@@ -1,0 +1,24 @@
+{
+  "software": {
+    "acceleration": "Software",
+    "backward_step_ms_p50": 57.798333,
+    "backward_step_ms_p95": 83.837458,
+    "frames": 300,
+    "random_seek_ms_p50": 58.278499999999994,
+    "random_seek_ms_p95": 84.966042,
+    "sequential_fps": 470.2,
+    "sequential_ms_p50": 1.533125,
+    "sequential_ms_p95": 5.115125
+  },
+  "videotoolbox": {
+    "acceleration": "VideoToolbox",
+    "backward_step_ms_p50": 211.12066700000003,
+    "backward_step_ms_p95": 342.564167,
+    "frames": 300,
+    "random_seek_ms_p50": 242.934583,
+    "random_seek_ms_p95": 327.313167,
+    "sequential_fps": 112.5,
+    "sequential_ms_p50": 8.144291999999998,
+    "sequential_ms_p95": 10.127959
+  }
+}

@@ -397,6 +397,12 @@ fn decoder_frames_route_assets_to_their_decoders() {
         error.to_string().contains("fosscut.media.end_of_stream"),
         "{error}"
     );
+    // The provider can move to a render thread.
+    let width = std::thread::spawn(move || frames.frame(&source(1)).map(|f| f.width))
+        .join()
+        .unwrap()
+        .unwrap();
+    assert_eq!(width, 8);
 }
 
 #[test]

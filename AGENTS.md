@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor and others) workin
 
 An open source video editor written in Rust, built so that people create high-quality short-form and long-form videos by talking to an AI agent, and can keep editing the same project in a desktop app (a web version may follow). The editor exposes one typed command API through three front ends: a GUI, a CLI with `--json` output, and an MCP server ([ADR-0002](docs/adr/0002-agent-first-command-api.md)).
 
-**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is in progress: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox on macOS, and `fosscut-render` composites frames on wgpu with a linear-light color pipeline. There is no encoding or export to files, MCP server or GUI yet. All ADRs are *Proposed* until accepted by a maintainer.
+**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is done on macOS: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox, `fosscut-render` composites frames on wgpu with a linear-light color pipeline, and the preview spike in `spikes/preview` chose rendering into the window behind the webview ([results](docs/development/milestone-2-spike-results.md)). There is no encoding or export to files, MCP server or GUI yet. `spikes/` holds throwaway prototypes outside the workspace and its gates. All ADRs are *Proposed* until accepted by a maintainer.
 
 ## Read before you work
 

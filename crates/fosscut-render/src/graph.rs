@@ -19,10 +19,11 @@ pub trait FrameProvider {
     fn frame(&mut self, source: &SourceRef) -> Result<VideoFrame, RenderError>;
 }
 
-/// Frames from one [`VideoDecoder`] per asset.
+/// Frames from one [`VideoDecoder`] per asset. Decoders must be `Send` so the provider can
+/// live on a render thread.
 #[derive(Default)]
 pub struct DecoderFrames {
-    decoders: HashMap<Id, Box<dyn VideoDecoder>>,
+    decoders: HashMap<Id, Box<dyn VideoDecoder + Send>>,
 }
 
 impl DecoderFrames {
@@ -32,7 +33,7 @@ impl DecoderFrames {
     }
 
     /// Uses `decoder` for `asset`'s frames.
-    pub fn insert(&mut self, asset: Id, decoder: Box<dyn VideoDecoder>) {
+    pub fn insert(&mut self, asset: Id, decoder: Box<dyn VideoDecoder + Send>) {
         self.decoders.insert(asset, decoder);
     }
 }

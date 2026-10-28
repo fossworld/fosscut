@@ -1,0 +1,113 @@
+{
+  "info": {
+    "adapter": "Apple M3 Pro",
+    "backend": "Metal",
+    "bench": true,
+    "mode": "a-native-surface",
+    "preview": [
+      1920,
+      1080
+    ],
+    "scale_factor": 2,
+    "source": {
+      "codec": "h264",
+      "duration_ms": 10000,
+      "rate": "30",
+      "size": [
+        3840,
+        2160
+      ]
+    }
+  },
+  "started": "2026-10-28T22:19:59.962Z",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  "playback_5s": {
+    "fps": 117.4,
+    "engine": {
+      "decode_ms": [
+        0.001458,
+        8.584916
+      ],
+      "hardware_decode": true,
+      "present_ms": [
+        3.3697079999999997,
+        13.204542
+      ],
+      "presented": 587,
+      "render_ms": [
+        1.817749,
+        2.504625
+      ],
+      "total_ms": [
+        8.308584000000002,
+        15.668250000000002
+      ]
+    },
+    "ui": {
+      "count": 240,
+      "p50": 17,
+      "p95": 18,
+      "max": 22
+    }
+  },
+  "scrub_forward_4s": {
+    "fps": 0.3,
+    "latency_ms": {
+      "count": 1,
+      "p50": 165,
+      "p95": 165,
+      "max": 165
+    },
+    "ui": {
+      "count": 16,
+      "p50": 17,
+      "p95": 69,
+      "max": 274902
+    }
+  },
+  "scrub_backward_4s": {
+    "fps": 5,
+    "latency_ms": {
+      "count": 20,
+      "p50": 273,
+      "p95": 314,
+      "max": 352
+    },
+    "ui": {
+      "count": 260,
+      "p50": 17,
+      "p95": 17,
+      "max": 19
+    }
+  },
+  "random_seeks_30": {
+    "latency_ms": {
+      "count": 30,
+      "p50": 222,
+      "p95": 375,
+      "max": 503
+    }
+  },
+  "timeline_scroll_4s": {
+    "fps": 60,
+    "frame_ms": {
+      "count": 240,
+      "p50": 17,
+      "p95": 18,
+      "max": 22
+    },
+    "clips_total": 2000,
+    "clips_drawn_last_frame": 61
+  },
+  "timeline_scroll_while_playing_4s": {
+    "fps": 60.3,
+    "frame_ms": {
+      "count": 241,
+      "p50": 17,
+      "p95": 17,
+      "max": 18
+    },
+    "clips_total": 2000,
+    "clips_drawn_last_frame": 58
+  }
+}

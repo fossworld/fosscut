@@ -1,0 +1,24 @@
+# Throwaway preview-path spike for ADR-0010 (milestone 2). Its own workspace, so it stays
+# out of the main build, tests and coverage. Deleted or replaced by apps/desktop.
+[workspace]
+
+[package]
+name = "fosscut-preview-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+fosscut-media = { path = "../../crates/fosscut-media", features = ["ffmpeg"] }
+fosscut-model = { path = "../../crates/fosscut-model" }
+fosscut-render = { path = "../../crates/fosscut-render" }
+fosscut-time = { path = "../../crates/fosscut-time" }
+pollster = "1.0.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = { version = "2.12.5", features = [] }
+wgpu = "30.0.1"
