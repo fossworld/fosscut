@@ -1,4 +1,8 @@
-name: Dependencies
+name: Dependency advisories
+
+# License and source policy is enforced on every pull request by the CI workflow. Security
+# advisories are reported here instead, weekly and when dependencies change, so that a newly
+# published advisory does not block unrelated pull requests.
 
 on:
   push:
@@ -7,17 +11,11 @@ on:
       - "**/Cargo.toml"
       - Cargo.lock
       - deny.toml
-      - ui/package.json
-      - ui/pnpm-lock.yaml
-      - scripts/check-npm-licenses.mjs
   pull_request:
     paths:
       - "**/Cargo.toml"
       - Cargo.lock
       - deny.toml
-      - ui/package.json
-      - ui/pnpm-lock.yaml
-      - scripts/check-npm-licenses.mjs
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
@@ -26,54 +24,16 @@ permissions:
   contents: read
 
 jobs:
-  detect:
-    name: Detect project parts
+  cargo-deny-advisories:
+    name: cargo-deny advisories
     runs-on: ubuntu-latest
-    outputs:
-      rust: ${{ steps.detect.outputs.rust }}
-      ui: ${{ steps.detect.outputs.ui }}
     steps:
       - uses: actions/checkout@v7
-      - id: detect
-        run: |
-          echo "rust=$([ -f Cargo.lock ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-          echo "ui=$([ -f ui/pnpm-lock.yaml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-
-  cargo-deny:
-    name: cargo-deny ${{ matrix.checks }}
-    needs: detect
-    if: needs.detect.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        checks:
-          - advisories
-          - bans licenses sources
-    # New advisories must not block unrelated pull requests; they surface in the weekly run.
-    continue-on-error: ${{ matrix.checks == 'advisories' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - name: Check for a Rust workspace
+        id: detect
+        run: echo "rust=$([ -f Cargo.lock ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.detect.outputs.rust == 'true'
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check ${{ matrix.checks }}
+          command: check advisories
           arguments: --all-features
-
-  npm-licenses:
-    name: npm license policy
-    needs: detect
-    if: needs.detect.outputs.ui == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-        with:
-          package_json_file: ui/package.json
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: ui/package.json
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-        working-directory: ui
-      - run: node scripts/check-npm-licenses.mjs ui

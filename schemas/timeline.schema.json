@@ -1,0 +1,372 @@
+{
+  "$defs": {
+    "Align": {
+      "description": "Horizontal text alignment.",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Left aligned.",
+          "type": "string"
+        },
+        {
+          "const": "center",
+          "description": "Centred.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Right aligned.",
+          "type": "string"
+        }
+      ]
+    },
+    "Clip": {
+      "description": "A clip on a track. The content kind decides which fields apply.",
+      "oneOf": [
+        {
+          "description": "A section of a video asset.",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/Id",
+              "description": "The asset (`asset_…`)."
+            },
+            "kind": {
+              "const": "video",
+              "type": "string"
+            },
+            "source_in": {
+              "$ref": "#/$defs/Flicks",
+              "description": "Source position of the clip's first frame."
+            }
+          },
+          "required": [
+            "kind",
+            "asset"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A section of an audio asset (or the audio of a video asset).",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/Id",
+              "description": "The asset (`asset_…`)."
+            },
+            "kind": {
+              "const": "audio",
+              "type": "string"
+            },
+            "source_in": {
+              "$ref": "#/$defs/Flicks",
+              "description": "Source position of the clip's first sample."
+            }
+          },
+          "required": [
+            "kind",
+            "asset"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A still image held for the clip duration.",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/Id",
+              "description": "The asset (`asset_…`)."
+            },
+            "kind": {
+              "const": "image",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "asset"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/TextContent",
+          "description": "A text title or caption.",
+          "properties": {
+            "kind": {
+              "const": "text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Length on the timeline."
+        },
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Clip id (`clip_…`)."
+        },
+        "opacity": {
+          "description": "Opacity from 0 to 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "start": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Timeline position of the first frame."
+        },
+        "transform": {
+          "$ref": "#/$defs/Transform",
+          "description": "Placement on the canvas; identity when omitted."
+        },
+        "volume": {
+          "description": "Linear audio gain (1 is unchanged, 0 is silent).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "start",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "Color": {
+      "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+      "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+      "type": "string"
+    },
+    "Flicks": {
+      "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+      "type": "integer"
+    },
+    "Id": {
+      "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+      "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+      "type": "string"
+    },
+    "Rate": {
+      "description": "Exact frame rate as an integer or a fraction string, for example \"30\" or \"30000/1001\" (29.97). Decimals are not accepted.",
+      "oneOf": [
+        {
+          "pattern": "^[1-9][0-9]*(/[1-9][0-9]*)?$",
+          "type": "string"
+        },
+        {
+          "minimum": 1,
+          "type": "integer"
+        }
+      ]
+    },
+    "TextContent": {
+      "description": "Text content with a single style.",
+      "properties": {
+        "style": {
+          "$ref": "#/$defs/TextStyle",
+          "description": "Appearance; defaults when omitted."
+        },
+        "text": {
+          "description": "The text; `\\n` separates lines.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "TextStyle": {
+      "description": "Text appearance.",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Align",
+          "description": "Horizontal alignment of lines."
+        },
+        "bold": {
+          "description": "Bold weight.",
+          "type": "boolean"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFFFFF",
+          "description": "Fill colour."
+        },
+        "font": {
+          "description": "Font family; the default sans-serif font when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "italic": {
+          "description": "Italic style.",
+          "type": "boolean"
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Font size as a fraction of the canvas height.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "TimelineFormat": {
+      "description": "Output format of a timeline.",
+      "properties": {
+        "height": {
+          "description": "Canvas height in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rate": {
+          "$ref": "#/$defs/Rate",
+          "description": "Frame rate; edits snap to its frames."
+        },
+        "sample_rate": {
+          "description": "Audio sample rate in Hz.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "width": {
+          "description": "Canvas width in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "rate"
+      ],
+      "type": "object"
+    },
+    "Track": {
+      "description": "A track: clips ordered by start time that never overlap.",
+      "properties": {
+        "clips": {
+          "description": "Clips sorted by start time, without overlaps.",
+          "items": {
+            "$ref": "#/$defs/Clip"
+          },
+          "type": "array"
+        },
+        "hidden": {
+          "description": "Hides the track's pictures.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Track id (`track_…`)."
+        },
+        "kind": {
+          "$ref": "#/$defs/TrackKind",
+          "description": "What the track holds."
+        },
+        "locked": {
+          "description": "Prevents edits to the track.",
+          "type": "boolean"
+        },
+        "muted": {
+          "description": "Silences the track.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Optional display name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "TrackKind": {
+      "description": "What a track holds.",
+      "oneOf": [
+        {
+          "const": "video",
+          "description": "Video and image clips (their audio plays too).",
+          "type": "string"
+        },
+        {
+          "const": "audio",
+          "description": "Audio clips.",
+          "type": "string"
+        },
+        {
+          "const": "text",
+          "description": "Text clips: titles and captions.",
+          "type": "string"
+        }
+      ]
+    },
+    "Transform": {
+      "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+      "properties": {
+        "position": {
+          "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "rotation": {
+          "description": "Clockwise rotation in degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "scale": {
+          "description": "Uniform scale relative to the fitted size (1 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A timeline document (`timelines/<id>.json`).",
+  "properties": {
+    "format": {
+      "$ref": "#/$defs/TimelineFormat",
+      "description": "Canvas size, frame rate and audio sample rate."
+    },
+    "id": {
+      "$ref": "#/$defs/Id",
+      "description": "Timeline id (`timeline_…`)."
+    },
+    "name": {
+      "description": "Timeline name.",
+      "type": "string"
+    },
+    "tracks": {
+      "description": "Tracks from bottom to top: later tracks draw over earlier ones.",
+      "items": {
+        "$ref": "#/$defs/Track"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "format"
+  ],
+  "title": "Timeline",
+  "type": "object"
+}

@@ -1,0 +1,264 @@
+{
+  "$defs": {
+    "Asset": {
+      "description": "A source media file referenced by clips. Splitting a clip never copies an asset.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Asset id (`asset_…`)."
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Content identity used to relink moved files."
+        },
+        "info": {
+          "$ref": "#/$defs/MediaInfo",
+          "description": "Stream information recorded at import."
+        },
+        "kind": {
+          "$ref": "#/$defs/AssetKind",
+          "description": "Media kind."
+        },
+        "name": {
+          "description": "Display name, usually the file name.",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/PathHints",
+          "description": "Where to find the file."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "path"
+      ],
+      "type": "object"
+    },
+    "AssetKind": {
+      "description": "What kind of media an asset is.",
+      "oneOf": [
+        {
+          "const": "video",
+          "description": "Moving picture, possibly with audio.",
+          "type": "string"
+        },
+        {
+          "const": "audio",
+          "description": "Sound only.",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "A still image.",
+          "type": "string"
+        }
+      ]
+    },
+    "AudioInfo": {
+      "description": "Audio stream properties.",
+      "properties": {
+        "channels": {
+          "description": "Channel count.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "codec": {
+          "description": "Codec name, for example `aac`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sample_rate": {
+          "description": "Sample rate in Hz.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sample_rate",
+        "channels"
+      ],
+      "type": "object"
+    },
+    "ContentIdentity": {
+      "description": "Identity of a file's content: its size and a BLAKE3 hash of its first and last MiB.",
+      "properties": {
+        "sample_blake3": {
+          "description": "Hex BLAKE3 digest of the size, the first MiB and the last MiB of the file.",
+          "type": "string"
+        },
+        "size": {
+          "description": "File size in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "size",
+        "sample_blake3"
+      ],
+      "type": "object"
+    },
+    "Flicks": {
+      "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+      "type": "integer"
+    },
+    "Id": {
+      "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+      "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+      "type": "string"
+    },
+    "MediaInfo": {
+      "description": "Stream information probed at import.",
+      "properties": {
+        "audio": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Primary audio stream."
+        },
+        "container": {
+          "description": "Container format name, for example `mov,mp4,m4a,3gp,3g2,mj2`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Flicks"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Playable duration; absent for still images."
+        },
+        "video": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Primary video stream."
+        }
+      },
+      "type": "object"
+    },
+    "PathHints": {
+      "description": "Path hints for a source file. Relative paths are relative to the project bundle.",
+      "properties": {
+        "absolute": {
+          "description": "Absolute path at import time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relative": {
+          "description": "Path relative to the `.fosscut` bundle directory, with `/` separators.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Rate": {
+      "description": "Exact frame rate as an integer or a fraction string, for example \"30\" or \"30000/1001\" (29.97). Decimals are not accepted.",
+      "oneOf": [
+        {
+          "pattern": "^[1-9][0-9]*(/[1-9][0-9]*)?$",
+          "type": "string"
+        },
+        {
+          "minimum": 1,
+          "type": "integer"
+        }
+      ]
+    },
+    "VideoInfo": {
+      "description": "Video stream properties.",
+      "properties": {
+        "codec": {
+          "description": "Codec name, for example `h264`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "height": {
+          "description": "Coded height in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Frame rate, when constant and known."
+        },
+        "rotation": {
+          "description": "Display rotation in degrees from container metadata.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "width": {
+          "description": "Coded width in pixels.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The media table: one immutable record per source file (`media.json`).",
+  "properties": {
+    "assets": {
+      "default": [],
+      "description": "Imported assets in import order.",
+      "items": {
+        "$ref": "#/$defs/Asset"
+      },
+      "type": "array"
+    }
+  },
+  "title": "Media",
+  "type": "object"
+}

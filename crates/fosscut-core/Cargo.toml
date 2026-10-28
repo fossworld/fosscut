@@ -1,0 +1,22 @@
+[package]
+name = "fosscut-core"
+description = "FossCut command layer: typed commands and queries with revisions, dry runs, idempotency, undo and an operation log (ADR-0002, ADR-0006)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+fosscut-model.workspace = true
+fosscut-time.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true

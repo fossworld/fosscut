@@ -1,0 +1,1980 @@
+{
+  "api_version": "0.1.0",
+  "commands": [
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Places a section of a media asset on a track.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset to place."
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Length; the rest of the asset (images: 5 seconds) when omitted."
+          },
+          "source_in": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Source in-point inside the asset; its beginning when omitted."
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position; appended after the track's last clip when omitted."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target track; the first track of the matching kind (created if needed) when omitted."
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "title": "ClipAdd",
+        "type": "object"
+      },
+      "name": "clip.add",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Moves a clip to another position and/or track of the same timeline.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip to move."
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New timeline position; unchanged when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target track in the same timeline; unchanged when omitted."
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "ClipMove",
+        "type": "object"
+      },
+      "name": "clip.move",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes a clip, optionally closing the gap.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip to remove."
+          },
+          "ripple": {
+            "default": false,
+            "description": "Shift later clips on the same track left to close the gap.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "ClipRemove",
+        "type": "object"
+      },
+      "name": "clip.remove",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `clip.remove`.",
+        "properties": {
+          "removed": {
+            "$ref": "#/$defs/Id",
+            "description": "The removed clip id."
+          },
+          "shifted": {
+            "description": "Clips shifted left by the ripple.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "The track it was on."
+          }
+        },
+        "required": [
+          "removed",
+          "track"
+        ],
+        "title": "ClipRemoved",
+        "type": "object"
+      },
+      "summary": "Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Splits a clip in two at a timeline position.",
+        "properties": {
+          "at": {
+            "$ref": "#/$defs/TimeInput",
+            "description": "Timeline position of the cut, strictly inside the clip; snapped to the nearest frame."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip to split."
+          }
+        },
+        "required": [
+          "clip",
+          "at"
+        ],
+        "title": "ClipSplit",
+        "type": "object"
+      },
+      "name": "clip.split",
+      "output_schema": {
+        "$defs": {
+          "ClipPlacement": {
+            "description": "Where a clip ended up.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "duration": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Length on the timeline."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "track": {
+                "$ref": "#/$defs/Id",
+                "description": "Track id."
+              }
+            },
+            "required": [
+              "clip",
+              "track",
+              "start",
+              "end",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `clip.split`.",
+        "properties": {
+          "left": {
+            "$ref": "#/$defs/ClipPlacement",
+            "description": "The left part; it keeps the original id."
+          },
+          "right": {
+            "$ref": "#/$defs/ClipPlacement",
+            "description": "The right part, with a new id."
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "title": "ClipSplitResult",
+        "type": "object"
+      },
+      "summary": "Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source."
+    },
+    {
+      "input_schema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "history.redo",
+      "output_schema": {
+        "$defs": {
+          "ChangeSummary": {
+            "description": "Objects added, removed or modified by a transaction, by id.",
+            "properties": {
+              "added": {
+                "description": "Ids of new objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "modified": {
+                "description": "Ids of changed objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "removed": {
+                "description": "Ids of removed objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `history.undo` and `history.redo`.",
+        "properties": {
+          "changes": {
+            "$ref": "#/$defs/ChangeSummary",
+            "description": "Objects changed by this undo or redo."
+          },
+          "target_seq": {
+            "description": "Sequence number of the transaction that was undone or redone.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_seq",
+          "changes"
+        ],
+        "title": "HistoryOutput",
+        "type": "object"
+      },
+      "summary": "Redo the most recently undone transaction. Must be the only command in its request."
+    },
+    {
+      "input_schema": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "name": "history.undo",
+      "output_schema": {
+        "$defs": {
+          "ChangeSummary": {
+            "description": "Objects added, removed or modified by a transaction, by id.",
+            "properties": {
+              "added": {
+                "description": "Ids of new objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "modified": {
+                "description": "Ids of changed objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "removed": {
+                "description": "Ids of removed objects.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `history.undo` and `history.redo`.",
+        "properties": {
+          "changes": {
+            "$ref": "#/$defs/ChangeSummary",
+            "description": "Objects changed by this undo or redo."
+          },
+          "target_seq": {
+            "description": "Sequence number of the transaction that was undone or redone.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "target_seq",
+          "changes"
+        ],
+        "title": "HistoryOutput",
+        "type": "object"
+      },
+      "summary": "Undo the most recent committed transaction. Must be the only command in its request."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "AssetKind": {
+            "description": "What kind of media an asset is.",
+            "oneOf": [
+              {
+                "const": "video",
+                "description": "Moving picture, possibly with audio.",
+                "type": "string"
+              },
+              {
+                "const": "audio",
+                "description": "Sound only.",
+                "type": "string"
+              },
+              {
+                "const": "image",
+                "description": "A still image.",
+                "type": "string"
+              }
+            ]
+          },
+          "AudioInfo": {
+            "description": "Audio stream properties.",
+            "properties": {
+              "channels": {
+                "description": "Channel count.",
+                "format": "uint16",
+                "maximum": 65535,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "codec": {
+                "description": "Codec name, for example `aac`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sample_rate": {
+                "description": "Sample rate in Hz.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sample_rate",
+              "channels"
+            ],
+            "type": "object"
+          },
+          "ContentIdentity": {
+            "description": "Identity of a file's content: its size and a BLAKE3 hash of its first and last MiB.",
+            "properties": {
+              "sample_blake3": {
+                "description": "Hex BLAKE3 digest of the size, the first MiB and the last MiB of the file.",
+                "type": "string"
+              },
+              "size": {
+                "description": "File size in bytes.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "size",
+              "sample_blake3"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "MediaInfo": {
+            "description": "Stream information probed at import.",
+            "properties": {
+              "audio": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AudioInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Primary audio stream."
+              },
+              "container": {
+                "description": "Container format name, for example `mov,mp4,m4a,3gp,3g2,mj2`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "duration": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Flicks"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Playable duration; absent for still images."
+              },
+              "video": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/VideoInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Primary video stream."
+              }
+            },
+            "type": "object"
+          },
+          "PathHints": {
+            "description": "Path hints for a source file. Relative paths are relative to the project bundle.",
+            "properties": {
+              "absolute": {
+                "description": "Absolute path at import time.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relative": {
+                "description": "Path relative to the `.fosscut` bundle directory, with `/` separators.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Rate": {
+            "description": "Exact frame rate as an integer or a fraction string, for example \"30\" or \"30000/1001\" (29.97). Decimals are not accepted.",
+            "oneOf": [
+              {
+                "pattern": "^[1-9][0-9]*(/[1-9][0-9]*)?$",
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ]
+          },
+          "VideoInfo": {
+            "description": "Video stream properties.",
+            "properties": {
+              "codec": {
+                "description": "Codec name, for example `h264`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "height": {
+                "description": "Coded height in pixels.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rate": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Rate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Frame rate, when constant and known."
+              },
+              "rotation": {
+                "description": "Display rotation in degrees from container metadata.",
+                "format": "int32",
+                "type": "integer"
+              },
+              "width": {
+                "description": "Coded width in pixels.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a probed media file to the project's media table.\n\nFront ends probe the file (the CLI uses ffprobe) and pass the stream information; the\ncore never touches media files itself.",
+        "properties": {
+          "identity": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ContentIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Content identity; when it matches an existing asset, that asset is returned instead."
+          },
+          "info": {
+            "$ref": "#/$defs/MediaInfo",
+            "default": {},
+            "description": "Probed stream information."
+          },
+          "kind": {
+            "$ref": "#/$defs/AssetKind",
+            "description": "Media kind."
+          },
+          "name": {
+            "description": "Display name, usually the file name.",
+            "type": "string"
+          },
+          "path": {
+            "$ref": "#/$defs/PathHints",
+            "description": "Where the file is."
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "path"
+        ],
+        "title": "MediaAdd",
+        "type": "object"
+      },
+      "name": "media.add",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `media.add`.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset id."
+          },
+          "existing": {
+            "description": "True when an identical file was already in the project and nothing was added.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asset",
+          "existing"
+        ],
+        "title": "MediaAdded",
+        "type": "object"
+      },
+      "summary": "Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both)."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TextStyle": {
+            "description": "Text appearance.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family; the default sans-serif font when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a text clip (a title or caption).",
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Length; 3 seconds when omitted."
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position; appended after the track's last clip when omitted."
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TextStyle"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Appearance; defaults when omitted."
+          },
+          "text": {
+            "description": "The text; `\\n` separates lines.",
+            "type": "string"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target text track; the first text track (created on top if needed) when omitted."
+          },
+          "transform": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Transform"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Placement; centred when omitted."
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "TextAdd",
+        "type": "object"
+      },
+      "name": "text.add",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TrackKind": {
+            "description": "What a track holds.",
+            "oneOf": [
+              {
+                "const": "video",
+                "description": "Video and image clips (their audio plays too).",
+                "type": "string"
+              },
+              {
+                "const": "audio",
+                "description": "Audio clips.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "Text clips: titles and captions.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds an empty track to a timeline.",
+        "properties": {
+          "index": {
+            "default": null,
+            "description": "Position in the track list (0 is the bottom layer); on top when omitted.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/$defs/TrackKind",
+            "description": "What the track holds."
+          },
+          "name": {
+            "default": null,
+            "description": "Optional display name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "TrackAdd",
+        "type": "object"
+      },
+      "name": "track.add",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `track.add`.",
+        "properties": {
+          "index": {
+            "description": "Its position in the track list.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline it belongs to."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "The new track id."
+          }
+        },
+        "required": [
+          "track",
+          "index",
+          "timeline"
+        ],
+        "title": "TrackAdded",
+        "type": "object"
+      },
+      "summary": "Add an empty video, audio or text track; later tracks draw on top of earlier ones."
+    }
+  ],
+  "errors": [
+    {
+      "code": "fosscut.request.invalid",
+      "hint": "Send {\"commands\": [{\"command\": name, \"args\": {...}}]} or a single {\"command\", \"args\"} object.",
+      "meaning": "The request envelope is malformed."
+    },
+    {
+      "code": "fosscut.request.invalid_arguments",
+      "hint": "Read the command's input schema from capabilities and correct the listed field.",
+      "meaning": "Arguments do not match the command schema."
+    },
+    {
+      "code": "fosscut.request.reused",
+      "hint": "Use a new request_id for a new request; reuse an id only to retry the identical request.",
+      "meaning": "The request_id was already used for different commands."
+    },
+    {
+      "code": "fosscut.command.unknown",
+      "hint": "List commands with capabilities.",
+      "meaning": "No command has this name."
+    },
+    {
+      "code": "fosscut.query.unknown",
+      "hint": "List queries with capabilities.",
+      "meaning": "No query has this name."
+    },
+    {
+      "code": "fosscut.revision.conflict",
+      "hint": "Read the project again, re-plan the edit against the current revision, then retry with the new revision.",
+      "meaning": "The project changed since expected_revision."
+    },
+    {
+      "code": "fosscut.guard.destructive",
+      "hint": "Ask the user to confirm, then retry with allow_destructive: true.",
+      "meaning": "The operation would remove primary content."
+    },
+    {
+      "code": "fosscut.history.nothing_to_undo",
+      "hint": "Check the history query.",
+      "meaning": "There is no committed transaction to undo."
+    },
+    {
+      "code": "fosscut.history.nothing_to_redo",
+      "hint": "A new commit clears the redo history.",
+      "meaning": "There is no undone transaction to redo."
+    },
+    {
+      "code": "fosscut.history.diverged",
+      "hint": "Do not undo further; inspect the project and report the problem.",
+      "meaning": "Documents differ from what the operation log expects."
+    },
+    {
+      "code": "fosscut.history.corrupt",
+      "hint": "Restore history/ops.jsonl from version control or a backup.",
+      "meaning": "The operation log cannot be read."
+    },
+    {
+      "code": "fosscut.timeline.not_found",
+      "hint": "List timelines with project.info.",
+      "meaning": "The timeline does not exist."
+    },
+    {
+      "code": "fosscut.track.not_found",
+      "hint": "Read the timeline to get current track ids.",
+      "meaning": "The track does not exist."
+    },
+    {
+      "code": "fosscut.track.locked",
+      "hint": "Ask the user before unlocking it.",
+      "meaning": "The track is locked."
+    },
+    {
+      "code": "fosscut.track.kind_mismatch",
+      "hint": "Use a video track for video and images, an audio track for audio and a text track for text.",
+      "meaning": "The clip kind does not fit the track kind."
+    },
+    {
+      "code": "fosscut.clip.not_found",
+      "hint": "Read the timeline to get current clip ids.",
+      "meaning": "The clip does not exist."
+    },
+    {
+      "code": "fosscut.clip.overlap",
+      "hint": "Choose a free position (details.free_from), another track, or remove the other clip first.",
+      "meaning": "The clip would overlap another clip on the track."
+    },
+    {
+      "code": "fosscut.clip.source_range",
+      "hint": "Shorten the clip or move its source in-point; details give the asset duration.",
+      "meaning": "The clip would read beyond the start or end of its media."
+    },
+    {
+      "code": "fosscut.clip.split_outside",
+      "hint": "Choose a time between the clip's start and end (exclusive).",
+      "meaning": "The split point is not strictly inside the clip."
+    },
+    {
+      "code": "fosscut.clip.invalid_range",
+      "hint": "Use a positive duration of at least one frame and a start of zero or later.",
+      "meaning": "The clip would be empty or start before zero."
+    },
+    {
+      "code": "fosscut.asset.not_found",
+      "hint": "List assets with media.list.",
+      "meaning": "The asset does not exist."
+    },
+    {
+      "code": "fosscut.media.incomplete_info",
+      "hint": "Import the file with a front end that probes it (fosscut media import).",
+      "meaning": "Media information is missing for this kind of asset."
+    },
+    {
+      "code": "fosscut.text.empty",
+      "hint": "Provide non-empty text.",
+      "meaning": "Text is empty."
+    },
+    {
+      "code": "fosscut.media.probe_unavailable",
+      "hint": "Install FFmpeg so that ffprobe is on PATH, or set FOSSCUT_FFPROBE to its location.",
+      "meaning": "No media prober is available."
+    },
+    {
+      "code": "fosscut.media.probe_failed",
+      "hint": "Check that the path exists and is a supported audio, video or image file.",
+      "meaning": "The media file could not be read."
+    },
+    {
+      "code": "fosscut.project.busy",
+      "hint": "Wait for the other command to finish, then retry with the same request_id.",
+      "meaning": "Another process is writing the project."
+    },
+    {
+      "code": "fosscut.model.invalid",
+      "hint": "Read details for the violated rule; this usually indicates a bug in the command.",
+      "meaning": "The change would break a project format rule."
+    },
+    {
+      "code": "fosscut.time.unit_required",
+      "hint": "Use {\"frames\": n}, {\"seconds\": \"s\"}, {\"timecode\": \"HH:MM:SS:FF\"} or {\"flicks\": n}.",
+      "meaning": "A time has no explicit unit."
+    },
+    {
+      "code": "fosscut.time.invalid_timecode",
+      "hint": "Use HH:MM:SS:FF with a frame field below the frame rate.",
+      "meaning": "A timecode is malformed for the timeline rate."
+    },
+    {
+      "code": "fosscut.time.invalid_seconds",
+      "hint": "Use a decimal number such as \"3.9333\".",
+      "meaning": "A seconds value is malformed."
+    },
+    {
+      "code": "fosscut.time.invalid_rate",
+      "hint": "Use an integer or a fraction such as \"30000/1001\".",
+      "meaning": "A frame rate is malformed."
+    },
+    {
+      "code": "fosscut.time.overflow",
+      "hint": "Use a smaller value.",
+      "meaning": "A time value is out of range."
+    },
+    {
+      "code": "fosscut.project.not_found",
+      "hint": "Create one with fosscut project new.",
+      "meaning": "No project exists at this location."
+    },
+    {
+      "code": "fosscut.project.unsupported_version",
+      "hint": "Update FossCut.",
+      "meaning": "The project format version is not supported."
+    },
+    {
+      "code": "fosscut.project.malformed",
+      "hint": "Restore the document from version control or a backup.",
+      "meaning": "A project document is not valid JSON for its schema."
+    },
+    {
+      "code": "fosscut.project.invalid",
+      "hint": "Read details for the list of issues.",
+      "meaning": "The project violates format rules."
+    },
+    {
+      "code": "fosscut.project.storage",
+      "hint": "Check permissions and free disk space.",
+      "meaning": "Reading or writing project files failed."
+    },
+    {
+      "code": "fosscut.internal",
+      "hint": "Report this as a bug with the request that caused it.",
+      "meaning": "Internal failure."
+    }
+  ],
+  "format_version": "0.1.0",
+  "queries": [
+    {
+      "input_schema": {
+        "$defs": {
+          "Detail": {
+            "description": "How much `timeline.read` and `capabilities` return.",
+            "oneOf": [
+              {
+                "const": "outline",
+                "description": "Names and counts only.",
+                "type": "string"
+              },
+              {
+                "const": "normal",
+                "description": "The usual working view.",
+                "type": "string"
+              },
+              {
+                "const": "full",
+                "description": "Everything, including styles, transforms and schemas.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Arguments of `capabilities`.",
+        "properties": {
+          "detail": {
+            "$ref": "#/$defs/Detail",
+            "description": "`outline` lists names and summaries; `normal` and `full` include JSON Schemas."
+          }
+        },
+        "title": "CapabilitiesArgs",
+        "type": "object"
+      },
+      "name": "capabilities",
+      "summary": "Commands, queries, their JSON Schemas, the request envelope, time formats and error codes."
+    },
+    {
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Arguments of `history.list`.",
+        "properties": {
+          "limit": {
+            "default": null,
+            "description": "Number of most recent entries to return (default 20).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "HistoryArgs",
+        "type": "object"
+      },
+      "name": "history.list",
+      "summary": "Most recent operation log entries, newest first."
+    },
+    {
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Arguments of `project.info` and `media.list`.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "media.list",
+      "summary": "Assets in the media table with durations and stream details."
+    },
+    {
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Arguments of `project.info` and `media.list`.",
+        "title": "NoArgs",
+        "type": "object"
+      },
+      "name": "project.info",
+      "summary": "Project name, revision, timelines and undo state."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Detail": {
+            "description": "How much `timeline.read` and `capabilities` return.",
+            "oneOf": [
+              {
+                "const": "outline",
+                "description": "Names and counts only.",
+                "type": "string"
+              },
+              {
+                "const": "normal",
+                "description": "The usual working view.",
+                "type": "string"
+              },
+              {
+                "const": "full",
+                "description": "Everything, including styles, transforms and schemas.",
+                "type": "string"
+              }
+            ]
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Arguments of `timeline.read`.",
+        "properties": {
+          "detail": {
+            "$ref": "#/$defs/Detail",
+            "description": "`outline`: tracks only; `normal`: clips with times; `full`: also styles and transforms."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          }
+        },
+        "title": "TimelineReadArgs",
+        "type": "object"
+      },
+      "name": "timeline.read",
+      "summary": "Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds."
+    }
+  ],
+  "request_schema": {
+    "$defs": {
+      "CommandCall": {
+        "additionalProperties": false,
+        "description": "One command invocation inside a request.",
+        "properties": {
+          "args": {
+            "default": null,
+            "description": "Arguments matching the command's input schema."
+          },
+          "command": {
+            "description": "Command name, for example `clip.split`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "A write request: one or more commands applied as a single transaction (ADR-0006).\n\nJSON may also use the single-command shorthand `{\"command\": ..., \"args\": ...}` with\nthe same envelope fields.",
+    "properties": {
+      "actor": {
+        "default": "unknown",
+        "description": "Who makes the change: `human`, or `agent:<client name>`.",
+        "type": "string"
+      },
+      "allow_destructive": {
+        "default": false,
+        "description": "Permit destructive operations such as removing clips from the primary video track.",
+        "type": "boolean"
+      },
+      "at_ms": {
+        "description": "Commit time in milliseconds since the Unix epoch, supplied by the host.",
+        "format": "uint64",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "commands": {
+        "description": "Commands to apply atomically, in order.",
+        "items": {
+          "$ref": "#/$defs/CommandCall"
+        },
+        "type": "array"
+      },
+      "dry_run": {
+        "default": false,
+        "description": "Validate and report changes without committing.",
+        "type": "boolean"
+      },
+      "expected_revision": {
+        "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+        "format": "uint64",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "reason": {
+        "description": "Why the change is made, recorded in the operation log.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "request_id": {
+        "description": "Retry key: repeating a request with the same id and commands returns the first result.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "commands"
+    ],
+    "title": "Request",
+    "type": "object"
+  },
+  "time_input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+    "oneOf": [
+      {
+        "additionalProperties": false,
+        "properties": {
+          "frames": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "frames"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "seconds": {
+            "description": "Decimal seconds, for example \"3.9333\"",
+            "type": [
+              "string",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "seconds"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "timecode": {
+            "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timecode"
+        ],
+        "type": "object"
+      },
+      {
+        "additionalProperties": false,
+        "properties": {
+          "flicks": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "flicks"
+        ],
+        "type": "object"
+      },
+      {
+        "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+        "type": "string"
+      }
+    ],
+    "title": "TimeInput"
+  }
+}

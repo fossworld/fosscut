@@ -22,10 +22,11 @@ Thank you for helping build an open source video editor that people and AI agent
 | Tool | Purpose |
 |---|---|
 | [rustup](https://rustup.rs) | Installs the toolchain pinned in `rust-toolchain.toml` automatically |
-| `cargo install cargo-nextest cargo-deny` | Test runner and dependency policy checks used by CI |
+| `cargo install cargo-nextest cargo-deny cargo-llvm-cov` | Test runner, dependency policy checks and coverage used by CI |
+| `rustup component add llvm-tools` | Needed by `cargo-llvm-cov` |
 | Node.js and pnpm | The shared UI in `ui/` (once it exists) |
 | Python 3 | Repository check scripts |
-| FFmpeg (shared libraries, LGPL build) | Media I/O once `fosscut-media` exists ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)) |
+| FFmpeg (`ffmpeg` and `ffprobe`; shared libraries, LGPL build) | End-to-end CLI tests now; media I/O once `fosscut-media` exists ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)) |
 
 Local checks that mirror CI:
 
@@ -38,7 +39,15 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 ```bash
-cargo nextest run --workspace --all-features --no-tests=pass
+cargo nextest run --workspace --all-features
+```
+
+```bash
+cargo test --workspace --all-features --doc
+```
+
+```bash
+cargo xtask coverage
 ```
 
 ```bash
@@ -53,17 +62,17 @@ python3 scripts/check-adr-index.py
 npx markdownlint-cli2
 ```
 
-Rust commands apply once the workspace has its first crate; the documentation checks apply now.
+`cargo xtask coverage` runs every test with coverage instrumentation and fails when line coverage drops below the minimums in `xtask/src/main.rs` (90% for the workspace, 85% for each crate).
 
 ## Workflow
 
 1. **Start from an issue.** Use the "Implementation task" template for well-scoped work with acceptance criteria. Comment that you are taking it.
 2. **Branch, keep it small.** One concern per pull request. Large features are split into reviewable steps.
-3. **Write tests at the right level** ([ADR-0016](docs/adr/0016-testing-strategy.md)): unit and property tests, command contract tests, snapshots, golden frames, export verification.
+3. **Write tests at the right level** ([ADR-0016](docs/adr/0016-testing-strategy.md)): unit and property tests, command contract tests, snapshots, end-to-end CLI tests, golden frames, export verification. Every behaviour change comes with a test that would fail without it.
 4. **Keep agents first-class.** A new capability is reachable from the CLI and MCP, appears in `capabilities`, and follows the [agent safety contract](docs/adr/0006-agent-safety-contract.md).
 5. **Use a conventional pull request title**, for example `feat(core): add clip split command` or `fix(render): correct mask feather`. Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`, `revert`. Pull requests are squash-merged with this title, and release notes are generated from it.
 6. **Sign off every commit** (`git commit -s`).
-7. **CI must be green** and a maintainer must approve. Agents never merge.
+7. **CI must be green.** Branch protection requires the `CI result` check, which fails if any test, lint, coverage or policy job fails, so a pull request with a failing test cannot merge. A maintainer merges; agents never merge.
 
 ## Working with AI coding agents
 

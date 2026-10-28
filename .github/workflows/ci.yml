@@ -69,6 +69,8 @@ jobs:
       - run: cargo doc --workspace --no-deps --all-features --locked
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: Check generated JSON Schemas are up to date
+        run: cargo xtask schemas --check
 
   rust-test:
     name: Rust tests (${{ matrix.os }})
@@ -87,8 +89,81 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - run: cargo nextest run --workspace --all-features --locked --no-tests=pass
-      - run: cargo test --workspace --all-features --locked --doc
+      - name: Install FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg -y --no-progress
+      - name: Unit, property, contract, snapshot and end-to-end tests
+        run: cargo nextest run --profile ci --workspace --all-features --locked --no-tests=fail
+        env:
+          # Tests that need FFmpeg fail instead of skipping (ADR-0016).
+          FOSSCUT_REQUIRE_FFMPEG: "1"
+      - name: Documentation tests
+        run: cargo test --workspace --all-features --locked --doc
+
+  coverage:
+    name: Test coverage
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustup component add llvm-tools
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-llvm-cov
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Measure coverage and enforce the minimums in xtask/src/main.rs
+        run: cargo xtask coverage
+        env:
+          NEXTEST_PROFILE: ci
+          FOSSCUT_REQUIRE_FFMPEG: "1"
+      - name: Upload the LCOV report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: target/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14
+
+  dependency-policy:
+    name: Dependency licenses and sources
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: cargo-deny bans, licenses and sources
+        if: needs.detect.outputs.rust == 'true'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources
+          arguments: --all-features
+      - uses: pnpm/action-setup@v6
+        if: needs.detect.outputs.ui == 'true'
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v7
+        if: needs.detect.outputs.ui == 'true'
+        with:
+          node-version-file: ui/package.json
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: npm license policy
+        if: needs.detect.outputs.ui == 'true'
+        run: |
+          pnpm install --frozen-lockfile --dir ui
+          node scripts/check-npm-licenses.mjs ui
 
   wasm-check:
     name: WebAssembly build of portable crates
@@ -136,3 +211,23 @@ jobs:
       - run: pnpm run --if-present typecheck
       - run: pnpm run --if-present test
       - run: pnpm run --if-present build
+
+  # The one check that branch protection requires (docs/development/github-setup.md). It fails
+  # when any job above failed or was cancelled, so adding a job here is enough to make it
+  # required. Jobs skipped because a part of the project does not exist yet count as passing.
+  ci-result:
+    name: CI result
+    if: always()
+    needs: [detect, docs, rust-lint, rust-test, coverage, wasm-check, dependency-policy, ui]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job failed or was cancelled
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | join(", ")')
+          if [ -n "$failed" ]; then
+            echo "::error::These CI jobs did not pass: $failed"
+            exit 1
+          fi

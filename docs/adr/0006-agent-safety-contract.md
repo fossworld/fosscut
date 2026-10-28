@@ -10,7 +10,7 @@ Autonomous agents make mistakes, retry after timeouts, work from stale reads, an
 
 ## Decision
 
-1. **Revisions.** Each timeline document has a revision number that increments on every committed transaction. Every write accepts `expected_revision`. A mismatch fails with `fosscut.revision.conflict`, returns the current revision and a summary of what changed, and changes nothing. CLI and MCP writes from agents must pass it; the GUI passes it implicitly.
+1. **Revisions.** The project has one revision number (in `project.json`) that increments on every committed transaction, including undo and redo. Per-timeline revisions may be added later if concurrent editing of different timelines needs them. Every write accepts `expected_revision`. A mismatch fails with `fosscut.revision.conflict`, returns the current revision and a summary of what changed, and changes nothing. CLI and MCP writes from agents must pass it; the GUI passes it implicitly.
 2. **Dry run and plan.** Every write supports `dry_run: true`, which validates and returns the predicted diff without committing. A dry run is never treated as a commit and returns no new revision.
 3. **Idempotency.** Writes accept `request_id`. Repeating the same id with the same arguments returns the original result without executing again; the same id with different arguments fails with `fosscut.request.reused`. Ids are kept for the session and recorded in the operation log.
 4. **Transactions.** A `batch` of commands applies atomically: all or nothing, one revision step, one undo step.

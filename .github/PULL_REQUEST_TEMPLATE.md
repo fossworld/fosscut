@@ -15,7 +15,8 @@ Closes #
 
 - [ ] Title follows conventional commits (`feat(core): …`, `fix(render): …`)
 - [ ] Every commit is signed off (`git commit -s`)
-- [ ] Tests added or updated at the right level (ADR-0016)
+- [ ] Tests added or updated at the right level (ADR-0016); each behaviour change has a test that fails without it
+- [ ] No test was weakened, skipped or deleted, and the coverage minimums were not lowered
 - [ ] New capabilities are reachable from CLI and MCP and listed in `capabilities` (ADR-0002)
 - [ ] Writes follow the agent safety contract: revisions, dry run, idempotency, guards (ADR-0006)
 - [ ] Schemas, snapshots and docs regenerated or updated where public behaviour changed

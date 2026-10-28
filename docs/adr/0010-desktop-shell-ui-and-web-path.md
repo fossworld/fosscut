@@ -16,8 +16,9 @@ The owner wants a desktop app first and possibly a web version later. Establishe
    - *A. Native surface:* the engine renders with `wgpu` into a native view composited with the webview (preferred for zero-copy and latency);
    - *B. Frame transport:* the engine renders offscreen and transfers frames to a canvas in the webview through shared memory or a custom protocol.
    Whichever wins, the UI talks to an abstract `PreviewSurface` so the web build can substitute a WebGPU canvas.
-4. **Agent-aware UI.** The app shows agent activity: connected clients, the operation log grouped by agent transaction, a diff view of `timeline.plan` results with accept and reject, and one-click undo of an agent's transaction.
-5. **Web path (later, separate ADR when started):** the same `ui/`, the engine's model, core and render crates compiled to WebAssembly with `wgpu` on WebGPU and WebCodecs for media ([ADR-0009](0009-media-io-and-codecs.md)), projects stored locally (File System Access, OPFS) or on a server. Agents reach a web session through the MCP server's HTTP transport.
+4. **One engine client.** UI code talks to the engine only through a single engine-client module in `ui/` (commands, queries, events, preview frames). On desktop it uses Tauri; on the web it will use an in-page WebAssembly engine or a WebSocket to a server. Components never call Tauri APIs directly, so the same UI runs in both.
+5. **Agent-aware UI.** The app shows agent activity: connected clients, the operation log grouped by agent transaction, a diff view of `timeline.plan` results with accept and reject, and one-click undo of an agent's transaction.
+6. **Web path (later, separate ADR when started):** the same `ui/`, the engine's model, core and render crates compiled to WebAssembly with `wgpu` on WebGPU and WebCodecs for media ([ADR-0009](0009-media-io-and-codecs.md)), projects stored locally (File System Access, OPFS) or on a server. Agents reach a web session through the MCP server's HTTP transport.
 
 ## Consequences
 
