@@ -16,6 +16,7 @@ node_modules/
 /out/
 /renders/
 *.fosscut/cache/
+*.fosscut/.lock
 /fixtures/generated/
 
 # Competitor research: private, never published (ADR-0015)

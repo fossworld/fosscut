@@ -1,0 +1,77 @@
+{
+  "$defs": {
+    "Id": {
+      "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+      "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+      "type": "string"
+    },
+    "TimelineEntry": {
+      "description": "A timeline listed in the manifest.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Timeline id; its document is `timelines/<id>.json`."
+        },
+        "name": {
+          "description": "Timeline name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The project manifest (`project.json`).",
+  "properties": {
+    "format_version": {
+      "description": "Format version of the bundle (semantic version).",
+      "type": "string"
+    },
+    "id": {
+      "$ref": "#/$defs/Id",
+      "description": "Project id (`project_…`)."
+    },
+    "name": {
+      "description": "Project name.",
+      "type": "string"
+    },
+    "next_id": {
+      "description": "Next number for new object ids; ids are never reused.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "primary_timeline": {
+      "$ref": "#/$defs/Id",
+      "description": "The timeline that opens by default and that exports target unless told otherwise."
+    },
+    "revision": {
+      "description": "Increments on every committed change (ADR-0006).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "timelines": {
+      "description": "Timelines in the project, in display order.",
+      "items": {
+        "$ref": "#/$defs/TimelineEntry"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "format_version",
+    "id",
+    "name",
+    "revision",
+    "next_id",
+    "primary_timeline",
+    "timelines"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

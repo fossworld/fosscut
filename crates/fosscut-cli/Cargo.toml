@@ -1,0 +1,25 @@
+[package]
+name = "fosscut-cli"
+description = "The fosscut command-line interface: every editing command with JSON output for people and AI agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "fosscut"
+path = "src/main.rs"
+
+[dependencies]
+blake3.workspace = true
+clap.workspace = true
+fosscut-core.workspace = true
+fosscut-model.workspace = true
+fosscut-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

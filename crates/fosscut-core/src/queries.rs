@@ -1,0 +1,340 @@
+//! Built-in read-only queries.
+
+use fosscut_model::{ClipContent, Id, Project, Timeline};
+use fosscut_time::{Rate, TimeReport};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::history::stacks;
+use crate::{API_VERSION, ApiError, LogEntry, Registry, Request, codes, error_catalogue};
+
+/// What a query can read.
+pub(crate) struct QueryContext<'a> {
+    pub project: &'a Project,
+    pub log: &'a [LogEntry],
+    pub registry: &'a Registry,
+}
+
+fn parse<A: for<'de> Deserialize<'de>>(name: &str, args: Value) -> Result<A, ApiError> {
+    let args = if args.is_null() {
+        Value::Object(Default::default())
+    } else {
+        args
+    };
+    serde_json::from_value(args)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{name}: {e}")))
+}
+
+/// How much `timeline.read` and `capabilities` return.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Detail {
+    /// Names and counts only.
+    Outline,
+    /// The usual working view.
+    #[default]
+    Normal,
+    /// Everything, including styles, transforms and schemas.
+    Full,
+}
+
+/// Arguments of `capabilities`.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CapabilitiesArgs {
+    /// `outline` lists names and summaries; `normal` and `full` include JSON Schemas.
+    #[serde(default)]
+    detail: Detail,
+}
+
+/// Arguments of `project.info` and `media.list`.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NoArgs {}
+
+/// Arguments of `timeline.read`.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TimelineReadArgs {
+    /// Timeline; the primary timeline when omitted.
+    #[serde(default)]
+    timeline: Option<Id>,
+    /// `outline`: tracks only; `normal`: clips with times; `full`: also styles and transforms.
+    #[serde(default)]
+    detail: Detail,
+}
+
+/// Arguments of `history.list`.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct HistoryArgs {
+    /// Number of most recent entries to return (default 20).
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+pub(crate) fn register(registry: &mut Registry) {
+    registry.register_query::<CapabilitiesArgs>(
+        "capabilities",
+        "Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.",
+        capabilities,
+    );
+    registry.register_query::<NoArgs>(
+        "project.info",
+        "Project name, revision, timelines and undo state.",
+        project_info,
+    );
+    registry.register_query::<NoArgs>(
+        "media.list",
+        "Assets in the media table with durations and stream details.",
+        media_list,
+    );
+    registry.register_query::<TimelineReadArgs>(
+        "timeline.read",
+        "Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.",
+        timeline_read,
+    );
+    registry.register_query::<HistoryArgs>(
+        "history.list",
+        "Most recent operation log entries, newest first.",
+        history_list,
+    );
+}
+
+fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let args: CapabilitiesArgs = parse("capabilities", args)?;
+    let brief = args.detail == Detail::Outline;
+    let commands: Vec<Value> = ctx
+        .registry
+        .commands()
+        .map(|c| {
+            if brief {
+                json!({ "name": c.name, "summary": c.summary })
+            } else {
+                json!({ "name": c.name, "summary": c.summary, "input_schema": c.input_schema, "output_schema": c.output_schema })
+            }
+        })
+        .collect();
+    let queries: Vec<Value> = ctx
+        .registry
+        .queries()
+        .map(|q| {
+            if brief {
+                json!({ "name": q.name, "summary": q.summary })
+            } else {
+                json!({ "name": q.name, "summary": q.summary, "input_schema": q.input_schema })
+            }
+        })
+        .collect();
+    let mut result = json!({
+        "api_version": API_VERSION,
+        "format_version": fosscut_model::FORMAT_VERSION,
+        "commands": commands,
+        "queries": queries,
+    });
+    if !brief {
+        result["request_schema"] =
+            serde_json::to_value(schemars::schema_for!(Request)).unwrap_or_default();
+        result["time_input_schema"] =
+            serde_json::to_value(schemars::schema_for!(fosscut_time::TimeInput))
+                .unwrap_or_default();
+        result["errors"] = serde_json::to_value(error_catalogue()).unwrap_or_default();
+    }
+    Ok(result)
+}
+
+fn primary_rate(project: &Project) -> Rate {
+    project
+        .primary_timeline()
+        .map(|t| t.format.rate)
+        .unwrap_or(Rate::FPS_30)
+}
+
+fn project_info(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let _: NoArgs = parse("project.info", args)?;
+    let project = ctx.project;
+    let (undo, redo) = stacks(ctx.log);
+    let timelines: Vec<Value> = project
+        .manifest
+        .timelines
+        .iter()
+        .filter_map(|entry| project.timelines.get(&entry.id))
+        .map(|t| {
+            json!({
+                "id": t.id,
+                "name": t.name,
+                "format": t.format,
+                "duration": TimeReport::new(t.duration(), t.format.rate),
+                "tracks": t.tracks.len(),
+                "clips": t.tracks.iter().map(|tr| tr.clips.len()).sum::<usize>(),
+            })
+        })
+        .collect();
+    Ok(json!({
+        "id": project.manifest.id,
+        "name": project.manifest.name,
+        "format_version": project.manifest.format_version,
+        "revision": project.manifest.revision,
+        "primary_timeline": project.manifest.primary_timeline,
+        "timelines": timelines,
+        "assets": project.media.assets.len(),
+        "can_undo": !undo.is_empty(),
+        "can_redo": !redo.is_empty(),
+    }))
+}
+
+fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let _: NoArgs = parse("media.list", args)?;
+    let project = ctx.project;
+    let rate = primary_rate(project);
+    let assets: Vec<Value> = project
+        .media
+        .assets
+        .iter()
+        .map(|asset| {
+            let used_by: Vec<&Id> = project
+                .timelines
+                .values()
+                .flat_map(|t| t.tracks.iter().flat_map(|tr| tr.clips.iter()))
+                .filter(|c| c.content.asset() == Some(&asset.id))
+                .map(|c| &c.id)
+                .collect();
+            json!({
+                "id": asset.id,
+                "kind": asset.kind,
+                "name": asset.name,
+                "path": asset.path,
+                "duration": asset.info.duration.map(|d| TimeReport::new(d, rate)),
+                "video": asset.info.video,
+                "audio": asset.info.audio,
+                "used_by": used_by,
+            })
+        })
+        .collect();
+    Ok(json!({ "assets": assets }))
+}
+
+fn clip_view(
+    project: &Project,
+    timeline: &Timeline,
+    clip: &fosscut_model::Clip,
+    detail: Detail,
+) -> Value {
+    let rate = timeline.format.rate;
+    let mut view = json!({
+        "id": clip.id,
+        "kind": clip.content.kind_name(),
+        "start": TimeReport::new(clip.start, rate),
+        "end": TimeReport::new(clip.end(), rate),
+        "duration": TimeReport::new(clip.duration, rate),
+    });
+    match &clip.content {
+        ClipContent::Video { asset, source_in } | ClipContent::Audio { asset, source_in } => {
+            view["asset"] = json!(asset);
+            view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
+            view["source_in"] = json!(TimeReport::new(*source_in, rate));
+        }
+        ClipContent::Image { asset } => {
+            view["asset"] = json!(asset);
+            view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
+        }
+        ClipContent::Text(text) => {
+            view["text"] = json!(text.text);
+            if detail == Detail::Full {
+                view["style"] = json!(text.style);
+            }
+        }
+    }
+    if detail == Detail::Full {
+        view["transform"] = json!(clip.transform);
+        view["opacity"] = json!(clip.opacity);
+        view["volume"] = json!(clip.volume);
+    }
+    view
+}
+
+fn timeline_read(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let args: TimelineReadArgs = parse("timeline.read", args)?;
+    let project = ctx.project;
+    let id = args
+        .timeline
+        .unwrap_or_else(|| project.manifest.primary_timeline.clone());
+    let timeline = project.timelines.get(&id).ok_or_else(|| {
+        ApiError::new(
+            codes::TIMELINE_NOT_FOUND,
+            format!("timeline {id} does not exist"),
+        )
+    })?;
+    let rate = timeline.format.rate;
+    let tracks: Vec<Value> = timeline
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(index, track)| {
+            let mut view = json!({
+                "id": track.id,
+                "kind": track.kind,
+                "index": index,
+                "clip_count": track.clips.len(),
+                "end": TimeReport::new(track.end(), rate),
+            });
+            if let Some(name) = &track.name {
+                view["name"] = json!(name);
+            }
+            for (flag, value) in [
+                ("muted", track.muted),
+                ("hidden", track.hidden),
+                ("locked", track.locked),
+            ] {
+                if value {
+                    view[flag] = json!(true);
+                }
+            }
+            if args.detail != Detail::Outline {
+                view["clips"] = track
+                    .clips
+                    .iter()
+                    .map(|c| clip_view(project, timeline, c, args.detail))
+                    .collect();
+            }
+            view
+        })
+        .collect();
+    Ok(json!({
+        "timeline": timeline.id,
+        "name": timeline.name,
+        "revision": project.manifest.revision,
+        "format": timeline.format,
+        "duration": TimeReport::new(timeline.duration(), rate),
+        "tracks": tracks,
+    }))
+}
+
+fn history_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let args: HistoryArgs = parse("history.list", args)?;
+    let (_, redo) = stacks(ctx.log);
+    let entries: Vec<Value> = ctx
+        .log
+        .iter()
+        .rev()
+        .take(args.limit.unwrap_or(20))
+        .map(|e| {
+            json!({
+                "seq": e.seq,
+                "kind": e.kind,
+                "revision_before": e.revision_before,
+                "revision_after": e.revision_after,
+                "actor": e.actor,
+                "reason": e.reason,
+                "request_id": e.request_id,
+                "commands": e.commands.iter().map(|c| c.command.clone()).collect::<Vec<_>>(),
+                "target_seq": e.target_seq,
+                "at_ms": e.at_ms,
+                "changes": e.changes,
+                "undone": redo.contains(&e.seq),
+            })
+        })
+        .collect();
+    Ok(json!({ "entries": entries }))
+}

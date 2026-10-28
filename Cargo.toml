@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/fossworld/fosscut"
+authors = ["The FossCut Contributors"]
+
+[workspace.dependencies]
+fosscut-time = { path = "crates/fosscut-time", version = "0.1.0" }
+fosscut-model = { path = "crates/fosscut-model", version = "0.1.0" }
+fosscut-core = { path = "crates/fosscut-core", version = "0.1.0" }
+
+anyhow = "1.0.104"
+blake3 = "1.8.7"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+insta = { version = "1.49.0", features = ["json"] }
+proptest = "1.12.0"
+schemars = "1.2.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"

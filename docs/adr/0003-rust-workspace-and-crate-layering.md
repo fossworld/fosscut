@@ -45,6 +45,7 @@ Rules:
 - Edition 2024, stable toolchain pinned in `rust-toolchain.toml`, one MSRV for the workspace.
 - Library crates use `thiserror` for typed errors; binaries may use `anyhow`.
 - No `unsafe` outside `fosscut-media` and `fosscut-render` backend modules, each `unsafe` block justified in a comment.
+- `fosscut-time`, `fosscut-model` and `fosscut-core` never touch the file system, the clock, threads or the environment directly: documents are read and written through the `ProjectStore` trait (a directory on desktop, browser storage or a server on the web), and timestamps come from the caller. This keeps the web build possible ([ADR-0010](0010-desktop-shell-ui-and-web-path.md)).
 - Heavy or optional dependencies (FFmpeg, ONNX Runtime, speech models) sit behind Cargo features so `fosscut-model` and `fosscut-core` build for `wasm32` with no native libraries.
 - Public types in `fosscut-model` and `fosscut-core` derive `serde` and `schemars` so schemas are generated, never hand-written.
 

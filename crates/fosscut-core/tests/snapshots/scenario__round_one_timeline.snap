@@ -1,0 +1,133 @@
+---
+source: crates/fosscut-core/tests/scenario.rs
+expression: view
+---
+{
+  "duration": {
+    "flicks": 5644800000,
+    "frames": 240,
+    "seconds": "8",
+    "timecode": "00:00:08:00"
+  },
+  "format": {
+    "height": 1080,
+    "rate": "30",
+    "width": 1920
+  },
+  "name": "Timeline 1",
+  "revision": 4,
+  "timeline": "timeline_0000",
+  "tracks": [
+    {
+      "clip_count": 2,
+      "clips": [
+        {
+          "asset": "asset_0001",
+          "asset_name": "test-pattern.mp4",
+          "duration": {
+            "flicks": 2775360000,
+            "frames": 118,
+            "seconds": "3.933333",
+            "timecode": "00:00:03:28"
+          },
+          "end": {
+            "flicks": 2775360000,
+            "frames": 118,
+            "seconds": "3.933333",
+            "timecode": "00:00:03:28"
+          },
+          "id": "clip_0003",
+          "kind": "video",
+          "source_in": {
+            "flicks": 0,
+            "frames": 0,
+            "seconds": "0",
+            "timecode": "00:00:00:00"
+          },
+          "start": {
+            "flicks": 0,
+            "frames": 0,
+            "seconds": "0",
+            "timecode": "00:00:00:00"
+          }
+        },
+        {
+          "asset": "asset_0001",
+          "asset_name": "test-pattern.mp4",
+          "duration": {
+            "flicks": 2869440000,
+            "frames": 122,
+            "seconds": "4.066667",
+            "timecode": "00:00:04:02"
+          },
+          "end": {
+            "flicks": 5644800000,
+            "frames": 240,
+            "seconds": "8",
+            "timecode": "00:00:08:00"
+          },
+          "id": "clip_0006",
+          "kind": "video",
+          "source_in": {
+            "flicks": 2775360000,
+            "frames": 118,
+            "seconds": "3.933333",
+            "timecode": "00:00:03:28"
+          },
+          "start": {
+            "flicks": 2775360000,
+            "frames": 118,
+            "seconds": "3.933333",
+            "timecode": "00:00:03:28"
+          }
+        }
+      ],
+      "end": {
+        "flicks": 5644800000,
+        "frames": 240,
+        "seconds": "8",
+        "timecode": "00:00:08:00"
+      },
+      "id": "track_0002",
+      "index": 0,
+      "kind": "video"
+    },
+    {
+      "clip_count": 1,
+      "clips": [
+        {
+          "duration": {
+            "flicks": 2116800000,
+            "frames": 90,
+            "seconds": "3",
+            "timecode": "00:00:03:00"
+          },
+          "end": {
+            "flicks": 2116800000,
+            "frames": 90,
+            "seconds": "3",
+            "timecode": "00:00:03:00"
+          },
+          "id": "clip_0005",
+          "kind": "text",
+          "start": {
+            "flicks": 0,
+            "frames": 0,
+            "seconds": "0",
+            "timecode": "00:00:00:00"
+          },
+          "text": "FossCut audit"
+        }
+      ],
+      "end": {
+        "flicks": 2116800000,
+        "frames": 90,
+        "seconds": "3",
+        "timecode": "00:00:03:00"
+      },
+      "id": "track_0004",
+      "index": 1,
+      "kind": "text"
+    }
+  ]
+}

@@ -69,6 +69,8 @@ jobs:
       - run: cargo doc --workspace --no-deps --all-features --locked
         env:
           RUSTDOCFLAGS: -D warnings
+      - name: Check generated JSON Schemas are up to date
+        run: cargo xtask schemas --check
 
   rust-test:
     name: Rust tests (${{ matrix.os }})
@@ -87,6 +89,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - name: Install FFmpeg for the CLI end-to-end test
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: cargo nextest run --workspace --all-features --locked --no-tests=pass
       - run: cargo test --workspace --all-features --locked --doc
 
