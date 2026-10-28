@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor and others) workin
 
 An open source video editor written in Rust, built so that people create high-quality short-form and long-form videos by talking to an AI agent, and can keep editing the same project in a desktop app (a web version may follow). The editor exposes one typed command API through three front ends: a GUI, a CLI with `--json` output, and an MCP server ([ADR-0002](docs/adr/0002-agent-first-command-api.md)).
 
-**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is in progress: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox on macOS. There is no rendering, export, MCP server or GUI yet. All ADRs are *Proposed* until accepted by a maintainer.
+**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is in progress: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox on macOS, and `fosscut-render` composites frames on wgpu with a linear-light color pipeline. There is no encoding or export to files, MCP server or GUI yet. All ADRs are *Proposed* until accepted by a maintainer.
 
 ## Read before you work
 
@@ -60,7 +60,7 @@ python3 scripts/check-adr-index.py
 npx markdownlint-cli2
 ```
 
-`cargo xtask coverage` needs `cargo-llvm-cov` and the `llvm-tools` component; it fails below 90% line coverage for the workspace or 85% for any crate, and writes `target/coverage/lcov.info`. Tests that need FFmpeg skip locally when it is missing but fail in CI, which sets `FOSSCUT_REQUIRE_FFMPEG=1`; set it yourself when you have FFmpeg installed. Building `fosscut-media` needs FFmpeg 8 development libraries; CONTRIBUTING.md lists the variables per platform.
+`cargo xtask coverage` needs `cargo-llvm-cov` and the `llvm-tools` component; it fails below 90% line coverage for the workspace or 85% for any crate, and writes `target/coverage/lcov.info`. Tests that need FFmpeg skip locally when it is missing but fail in CI, which sets `FOSSCUT_REQUIRE_FFMPEG=1`; set it yourself when you have FFmpeg installed. Building `fosscut-media` needs FFmpeg 8 development libraries; CONTRIBUTING.md lists the variables per platform. GPU tests in `fosscut-render` skip without an adapter locally and fail in CI, which sets `FOSSCUT_REQUIRE_GPU=1`. `cargo xtask goldens [--update]` runs or rewrites the golden frames; follow the `golden-frame-tests` skill.
 
 After changing public model or command types, regenerate the JSON Schemas with `cargo xtask schemas` and commit `schemas/`. `cargo xtask fixtures` writes test media to `fixtures/generated/` (needs FFmpeg). Snapshot tests use `insta`; record new snapshots with `INSTA_UPDATE=always cargo test -p <crate>` and review the `.snap` diff.
 

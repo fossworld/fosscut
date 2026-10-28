@@ -1,0 +1,27 @@
+[package]
+name = "fosscut-render"
+description = "FossCut's frame evaluation: render plans and the wgpu compositor with its color pipeline"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+fosscut-media.workspace = true
+fosscut-model.workspace = true
+fosscut-time.workspace = true
+half.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+wgpu.workspace = true
+
+[dev-dependencies]
+png.workspace = true
+wgpu.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

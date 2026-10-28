@@ -4,7 +4,7 @@ An open source video editor, written in Rust, that you can drive with natural la
 
 Ask Claude Code, Codex, Cursor or any MCP client to "turn this interview into three 45-second vertical clips with animated captions and beat-synced cuts", watch the edit appear in the desktop app, and keep refining it by hand or by conversation. FossCut exposes one typed editing API through three front ends: a desktop app (a web version may follow), a CLI with JSON output, and an MCP server. Every agent edit is validated, reviewable and undoable.
 
-**Status:** early development. Milestone 1 is in place: the open project format, frame-exact time, the command layer with its agent safety contract, and the `fosscut` CLI. Milestone 2 has started with frame-exact video decoding (`fosscut-media`); rendering, export, the MCP server and the desktop app come next ([milestones](docs/adr/README.md#suggested-first-milestones)). Contributions are welcome now, when they shape the project most.
+**Status:** early development. Milestone 1 is in place: the open project format, frame-exact time, the command layer with its agent safety contract, and the `fosscut` CLI. Milestone 2 has frame-exact video decoding (`fosscut-media`) and a GPU compositor with a linear-light color pipeline (`fosscut-render`); the preview spike, export, the MCP server and the desktop app come next ([milestones](docs/adr/README.md#suggested-first-milestones)). Contributions are welcome now, when they shape the project most.
 
 ## Try it
 

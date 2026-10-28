@@ -107,7 +107,8 @@ pub struct VideoInfo {
     /// Codec name, for example `h264`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codec: Option<String>,
-    /// Display rotation in degrees from container metadata.
+    /// Display rotation from the container's display matrix in degrees counterclockwise,
+    /// as FFmpeg reports it (for example -90 for portrait phone video).
     #[serde(default, skip_serializing_if = "is_default")]
     pub rotation: i32,
 }

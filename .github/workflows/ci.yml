@@ -91,6 +91,7 @@ jobs:
         with:
           tool: cargo-nextest
       - uses: ./.github/actions/setup-ffmpeg
+      - uses: ./.github/actions/setup-gpu
       - name: Unit, property, contract, snapshot and end-to-end tests
         run: cargo nextest run --profile ci --workspace --all-features --locked --no-tests=fail
         env:
@@ -115,6 +116,7 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
       - uses: ./.github/actions/setup-ffmpeg
+      - uses: ./.github/actions/setup-gpu
       - name: Measure coverage and enforce the minimums in xtask/src/main.rs
         run: cargo xtask coverage
         env:
