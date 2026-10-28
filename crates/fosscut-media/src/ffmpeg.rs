@@ -520,7 +520,14 @@ fn rotation(parameters: &ffi::AVCodecParameters) -> u16 {
     (quarter_turns.rem_euclid(4) * 90) as u16
 }
 
-fn color_info(matrix: u32, range: u32, primaries: u32, transfer: u32) -> ColorInfo {
+/// Takes FFmpeg's enum aliases rather than a fixed integer type: bindgen makes C enums
+/// unsigned on macOS and Linux but signed with MSVC on Windows.
+fn color_info(
+    matrix: ffi::AVColorSpace,
+    range: ffi::AVColorRange,
+    primaries: ffi::AVColorPrimaries,
+    transfer: ffi::AVColorTransferCharacteristic,
+) -> ColorInfo {
     ColorInfo {
         matrix: match matrix {
             ffi::AVCOL_SPC_BT709 => Matrix::Bt709,
