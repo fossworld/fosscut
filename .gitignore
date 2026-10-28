@@ -41,3 +41,7 @@ node_modules/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Spike build output
+spikes/*/target/
+spikes/*/gen/

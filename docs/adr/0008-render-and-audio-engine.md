@@ -49,3 +49,5 @@ Milestone 2 built the compositor in `fosscut-render` on wgpu 30:
 ## Validation
 
 Spike: decode a 4K H.264 clip, apply transform, a mask and a LUT, and preview at 1080p and 60 fps on an M1-class Mac and a mid-range Windows GPU; export the same timeline and compare frames at three timestamps against the preview path within tolerance.
+
+**Results on macOS (Apple M3 Pro, 2026-10-28):** the 4K source with transform, feathered mask and LUT rendered to 1080p in 1.9 ms median per frame, and playback presented at the display's 120 Hz; VideoToolbox decoded the source at 112 frames per second including the copy to system memory. Preview and export renders matched at three timestamps at 47.6 to 60.9 dB (`crates/fosscut-render/tests/parity.rs`). Random access is the weak point: seeking costs about 220 ms with this long-GOP source, so preview needs proxies and a decoded-frame cache (item 6). Windows has not been measured yet. Details: [milestone 2 spike results](../development/milestone-2-spike-results.md).

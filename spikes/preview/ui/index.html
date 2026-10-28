@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FossCut preview spike</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="panel">
+    <strong>FossCut preview spike</strong>
+    <span id="mode"></span>
+    <button id="play">Play</button>
+    <button id="bench">Run benchmark</button>
+    <span id="meter"></span>
+  </header>
+  <main>
+    <div id="preview"><canvas id="frame" width="1920" height="1080"></canvas></div>
+    <aside class="panel" id="log"></aside>
+  </main>
+  <section class="panel" id="scrub-row">
+    <input id="scrub" type="range" min="0" max="10000" step="1" value="0">
+    <span id="time">0.000 s</span>
+  </section>
+  <section class="panel"><canvas id="timeline"></canvas></section>
+  <script src="main.js"></script>
+</body>
+</html>

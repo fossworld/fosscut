@@ -1,0 +1,124 @@
+{
+  "info": {
+    "adapter": "Apple M3 Pro",
+    "backend": "Metal",
+    "bench": true,
+    "mode": "b-frame-transport",
+    "preview": [
+      1920,
+      1080
+    ],
+    "scale_factor": 2,
+    "source": {
+      "codec": "h264",
+      "duration_ms": 10000,
+      "rate": "30",
+      "size": [
+        3840,
+        2160
+      ]
+    }
+  },
+  "started": "2026-10-28T22:25:35.126Z",
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  "playback_5s": {
+    "fps": 91.2,
+    "total_ms": {
+      "count": 456,
+      "p50": 9,
+      "p95": 17,
+      "max": 25
+    },
+    "transfer_ms": {
+      "count": 456,
+      "p50": 2.11,
+      "p95": 3.05,
+      "max": 4.64
+    },
+    "draw_ms": {
+      "count": 456,
+      "p50": 1,
+      "p95": 1,
+      "max": 2
+    },
+    "decode_ms": {
+      "count": 456,
+      "p50": 0,
+      "p95": 8.41,
+      "max": 12.18
+    },
+    "render_ms": {
+      "count": 456,
+      "p50": 5.52,
+      "p95": 8.01,
+      "max": 16.05
+    },
+    "megabytes_per_second": 756.4,
+    "ui": {
+      "count": 300,
+      "p50": 17,
+      "p95": 18,
+      "max": 20
+    }
+  },
+  "scrub_forward_4s": {
+    "fps": 29,
+    "latency_ms": {
+      "count": 116,
+      "p50": 30,
+      "p95": 41,
+      "max": 137
+    },
+    "ui": {
+      "count": 259,
+      "p50": 17,
+      "p95": 18,
+      "max": 29
+    }
+  },
+  "scrub_backward_4s": {
+    "fps": 5,
+    "latency_ms": {
+      "count": 20,
+      "p50": 265,
+      "p95": 311,
+      "max": 342
+    },
+    "ui": {
+      "count": 260,
+      "p50": 17,
+      "p95": 18,
+      "max": 22
+    }
+  },
+  "random_seeks_30": {
+    "latency_ms": {
+      "count": 30,
+      "p50": 236,
+      "p95": 390,
+      "max": 444
+    }
+  },
+  "timeline_scroll_4s": {
+    "fps": 60.5,
+    "frame_ms": {
+      "count": 242,
+      "p50": 17,
+      "p95": 18,
+      "max": 18
+    },
+    "clips_total": 2000,
+    "clips_drawn_last_frame": 64
+  },
+  "timeline_scroll_while_playing_4s": {
+    "fps": 60.5,
+    "frame_ms": {
+      "count": 242,
+      "p50": 17,
+      "p95": 18,
+      "max": 20
+    },
+    "clips_total": 2000,
+    "clips_drawn_last_frame": 58
+  }
+}
