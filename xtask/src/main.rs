@@ -2,7 +2,8 @@
 //!
 //! - `schemas [--check]`: write the JSON Schemas in `schemas/`, or fail if they are stale;
 //! - `fixtures`: generate test media in `fixtures/generated/` with FFmpeg;
-//! - `coverage`: run the tests with coverage instrumentation and fail below the minimums.
+//! - `coverage`: run the tests with coverage instrumentation and fail below the minimums;
+//! - `goldens [--update]`: run the golden-frame render tests, or rewrite their PNGs.
 
 #![forbid(unsafe_code)]
 
@@ -31,7 +32,11 @@ fn main() -> ExitCode {
         Some("schemas") => schemas(args.iter().any(|a| a == "--check")),
         Some("fixtures") => fixtures(),
         Some("coverage") => coverage(),
-        _ => Err("usage: cargo xtask <schemas [--check] | fixtures | coverage>".to_string()),
+        Some("goldens") => goldens(args.iter().any(|a| a == "--update")),
+        _ => Err(
+            "usage: cargo xtask <schemas [--check] | fixtures | coverage | goldens [--update]>"
+                .to_string(),
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -337,4 +342,21 @@ fn coverage() -> Result<(), String> {
             failures.join(", ")
         ))
     }
+}
+
+/// Runs the golden-frame tests; with `update`, rewrites the PNGs for review instead
+/// (the `golden-frame-tests` skill).
+fn goldens(update: bool) -> Result<(), String> {
+    let mut command = cargo(&["test", "-p", "fosscut-render", "--test", "goldens"]);
+    if update {
+        command.env("FOSSCUT_UPDATE_GOLDENS", "1");
+    }
+    run(command)?;
+    if update {
+        println!(
+            "goldens rewritten in crates/fosscut-render/tests/goldens/; open every changed \
+             PNG and describe the visual change in the pull request"
+        );
+    }
+    Ok(())
 }

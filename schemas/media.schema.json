@@ -229,7 +229,7 @@
           "description": "Frame rate, when constant and known."
         },
         "rotation": {
-          "description": "Display rotation in degrees from container metadata.",
+          "description": "Display rotation from the container's display matrix in degrees counterclockwise,\nas FFmpeg reports it (for example -90 for portrait phone video).",
           "format": "int32",
           "type": "integer"
         },

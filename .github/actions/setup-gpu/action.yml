@@ -1,0 +1,21 @@
+name: Set up a GPU adapter
+description: >
+  Makes a wgpu adapter available for fosscut-render's GPU tests (ADR-0016) on runners
+  without a GPU: Mesa lavapipe (software Vulkan) on Linux. Windows runners provide WARP
+  (software DX12) and macOS runners a virtual Metal device without setup. Sets
+  FOSSCUT_REQUIRE_GPU=1 so a missing adapter fails the tests instead of skipping them.
+
+runs:
+  using: composite
+  steps:
+    - name: Mesa lavapipe (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+        echo "WGPU_BACKEND=vulkan" >> "$GITHUB_ENV"
+
+    - name: Require a GPU adapter in tests
+      shell: bash
+      run: echo "FOSSCUT_REQUIRE_GPU=1" >> "$GITHUB_ENV"

@@ -23,6 +23,16 @@ Round 1's roadmap states that preview and export must agree as a correctness con
 6. **Caching.** Decoded frame cache, pre-rendered segment cache and proxy files live in the OS cache directory keyed by content hashes of their inputs, so edits invalidate exactly what they touch.
 7. **Determinism.** Export is deterministic for a given machine, settings and codec. Golden-frame tests compare within documented tolerances across GPUs ([ADR-0016](0016-testing-strategy.md)).
 
+## Implementation notes
+
+Milestone 2 built the compositor in `fosscut-render` on wgpu 30:
+
+- **Plans:** `plan_frame(project, timeline, time)` is pure and lists the visible layers bottom to top with source frame, display rotation, transform, opacity, mask and LUT; text clips are reported as skipped until the text engine exists. Masks and LUTs live in the plan only; storing effects in projects is separate work under ADR-0011.
+- **Passes:** per layer, Y'CbCr planes are uploaded and converted at source size to linear light in `rgba16float` with the stream's matrix and range, mipmapped in linear light, then composited over a 4x multisampled linear canvas with premultiplied alpha; the canvas is encoded with the output transfer function into the target.
+- **Color:** sources are decoded with the inverse of their transfer function (BT.709 or sRGB), so untouched pixels round-trip exactly; LUTs apply to the BT.709-encoded signal. PQ and HLG sources fail with `fosscut.render.unsupported_color` until the HDR pipeline exists. Chroma is upsampled bilinearly with centre siting.
+- **Graphs:** `ExportGraph` (every frame, full resolution, readback) and `PreviewGraph` (on demand, fitted to a preview size, into any texture view such as a window surface) share the plan and the renderer.
+- **Tests:** color bars against hand-computed values, layering, masks, LUTs, rotation, aliasing-free downscaling, golden frames compared by PSNR (`cargo xtask goldens`), and preview/export parity above 40 dB at three timestamps. CI runs them on Mesa lavapipe (Linux), WARP (Windows) and Metal (macOS) with `FOSSCUT_REQUIRE_GPU=1`.
+
 ## Consequences
 
 - One shader language and one GPU API across desktop and web.

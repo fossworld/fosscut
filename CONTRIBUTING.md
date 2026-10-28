@@ -39,7 +39,7 @@ Thank you for helping build an open source video editor that people and AI agent
 | Linux | Distribution packages for FFmpeg 8 (`libavcodec-dev` and friends), or a BtbN `lgpl-shared` build | pkg-config finds distribution packages; for an unpacked build set `FFMPEG_LIBS_DIR` and `FFMPEG_INCLUDE_DIR` | `LD_LIBRARY_PATH` must include an unpacked build's `lib` directory |
 | Windows | BtbN `win64-lgpl-shared` build | `FFMPEG_LIBS_DIR` and `FFMPEG_INCLUDE_DIR` | The build's DLLs on `PATH` |
 
-FFmpeg from conda installs libraries that load through `@rpath`; on macOS also set `DYLD_FALLBACK_LIBRARY_PATH` to its `lib` directory. CI does the same setup in `.github/actions/setup-ffmpeg`. Builds you distribute must use an LGPL FFmpeg without GPL or nonfree components; a GPL build is fine for local development.
+GPU tests in `fosscut-render` need a wgpu adapter: any GPU, or a software one (Mesa lavapipe on Linux with `mesa-vulkan-drivers`, WARP on Windows). FFmpeg from conda installs libraries that load through `@rpath`; on macOS also set `DYLD_FALLBACK_LIBRARY_PATH` to its `lib` directory. CI does the same setup in `.github/actions/setup-ffmpeg`. Builds you distribute must use an LGPL FFmpeg without GPL or nonfree components; a GPL build is fine for local development.
 
 Local checks that mirror CI:
 
