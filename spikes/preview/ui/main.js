@@ -1,4 +1,4 @@
-// FossCut preview spike UI (throwaway, ADR-0010). Drives the engine in either mode and
+// FossCut preview spike UI (throwaway, ADR-0010). Drives the native-surface preview and
 // measures playback, scrubbing, seeking and timeline scrolling.
 const { invoke } = window.__TAURI__.core;
 
@@ -20,44 +20,19 @@ const summary = (values) => ({
   max: +percentile(values, 1).toFixed(2),
 });
 
-// ---- Preview: mode A tells the engine where the hole is; mode B draws fetched frames. ----
+// ---- Preview: tell the engine where the hole is. ----
 
 function reportViewport() {
-  if (state.mode !== "a") return;
   const r = $("preview").getBoundingClientRect();
   const s = window.devicePixelRatio;
   invoke("viewport", { x: r.left * s, y: r.top * s, width: r.width * s, height: r.height * s });
 }
 
-const ctx = $("frame").getContext("2d");
-const image = new ImageData(1920, 1080);
-
-// Mode B: fetch one frame and draw it. Returns timings in milliseconds.
-async function fetchFrame(ms) {
-  const start = performance.now();
-  const response = await fetch(`frame://localhost/${ms.toFixed(3)}`);
-  const buffer = await response.arrayBuffer();
-  const received = performance.now();
-  image.data.set(new Uint8ClampedArray(buffer));
-  ctx.putImageData(image, 0, 0);
-  const drawn = performance.now();
-  return {
-    total: drawn - start,
-    transfer: received - start - (+response.headers.get("x-decode-ms") || 0) - (+response.headers.get("x-render-ms") || 0),
-    draw: drawn - received,
-    decode: +response.headers.get("x-decode-ms") || 0,
-    render: +response.headers.get("x-render-ms") || 0,
-    bytes: buffer.byteLength,
-  };
-}
-
 // Show the frame at `ms` and resolve once it should be on screen: after the engine
-// presented (A) or the canvas was drawn (B), plus one display refresh.
+// presented it, plus one display refresh.
 async function showAt(ms) {
   const start = performance.now();
-  let detail;
-  if (state.mode === "a") detail = await invoke("show", { msTime: ms });
-  else detail = await fetchFrame(ms);
+  const detail = await invoke("show", { msTime: ms });
   await nextFrame();
   return { latency: performance.now() - start, detail };
 }
@@ -119,27 +94,14 @@ timeline.canvas.addEventListener("wheel", (e) => {
 $("scrub").addEventListener("input", async (e) => {
   const ms = (+e.target.value / 10000) * state.durationMs;
   $("time").textContent = `${(ms / 1000).toFixed(3)} s`;
-  if (state.mode === "a") invoke("show", { msTime: ms });
-  else if (!state.scrubBusy) { state.scrubBusy = true; await fetchFrame(ms); state.scrubBusy = false; }
+  invoke("show", { msTime: ms });
 });
 $("play").addEventListener("click", () => {
   state.playing = !state.playing;
   $("play").textContent = state.playing ? "Pause" : "Play";
-  if (state.mode === "a") invoke("play", { fromMs: state.playing ? 0 : null });
-  else if (state.playing) playTransport(1e9);
+  invoke("play", { fromMs: state.playing ? 0 : null });
 });
 $("bench").addEventListener("click", () => runBenchmark());
-
-// Mode B playback: request frames back to back for `durationMs`, following a real-time clock.
-async function playTransport(durationMs) {
-  const start = performance.now();
-  const frames = [];
-  while (performance.now() - start < durationMs && (state.playing || durationMs < 1e9)) {
-    const ms = (performance.now() - start) % state.durationMs;
-    frames.push(await fetchFrame(ms));
-  }
-  return { seconds: (performance.now() - start) / 1000, frames };
-}
 
 // ---- Benchmark. ----
 
@@ -154,45 +116,25 @@ async function measureRefresh(work) {
 }
 
 async function benchPlayback(seconds) {
-  if (state.mode === "a") {
-    await invoke("stats", { reset: true });
-    await invoke("play", { fromMs: 0 });
-    const measured = await measureRefresh(() => sleep(seconds * 1000));
-    await invoke("play", { fromMs: null });
-    const stats = await invoke("stats", { reset: true });
-    return { fps: +(stats.presented / seconds).toFixed(1), engine: stats, ui: measured.refresh };
-  }
-  const measured = await measureRefresh(() => playTransport(seconds * 1000));
-  const { frames } = measured.result;
-  return {
-    fps: +(frames.length / seconds).toFixed(1),
-    total_ms: summary(frames.map((f) => f.total)),
-    transfer_ms: summary(frames.map((f) => f.transfer)),
-    draw_ms: summary(frames.map((f) => f.draw)),
-    decode_ms: summary(frames.map((f) => f.decode)),
-    render_ms: summary(frames.map((f) => f.render)),
-    megabytes_per_second: +(frames.reduce((a, f) => a + f.bytes, 0) / seconds / 1e6).toFixed(1),
-    ui: measured.refresh,
-  };
+  await invoke("stats", { reset: true });
+  await invoke("play", { fromMs: 0 });
+  const measured = await measureRefresh(() => sleep(seconds * 1000));
+  await invoke("play", { fromMs: null });
+  const stats = await invoke("stats", { reset: true });
+  return { fps: +(stats.presented / seconds).toFixed(1), engine: stats, ui: measured.refresh };
 }
 
 // Scrub across the clip at 2.5x speed (forward or backward), one target per display refresh.
 async function benchScrub(direction, seconds) {
   const latencies = [];
-  let shown = 0, inFlight = false;
+  let shown = 0;
   const start = performance.now();
   const measured = await measureRefresh(async () => {
     while (performance.now() - start < seconds * 1000) {
       const progress = (performance.now() - start) / (seconds * 1000);
       const ms = (direction === "forward" ? progress : 1 - progress) * (state.durationMs - 40);
-      if (state.mode === "a") {
-        const sent = performance.now();
-        invoke("show", { msTime: ms }).then((t) => { if (!t.skipped) { shown++; latencies.push(performance.now() - sent); } });
-      } else if (!inFlight) {
-        inFlight = true;
-        const sent = performance.now();
-        fetchFrame(ms).then(() => { shown++; latencies.push(performance.now() - sent); inFlight = false; });
-      }
+      const sent = performance.now();
+      invoke("show", { msTime: ms }).then((t) => { if (!t.skipped) { shown++; latencies.push(performance.now() - sent); } });
       await nextFrame();
     }
     await sleep(300);
@@ -214,9 +156,7 @@ async function benchSeeks(count) {
 
 // Scroll the timeline by 12 px per refresh and record refresh intervals.
 async function benchTimeline(seconds, whilePlaying) {
-  if (whilePlaying && state.mode === "a") await invoke("play", { fromMs: 0 });
-  let playback = null;
-  if (whilePlaying && state.mode === "b") { state.playing = true; playback = playTransport(seconds * 1000); }
+  if (whilePlaying) await invoke("play", { fromMs: 0 });
   const intervals = [];
   let drawn = 0, last = performance.now();
   const start = last;
@@ -228,8 +168,7 @@ async function benchTimeline(seconds, whilePlaying) {
     intervals.push(now - last);
     last = now;
   }
-  if (whilePlaying && state.mode === "a") await invoke("play", { fromMs: null });
-  if (playback) { state.playing = false; await playback; }
+  if (whilePlaying) await invoke("play", { fromMs: null });
   return {
     fps: +(intervals.length / seconds).toFixed(1),
     frame_ms: summary(intervals),
@@ -267,10 +206,9 @@ async function runBenchmark() {
 
 (async function start() {
   state.info = await invoke("info");
-  state.mode = state.info.mode.startsWith("a") ? "a" : "b";
+  state.mode = "a";
   state.durationMs = state.info.source.duration_ms;
   $("mode").textContent = `${state.info.mode} on ${state.info.adapter} (${state.info.backend})`;
-  if (state.mode === "b") $("preview").classList.add("transport");
   log(JSON.stringify(state.info, null, 2));
   drawTimeline();
   reportViewport();

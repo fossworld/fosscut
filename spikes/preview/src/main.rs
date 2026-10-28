@@ -1,15 +1,14 @@
 //! FossCut preview-path spike for ADR-0010 (milestone 2). Throwaway code.
 //!
-//! The same scene (4K H.264 decoded with VideoToolbox, transformed, masked and graded with a
-//! LUT by `fosscut-render`, previewed at 1920x1080) reaches the webview in two ways:
+//! The scene (4K H.264 decoded with VideoToolbox, transformed, masked and graded with a LUT
+//! by `fosscut-render`, previewed at 1920x1080) is rendered with wgpu into the window behind
+//! a transparent webview; the UI leaves a hole where the preview shows through. This is
+//! option A, the native surface, which the spike chose. Option B (frames sent to a webview
+//! canvas through a `frame://` URI scheme) was measured and removed; it is in the first
+//! commit of the spike's pull request.
 //!
-//! - **A, native surface** (`FOSSCUT_SPIKE_MODE=a`): wgpu renders into the window behind a
-//!   transparent webview; the UI leaves a hole where the preview shows through.
-//! - **B, frame transport** (`FOSSCUT_SPIKE_MODE=b`): wgpu renders offscreen, the RGBA frame
-//!   is read back and fetched by the page through the `frame://` URI scheme into a canvas.
-//!
-//! The UI (`ui/`) drives both with the same commands and measures them. With
-//! `FOSSCUT_SPIKE_BENCH=1` it runs the benchmark, saves JSON to `results/` and quits.
+//! The UI (`ui/`) drives the engine and measures it. With `FOSSCUT_SPIKE_BENCH=1` it runs
+//! the benchmark, saves JSON to `results/` and quits.
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -30,12 +29,6 @@ use serde::Serialize;
 use tauri::{Manager, State};
 
 const PREVIEW: (u32, u32) = (1920, 1080);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-enum Mode {
-    Native,
-    Transport,
-}
 
 /// Per-frame costs in milliseconds.
 #[derive(Clone, Copy, Debug, Default, Serialize)]
@@ -99,19 +92,14 @@ impl Samples {
 }
 
 enum Job {
-    /// Mode A: render the frame at `time` into the window.
+    /// Render the frame at `time` into the window.
     Show {
         time: Flicks,
         reply: Option<Sender<Timing>>,
     },
-    /// Mode B: render the frame at `time` offscreen and return RGBA.
-    Grab {
-        time: Flicks,
-        reply: Sender<Result<(Vec<u8>, Timing), String>>,
-    },
-    /// Mode A: where the preview hole is, in physical pixels of the window.
+    /// Where the preview hole is, in physical pixels of the window.
     Viewport { rect: [f32; 4] },
-    /// Mode A: play from `from` in real time, or stop.
+    /// Play from `from` in real time, or stop.
     Play { from: Option<Flicks> },
 }
 
@@ -231,7 +219,7 @@ impl FrameProvider for TimedFrames {
     }
 }
 
-/// Mode A's window surface and the pipeline that blits the preview into the hole.
+/// The window surface and the pipeline that blits the preview into the hole.
 struct Window {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
@@ -258,7 +246,6 @@ struct Out { @builtin(position) position: vec4f, @location(0) uv: vec2f }
 ";
 
 struct Engine {
-    mode: Mode,
     scene: Scene,
     renderer: Renderer,
     frames: TimedFrames,
@@ -299,25 +286,6 @@ impl Engine {
         Ok(timing)
     }
 
-    fn grab(&mut self, time: Flicks) -> Result<(Vec<u8>, Timing), String> {
-        let start = Instant::now();
-        self.frames.spent = Duration::ZERO;
-        let plan = self.scene.plan(time).map_err(|e| e.to_string())?;
-        let image = self
-            .renderer
-            .render_image(&plan, &mut self.frames, PREVIEW, TransferFunction::Bt709)
-            .map_err(|e| e.to_string())?;
-        let decode = self.frames.spent;
-        let timing = Timing {
-            decode_ms: ms(decode),
-            render_ms: ms(start.elapsed().saturating_sub(decode)),
-            present_ms: 0.0,
-            total_ms: ms(start.elapsed()),
-            skipped: false,
-        };
-        Ok((image.rgba, timing))
-    }
-
     fn record(&self, timing: &Timing) {
         if let Ok(mut samples) = self.samples.lock() {
             samples.record(timing);
@@ -351,13 +319,6 @@ impl Engine {
                         let mut replies = replies;
                         replies.extend(reply);
                         latest_show = Some((time, replies));
-                    }
-                    Job::Grab { time, reply } => {
-                        let result = self.grab(time);
-                        if let Ok((_, timing)) = &result {
-                            self.record(timing);
-                        }
-                        let _ = reply.send(result);
                     }
                     Job::Viewport { rect } => {
                         if let Some(window) = &mut self.window {
@@ -573,10 +534,6 @@ fn save_results(app: tauri::AppHandle, name: String, json: String, quit: bool) -
 }
 
 fn main() {
-    let mode = match std::env::var("FOSSCUT_SPIKE_MODE").as_deref() {
-        Ok("b") | Ok("B") => Mode::Transport,
-        _ => Mode::Native,
-    };
     let source = std::env::var("FOSSCUT_SPIKE_SOURCE").unwrap_or_else(|_| {
         concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/generated/test-pattern-4k.mp4").into()
     });
@@ -584,43 +541,8 @@ fn main() {
     let samples = Arc::new(Mutex::new(Samples::default()));
     let (jobs, receiver) = channel::<Job>();
     let receiver = Mutex::new(Some(receiver));
-    let grab_jobs = Mutex::new(jobs.clone());
 
     tauri::Builder::default()
-        .register_asynchronous_uri_scheme_protocol("frame", move |_ctx, request, responder| {
-            // frame://localhost/<milliseconds>
-            let ms_time: f64 = request
-                .uri()
-                .path()
-                .trim_start_matches('/')
-                .parse()
-                .unwrap_or(0.0);
-            let (reply, answer) = channel();
-            let sent = grab_jobs.lock().ok().is_some_and(|jobs| {
-                jobs.send(Job::Grab {
-                    time: Flicks::new((ms_time * 705_600.0) as i64),
-                    reply,
-                })
-                .is_ok()
-            });
-            std::thread::spawn(move || {
-                let response = match (sent, answer.recv()) {
-                    (true, Ok(Ok((rgba, timing)))) => tauri::http::Response::builder()
-                        .header("Content-Type", "application/octet-stream")
-                        .header("Access-Control-Allow-Origin", "*")
-                        .header("Access-Control-Expose-Headers", "x-decode-ms, x-render-ms")
-                        .header("x-decode-ms", format!("{:.3}", timing.decode_ms))
-                        .header("x-render-ms", format!("{:.3}", timing.render_ms))
-                        .body(rgba),
-                    _ => tauri::http::Response::builder()
-                        .status(500)
-                        .body(b"render failed".to_vec()),
-                };
-                if let Ok(response) = response {
-                    responder.respond(response);
-                }
-            });
-        })
         .setup(move |app| {
             let window = app
                 .get_webview_window("main")
@@ -629,11 +551,7 @@ fn main() {
             let instance = wgpu::Instance::new(
                 wgpu::InstanceDescriptor::new_without_display_handle_from_env(),
             );
-            let surface = if mode == Mode::Native {
-                Some(instance.create_surface(window.clone())?)
-            } else {
-                None
-            };
+            let surface = Some(instance.create_surface(window.clone())?);
             let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: surface.as_ref(),
@@ -727,7 +645,7 @@ fn main() {
             frames.insert(Id::new(IdKind::Asset, 1), Box::new(ReportingDecoder(decoder)));
             let duration_ms = scene.duration.get() as f64 / 705_600.0;
             let info = serde_json::json!({
-                "mode": if mode == Mode::Native { "a-native-surface" } else { "b-frame-transport" },
+                "mode": "a-native-surface",
                 "bench": bench,
                 "adapter": adapter_info.name,
                 "backend": format!("{:?}", adapter_info.backend),
@@ -741,7 +659,6 @@ fn main() {
                 "scale_factor": window.scale_factor().unwrap_or(1.0),
             });
             let engine = Engine {
-                mode,
                 scene,
                 renderer,
                 frames: TimedFrames {
@@ -753,7 +670,6 @@ fn main() {
                 samples: samples.clone(),
                 playing: None,
             };
-            let _ = engine.mode;
             let receiver = receiver
                 .lock()
                 .ok()

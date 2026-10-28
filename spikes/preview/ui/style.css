@@ -9,9 +9,6 @@ header #meter { margin-left: auto; color: var(--muted); font-variant-numeric: ta
 button { background: #2b2d33; color: var(--text); border: 1px solid #3a3c44; border-radius: 4px; padding: 4px 10px; }
 main { display: flex; height: 552px; }
 #preview { width: 960px; height: 540px; margin: 6px; flex: none; }
-#preview.transport { background: #000; }
-#preview canvas { width: 960px; height: 540px; display: none; }
-#preview.transport canvas { display: block; }
 #log { flex: 1; padding: 8px; color: var(--muted); white-space: pre-wrap; overflow: auto;
   font: 11px/1.4 ui-monospace, monospace; }
 #scrub-row { display: flex; gap: 12px; align-items: center; padding: 6px 12px; }
