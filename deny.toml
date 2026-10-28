@@ -7,6 +7,13 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+# Every exception names the advisory, why it does not affect FossCut and when to remove it.
+ignore = [
+    # `paste` is archived (unmaintained), with no known vulnerability. It is a compile-time
+    # macro pulled in only by `rsmpeg`, our FFmpeg bindings (ADR-0009). Remove this entry
+    # when rsmpeg drops `paste`.
+    { id = "RUSTSEC-2024-0436", reason = "unmaintained compile-time macro used only by rsmpeg; no known vulnerability" },
+]
 
 [licenses]
 version = 2
