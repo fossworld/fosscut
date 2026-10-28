@@ -1,0 +1,48 @@
+# FossCut
+
+An open source video editor, written in Rust, that you can drive with natural language through any AI agent.
+
+Ask Claude Code, Codex, Cursor or any MCP client to "turn this interview into three 45-second vertical clips with animated captions and beat-synced cuts", watch the edit appear in the desktop app, and keep refining it by hand or by conversation. FossCut exposes one typed editing API through three front ends: a desktop app (a web version may follow), a CLI with JSON output, and an MCP server. Every agent edit is validated, reviewable and undoable.
+
+**Status:** pre-implementation. The research and the architecture decisions are written; the code is starting. Contributions are welcome now, when they shape the project most.
+
+## Principles
+
+- **Agent-first, human-friendly.** No capability exists only in the GUI. Agents get the same power as people, plus eyes: frame grabs, transcripts, beats, export reports ([ADR-0002](docs/adr/0002-agent-first-command-api.md)).
+- **Safe autonomous editing.** Revision checks, dry runs and plan/apply, idempotent requests, guarded destructive operations and a full operation log ([ADR-0006](docs/adr/0006-agent-safety-contract.md), [ADR-0007](docs/adr/0007-timeline-projection-and-patches.md)).
+- **Open, portable projects.** A versioned, documented format with frame-exact time ([ADR-0004](docs/adr/0004-open-project-format.md), [ADR-0005](docs/adr/0005-time-model.md)).
+- **Bring your own brain.** No mandatory account or model. Your agent reasons; FossCut edits, analyses locally and calls paid AI services only when you say so ([ADR-0012](docs/adr/0012-ai-capabilities-bring-your-own-brain.md)).
+- **Honest exports.** What you request is what you get, verified; no hidden watermarks ([ADR-0009](docs/adr/0009-media-io-and-codecs.md), [ADR-0017](docs/adr/0017-provenance.md)).
+
+## Documentation
+
+| | |
+|---|---|
+| [Architecture decision records](docs/adr/README.md) | 18 proposed decisions and suggested first milestones |
+| [AGENTS.md](AGENTS.md) | Instructions for AI coding agents working on this repository |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, DCO sign-off, workflow, releases |
+| [GitHub setup](docs/development/github-setup.md) | Repository settings and branch protection for maintainers |
+
+The architecture builds on two rounds of private research into CapCut 9.6.0 (a hands-on audit and a static analysis with [REA](https://github.com/morluto/rea)). The research is not part of this repository; the ADRs summarize what matters for each decision. FossCut contains no CapCut code or assets ([clean-room policy](docs/adr/0015-clean-room-policy.md)).
+
+## Repository layout
+
+```text
+crates/       Rust crates: time, model, core, media, render, audio, analysis, engine, mcp, cli
+apps/         desktop shell
+ui/           shared TypeScript front end
+skills/       editing skills for AI agents
+docs/         research, ADRs, development docs
+.claude/      development skills for AI coding agents
+.github/      CI, release and dependency workflows
+```
+
+Folders appear as the implementation reaches them ([ADR-0003](docs/adr/0003-rust-workspace-and-crate-layering.md)).
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option ([ADR-0014](docs/adr/0014-licensing.md)). Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in FossCut, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

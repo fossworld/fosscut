@@ -1,0 +1,18 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp4 binary
+*.mov binary
+*.wav binary
+*.mp3 binary
+*.ttf binary
+*.otf binary
+
+# Generated files: collapse in diffs
+schemas/** linguist-generated=true
+Cargo.lock linguist-generated=true
+ui/pnpm-lock.yaml linguist-generated=true

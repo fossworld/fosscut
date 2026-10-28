@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build a draft release for
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  detect:
+    name: Detect release parts
+    runs-on: ubuntu-latest
+    outputs:
+      cli: ${{ steps.detect.outputs.cli }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - id: detect
+        run: echo "cli=$([ -f crates/fosscut-cli/Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  build-cli:
+    name: Build fosscut CLI (${{ matrix.target }})
+    needs: detect
+    if: needs.detect.outputs.cli == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Install Rust toolchain and target
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="fosscut-${RELEASE_TAG}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp LICENSE-MIT LICENSE-APACHE README.md "dist/$name/"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/fosscut.exe" "dist/$name/"
+            (cd dist && 7z a "$name.zip" "$name" > /dev/null && sha256sum "$name.zip" > "$name.zip.sha256")
+          else
+            cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
+            (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          fi
+          rm -rf "dist/$name"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fosscut-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Draft GitHub release
+    needs: [detect, build-cli]
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+      - name: Generate release notes
+        id: notes
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: RELEASE_NOTES.md
+      - name: Download CLI archives
+        if: needs.build-cli.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: fosscut-*
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          draft: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          body_path: RELEASE_NOTES.md
+          files: dist/*

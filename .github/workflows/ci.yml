@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  detect:
+    name: Detect project parts
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.detect.outputs.rust }}
+      ui: ${{ steps.detect.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: detect
+        run: |
+          echo "rust=$([ -f Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "ui=$([ -f ui/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  docs:
+    name: Docs and ADRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Keep competitor research private (ADR-0015)
+        run: |
+          tracked=$(git ls-files docs/capcut-audit docs/capcut-rea)
+          if [ -n "$tracked" ]; then
+            echo "::error::Private research must not be committed. Remove these files from the index with 'git rm --cached':"
+            echo "$tracked"
+            exit 1
+          fi
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v25
+      - name: Check local links and anchors
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --include-fragments --no-progress './**/*.md'
+          fail: true
+      - name: Check ADR index
+        run: python3 scripts/check-adr-index.py
+
+  rust-lint:
+    name: Rust format, lints and docs
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo doc --workspace --no-deps --all-features --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  rust-test:
+    name: Rust tests (${{ matrix.os }})
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --workspace --all-features --locked --no-tests=pass
+      - run: cargo test --workspace --all-features --locked --doc
+
+  wasm-check:
+    name: WebAssembly build of portable crates
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build fosscut-time, fosscut-model and fosscut-core for wasm32
+        run: |
+          packages=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name')
+          args=""
+          for p in fosscut-time fosscut-model fosscut-core; do
+            if echo "$packages" | grep -qx "$p"; then args="$args -p $p"; fi
+          done
+          if [ -z "$args" ]; then
+            echo "::notice::No portable crates in the workspace yet (ADR-0003)."
+            exit 0
+          fi
+          cargo build --locked --target wasm32-unknown-unknown $args
+
+  ui:
+    name: UI lint, types and tests
+    needs: detect
+    if: needs.detect.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ui/package.json
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run --if-present lint
+      - run: pnpm run --if-present typecheck
+      - run: pnpm run --if-present test
+      - run: pnpm run --if-present build

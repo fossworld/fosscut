@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in FossCut does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please do not include private media or personal data. For security problems, use private reporting instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: FossCut version or commit
+      placeholder: "0.1.0, or a commit hash"
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Where did it happen?
+      multiple: true
+      options:
+        - Desktop app
+        - CLI
+        - MCP server (AI agent)
+        - Agent skill
+        - Export
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: AI agent client, if any
+      placeholder: "Claude Code, Codex, Cursor, ..."
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and hardware
+      placeholder: "macOS 27 on M3, Windows 11 with RTX 4070, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands, agent prompts or UI steps. A minimal project or a generated test clip helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include error codes (fosscut.*), export verification reports or frame grabs where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: text

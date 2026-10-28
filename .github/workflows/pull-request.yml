@@ -1,0 +1,57 @@
+name: Pull request checks
+
+# pull_request_target runs with the base repository's workflow and token so that
+# checks work for forks. These jobs never check out or execute pull request code.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Signed-off-by on every commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          missing=$(gh api --paginate "repos/$REPO/pulls/$PR/commits" --jq '
+            .[]
+            | select((.author.login // "") | test("\\[bot\\]$") | not)
+            | select(.commit.message | test("Signed-off-by: [^\\n]+ <[^\\n]+@[^\\n]+>") | not)
+            | .sha[0:7] + " " + (.commit.message | split("\n")[0])')
+          if [ -n "$missing" ]; then
+            echo "These commits are missing a Developer Certificate of Origin sign-off:"
+            echo "$missing"
+            echo
+            echo "Sign off with 'git commit -s'. To fix existing commits: git rebase --signoff origin/main && git push --force-with-lease"
+            echo "See CONTRIBUTING.md#developer-certificate-of-origin"
+            exit 1
+          fi
+          echo "All commits are signed off."

@@ -1,0 +1,23 @@
+{
+  "config": {
+    "default": true,
+    // Prose and tables are not wrapped.
+    "MD013": false,
+    // Inline HTML is used for badges and details blocks.
+    "MD033": false,
+    // Repeated headings are fine in different sections (ADR template).
+    "MD024": { "siblings_only": true },
+    // Bold lead-ins are used as labels, not headings.
+    "MD036": false,
+    // Compact table separators (|---|) are allowed.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    "**/node_modules/**",
+    "target/**",
+    // Private research, git-ignored (ADR-0015).
+    "docs/capcut-audit/**",
+    "docs/capcut-rea/**"
+  ]
+}

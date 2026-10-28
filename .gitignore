@@ -1,0 +1,42 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / UI
+node_modules/
+/ui/dist/
+/apps/*/dist/
+*.tsbuildinfo
+
+# Tauri
+/apps/desktop/src-tauri/target/
+/apps/desktop/src-tauri/gen/
+
+# Local media, renders and caches
+/out/
+/renders/
+*.fosscut/cache/
+/fixtures/generated/
+
+# Competitor research: private, never published (ADR-0015)
+/docs/capcut-audit/
+/docs/capcut-rea/
+
+# REA and research scratch output (large, contains local paths)
+*.evidence.json
+/rea-out/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Claude Code local settings
+.claude/settings.local.json

@@ -1,0 +1,50 @@
+name: Implementation task
+description: A well-scoped unit of work that a contributor or an AI coding agent can complete in one pull request
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write this so an agent with no prior context can finish it using AGENTS.md, the ADRs and the development skills. Keep it to one concern.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this is needed. Link the ADRs, research sections and issues it builds on.
+      placeholder: |
+        Implements part of ADR-0005 (time model).
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Crates, files and public APIs to add or change.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checkable statements. Each one should map to a test or a command output.
+      placeholder: |
+        - [ ] `frames -> flicks -> frames` round-trips for every supported rate (property test)
+        - [ ] Bare numbers are rejected with fosscut.time.unit_required
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test plan
+      description: Which test levels from ADR-0016 apply.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of scope
+  - type: input
+    id: skill
+    attributes:
+      label: Suggested development skill
+      placeholder: "add-command, add-effect, change-project-format, ..."

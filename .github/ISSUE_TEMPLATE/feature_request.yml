@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose a capability or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to make or do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: Describe the result. If an AI agent should be able to do it, describe the request a user would give the agent.
+    validations:
+      required: true
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Surfaces
+      options:
+        - label: Desktop app
+        - label: CLI / MCP for AI agents
+        - label: Agent skill
+        - label: Project format
+  - type: input
+    id: reference
+    attributes:
+      label: Research reference
+      description: Optional reference, for example a CapCut capability id (CC-095) that a maintainer mentioned, or a public link. Describe behaviour only; do not attach copyrighted assets.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

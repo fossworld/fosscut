@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo fmt:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo nextest:*)",
+      "Bash(cargo doc:*)",
+      "Bash(cargo deny:*)",
+      "Bash(cargo metadata:*)",
+      "Bash(cargo tree:*)",
+      "Bash(cargo xtask:*)",
+      "Bash(python3 scripts/check-adr-index.py)",
+      "Bash(npx markdownlint-cli2:*)",
+      "Bash(pnpm run:*)",
+      "Bash(ffprobe:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}
