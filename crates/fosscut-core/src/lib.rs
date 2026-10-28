@@ -17,6 +17,8 @@
 //! [`fosscut_model::ProjectStore`] and timestamps come from the caller, so it builds for
 //! `wasm32-unknown-unknown`.
 
+#![forbid(unsafe_code)]
+
 mod changes;
 mod command;
 mod commands;

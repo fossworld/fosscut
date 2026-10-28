@@ -1,0 +1,26 @@
+[package]
+name = "fosscut-media"
+description = "Media probing and decoding for FossCut behind backend traits, with an FFmpeg backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["ffmpeg"]
+# Native backend: FFmpeg 8 shared libraries found through pkg-config (ADR-0009).
+ffmpeg = ["dep:rsmpeg"]
+
+[dependencies]
+fosscut-time.workspace = true
+rsmpeg = { workspace = true, optional = true }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

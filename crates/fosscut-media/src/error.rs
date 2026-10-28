@@ -1,0 +1,67 @@
+use thiserror::Error;
+
+/// Errors from probing and decoding media.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum MediaError {
+    /// The file could not be opened or is not a media file FossCut can read.
+    #[error("cannot open {path}: {message}")]
+    OpenFailed {
+        /// The file that was requested.
+        path: String,
+        /// What the backend reported.
+        message: String,
+    },
+    /// The file has no video stream.
+    #[error("{path} has no video stream")]
+    NoVideoStream {
+        /// The file that was requested.
+        path: String,
+    },
+    /// No decoder is available for the stream's codec.
+    #[error("no decoder for codec {codec}")]
+    DecoderUnavailable {
+        /// Codec name as reported by the backend.
+        codec: String,
+    },
+    /// Hardware decoding was required but is not available for this stream.
+    #[error("hardware decoding is not available: {message}")]
+    HardwareUnavailable {
+        /// Why hardware decoding could not be used.
+        message: String,
+    },
+    /// Decoding failed part way through the stream.
+    #[error("decoding failed: {message}")]
+    DecodeFailed {
+        /// What the backend reported.
+        message: String,
+    },
+    /// Seeking failed.
+    #[error("seeking failed: {message}")]
+    SeekFailed {
+        /// What the backend reported.
+        message: String,
+    },
+    /// The requested time is after the last frame of the stream.
+    #[error("no frame at {requested_flicks} flicks: the stream ends at {end_flicks} flicks")]
+    EndOfStream {
+        /// The requested time in flicks.
+        requested_flicks: i64,
+        /// The end of the last decoded frame in flicks.
+        end_flicks: i64,
+    },
+}
+
+impl MediaError {
+    /// The stable error code used in FossCut API responses (ADR-0006).
+    pub fn code(&self) -> &'static str {
+        match self {
+            MediaError::OpenFailed { .. } => "fosscut.media.open_failed",
+            MediaError::NoVideoStream { .. } => "fosscut.media.no_video_stream",
+            MediaError::DecoderUnavailable { .. } => "fosscut.media.decoder_unavailable",
+            MediaError::HardwareUnavailable { .. } => "fosscut.media.hardware_unavailable",
+            MediaError::DecodeFailed { .. } => "fosscut.media.decode_failed",
+            MediaError::SeekFailed { .. } => "fosscut.media.seek_failed",
+            MediaError::EndOfStream { .. } => "fosscut.media.end_of_stream",
+        }
+    }
+}

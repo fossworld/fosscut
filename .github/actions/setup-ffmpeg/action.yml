@@ -1,0 +1,59 @@
+name: Set up FFmpeg 8
+description: >
+  Installs FFmpeg 8 shared libraries and headers for building fosscut-media (ADR-0009), and
+  the ffmpeg and ffprobe command-line tools that tests use to generate fixtures. On Linux and
+  Windows the libraries are the LGPL shared builds from BtbN/FFmpeg-Builds, the license class
+  FossCut distributes; the command-line tools are separate packages that include libx264 for
+  generating H.264 fixtures and are never linked.
+
+runs:
+  using: composite
+  steps:
+    - name: FFmpeg 8 (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ffmpeg libclang-dev
+        dir="$RUNNER_TEMP/ffmpeg-8"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 \
+          https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-lgpl-shared-8.1.tar.xz \
+          | tar -xJ -C "$dir" --strip-components=1
+        {
+          echo "FFMPEG_INCLUDE_DIR=$dir/include"
+          echo "FFMPEG_LIBS_DIR=$dir/lib"
+          echo "FFMPEG_LINK_MODE=dynamic"
+          echo "LD_LIBRARY_PATH=$dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        } >> "$GITHUB_ENV"
+
+    - name: FFmpeg 8 (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew install ffmpeg@8
+        prefix="$(brew --prefix ffmpeg@8)"
+        {
+          echo "FFMPEG_PKG_CONFIG_PATH=$prefix/lib/pkgconfig"
+          echo "FFMPEG_LINK_MODE=dynamic"
+        } >> "$GITHUB_ENV"
+        echo "$prefix/bin" >> "$GITHUB_PATH"
+
+    - name: FFmpeg 8 (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        choco install ffmpeg -y --no-progress
+        $name = "ffmpeg-n8.1-latest-win64-lgpl-shared-8.1"
+        $archive = Join-Path $env:RUNNER_TEMP "$name.zip"
+        Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/$name.zip" -OutFile $archive
+        Expand-Archive $archive -DestinationPath $env:RUNNER_TEMP
+        $dir = Join-Path $env:RUNNER_TEMP $name
+        # Only the DLLs go on PATH, so the LGPL ffmpeg.exe does not shadow the fixture tool.
+        $dlls = Join-Path $env:RUNNER_TEMP "ffmpeg-8-dlls"
+        New-Item -ItemType Directory -Force $dlls | Out-Null
+        Copy-Item (Join-Path $dir "bin\*.dll") $dlls
+        "FFMPEG_INCLUDE_DIR=$dir\include" >> $env:GITHUB_ENV
+        "FFMPEG_LIBS_DIR=$dir\lib" >> $env:GITHUB_ENV
+        "FFMPEG_LINK_MODE=dynamic" >> $env:GITHUB_ENV
+        $dlls >> $env:GITHUB_PATH

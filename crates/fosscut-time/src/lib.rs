@@ -10,6 +10,8 @@
 //! All time arithmetic in FossCut goes through this crate. It has no native
 //! dependencies and builds for `wasm32-unknown-unknown`.
 
+#![forbid(unsafe_code)]
+
 mod error;
 mod flicks;
 mod input;

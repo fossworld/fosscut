@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor and others) workin
 
 An open source video editor written in Rust, built so that people create high-quality short-form and long-form videos by talking to an AI agent, and can keep editing the same project in a desktop app (a web version may follow). The editor exposes one typed command API through three front ends: a GUI, a CLI with `--json` output, and an MCP server ([ADR-0002](docs/adr/0002-agent-first-command-api.md)).
 
-**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. There is no rendering, export, MCP server or GUI yet. All ADRs are *Proposed* until accepted by a maintainer.
+**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is in progress: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox on macOS. There is no rendering, export, MCP server or GUI yet. All ADRs are *Proposed* until accepted by a maintainer.
 
 ## Read before you work
 
@@ -60,7 +60,7 @@ python3 scripts/check-adr-index.py
 npx markdownlint-cli2
 ```
 
-`cargo xtask coverage` needs `cargo-llvm-cov` and the `llvm-tools` component; it fails below 90% line coverage for the workspace or 85% for any crate, and writes `target/coverage/lcov.info`. Tests that need FFmpeg skip locally when it is missing but fail in CI, which sets `FOSSCUT_REQUIRE_FFMPEG=1`; set it yourself when you have FFmpeg installed.
+`cargo xtask coverage` needs `cargo-llvm-cov` and the `llvm-tools` component; it fails below 90% line coverage for the workspace or 85% for any crate, and writes `target/coverage/lcov.info`. Tests that need FFmpeg skip locally when it is missing but fail in CI, which sets `FOSSCUT_REQUIRE_FFMPEG=1`; set it yourself when you have FFmpeg installed. Building `fosscut-media` needs FFmpeg 8 development libraries; CONTRIBUTING.md lists the variables per platform.
 
 After changing public model or command types, regenerate the JSON Schemas with `cargo xtask schemas` and commit `schemas/`. `cargo xtask fixtures` writes test media to `fixtures/generated/` (needs FFmpeg). Snapshot tests use `insta`; record new snapshots with `INSTA_UPDATE=always cargo test -p <crate>` and review the `.snap` diff.
 
@@ -77,7 +77,7 @@ For the UI, from `ui/`: `pnpm install`, then `pnpm run lint`, `pnpm run typechec
 
 ## Conventions
 
-- **Rust:** edition 2024, toolchain from `rust-toolchain.toml`. Library crates return typed errors (`thiserror`); binaries may use `anyhow`. No `unwrap`/`expect` in library code outside tests unless an invariant is documented next to it. No `unsafe` outside backend modules of `fosscut-media` and `fosscut-render`, and each block carries a `// SAFETY:` comment. Public items have doc comments. Public model and command types derive `serde` and `schemars`.
+- **Rust:** edition 2024, toolchain from `rust-toolchain.toml`. Library crates return typed errors (`thiserror`); binaries may use `anyhow`. No `unwrap`/`expect` in library code outside tests unless an invariant is documented next to it. No `unsafe` outside backend modules of `fosscut-media` and `fosscut-render`: the workspace denies `unsafe_code`, other crates `#![forbid(unsafe_code)]`, and a backend module opts in with `#![allow(unsafe_code)]` while each block carries a `// SAFETY:` comment. Public items have doc comments. Public model and command types derive `serde` and `schemars`.
 - **Tests:** follow [ADR-0016](docs/adr/0016-testing-strategy.md). Tests are the main safeguard in an AI-written codebase: every behaviour change and bug fix comes with a test that fails without it, and assertions check results, not just that code runs. New commands get contract tests; new effects get golden frames; format changes get round-trip and migration tests; API output changes update snapshots deliberately; CLI behaviour gets end-to-end tests. A pull request cannot merge while any CI job fails (the required `CI result` check) or while coverage is below the minimums.
 - **Fixtures:** generate media with scripts (FFmpeg `lavfi` generators); commit only small files with a license record.
 - **Commits and PRs:** conventional titles (`feat(core): …`), `git commit -s` sign-off, one concern per PR, fill in the PR template including AI-assistance disclosure.
