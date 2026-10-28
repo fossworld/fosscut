@@ -19,6 +19,12 @@ Shipping FFmpeg under the LGPL rules out its best software H.264 and HEVC encode
 7. **Proxies and intermediates** use a fixed, hardware-friendly profile and are stored in the cache directory.
 8. **Probing** records stream timebases, rotation, color primaries, transfer, matrix and range, variable frame rate, and alpha, because the time model and color pipeline depend on them.
 
+## Implementation notes
+
+- **Bindings:** `rsmpeg` (MIT) over `rusty_ffmpeg`, linked dynamically against FFmpeg 8. `ffmpeg-next` was not chosen because its WTFPL license is outside the dependency policy in `deny.toml`.
+- **Decoding** (milestone 2): `fosscut-media` exposes `VideoDecoder` with exact flick timestamps, `frame_at` seeking that returns the frame displayed at a time, color tags with documented defaults for untagged streams, rotation from the display matrix, and VideoToolbox hardware decoding with software fallback. Frames are copied to system memory as NV12 or YUV 4:2:0; formats such as 4:2:2 and 10-bit are converted to 8-bit NV12 for now. Zero-copy import of VideoToolbox surfaces into the renderer is measured in the milestone 2 preview spike.
+- **CI** links the LGPL shared builds from BtbN/FFmpeg-Builds on Linux and Windows and Homebrew's `ffmpeg@8` on macOS (`.github/actions/setup-ffmpeg`).
+
 ## Consequences
 
 - Licensing stays compatible with a permissive project license ([ADR-0014](0014-licensing.md)).

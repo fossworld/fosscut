@@ -64,6 +64,7 @@ jobs:
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-ffmpeg
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo doc --workspace --no-deps --all-features --locked
@@ -89,15 +90,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - name: Install FFmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - name: Install FFmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
-      - name: Install FFmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y --no-progress
+      - uses: ./.github/actions/setup-ffmpeg
       - name: Unit, property, contract, snapshot and end-to-end tests
         run: cargo nextest run --profile ci --workspace --all-features --locked --no-tests=fail
         env:
@@ -121,8 +114,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-llvm-cov
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - uses: ./.github/actions/setup-ffmpeg
       - name: Measure coverage and enforce the minimums in xtask/src/main.rs
         run: cargo xtask coverage
         env:

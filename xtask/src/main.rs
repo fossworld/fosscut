@@ -4,6 +4,8 @@
 //! - `fixtures`: generate test media in `fixtures/generated/` with FFmpeg;
 //! - `coverage`: run the tests with coverage instrumentation and fail below the minimums.
 
+#![forbid(unsafe_code)]
+
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -101,34 +103,68 @@ fn schemas(check: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn fixtures() -> Result<(), String> {
-    let dir = root().join("fixtures").join("generated");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let output = dir.join("test-pattern.mp4");
-    let status = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-v",
-            "error",
+/// Test media generated with FFmpeg's `lavfi` sources (ADR-0016, item 7): name, then the
+/// FFmpeg arguments between `-y -v error` and the output path.
+const FIXTURES: &[(&str, &[&str])] = &[
+    (
+        // The round 1 audit fixture: 8 s, 720p30 with a 440 Hz tone.
+        "test-pattern.mp4",
+        &[
             "-f",
             "lavfi",
             "-i",
             "testsrc2=size=1280x720:rate=30:duration=8",
-        ])
-        .args([
             "-f",
             "lavfi",
             "-i",
             "sine=frequency=440:sample_rate=48000:duration=8",
-        ])
-        .args(["-c:v", "mpeg4", "-q:v", "5", "-c:a", "aac", "-shortest"])
-        .arg(&output)
-        .status()
-        .map_err(|e| format!("cannot run ffmpeg: {e}"))?;
-    if !status.success() {
-        return Err("ffmpeg failed".to_string());
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "5",
+            "-c:a",
+            "aac",
+            "-shortest",
+        ],
+    ),
+    (
+        // The ADR-0008 spike source: 10 s of 4K30 H.264, tagged BT.709 limited range
+        // with `setparams` so the tags do not trigger a pixel conversion.
+        "test-pattern-4k.mp4",
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=3840x2160:rate=30:duration=10,format=yuv420p,\
+             setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-g",
+            "30",
+        ],
+    ),
+];
+
+fn fixtures() -> Result<(), String> {
+    let dir = root().join("fixtures").join("generated");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for (name, args) in FIXTURES {
+        let output = dir.join(name);
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-v", "error"])
+            .args(*args)
+            .arg(&output)
+            .status()
+            .map_err(|e| format!("cannot run ffmpeg: {e}"))?;
+        if !status.success() {
+            return Err(format!("ffmpeg failed to write {name}"));
+        }
+        println!("wrote {}", output.display());
     }
-    println!("wrote {}", output.display());
     Ok(())
 }
 

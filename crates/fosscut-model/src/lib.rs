@@ -14,6 +14,8 @@
 //! [`ProjectStore`], so the model builds for `wasm32-unknown-unknown` and can be backed
 //! by browser storage or a server later.
 
+#![forbid(unsafe_code)]
+
 mod bundle;
 mod error;
 mod id;

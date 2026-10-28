@@ -1,6 +1,8 @@
 //! The `fosscut` command-line interface (ADR-0002): every editing command and query,
 //! with `--json` output for scripts and AI agents.
 
+#![forbid(unsafe_code)]
+
 mod args;
 mod bundle;
 mod output;

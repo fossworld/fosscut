@@ -26,7 +26,20 @@ Thank you for helping build an open source video editor that people and AI agent
 | `rustup component add llvm-tools` | Needed by `cargo-llvm-cov` |
 | Node.js and pnpm | The shared UI in `ui/` (once it exists) |
 | Python 3 | Repository check scripts |
-| FFmpeg (`ffmpeg` and `ffprobe`; shared libraries, LGPL build) | End-to-end CLI tests now; media I/O once `fosscut-media` exists ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)) |
+| FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
+| `ffmpeg` and `ffprobe` command-line tools with libx264 | Generating test fixtures and the end-to-end CLI tests |
+
+### FFmpeg for development
+
+`fosscut-media` links FFmpeg 8 dynamically through the `rsmpeg` bindings, which generate their bindings with bindgen (libclang). Point the build at your FFmpeg 8 with one of these, and set `FFMPEG_LINK_MODE=dynamic`:
+
+| Platform | FFmpeg 8 | Build variables | At run time |
+|---|---|---|---|
+| macOS | `brew install ffmpeg@8` | `FFMPEG_PKG_CONFIG_PATH=$(brew --prefix ffmpeg@8)/lib/pkgconfig` | Nothing extra |
+| Linux | Distribution packages for FFmpeg 8 (`libavcodec-dev` and friends), or a BtbN `lgpl-shared` build | pkg-config finds distribution packages; for an unpacked build set `FFMPEG_LIBS_DIR` and `FFMPEG_INCLUDE_DIR` | `LD_LIBRARY_PATH` must include an unpacked build's `lib` directory |
+| Windows | BtbN `win64-lgpl-shared` build | `FFMPEG_LIBS_DIR` and `FFMPEG_INCLUDE_DIR` | The build's DLLs on `PATH` |
+
+FFmpeg from conda installs libraries that load through `@rpath`; on macOS also set `DYLD_FALLBACK_LIBRARY_PATH` to its `lib` directory. CI does the same setup in `.github/actions/setup-ffmpeg`. Builds you distribute must use an LGPL FFmpeg without GPL or nonfree components; a GPL build is fine for local development.
 
 Local checks that mirror CI:
 
