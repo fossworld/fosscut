@@ -19,6 +19,14 @@ pub struct BundleLock {
 impl BundleLock {
     /// Waits up to ten seconds for other writers; locks older than two minutes are stale.
     pub fn acquire(bundle: &Path) -> Result<BundleLock, ApiError> {
+        BundleLock::acquire_with(bundle, LOCK_WAIT, LOCK_STALE)
+    }
+
+    fn acquire_with(
+        bundle: &Path,
+        wait: Duration,
+        stale_after: Duration,
+    ) -> Result<BundleLock, ApiError> {
         let path = bundle.join(LOCK_FILE);
         let started = Instant::now();
         loop {
@@ -29,12 +37,12 @@ impl BundleLock {
                         .and_then(|m| m.modified())
                         .ok()
                         .and_then(|t| t.elapsed().ok())
-                        .is_some_and(|age| age > LOCK_STALE);
+                        .is_some_and(|age| age > stale_after);
                     if stale {
                         let _ = std::fs::remove_file(&path);
                         continue;
                     }
-                    if started.elapsed() > LOCK_WAIT {
+                    if started.elapsed() > wait {
                         return Err(ApiError::new(
                             codes::PROJECT_BUSY,
                             format!("{} is locked by another process", bundle.display()),
@@ -137,4 +145,57 @@ pub fn now_ms() -> Option<u64> {
         .duration_since(UNIX_EPOCH)
         .ok()
         .map(|d| d.as_millis() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bundle_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("fosscut-lock-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_held_lock_makes_other_writers_wait_then_fail() {
+        let dir = bundle_dir("busy");
+        let held = BundleLock::acquire(&dir).unwrap();
+        let Err(error) = BundleLock::acquire_with(&dir, Duration::from_millis(120), LOCK_STALE)
+        else {
+            panic!("a second writer must not get the lock");
+        };
+        assert_eq!(error.code, codes::PROJECT_BUSY);
+        drop(held);
+        assert!(
+            !dir.join(LOCK_FILE).exists(),
+            "dropping the lock removes the file"
+        );
+        let again = BundleLock::acquire(&dir).unwrap();
+        drop(again);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn stale_locks_are_taken_over() {
+        let dir = bundle_dir("stale");
+        let file = std::fs::File::create(dir.join(LOCK_FILE)).unwrap();
+        file.set_modified(SystemTime::now() - Duration::from_secs(600))
+            .unwrap();
+        drop(file);
+        let lock = BundleLock::acquire_with(&dir, Duration::ZERO, LOCK_STALE).unwrap();
+        drop(lock);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn locking_a_missing_bundle_is_a_storage_error() {
+        let dir = std::env::temp_dir().join(format!("fosscut-lock-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let Err(error) = BundleLock::acquire(&dir) else {
+            panic!("a missing bundle cannot be locked");
+        };
+        assert_eq!(error.code, "fosscut.project.storage");
+    }
 }

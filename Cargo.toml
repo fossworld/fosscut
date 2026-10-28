@@ -33,3 +33,5 @@ missing_docs = "warn"
 unwrap_used = "warn"
 expect_used = "warn"
 dbg_macro = "warn"
+# An ignored test must say why (`#[ignore = "reason"]`), so skipped tests stay visible in review.
+ignore_without_reason = "warn"

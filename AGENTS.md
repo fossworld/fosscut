@@ -51,13 +51,16 @@ Run the checks that apply to what you changed. CI runs all of them.
 ```bash
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo nextest run --workspace --all-features --no-tests=pass
+cargo nextest run --workspace --all-features
 cargo test --workspace --all-features --doc
+cargo xtask coverage
 cargo deny check
 cargo xtask schemas --check
 python3 scripts/check-adr-index.py
 npx markdownlint-cli2
 ```
+
+`cargo xtask coverage` needs `cargo-llvm-cov` and the `llvm-tools` component; it fails below 90% line coverage for the workspace or 85% for any crate, and writes `target/coverage/lcov.info`. Tests that need FFmpeg skip locally when it is missing but fail in CI, which sets `FOSSCUT_REQUIRE_FFMPEG=1`; set it yourself when you have FFmpeg installed.
 
 After changing public model or command types, regenerate the JSON Schemas with `cargo xtask schemas` and commit `schemas/`. `cargo xtask fixtures` writes test media to `fixtures/generated/` (needs FFmpeg). Snapshot tests use `insta`; record new snapshots with `INSTA_UPDATE=always cargo test -p <crate>` and review the `.snap` diff.
 
@@ -75,7 +78,7 @@ For the UI, from `ui/`: `pnpm install`, then `pnpm run lint`, `pnpm run typechec
 ## Conventions
 
 - **Rust:** edition 2024, toolchain from `rust-toolchain.toml`. Library crates return typed errors (`thiserror`); binaries may use `anyhow`. No `unwrap`/`expect` in library code outside tests unless an invariant is documented next to it. No `unsafe` outside backend modules of `fosscut-media` and `fosscut-render`, and each block carries a `// SAFETY:` comment. Public items have doc comments. Public model and command types derive `serde` and `schemars`.
-- **Tests:** follow [ADR-0016](docs/adr/0016-testing-strategy.md). New commands get contract tests; new effects get golden frames; format changes get round-trip and migration tests; API output changes update snapshots deliberately.
+- **Tests:** follow [ADR-0016](docs/adr/0016-testing-strategy.md). Tests are the main safeguard in an AI-written codebase: every behaviour change and bug fix comes with a test that fails without it, and assertions check results, not just that code runs. New commands get contract tests; new effects get golden frames; format changes get round-trip and migration tests; API output changes update snapshots deliberately; CLI behaviour gets end-to-end tests. A pull request cannot merge while any CI job fails (the required `CI result` check) or while coverage is below the minimums.
 - **Fixtures:** generate media with scripts (FFmpeg `lavfi` generators); commit only small files with a license record.
 - **Commits and PRs:** conventional titles (`feat(core): …`), `git commit -s` sign-off, one concern per PR, fill in the PR template including AI-assistance disclosure.
 - **Docs:** update the relevant ADR, schema docs or skill in the same PR as the behaviour change.
@@ -100,7 +103,7 @@ For the UI, from `ui/`: `pnpm install`, then `pnpm run lint`, `pnpm run typechec
 - Commit anything under `docs/capcut-audit/` or `docs/capcut-rea/`, or add Markdown links to them; refer to research as plain paths only.
 - Add GPL, AGPL or non-commercial dependencies, models or assets.
 - Edit generated files in `schemas/` by hand, or update golden images without reviewing the image diff.
-- Weaken, skip or delete tests to make CI pass.
+- Weaken, skip, ignore or delete tests, add retries, or lower the coverage minimums to make CI pass. If a test is wrong, fix it and explain why in the pull request.
 - Change an accepted ADR's decision in place; write a superseding ADR.
 - Commit secrets, API keys, personal media or personal data; read provider keys only from the environment or OS keychain.
 - Merge pull requests or push to `main`.

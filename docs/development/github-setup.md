@@ -29,10 +29,28 @@ Checklist for maintainers when the repository is first connected to GitHub. The 
 
 ## Branch protection (ruleset on `main`)
 
-- Require a pull request with at least one approving review; dismiss stale approvals on new commits.
-- Require status checks to pass: `Docs and ADRs`, `Conventional title`, `DCO sign-off`. Add `Rust format, lints and docs`, the three `Rust tests` jobs and `WebAssembly build of portable crates` once the Rust workspace exists, and `UI lint, types and tests` once `ui/` exists. (Jobs that are skipped because a part does not exist yet report as skipped, which GitHub treats as passing.)
-- Require linear history; block force pushes and deletion.
-- Do not allow bypassing for anyone except in emergencies.
+A pull request must not merge while any test or check fails ([ADR-0016](../adr/0016-testing-strategy.md)). Create a branch ruleset (Settings, Rules, Rulesets, New branch ruleset) targeting the default branch, with enforcement **Active**:
+
+- **Require a pull request before merging.** With one maintainer, set required approvals to 0 (GitHub does not let authors approve their own pull requests); raise it to 1 and dismiss stale approvals on new commits once there are two maintainers.
+- **Require status checks to pass**, with "Require branches to be up to date before merging" on, and these checks:
+
+  | Check | Workflow | Covers |
+  |---|---|---|
+  | `CI result` | CI | Every CI job: docs and ADRs, Rust format, lints and docs, schemas, Rust tests on Linux, macOS and Windows, documentation tests, test coverage minimums, the WebAssembly build, dependency licenses and sources, and the UI checks |
+  | `Conventional title` | Pull request checks | Pull request title |
+  | `DCO sign-off` | Pull request checks | Sign-off on every commit |
+
+  `CI result` fails when any CI job fails or is cancelled, so new jobs added to its `needs` list become required without changing the ruleset. Jobs skipped because a part of the project does not exist yet count as passing. The check names appear in the picker after the workflows have run once on a pull request.
+- **Require linear history; block force pushes and deletion.**
+- **Bypass list:** empty. Bypass only in emergencies, by temporarily adding a maintainer.
+
+`cargo-deny advisories` (Dependency advisories workflow) is deliberately not required: a newly published advisory should be fixed in its own pull request, not block unrelated ones.
+
+The same ruleset from the command line (needs an admin token):
+
+```bash
+gh api --method POST repos/fossworld/fosscut/rulesets --input docs/development/main-ruleset.json
+```
 
 ## Labels
 

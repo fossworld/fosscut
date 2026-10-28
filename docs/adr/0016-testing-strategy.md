@@ -20,12 +20,15 @@ Most code will be written by AI agents, so tests are the main defence against re
 8. **Fuzzing** (`cargo-fuzz`) for project parsing, patch and selector parsing, and media probing entry points; run nightly.
 9. **Agent evaluations:** scripted MCP sessions on fixture projects verify skills and tool ergonomics deterministically in CI. Model-in-the-loop evaluations with real agents run on demand or nightly, because they cost money and are non-deterministic; their results are tracked over time rather than gating every pull request.
 10. **CI matrix:** Linux, macOS and Windows for Rust tests; GPU-dependent tests marked and run where a GPU or a software adapter exists.
+11. **Failing tests block merging.** Every CI job feeds one aggregate check, `CI result`, which branch protection on `main` requires together with the pull request checks ([GitHub setup](../development/github-setup.md#branch-protection-ruleset-on-main)). A failed or cancelled job fails it; only jobs for project parts that do not exist yet may be skipped. Tests never retry on failure (a flaky test is a bug), and CI installs every external tool the tests need, such as FFmpeg, and sets `FOSSCUT_REQUIRE_FFMPEG=1` so that tests depending on it fail instead of skipping. An ignored test must state its reason (`#[ignore = "…"]`, enforced by Clippy).
+12. **Coverage minimums.** `cargo xtask coverage` measures line coverage with `cargo-llvm-cov` over all tests, including the end-to-end CLI tests, and fails below 90% for the workspace or below 85% for any crate in `crates/` (coverage is counted per source line from the LCOV report). The minimums live in `xtask/src/main.rs`; they are raised as coverage grows and are never lowered to make a change pass. Coverage shows which code runs, not whether its results are checked, so assertions are still reviewed; mutation testing (`cargo-mutants`) is the planned complement.
 
 ## Consequences
 
 - Agents get fast, precise feedback and cannot quietly break frame accuracy or color.
 - Golden images and fixtures need storage discipline (small sizes, Git LFS if they grow).
 - GPU variance across vendors requires tolerances and occasional per-backend goldens.
+- Required checks and coverage minimums add CI time and occasionally force tests for code that is hard to reach; that cost is accepted because agents otherwise ship untested paths.
 
 ## Alternatives considered
 
@@ -34,4 +37,4 @@ Most code will be written by AI agents, so tests are the main defence against re
 
 ## Validation
 
-Every merged feature pull request adds or updates at least one test at the appropriate level; CI fails otherwise for crates under `crates/`.
+Every merged feature pull request adds or updates at least one test at the appropriate level. No pull request merges with a failing, cancelled or silently skipped test job, and coverage stays at or above the minimums in item 12.

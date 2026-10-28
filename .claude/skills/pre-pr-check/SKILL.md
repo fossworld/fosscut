@@ -30,8 +30,9 @@ If `lychee` is installed, also run `lychee --offline --include-fragments './**/*
 ```bash
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo nextest run --workspace --all-features --no-tests=pass
+FOSSCUT_REQUIRE_FFMPEG=1 cargo nextest run --workspace --all-features
 cargo test --workspace --all-features --doc
+cargo xtask coverage
 cargo doc --workspace --no-deps --all-features
 cargo deny check
 ```
@@ -42,7 +43,9 @@ For changes in `fosscut-time`, `fosscut-model` or `fosscut-core`, also build the
 cargo build -p fosscut-time -p fosscut-model -p fosscut-core --target wasm32-unknown-unknown
 ```
 
-Run only the crates that exist. If `cargo nextest` is missing, install it with `cargo install cargo-nextest`.
+Run only the crates that exist. Install missing tools with `cargo install cargo-nextest cargo-llvm-cov` and `rustup component add llvm-tools`. Drop `FOSSCUT_REQUIRE_FFMPEG=1` only if FFmpeg is not installed, and say in the PR that the end-to-end tests were skipped locally.
+
+`cargo xtask coverage` prints line coverage per crate and fails below the minimums in `xtask/src/main.rs`. If your change lowers coverage, add tests for the new code; to find uncovered lines, run `cargo llvm-cov nextest --workspace --exclude xtask --open`. Report the coverage table in the PR's Verification section.
 
 ## 4. Generated artefacts
 
@@ -74,5 +77,7 @@ pnpm run test
 
 ## Rules
 
-- Never silence a failing check (no `#[allow]` without a justification comment, no skipped tests, no lowered thresholds) to get green.
+- Never silence a failing check to get green: no `#[allow]` without a justification comment, no skipped or `#[ignore]`d tests, no retries, no lowered coverage minimums.
+- Every behaviour change and bug fix has a test that fails without it. Check this by reverting the fix locally or reasoning it through, and say how in the PR.
+- A PR cannot merge while the `CI result` check fails; it covers every test, lint, coverage and policy job.
 - If a check fails for reasons unrelated to your change, say so in the PR and open an issue instead of fixing it silently in the same PR.

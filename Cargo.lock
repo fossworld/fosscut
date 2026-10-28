@@ -298,6 +298,7 @@ dependencies = [
  "fosscut-core",
  "fosscut-model",
  "fosscut-time",
+ "insta",
  "serde",
  "serde_json",
 ]

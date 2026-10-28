@@ -1,0 +1,117 @@
+---
+source: crates/fosscut-cli/tests/cli.rs
+expression: text
+---
+$ fosscut project new Demo.fosscut --name Demo
+Demo (project_<random>)  revision 0  format 0.1.0
+assets: 0  can undo: false  can redo: false
+  timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
+
+$ fosscut text add Hello --duration 2s
+saved revision 1
+  clip_0002 on track_0001: 00:00:00:00 – 00:00:02:00 (60 frames)
+  changes: + clip_0002, track_0001
+
+$ fosscut text add World --start 3s --duration 1s --dry-run
+dry run, nothing saved (revision 1)
+  clip_0003 on track_0001: 00:00:03:00 – 00:00:04:00 (30 frames)
+  changes: + clip_0003
+
+$ fosscut text add World --start 3s --duration 1s --request-id world
+saved revision 2
+  clip_0003 on track_0001: 00:00:03:00 – 00:00:04:00 (30 frames)
+  changes: + clip_0003
+
+$ fosscut text add World --start 3s --duration 1s --request-id world
+replayed earlier request, revision 2
+  clip_0003 on track_0001: 00:00:03:00 – 00:00:04:00 (30 frames)
+  changes: + clip_0003
+
+$ fosscut text add Overlap --start 3s --duration 1s
+[exit 1]
+error: the clip would overlap clip_0003 on track track_0001 [fosscut.clip.overlap]
+hint: Choose a free position (details.free_from), another track, or remove the other clip first.
+details: {"command":"text.add","command_index":0,"conflicting_clip":"clip_0003","conflicting_end":{"flicks":2822400000,"frames":120,"seconds":"4","timecode":"00:00:04:00"},"conflicting_start":{"flicks":2116800000,"frames":90,"seconds":"3","timecode":"00:00:03:00"},"free_from":{"flicks":2822400000,"frames":120,"seconds":"4","timecode":"00:00:04:00"}}
+
+$ fosscut track add --kind text --name Captions
+saved revision 3
+  track_0004 at index 1
+  changes: + track_0004
+
+$ fosscut clip move --clip clip_0002 --start 5s
+saved revision 4
+  clip_0002 on track_0001: 00:00:05:00 – 00:00:07:00 (60 frames)
+  changes: ~ clip_0002
+
+$ fosscut clip move --clip clip_0002 --start 5s
+no changes (revision 4)
+  clip_0002 on track_0001: 00:00:05:00 – 00:00:07:00 (60 frames)
+
+$ fosscut clip move --clip clip_0099 --start 1s
+[exit 1]
+error: clip clip_0099 does not exist [fosscut.clip.not_found]
+hint: Read the timeline to get current clip ids.
+details: {"command":"clip.move","command_index":0}
+
+$ fosscut clip split --clip clip_0002 --at 6s
+saved revision 5
+  split: clip_0002 00:00:05:00 – 00:00:06:00 (30 frames)  |  clip_0005 00:00:06:00 – 00:00:07:00 (30 frames)
+  changes: + clip_0005 ~ clip_0002
+
+$ fosscut clip remove --clip clip_0005
+saved revision 6
+  removed clip_0005 from track_0001
+  changes: - clip_0005
+
+$ fosscut undo
+saved revision 7
+  history entry 6
+  changes: + clip_0005
+
+$ fosscut redo
+saved revision 8
+  history entry 6
+  changes: - clip_0005
+
+$ fosscut timeline read
+Timeline 1 (timeline_0000)  1920x1080 @ 30 fps  revision 8  duration 00:00:06:00
+track_0001 text  (2 clips, ends 00:00:06:00)
+  clip_0003 text  00:00:03:00 – 00:00:04:00 (30 frames)  "World"
+  clip_0002 text  00:00:05:00 – 00:00:06:00 (30 frames)  "Hello"
+track_0004 text  (0 clips, ends 00:00:00:00)
+
+$ fosscut media list
+
+$ fosscut history
+#8 r7→r8 redo by agent:test: history.redo
+#7 r6→r7 undo by agent:test: history.undo
+#6 r5→r6 commit by agent:test: clip.remove
+#5 r4→r5 commit by agent:test: clip.split
+#4 r3→r4 commit by agent:test: clip.move
+#3 r2→r3 commit by agent:test: track.add
+#2 r1→r2 commit by agent:test: text.add
+#1 r0→r1 commit by agent:test: text.add
+
+$ fosscut project info
+Demo (project_<random>)  revision 8  format 0.1.0
+assets: 0  can undo: true  can redo: false
+  timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
+
+$ fosscut capabilities
+API 0.1.0  project format 0.1.0
+commands:
+  clip.add       Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  clip.move      Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap.
+  clip.remove    Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
+  clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
+  history.redo   Redo the most recently undone transaction. Must be the only command in its request.
+  history.undo   Undo the most recent committed transaction. Must be the only command in its request.
+  media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
+  text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
+queries:
+  capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.
+  history.list   Most recent operation log entries, newest first.
+  media.list     Assets in the media table with durations and stream details.
+  project.info   Project name, revision, timelines and undo state.
+  timeline.read  Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.

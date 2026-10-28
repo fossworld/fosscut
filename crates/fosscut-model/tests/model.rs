@@ -257,6 +257,211 @@ fn document_keys_parse_their_paths() {
     assert_eq!(DocumentKey::from_path("other.json"), None);
 }
 
+fn primary(project: &mut Project) -> &mut Timeline {
+    let id = project.manifest.primary_timeline.clone();
+    project.timelines.get_mut(&id).unwrap()
+}
+
+/// Every rule in `validate`, each broken on its own, reports its code at the right path.
+#[test]
+fn each_validation_rule_reports_its_code() {
+    type Breakage = fn(&mut Project);
+    let cases: [(&str, &str, Breakage); 17] = [
+        ("project", "fosscut.model.id_kind", |p| {
+            p.manifest.id = Id::new(IdKind::Clip, 1);
+        }),
+        ("project", "fosscut.model.missing_timeline", |p| {
+            p.manifest.primary_timeline = Id::new(IdKind::Timeline, 99);
+        }),
+        ("project", "fosscut.model.timeline_list", |p| {
+            p.manifest.timelines.clear();
+        }),
+        ("asset_0001", "fosscut.model.asset_duration", |p| {
+            p.media.assets[0].info.duration = None;
+        }),
+        ("timeline_0000", "fosscut.model.id_mismatch", |p| {
+            primary(p).id = Id::new(IdKind::Timeline, 7);
+        }),
+        ("timeline_0000", "fosscut.model.canvas", |p| {
+            primary(p).format.width = 0;
+        }),
+        (
+            "timeline_0000/track_0002",
+            "fosscut.model.duplicate_id",
+            |p| {
+                primary(p).tracks[1].id = primary(p).tracks[0].id.clone();
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.negative_start",
+            |p| {
+                primary(p).tracks[0].clips[0].start = frames(-1);
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.empty_clip",
+            |p| {
+                primary(p).tracks[0].clips[0].duration = Flicks::ZERO;
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.opacity",
+            |p| {
+                primary(p).tracks[0].clips[0].opacity = 1.5;
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.volume",
+            |p| {
+                primary(p).tracks[0].clips[0].volume = f64::NAN;
+            },
+        ),
+        (
+            "timeline_0000/track_0003/clip_0006",
+            "fosscut.model.empty_text",
+            |p| {
+                primary(p).tracks[1].clips[0].content = ClipContent::Text(TextContent {
+                    text: "  ".into(),
+                    style: TextStyle::default(),
+                });
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.asset_kind",
+            |p| {
+                p.media.assets[0].kind = AssetKind::Audio;
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.asset_kind",
+            |p| {
+                let asset = p.media.assets[0].id.clone();
+                primary(p).tracks[0].clips[0].content = ClipContent::Image { asset };
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.source_range",
+            |p| {
+                let asset = p.media.assets[0].id.clone();
+                primary(p).tracks[0].clips[0].content = ClipContent::Video {
+                    asset,
+                    source_in: frames(-1),
+                };
+            },
+        ),
+        (
+            "timeline_0000/track_0002/clip_0004",
+            "fosscut.model.track_kind",
+            |p| {
+                let asset = p.media.assets[0].id.clone();
+                primary(p).tracks[0].clips[0].content = ClipContent::Audio {
+                    asset,
+                    source_in: Flicks::ZERO,
+                };
+            },
+        ),
+        (
+            "timeline_0000/track_0006/clip_0007",
+            "fosscut.model.asset_kind",
+            |p| {
+                p.media.assets[0].info.audio = None;
+                let asset = p.media.assets[0].id.clone();
+                primary(p).tracks.push(Track {
+                    id: Id::new(IdKind::Track, 6),
+                    kind: TrackKind::Audio,
+                    name: None,
+                    muted: false,
+                    hidden: false,
+                    locked: false,
+                    clips: vec![Clip {
+                        id: Id::new(IdKind::Clip, 7),
+                        start: Flicks::ZERO,
+                        duration: frames(30),
+                        content: ClipContent::Audio {
+                            asset,
+                            source_in: Flicks::ZERO,
+                        },
+                        transform: Transform::default(),
+                        opacity: 1.0,
+                        volume: 1.0,
+                    }],
+                });
+            },
+        ),
+    ];
+    for (path, code, breakage) in cases {
+        let mut project = round_one_project();
+        breakage(&mut project);
+        let issues = validate(&project);
+        assert!(
+            issues.iter().any(|i| i.code == code && i.path == path),
+            "expected {code} at {path}, got {issues:?}"
+        );
+        let shown = issues.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert!(
+            shown
+                .iter()
+                .any(|line| line.starts_with(path) && line.ends_with(&format!("({code})"))),
+            "{shown:?}"
+        );
+    }
+}
+
+#[test]
+fn timelines_find_tracks_and_clips() {
+    let mut project = round_one_project();
+    let timeline = primary(&mut project);
+    let track = timeline.tracks[1].id.clone();
+    let title = timeline.tracks[1].clips[0].id.clone();
+    assert_eq!(
+        timeline.track(&track).map(|t| t.kind),
+        Some(TrackKind::Text)
+    );
+    assert_eq!(timeline.find_clip(&title).map(|(index, _)| index), Some(1));
+    assert!(timeline.find_clip(&Id::new(IdKind::Clip, 99)).is_none());
+    timeline.track_mut(&track).unwrap().muted = true;
+    assert!(timeline.tracks[1].muted);
+    assert!(timeline.track(&Id::new(IdKind::Track, 99)).is_none());
+}
+
+#[test]
+fn colours_are_normalised_and_validated() {
+    assert_eq!(Color::parse("#ff8800").unwrap().as_str(), "#FF8800");
+    assert_eq!(Color::parse("#ff880080").unwrap().as_str(), "#FF880080");
+    for bad in ["ff8800", "#ff88", "#gg8800", ""] {
+        assert!(Color::parse(bad).is_err(), "{bad} should be rejected");
+    }
+    let json: Result<Color, _> = serde_json::from_str("\"red\"");
+    assert!(json.is_err());
+    assert_eq!(
+        serde_json::to_string(&Color::parse("#00ff00").unwrap()).unwrap(),
+        "\"#00FF00\""
+    );
+}
+
+#[test]
+fn directory_store_reports_missing_files_and_appends() {
+    let root = std::env::temp_dir().join(format!("fosscut-store-test-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut store = DirStore::new(&root);
+    assert_eq!(store.root(), root.as_path());
+    assert!(!store.exists("history/ops.jsonl"));
+    let missing = store.read("history/ops.jsonl").unwrap_err();
+    assert!(matches!(missing, StoreError::NotFound(ref path) if path == "history/ops.jsonl"));
+    store.append("history/ops.jsonl", b"one\n").unwrap();
+    store.append("history/ops.jsonl", b"two\n").unwrap();
+    assert_eq!(store.read("history/ops.jsonl").unwrap(), b"one\ntwo\n");
+    assert!(store.exists("history/ops.jsonl"));
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
 proptest! {
     #[test]
     fn generated_timelines_round_trip(lengths in proptest::collection::vec((1i64..300, 0i64..30), 1..20)) {

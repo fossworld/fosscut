@@ -58,9 +58,19 @@ fn has_ffmpeg() -> bool {
     })
 }
 
+/// CI sets `FOSSCUT_REQUIRE_FFMPEG=1` so that a missing FFmpeg fails the test instead of
+/// skipping it silently.
+fn ffmpeg_required() -> bool {
+    std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0")
+}
+
 #[test]
 fn round_one_sequence_from_the_command_line() {
     if !has_ffmpeg() {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg and ffprobe are not installed"
+        );
         eprintln!("skipping: ffmpeg and ffprobe are not installed");
         return;
     }
@@ -189,6 +199,28 @@ fn round_one_sequence_from_the_command_line() {
     let history = ok(&dir, &["history"]);
     assert_eq!(history["entries"][0]["kind"], json!("redo"));
     assert_eq!(history["entries"][0]["actor"], json!("agent:test"));
+
+    let human = |args: &[&str]| {
+        let output = fosscut(&dir, args);
+        assert!(output.status.success(), "{args:?}");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let media = human(&["media", "list"]);
+    assert!(
+        media.contains("video 00:00:08:00 1280x720  test-pattern.mp4"),
+        "{media}"
+    );
+    let timeline = human(&["timeline", "read"]);
+    assert!(
+        timeline.contains("(122 frames)  test-pattern.mp4 from 00:00:03:28"),
+        "{timeline}"
+    );
+    let reimport = human(&["media", "import", "test-pattern.mp4"]);
+    assert!(reimport.contains("(already imported)"), "{reimport}");
+
+    std::fs::write(dir.join("notes.txt"), "not media").unwrap();
+    let unreadable = fails(&dir, &["media", "import", "notes.txt"]);
+    assert_eq!(unreadable["code"], json!("fosscut.media.probe_failed"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -229,6 +261,203 @@ fn works_without_media_tools() {
         info["revision"],
         json!(1),
         "the failed batch changed nothing"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Runs each command without `--json` and records what a person sees, so changes to the
+/// human-readable output show up in review.
+fn transcript(dir: &Path, commands: &[&[&str]]) -> String {
+    let mut text = String::new();
+    for args in commands {
+        let output = fosscut(dir, args);
+        text.push_str(&format!("$ fosscut {}\n", args.join(" ")));
+        text.push_str(&String::from_utf8_lossy(&output.stdout));
+        if !output.status.success() {
+            text.push_str(&format!("[exit {}]\n", output.status.code().unwrap_or(-1)));
+            text.push_str(&String::from_utf8_lossy(&output.stderr));
+        }
+        text.push('\n');
+    }
+    text
+}
+
+#[test]
+fn human_output_is_stable() {
+    let dir = workspace("human");
+    let text = transcript(
+        &dir,
+        &[
+            &["project", "new", "Demo.fosscut", "--name", "Demo"],
+            &["text", "add", "Hello", "--duration", "2s"],
+            &[
+                "text",
+                "add",
+                "World",
+                "--start",
+                "3s",
+                "--duration",
+                "1s",
+                "--dry-run",
+            ],
+            &[
+                "text",
+                "add",
+                "World",
+                "--start",
+                "3s",
+                "--duration",
+                "1s",
+                "--request-id",
+                "world",
+            ],
+            &[
+                "text",
+                "add",
+                "World",
+                "--start",
+                "3s",
+                "--duration",
+                "1s",
+                "--request-id",
+                "world",
+            ],
+            &[
+                "text",
+                "add",
+                "Overlap",
+                "--start",
+                "3s",
+                "--duration",
+                "1s",
+            ],
+            &["track", "add", "--kind", "text", "--name", "Captions"],
+            &["clip", "move", "--clip", "clip_0002", "--start", "5s"],
+            &["clip", "move", "--clip", "clip_0002", "--start", "5s"],
+            &["clip", "move", "--clip", "clip_0099", "--start", "1s"],
+            &["clip", "split", "--clip", "clip_0002", "--at", "6s"],
+            &["clip", "remove", "--clip", "clip_0005"],
+            &["undo"],
+            &["redo"],
+            &["timeline", "read"],
+            &["media", "list"],
+            &["history"],
+            &["project", "info"],
+            &["capabilities"],
+        ],
+    );
+    let info = ok(&dir, &["project", "info"]);
+    let text = text.replace(info["id"].as_str().unwrap(), "project_<random>");
+    insta::assert_snapshot!(text);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn errors_explain_what_to_do() {
+    let dir = workspace("errors");
+
+    let none = fosscut(&dir, &["project", "info"]);
+    assert_eq!(none.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&none.stderr);
+    assert!(
+        stderr.contains("error: no project given [fosscut.project.not_found]"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("hint: Pass --project"), "{stderr}");
+
+    let missing = fails(&dir, &["-p", "Missing.fosscut", "project", "info"]);
+    assert_eq!(missing["code"], json!("fosscut.project.not_found"));
+    assert!(missing["hint"].as_str().unwrap().contains("project new"));
+
+    ok(&dir, &["project", "new", "A.fosscut"]);
+    let again = fails(&dir, &["project", "new", "A.fosscut"]);
+    assert_eq!(again["code"], json!("fosscut.request.invalid"));
+    assert!(
+        again["message"]
+            .as_str()
+            .unwrap()
+            .contains("already exists")
+    );
+    let bad_rate = fails(&dir, &["project", "new", "C.fosscut", "--rate", "29.97"]);
+    assert!(
+        bad_rate["code"]
+            .as_str()
+            .unwrap()
+            .starts_with("fosscut.time.")
+    );
+
+    ok(&dir, &["project", "new", "B.fosscut"]);
+    let several = fails(&dir, &["project", "info"]);
+    assert_eq!(several["code"], json!("fosscut.request.invalid"));
+    assert!(several["hint"].as_str().unwrap().contains("--project"));
+
+    let a = ["-p", "A.fosscut"];
+    let with =
+        |rest: &[&str]| -> Vec<String> { a.iter().chain(rest).map(|s| s.to_string()).collect() };
+    let run_json = |rest: &[&str]| {
+        let args = with(rest);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        fails(&dir, &args)
+    };
+    assert_eq!(
+        run_json(&["exec", "not json"])["code"],
+        json!("fosscut.request.invalid")
+    );
+    let unreadable = run_json(&["exec", "@missing-request.json"]);
+    assert!(
+        unreadable["message"]
+            .as_str()
+            .unwrap()
+            .contains("cannot read")
+    );
+    assert_eq!(
+        run_json(&["query", "timeline.read", "{bad"])["code"],
+        json!("fosscut.request.invalid_arguments")
+    );
+    assert_eq!(
+        run_json(&["query", "timeline.reed"])["code"],
+        json!("fosscut.query.unknown")
+    );
+
+    std::fs::write(
+        dir.join("request.json"),
+        r#"{"command": "text.add", "args": {"text": "From a file", "duration": "1s"}}"#,
+    )
+    .unwrap();
+    let from_file = ok(&dir, &["-p", "A.fosscut", "exec", "@request.json"]);
+    assert_eq!(from_file["revision"], json!(1));
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fosscut"))
+        .current_dir(&dir)
+        .env_remove("FOSSCUT_PROJECT")
+        .args(["-p", "A.fosscut", "--json", "exec", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(
+        child.stdin.as_mut().unwrap(),
+        br#"{"command": "text.add", "args": {"text": "From stdin", "start": "2s", "duration": "1s"}}"#,
+    )
+    .unwrap();
+    let from_stdin = child.wait_with_output().unwrap();
+    assert!(from_stdin.status.success());
+    let from_stdin: Value = serde_json::from_slice(&from_stdin.stdout).unwrap();
+    assert_eq!(from_stdin["revision"], json!(2));
+    let query = ok(&dir, &["-p", "A.fosscut", "query", "project.info", "{}"]);
+    assert_eq!(query["revision"], json!(2));
+
+    std::fs::write(dir.join("clip.mp4"), b"not really a video").unwrap();
+    let no_probe = Command::new(env!("CARGO_BIN_EXE_fosscut"))
+        .current_dir(&dir)
+        .env("FOSSCUT_FFPROBE", dir.join("no-such-ffprobe"))
+        .args(["-p", "A.fosscut", "--json", "media", "import", "clip.mp4"])
+        .output()
+        .unwrap();
+    let error: Value = serde_json::from_slice(&no_probe.stdout).unwrap();
+    assert_eq!(
+        error["error"]["code"],
+        json!("fosscut.media.probe_unavailable")
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }

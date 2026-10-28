@@ -7,6 +7,7 @@
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
       "Bash(cargo nextest:*)",
+      "Bash(cargo llvm-cov:*)",
       "Bash(cargo doc:*)",
       "Bash(cargo deny:*)",
       "Bash(cargo metadata:*)",
