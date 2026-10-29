@@ -101,6 +101,22 @@ pub enum Command {
         /// Arguments as JSON text, @file, or - for stdin.
         args: Option<String>,
     },
+    /// Render a timeline to a video file and verify the file against the request.
+    Export {
+        /// Output file, for example `Promo.mp4`. Without --preset, the extension decides:
+        /// .mov is ProRes, .webm is VP9, .m4a is audio only, anything else is the most
+        /// compatible video preset this machine can encode.
+        output: Option<PathBuf>,
+        /// Preset: mp4-h264, mp4-hevc, mp4-av1, mov-prores, webm-vp9 or m4a-aac.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+        /// List the presets and whether this machine can encode them, instead of exporting.
+        #[arg(long)]
+        presets: bool,
+    },
 }
 
 /// `fosscut project ...`

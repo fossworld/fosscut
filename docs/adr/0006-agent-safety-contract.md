@@ -21,6 +21,13 @@ Autonomous agents make mistakes, retry after timeouts, work from stale reads, an
 9. **Operation log.** Every committed transaction appends a record to `history/ops.jsonl`: revision before and after, commands and arguments, actor (`human`, or `agent:<client name>`), optional reason text supplied by the agent, timestamp. Undo and redo operate on these transactions. The GUI can show and revert agent changes as a group.
 10. **No ambient authority.** Commands only touch files the project references or paths the user granted (import sources, export destinations). The MCP server never exposes arbitrary file reads or shell execution.
 
+## Implementation notes
+
+- **Export jobs** (milestone 3): `fosscut_engine::export` runs an export in the caller with a progress callback that can cancel it. The file is written under a hidden temporary name next to the destination and moved into place only when complete, so a cancelled or failed export leaves nothing behind. An existing destination fails with `fosscut.guard.destructive` unless `allow_destructive` is set.
+- **Export dry run and revisions:** `fosscut_engine::plan` checks an export exactly as the export would (expected revision, timeline, settings and encoders, overwrite guard, output folder, every clip's media) and returns the frames, duration and encoders it would produce, writing nothing; `fosscut export --dry-run` uses it. With `expected_revision`, an export of a project that changed since the agent read it fails with `fosscut.revision.conflict` and names the current revision.
+- **Export idempotency:** with a `request_id`, the verified report is recorded in the user's cache directory (`FOSSCUT_CACHE_DIR`, or the platform cache directory), keyed by project id and a hash of the request id. Records hold absolute paths, so they stay out of the bundle (ADR-0004, item 9). Repeating the request returns the recorded report with `replayed: true` while the output still exists; the same id with another destination or other settings fails with `fosscut.request.reused`.
+- **Not yet:** returning a job id at once and polling it arrive with the MCP server (milestone 4); the CLI waits for the result and prints progress to stderr.
+
 ## Consequences
 
 - Agents can retry safely and recover from conflicts by re-reading and re-planning.

@@ -191,57 +191,65 @@ fn open_audio_encoder(
     Ok(context)
 }
 
-/// Which codecs this machine can encode. Each candidate encoder is opened at a small size,
-/// because an encoder can be compiled in and still be unusable (for example a hardware
-/// encoder in a virtual machine). Probed once per process.
+/// The encoder this machine uses for a video codec, if any. Candidates are opened at a
+/// small size, because an encoder can be compiled in and still be unusable (for example a
+/// hardware encoder in a virtual machine). Probed once per codec and process, only when
+/// asked, so an H.264 export never loads the AV1 encoders (whose libraries print banners).
+pub fn video_encoder(codec: VideoCodec) -> Option<&'static EncoderInfo> {
+    static PROBED: [OnceLock<Option<EncoderInfo>>; 5] = [const { OnceLock::new() }; 5];
+    let index = VideoCodec::ALL.iter().position(|c| *c == codec)?;
+    super::quiet();
+    PROBED[index]
+        .get_or_init(|| {
+            let probe = VideoSettings {
+                codec,
+                width: 256,
+                height: 144,
+                rate: fosscut_time::Rate::FPS_30,
+                bit_rate: None,
+            };
+            video_candidates(codec)
+                .iter()
+                .find(|(name, _)| open_video_encoder(name, codec, &probe, false).is_ok())
+                .map(|(name, hardware)| EncoderInfo {
+                    encoder: (*name).to_string(),
+                    hardware: *hardware,
+                })
+        })
+        .as_ref()
+}
+
+/// The encoder this machine uses for an audio codec, if any; probed like
+/// [`video_encoder`].
+pub fn audio_encoder(codec: AudioCodec) -> Option<&'static EncoderInfo> {
+    static PROBED: [OnceLock<Option<EncoderInfo>>; 2] = [const { OnceLock::new() }; 2];
+    let index = AudioCodec::ALL.iter().position(|c| *c == codec)?;
+    super::quiet();
+    PROBED[index]
+        .get_or_init(|| {
+            audio_candidates(codec)
+                .iter()
+                .find(|name| open_audio_encoder(name, &AudioSettings::stereo(codec), false).is_ok())
+                .map(|name| EncoderInfo {
+                    encoder: (*name).to_string(),
+                    hardware: false,
+                })
+        })
+        .as_ref()
+}
+
+/// Every codec this machine can encode (probes all of them).
 pub fn encoder_capabilities() -> &'static EncoderCapabilities {
     static CAPABILITIES: OnceLock<EncoderCapabilities> = OnceLock::new();
-    super::quiet();
-    CAPABILITIES.get_or_init(|| {
-        let probe = VideoSettings {
-            codec: VideoCodec::H264,
-            width: 256,
-            height: 144,
-            rate: fosscut_time::Rate::FPS_30,
-            bit_rate: None,
-        };
-        let video = VideoCodec::ALL
+    CAPABILITIES.get_or_init(|| EncoderCapabilities {
+        video: VideoCodec::ALL
             .iter()
-            .filter_map(|&codec| {
-                video_candidates(codec)
-                    .iter()
-                    .find(|(name, _)| open_video_encoder(name, codec, &probe, false).is_ok())
-                    .map(|(name, hardware)| {
-                        (
-                            codec,
-                            EncoderInfo {
-                                encoder: (*name).to_string(),
-                                hardware: *hardware,
-                            },
-                        )
-                    })
-            })
-            .collect();
-        let audio = AudioCodec::ALL
+            .filter_map(|&c| video_encoder(c).map(|e| (c, e.clone())))
+            .collect(),
+        audio: AudioCodec::ALL
             .iter()
-            .filter_map(|&codec| {
-                audio_candidates(codec)
-                    .iter()
-                    .find(|name| {
-                        open_audio_encoder(name, &AudioSettings::stereo(codec), false).is_ok()
-                    })
-                    .map(|name| {
-                        (
-                            codec,
-                            EncoderInfo {
-                                encoder: (*name).to_string(),
-                                hardware: false,
-                            },
-                        )
-                    })
-            })
-            .collect();
-        EncoderCapabilities { video, audio }
+            .filter_map(|&c| audio_encoder(c).map(|e| (c, e.clone())))
+            .collect(),
     })
 }
 
@@ -319,27 +327,28 @@ impl FfmpegWriter {
                 message: format!("{}x{} is not an even size", video.width, video.height),
             });
         }
-        let capabilities = encoder_capabilities();
-        let video_encoder =
-            match video_codec {
-                Some(codec) => Some(capabilities.video(codec).ok_or_else(|| {
-                    MediaError::EncoderUnavailable {
+        let video_encoder = match video_codec {
+            Some(codec) => {
+                Some(
+                    video_encoder(codec).ok_or_else(|| MediaError::EncoderUnavailable {
                         codec: codec.probe_name().to_string(),
-                        available: available_names(capabilities, false),
-                    }
-                })?),
-                None => None,
-            };
-        let audio_encoder =
-            match audio_codec {
-                Some(codec) => Some(capabilities.audio(codec).ok_or_else(|| {
-                    MediaError::EncoderUnavailable {
+                        available: available_names(encoder_capabilities(), false),
+                    })?,
+                )
+            }
+            None => None,
+        };
+        let audio_encoder = match audio_codec {
+            Some(codec) => {
+                Some(
+                    audio_encoder(codec).ok_or_else(|| MediaError::EncoderUnavailable {
                         codec: codec.probe_name().to_string(),
-                        available: available_names(capabilities, true),
-                    }
-                })?),
-                None => None,
-            };
+                        available: available_names(encoder_capabilities(), true),
+                    })?,
+                )
+            }
+            None => None,
+        };
 
         let write_failed = |message: String| MediaError::WriteFailed {
             path: shown.clone(),

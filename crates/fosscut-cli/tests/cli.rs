@@ -20,6 +20,7 @@ fn fosscut(dir: &Path, args: &[&str]) -> Output {
         .current_dir(dir)
         .env_remove("FOSSCUT_PROJECT")
         .env("FOSSCUT_ACTOR", "agent:test")
+        .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
         .args(args)
         .output()
         .unwrap()
@@ -459,5 +460,313 @@ fn errors_explain_what_to_do() {
         error["error"]["code"],
         json!("fosscut.media.probe_unavailable")
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Mean luma of a 16x9 grid of blocks over a frame, so frames of different sizes compare.
+fn blocks(frame: &fosscut_media::VideoFrame) -> Vec<f64> {
+    let plane = &frame.planes[0];
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    let mut means = Vec::with_capacity(144);
+    for by in 0..9 {
+        for bx in 0..16 {
+            let (x0, x1) = (bx * w / 16, (bx + 1) * w / 16);
+            let (y0, y1) = (by * h / 9, (by + 1) * h / 9);
+            let mut sum = 0u64;
+            for y in y0..y1 {
+                sum += plane.row(y)[x0..x1]
+                    .iter()
+                    .map(|&v| u64::from(v))
+                    .sum::<u64>();
+            }
+            means.push(sum as f64 / ((x1 - x0) * (y1 - y0)) as f64);
+        }
+    }
+    means
+}
+
+/// The milestone 3 exit check: the round 1 baseline (import an 8 s clip, add a 3 s title,
+/// split at 00:00:03:28) exported from the command line and verified by probing, with the
+/// title in the picture for its 3 seconds and the clip's audio in the file.
+#[test]
+fn round_one_baseline_exports_and_verifies() {
+    use fosscut_media::VideoDecoder;
+    if !has_ffmpeg() {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+        );
+        return;
+    }
+    if fosscut_render::Renderer::headless().is_err() {
+        let required =
+            std::env::var_os("FOSSCUT_REQUIRE_GPU").is_some_and(|v| !v.is_empty() && v != "0");
+        assert!(
+            !required,
+            "FOSSCUT_REQUIRE_GPU is set but there is no adapter"
+        );
+        return;
+    }
+    let dir = workspace("baseline");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=1280x720:rate=30:duration=8",
+        ])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=8",
+        ])
+        .args([
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "5",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "test-pattern.mp4",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(
+        &dir,
+        &["project", "new", "Audit.fosscut", "--name", "FossCut audit"],
+    );
+    let asset = ok(&dir, &["media", "import", "test-pattern.mp4"])["results"][0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let clip = ok(&dir, &["clip", "add", "--asset", &asset])["results"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(
+        &dir,
+        &[
+            "text",
+            "add",
+            "FossCut audit",
+            "--duration",
+            "3s",
+            "--size",
+            "0.1",
+        ],
+    );
+    ok(
+        &dir,
+        &["clip", "split", "--clip", &clip, "--at", "00:00:03:28"],
+    );
+
+    let presets = ok(&dir, &["export", "--presets"]);
+    let available = |name: &str| {
+        presets["presets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["name"] == name && p["available"] == json!(true))
+    };
+    // The round 1 regression: H.264 requested must be H.264 or a typed refusal, never HEVC.
+    if !available("mp4-h264") {
+        let refused = fails(&dir, &["export", "H264.mp4", "--preset", "mp4-h264"]);
+        assert_eq!(refused["code"], json!("fosscut.export.codec_unavailable"));
+        assert!(
+            !refused["details"]["available"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!dir.join("H264.mp4").exists());
+    }
+    let preset = if available("mp4-h264") {
+        "mp4-h264"
+    } else {
+        "mp4-av1"
+    };
+    // A dry run checks everything and writes nothing; a stale revision is refused.
+    let planned = ok(
+        &dir,
+        &["export", "Baseline.mp4", "--preset", preset, "--dry-run"],
+    );
+    assert_eq!(planned["dry_run"], json!(true));
+    assert_eq!(planned["frames"], json!(240));
+    assert_eq!(planned["duration"], json!(8 * 705_600_000_i64));
+    assert!(!dir.join("Baseline.mp4").exists());
+    let stale = fails(
+        &dir,
+        &["export", "Baseline.mp4", "--expected-revision", "1"],
+    );
+    assert_eq!(stale["code"], json!("fosscut.revision.conflict"));
+    assert!(!dir.join("Baseline.mp4").exists());
+    let revision = ok(&dir, &["project", "info"])["revision"].to_string();
+    assert_eq!(stale["details"]["current_revision"].to_string(), revision);
+
+    let report = ok(
+        &dir,
+        &[
+            "export",
+            "Baseline.mp4",
+            "--preset",
+            preset,
+            "--expected-revision",
+            &revision,
+            "--request-id",
+            "baseline",
+        ],
+    );
+    let video = &report["verified"]["video"];
+    assert_eq!(video["codec"], json!(preset.trim_start_matches("mp4-")));
+    assert_eq!(
+        (video["width"].clone(), video["height"].clone()),
+        (json!(1920), json!(1080))
+    );
+    assert_eq!(video["rate"], json!("30"));
+    assert_eq!(video["frame_count"], json!(240));
+    assert_eq!(video["color"]["matrix"], json!("bt709"));
+    assert_eq!(report["frames"], json!(240));
+    assert_eq!(report["duration"], json!(8 * 705_600_000i64));
+    let audio = &report["verified"]["audio"];
+    assert_eq!(
+        (
+            audio["codec"].clone(),
+            audio["sample_rate"].clone(),
+            audio["channels"].clone()
+        ),
+        (json!("aac"), json!(48000), json!(2))
+    );
+    assert!(
+        !report["encoders"]["video"]
+            .as_str()
+            .unwrap()
+            .contains("x264")
+    );
+
+    // The title is in the picture for its 3 seconds: compare blocks of the export with the
+    // source at the same moments.
+    let software = fosscut_media::DecoderOptions {
+        hardware: fosscut_media::HardwareDecoding::Off,
+    };
+    let mut output =
+        fosscut_media::ffmpeg::FfmpegVideoDecoder::open(&dir.join("Baseline.mp4"), software)
+            .unwrap();
+    let mut source =
+        fosscut_media::ffmpeg::FfmpegVideoDecoder::open(&dir.join("test-pattern.mp4"), software)
+            .unwrap();
+    let difference = |output: &mut fosscut_media::ffmpeg::FfmpegVideoDecoder,
+                      source: &mut fosscut_media::ffmpeg::FfmpegVideoDecoder,
+                      seconds: i64| {
+        let time = fosscut_time::Flicks::from_seconds(seconds).unwrap();
+        let a = blocks(&output.frame_at(time).unwrap());
+        let b = blocks(&source.frame_at(time).unwrap());
+        a.iter()
+            .zip(&b)
+            .map(|(x, y)| (x - y).abs())
+            .fold(0.0, f64::max)
+    };
+    let with_title = difference(&mut output, &mut source, 1);
+    let without_title = difference(&mut output, &mut source, 4);
+    assert!(
+        with_title > 30.0,
+        "title visible at 1 s: largest block difference {with_title}"
+    );
+    assert!(
+        without_title < 12.0,
+        "no title at 4 s: largest block difference {without_title}"
+    );
+
+    // The clip's 440 Hz tone (amplitude 1/8) is in the export.
+    let mut sound =
+        fosscut_media::ffmpeg::FfmpegAudioDecoder::open(&dir.join("Baseline.mp4"), 48_000, 2)
+            .unwrap();
+    let samples = sound
+        .read(
+            fosscut_time::Flicks::from_seconds(2).unwrap(),
+            fosscut_time::Flicks::from_seconds(1).unwrap(),
+        )
+        .unwrap()
+        .samples;
+    let rms =
+        (samples.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / samples.len() as f64).sqrt();
+    assert!(
+        (rms - 0.125 / 2f64.sqrt()).abs() < 0.02,
+        "audio level {rms}"
+    );
+
+    // Repeating the request replays it; a new export over the file needs permission.
+    let replay = ok(
+        &dir,
+        &[
+            "export",
+            "Baseline.mp4",
+            "--preset",
+            preset,
+            "--request-id",
+            "baseline",
+        ],
+    );
+    assert_eq!(replay["replayed"], json!(true));
+    let records = std::fs::read_dir(dir.join("cache").join("jobs")).unwrap();
+    assert_eq!(records.count(), 1, "one project's records");
+    assert!(!dir.join("Audit.fosscut").join("cache").exists());
+    let guarded = fails(&dir, &["export", "Baseline.mp4", "--preset", preset]);
+    assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    let human = fosscut(
+        &dir,
+        &[
+            "export",
+            "Baseline.mp4",
+            "--preset",
+            preset,
+            "--allow-destructive",
+        ],
+    );
+    assert!(human.status.success());
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.contains("240 frames") && text.contains("verified against the request"),
+        "{text}"
+    );
+    let dry = fosscut(
+        &dir,
+        &["export", "Copy.mp4", "--preset", preset, "--dry-run"],
+    );
+    let text = String::from_utf8_lossy(&dry.stdout);
+    assert!(
+        text.contains("would export Copy.mp4") && text.contains("240 frames"),
+        "{text}"
+    );
+    assert!(text.contains("nothing was written"), "{text}");
+    assert!(!dir.join("Copy.mp4").exists());
+    let listing =
+        String::from_utf8_lossy(&fosscut(&dir, &["export", "--presets"]).stdout).into_owned();
+    assert!(listing.contains("mov-prores"), "{listing}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn export_needs_an_output_and_a_known_preset() {
+    let dir = workspace("export-errors");
+    ok(&dir, &["project", "new", "Empty.fosscut"]);
+    let missing = fails(&dir, &["export"]);
+    assert_eq!(missing["code"], json!("fosscut.request.invalid_arguments"));
+    assert!(missing["hint"].as_str().unwrap().contains("--presets"));
+    let unknown = fails(&dir, &["export", "x.mp4", "--preset", "gif"]);
+    assert!(unknown["hint"].as_str().unwrap().contains("mp4-h264"));
+    let timeline = fails(&dir, &["export", "x.mp4", "--timeline", "timeline_0099"]);
+    assert_eq!(timeline["code"], json!("fosscut.timeline.not_found"));
+    let bad_id = fails(&dir, &["export", "x.mp4", "--timeline", "nonsense"]);
+    assert_eq!(bad_id["code"], json!("fosscut.request.invalid_arguments"));
+    if fosscut_render::Renderer::headless().is_ok() {
+        let empty = fails(&dir, &["export", "x.m4a"]);
+        assert_eq!(empty["code"], json!("fosscut.export.empty_timeline"));
+    }
     std::fs::remove_dir_all(&dir).unwrap();
 }

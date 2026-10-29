@@ -1,0 +1,18 @@
+[package]
+name = "fosscut-audio"
+description = "Timeline audio mixing for FossCut: places clip audio sample-exactly and applies gain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+fosscut-media.workspace = true
+fosscut-model.workspace = true
+fosscut-time.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

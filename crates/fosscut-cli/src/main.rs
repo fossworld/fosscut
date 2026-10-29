@@ -15,8 +15,12 @@ use args::{
     Cli, ClipCommand, Command, MediaCommand, ProjectCommand, TextCommand, TimelineCommand,
     TrackCommand,
 };
+use std::io::IsTerminal;
+use std::path::Path;
+
 use clap::Parser;
 use fosscut_core::{ApiError, REDO, Request, Response, Session, UNDO, codes};
+use fosscut_engine::{ExportError, ExportPlan, ExportReport, ExportRequest, Preset, Progress};
 use fosscut_model::{DirStore, MemoryStore, Project, TimelineFormat};
 use fosscut_time::Rate;
 use serde_json::{Map, Value, json};
@@ -24,6 +28,8 @@ use serde_json::{Map, Value, json};
 enum Outcome {
     Write(Response),
     Query(String, Value),
+    Export(Box<ExportReport>),
+    ExportPlan(Box<ExportPlan>),
 }
 
 fn main() -> ExitCode {
@@ -46,6 +52,14 @@ fn print(cli: &Cli, outcome: &Outcome) {
         Outcome::Write(response) => output::print_response(response),
         Outcome::Query(_, value) if cli.json => println!("{}", pretty(value)),
         Outcome::Query(name, value) => output::print_query(name, value),
+        Outcome::Export(report) if cli.json => println!("{}", pretty(&json!(report))),
+        Outcome::Export(report) => output::print_export(report),
+        Outcome::ExportPlan(plan) if cli.json => {
+            let mut value = json!(plan);
+            value["dry_run"] = json!(true);
+            println!("{}", pretty(&value));
+        }
+        Outcome::ExportPlan(plan) => output::print_export_plan(plan),
     }
 }
 
@@ -103,6 +117,8 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                     Err(_) => scratch_session()?
                         .query("capabilities", json!({ "detail": detail.as_str() }))?,
                 };
+            let mut value = value;
+            value["export_presets"] = json!(fosscut_engine::presets());
             Ok(Outcome::Query("capabilities".into(), value))
         }
         Command::Media(MediaCommand::Import { file, name }) => {
@@ -218,6 +234,18 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             apply_options(cli, &mut request, false);
             execute(cli, request)
         }
+        Command::Export {
+            output,
+            preset,
+            timeline,
+            presets,
+        } => export(
+            cli,
+            output.as_deref(),
+            preset.as_deref(),
+            timeline.as_deref(),
+            *presets,
+        ),
         Command::Query { name, args } => {
             let args = match args {
                 Some(text) => serde_json::from_str(&read_input(text)?).map_err(|e| {
@@ -267,6 +295,120 @@ fn query(cli: &Cli, name: &str, args: Value) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
     let session: Session<DirStore> = bundle::open(&path)?;
     Ok(Outcome::Query(name.to_string(), session.query(name, args)?))
+}
+
+/// Renders and verifies an export (milestone 3), or lists the presets.
+fn export(
+    cli: &Cli,
+    output: Option<&Path>,
+    preset: Option<&str>,
+    timeline: Option<&str>,
+    list: bool,
+) -> Result<Outcome, ApiError> {
+    if list {
+        return Ok(Outcome::Query(
+            "export.presets".into(),
+            json!({ "presets": fosscut_engine::presets() }),
+        ));
+    }
+    let output = output.ok_or_else(|| {
+        ApiError::new(codes::INVALID_ARGUMENTS, "an output file is required")
+            .with_hint("For example: fosscut export Promo.mp4. List presets with --presets.")
+    })?;
+    let bundle = bundle::bundle_path(cli.project.as_deref())?;
+    let session = bundle::open(&bundle)?;
+    let project = session.project();
+    let timeline = match timeline {
+        Some(text) => fosscut_model::Id::parse(text)
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}")))?,
+        None => project.manifest.primary_timeline.clone(),
+    };
+    let format = &project
+        .timelines
+        .get(&timeline)
+        .ok_or_else(|| {
+            ApiError::new(
+                codes::TIMELINE_NOT_FOUND,
+                format!("timeline {timeline} does not exist"),
+            )
+        })?
+        .format;
+    let preset = match preset {
+        Some(name) => Preset::parse(name).ok_or_else(|| {
+            let names: Vec<&str> = Preset::ALL.iter().map(|p| p.name()).collect();
+            ApiError::new(codes::INVALID_ARGUMENTS, format!("unknown preset {name}"))
+                .with_hint(format!("Presets: {}.", names.join(", ")))
+        })?,
+        None => preset_for(output)?,
+    };
+    let request = ExportRequest {
+        bundle: bundle.clone(),
+        timeline,
+        settings: preset.settings(format),
+        output: output.to_path_buf(),
+        allow_overwrite: cli.write.allow_destructive,
+        expected_revision: cli.write.expected_revision,
+        request_id: cli.write.request_id.clone(),
+        cache: fosscut_engine::cache_dir(),
+    };
+    if cli.write.dry_run {
+        let plan = fosscut_engine::plan(project, &request).map_err(|e| export_error(&e))?;
+        return Ok(Outcome::ExportPlan(Box::new(plan)));
+    }
+    let mut renderer =
+        fosscut_render::Renderer::headless().map_err(|e| ApiError::new(e.code(), e.to_string()))?;
+    let report = fosscut_engine::export(project, &request, &mut renderer, &mut progress_printer())
+        .map_err(|e| export_error(&e))?;
+    Ok(Outcome::Export(Box::new(report)))
+}
+
+/// The preset an output path implies when none is given.
+fn preset_for(output: &Path) -> Result<Preset, ApiError> {
+    let extension = output
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let by_extension = match extension.as_str() {
+        "mov" => Some(Preset::MovProRes),
+        "webm" => Some(Preset::WebmVp9),
+        "m4a" => Some(Preset::M4aAac),
+        _ => None,
+    };
+    by_extension.or_else(Preset::default_video).ok_or_else(|| {
+        ApiError::new(
+            "fosscut.export.codec_unavailable",
+            "this machine cannot encode video",
+        )
+    })
+}
+
+/// Progress on stderr: a live counter in a terminal, every tenth otherwise (for agents).
+fn progress_printer() -> impl FnMut(Progress) -> bool {
+    let terminal = std::io::stderr().is_terminal();
+    let mut reported = 0;
+    move |progress: Progress| {
+        if terminal {
+            eprint!("\rexporting {}/{}", progress.done, progress.total);
+            if progress.done == progress.total {
+                eprintln!();
+            }
+        } else {
+            let tenth = progress.done * 10 / progress.total.max(1);
+            if tenth > reported {
+                reported = tenth;
+                eprintln!("exporting {}%", tenth * 10);
+            }
+        }
+        true
+    }
+}
+
+fn export_error(error: &ExportError) -> ApiError {
+    let mut api = ApiError::new(error.code(), error.to_string()).with_details(error.details());
+    if let Some(hint) = error.hint() {
+        api = api.with_hint(hint);
+    }
+    api
 }
 
 /// A throwaway in-memory session so that `capabilities` works without a project.

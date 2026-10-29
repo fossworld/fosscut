@@ -26,7 +26,7 @@ Thank you for helping build an open source video editor that people and AI agent
 | `rustup component add llvm-tools` | Needed by `cargo-llvm-cov` |
 | Node.js and pnpm | The shared UI in `ui/` (once it exists) |
 | Python 3 | Repository check scripts |
-| FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
+| FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` and the crates above it, including the CLI ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
 | `ffmpeg` and `ffprobe` command-line tools with libx264 | Generating test fixtures and the end-to-end CLI tests |
 
 ### FFmpeg for development

@@ -6,7 +6,7 @@ Instructions for AI coding agents (Claude Code, Codex, Cursor and others) workin
 
 An open source video editor written in Rust, built so that people create high-quality short-form and long-form videos by talking to an AI agent, and can keep editing the same project in a desktop app (a web version may follow). The editor exposes one typed command API through three front ends: a GUI, a CLI with `--json` output, and an MCP server ([ADR-0002](docs/adr/0002-agent-first-command-api.md)).
 
-**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is done on macOS: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox, `fosscut-render` composites frames on wgpu with a linear-light color pipeline, and the preview spike in `spikes/preview` chose rendering into the window behind the webview ([results](docs/development/milestone-2-spike-results.md)). Milestone 3 (first render loop) is in progress: `fosscut-media` encodes, muxes and probes outputs, and `fosscut-render` draws text layers with the bundled Inter font; the export job comes next. There is no MCP server or GUI yet. `spikes/` holds throwaway prototypes outside the workspace and its gates. All ADRs are *Proposed* until accepted by a maintainer.
+**Status:** milestone 1 (foundations) exists: `fosscut-time`, `fosscut-model`, `fosscut-core` and the `fosscut` CLI. Milestone 2 (render and preview spikes) is done on macOS: `fosscut-media` decodes video through FFmpeg 8 with VideoToolbox, `fosscut-render` composites frames on wgpu with a linear-light color pipeline, and the preview spike in `spikes/preview` chose rendering into the window behind the webview ([results](docs/development/milestone-2-spike-results.md)). Milestone 3 (first render loop) is done: `fosscut-media` encodes, muxes and probes outputs, `fosscut-render` draws text layers with the bundled Inter font, `fosscut-audio` mixes timeline audio, and `fosscut-engine` exports with verification through `fosscut export`. There is no MCP server or GUI yet. `spikes/` holds throwaway prototypes outside the workspace and its gates. All ADRs are *Proposed* until accepted by a maintainer.
 
 ## Read before you work
 
@@ -64,13 +64,14 @@ npx markdownlint-cli2
 
 After changing public model or command types, regenerate the JSON Schemas with `cargo xtask schemas` and commit `schemas/`. `cargo xtask fixtures` writes test media to `fixtures/generated/` (needs FFmpeg). Snapshot tests use `insta`; record new snapshots with `INSTA_UPDATE=always cargo test -p <crate>` and review the `.snap` diff.
 
-To try the editor from the command line (ffprobe is needed for `media import`):
+To try the editor from the command line (ffprobe is needed for `media import`, a wgpu adapter for `export`):
 
 ```bash
 cargo run -q -p fosscut-cli -- project new Demo.fosscut
 cargo run -q -p fosscut-cli -- -p Demo.fosscut media import fixtures/generated/test-pattern.mp4
 cargo run -q -p fosscut-cli -- -p Demo.fosscut clip add --asset asset_0001
 cargo run -q -p fosscut-cli -- -p Demo.fosscut timeline read --json
+cargo run -q -p fosscut-cli -- -p Demo.fosscut export Demo.mp4
 ```
 
 For the UI, from `ui/`: `pnpm install`, then `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`. `ui/package.json` declares `packageManager` and `engines.node`, which CI reads.

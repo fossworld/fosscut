@@ -115,3 +115,10 @@ queries:
   media.list     Assets in the media table with durations and stream details.
   project.info   Project name, revision, timelines and undo state.
   timeline.read  Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.
+export presets:
+  mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
+  mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)
+  mp4-av1        AV1 and AAC in MP4: small files, modern players
+  mov-prores     ProRes 422 and AAC in QuickTime: for other editors
+  webm-vp9       VP9 and Opus in WebM: for the web
+  m4a-aac        AAC audio only

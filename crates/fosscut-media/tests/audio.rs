@@ -187,3 +187,38 @@ fn files_without_audio_and_bad_settings_are_typed_errors() {
     let error = FfmpegAudioDecoder::open(&wav, 48_000, 6).err().unwrap();
     assert_eq!(error.code(), "fosscut.media.unsupported");
 }
+
+#[test]
+fn mono_sources_play_at_full_level_on_both_channels() {
+    if !have_ffmpeg() {
+        return;
+    }
+    let path = dir().join("mono.wav");
+    if !path.exists() {
+        let status = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "aevalsrc=0.5*sin(2*PI*440*t):s=48000:d=1",
+            ])
+            .args(["-c:a", "pcm_s16le"])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let mut decoder = FfmpegAudioDecoder::open(&path, 48_000, 2).unwrap();
+    let buffer = decoder.read(seconds(0.25), seconds(0.25)).unwrap();
+    for i in (0..buffer.frames()).step_by(97) {
+        let want = expected(0, 0.25 + i as f64 / 48_000.0);
+        assert!((buffer.samples[i * 2] - want).abs() < 0.01, "left at {i}");
+        assert!(
+            (buffer.samples[i * 2 + 1] - want).abs() < 0.01,
+            "right at {i}"
+        );
+    }
+}

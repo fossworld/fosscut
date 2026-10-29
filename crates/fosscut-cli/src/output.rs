@@ -99,6 +99,7 @@ pub fn print_query(name: &str, value: &Value) {
         "media.list" => print_media(value),
         "history.list" => print_history(value),
         "capabilities" => print_capabilities(value),
+        "export.presets" => print_presets(value),
         _ => println!(
             "{}",
             serde_json::to_string_pretty(value).unwrap_or_default()
@@ -234,6 +235,106 @@ fn print_capabilities(v: &Value) {
     for q in v["queries"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&q["name"]), s(&q["summary"]));
     }
+    println!("export presets:");
+    for p in v["export_presets"].as_array().into_iter().flatten() {
+        println!("  {:<14} {}", s(&p["name"]), s(&p["description"]));
+    }
+}
+
+fn print_presets(v: &Value) {
+    for p in v["presets"].as_array().into_iter().flatten() {
+        let mark = if p["available"] == Value::Bool(true) {
+            "yes"
+        } else {
+            "no "
+        };
+        println!(
+            "{:<11} {} .{:<5} {}",
+            s(&p["name"]),
+            mark,
+            s(&p["extension"]),
+            s(&p["description"])
+        );
+    }
+}
+
+/// Prints a verified export.
+pub fn print_export(report: &fosscut_engine::ExportReport) {
+    let file = &report.verified;
+    let seconds = report.duration.get() as f64 / 705_600_000.0;
+    let mut line = format!(
+        "exported {} ({:.1} MB, {:.3} s",
+        report.output,
+        file.size_bytes as f64 / 1e6,
+        seconds
+    );
+    if let Some(video) = &file.video {
+        line.push_str(&format!(
+            ", {} {}x{} @ {} fps, {} frames",
+            video.codec,
+            video.width,
+            video.height,
+            video.rate.map(|r| r.to_string()).unwrap_or_default(),
+            video.frame_count
+        ));
+    }
+    if let Some(audio) = &file.audio {
+        line.push_str(&format!(
+            ", {} {} Hz x {}",
+            audio.codec, audio.sample_rate, audio.channels
+        ));
+    }
+    line.push(')');
+    println!("{line}");
+    let how = if report.replayed {
+        "replayed earlier request".to_string()
+    } else {
+        format!("rendered in {:.1} s", report.elapsed_ms as f64 / 1000.0)
+    };
+    let encoders: Vec<&str> = [&report.encoders.video, &report.encoders.audio]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    println!(
+        "verified against the request; {how} with {}",
+        encoders.join(" and ")
+    );
+}
+
+/// A dry run of `fosscut export`: what would be written.
+pub fn print_export_plan(plan: &fosscut_engine::ExportPlan) {
+    let seconds = plan.duration.get() as f64 / 705_600_000.0;
+    let mut line = format!("would export {} ({seconds:.3} s", plan.output);
+    if let Some(video) = &plan.settings.video {
+        line.push_str(&format!(
+            ", {} {}x{} @ {} fps, {} frames",
+            video.codec.probe_name(),
+            video.width,
+            video.height,
+            video.rate,
+            plan.frames
+        ));
+    }
+    if let Some(audio) = &plan.settings.audio {
+        line.push_str(&format!(
+            ", {} {} Hz x {}",
+            audio.codec.probe_name(),
+            audio.sample_rate,
+            audio.channels
+        ));
+    }
+    line.push(')');
+    println!("{line}");
+    let encoders: Vec<&str> = [&plan.encoders.video, &plan.encoders.audio]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    println!(
+        "dry run: nothing was written; it would use {}",
+        encoders.join(" and ")
+    );
 }
 
 /// Prints an error to stderr, or as `{"error": ...}` JSON on stdout.
