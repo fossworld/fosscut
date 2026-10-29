@@ -24,6 +24,9 @@ anyhow = "1.0.104"
 blake3 = "1.8.7"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+# Text shaping, layout and rasterization; system font discovery (fontconfig) is off so only
+# bundled fonts are used.
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 half = "2.7.1"
 insta = { version = "1.49.0", features = ["json"] }
 png = "0.18.1"

@@ -13,9 +13,10 @@ use fosscut_media::{PixelFormat, VideoFrame};
 use wgpu::util::DeviceExt;
 
 use crate::color::{TransferFunction, yuv_to_rgb};
-use crate::geometry::{Vertex, layer_quad};
+use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
-use crate::plan::{MaskShape, RenderPlan, SourceRef};
+use crate::plan::{LayerSource, MaskShape, RenderPlan, SourceRef};
+use crate::text::{TextEngine, TextRaster, linear_color};
 use crate::{FrameProvider, RenderError};
 
 const COMMON: &str = include_str!("shaders/common.wgsl");
@@ -82,6 +83,7 @@ impl Image {
 enum Slot {
     Plane { layer: usize, plane: usize },
     Layer(usize),
+    Text(usize),
     Canvas,
     CanvasSamples,
     Readback,
@@ -125,7 +127,12 @@ pub struct Renderer {
     no_lut: wgpu::Texture,
     luts: HashMap<usize, (Arc<Lut3d>, wgpu::Texture)>,
     textures: HashMap<TextureKey, wgpu::Texture>,
+    text: TextEngine,
+    text_cache: HashMap<String, Arc<TextRaster>>,
 }
+
+/// Rasterized text kept between frames; titles usually stay the same for many frames.
+const TEXT_CACHE_LIMIT: usize = 64;
 
 impl Renderer {
     /// A renderer on the default GPU adapter without a window, honouring wgpu's
@@ -257,6 +264,8 @@ impl Renderer {
             no_lut,
             luts: HashMap::new(),
             textures: HashMap::new(),
+            text: TextEngine::new(),
+            text_cache: HashMap::new(),
         }
     }
 
@@ -405,14 +414,44 @@ impl Renderer {
     ) -> Result<(), RenderError> {
         let mut draws = Vec::with_capacity(plan.layers.len());
         for (index, layer) in plan.layers.iter().enumerate() {
-            let frame = frames.frame(&layer.source)?;
-            let layer_view = self.convert_layer(encoder, index, &frame, &layer.source)?;
-            let vertices = layer_quad(
-                plan.canvas,
-                (frame.width, frame.height),
-                layer.rotation,
-                &layer.transform,
-            );
+            let (layer_view, vertices) = match &layer.source {
+                LayerSource::Frame(source) => {
+                    let frame = frames.frame(source)?;
+                    let view = self.convert_layer(encoder, index, &frame, source)?;
+                    let vertices = layer_quad(
+                        plan.canvas,
+                        (frame.width, frame.height),
+                        layer.rotation,
+                        &layer.transform,
+                    );
+                    (view, vertices)
+                }
+                LayerSource::Text(content) => {
+                    // Rasterize at the output resolution: output pixels per canvas pixel.
+                    let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
+                    let raster = self.rasterize(content, plan.canvas, scale);
+                    if raster.is_empty() {
+                        continue;
+                    }
+                    let color = linear_color(content.style.color.as_str());
+                    let view = self.upload_text(encoder, index, &raster, color);
+                    let scale = f64::from(scale);
+                    let natural = (
+                        f64::from(raster.width) / scale,
+                        f64::from(raster.height) / scale,
+                    );
+                    // Centre the exact layout box, not the pixel-cropped raster.
+                    let [x, y, w, h] = raster.layout_box.map(f64::from);
+                    let offset = (
+                        (x + w / 2.0 - f64::from(raster.width) / 2.0) / scale,
+                        (y + h / 2.0 - f64::from(raster.height) / 2.0) / scale,
+                    );
+                    (
+                        view,
+                        placed_quad(plan.canvas, natural, offset, &layer.transform),
+                    )
+                }
+            };
             let (mask_kind, mask) = match &layer.mask {
                 Some(mask) => (
                     match mask.shape {
@@ -614,6 +653,24 @@ impl Renderer {
             pass.set_bind_group(0, &bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
+        self.generate_mips(encoder, &layer, mips);
+        Ok(layer.create_view(&Default::default()))
+    }
+
+    /// Fills mip levels 1.. of `texture` from level 0 with the box-filter pass.
+    fn generate_mips(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        texture: &wgpu::Texture,
+        mips: u32,
+    ) {
+        let level = |mip: u32| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: mip,
+                mip_level_count: Some(1),
+                ..Default::default()
+            })
+        };
         for mip in 1..mips {
             let source = level(mip - 1);
             let target = level(mip);
@@ -634,7 +691,70 @@ impl Renderer {
             pass.set_bind_group(0, &bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-        Ok(layer.create_view(&Default::default()))
+    }
+
+    /// Rasterized text, cached by content, canvas and scale.
+    fn rasterize(
+        &mut self,
+        content: &fosscut_model::TextContent,
+        canvas: (u32, u32),
+        scale: f32,
+    ) -> Arc<TextRaster> {
+        let key = format!("{content:?}|{}x{}|{}", canvas.0, canvas.1, scale.to_bits());
+        if let Some(raster) = self.text_cache.get(&key) {
+            return raster.clone();
+        }
+        if self.text_cache.len() >= TEXT_CACHE_LIMIT {
+            self.text_cache.clear();
+        }
+        let raster = Arc::new(self.text.rasterize(content, canvas, scale));
+        self.text_cache.insert(key, raster.clone());
+        raster
+    }
+
+    /// Uploads glyph coverage as premultiplied linear color and mipmaps it.
+    fn upload_text(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        raster: &TextRaster,
+        color: [f32; 4],
+    ) -> wgpu::TextureView {
+        let mips = (raster.width.max(raster.height) as f32).log2().floor() as u32 + 1;
+        let texture = self.texture(
+            Slot::Text(index),
+            (raster.width, raster.height),
+            CANVAS_FORMAT,
+            mips,
+            wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_DST,
+        );
+        let texels: Vec<u16> = raster
+            .coverage
+            .iter()
+            .flat_map(|&c| {
+                let alpha = f32::from(c) / 255.0 * color[3];
+                [color[0] * alpha, color[1] * alpha, color[2] * alpha, alpha]
+            })
+            .map(|v| half::f16::from_f32(v).to_bits())
+            .collect();
+        self.queue.write_texture(
+            texture.as_image_copy(),
+            bytemuck::cast_slice(&texels),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(raster.width * 8),
+                rows_per_image: Some(raster.height),
+            },
+            wgpu::Extent3d {
+                width: raster.width,
+                height: raster.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.generate_mips(encoder, &texture, mips);
+        texture.create_view(&Default::default())
     }
 
     fn texture(

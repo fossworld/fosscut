@@ -12,7 +12,7 @@ mod support;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fosscut_model::Transform;
+use fosscut_model::{Align, Color, TextContent, TextStyle, Transform};
 use fosscut_render::color::TransferFunction;
 use fosscut_render::lut::Lut3d;
 use fosscut_render::plan::{Layer, Mask, MaskShape, RenderPlan};
@@ -59,8 +59,18 @@ fn read_png(path: &Path) -> Image {
 }
 
 fn check(name: &str, renderer: &mut Renderer, plan: &RenderPlan, frames: &mut Frames) {
+    check_at(name, renderer, plan, frames, SIZE);
+}
+
+fn check_at(
+    name: &str,
+    renderer: &mut Renderer,
+    plan: &RenderPlan,
+    frames: &mut Frames,
+    size: (u32, u32),
+) {
     let image = renderer
-        .render_image(plan, frames, SIZE, TransferFunction::Bt709)
+        .render_image(plan, frames, size, TransferFunction::Bt709)
         .unwrap();
     let golden = goldens_dir().join(format!("{name}.png"));
     if std::env::var_os("FOSSCUT_UPDATE_GOLDENS").is_some() {
@@ -150,4 +160,86 @@ fn portrait_source_on_a_vertical_canvas() {
     }
     let psnr = image.psnr(&read_png(&golden)).unwrap();
     assert!(psnr >= MIN_PSNR_DB, "portrait-rotated: PSNR {psnr:.1} dB");
+}
+
+/// Text goldens render at 640x360: at 320x180 a caption is only a few pixels tall.
+const TEXT_SIZE: (u32, u32) = (640, 360);
+
+fn text(text: &str, edit: impl FnOnce(&mut TextStyle)) -> TextContent {
+    let mut style = TextStyle::default();
+    edit(&mut style);
+    TextContent {
+        text: text.into(),
+        style,
+    }
+}
+
+#[test]
+fn title_over_video() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let title = Layer {
+        transform: Transform {
+            position: [0.0, 0.3],
+            ..Transform::default()
+        },
+        ..Layer::text(text("FossCut audit", |s| {
+            s.size = 0.08;
+            s.bold = true;
+        }))
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![Layer::new(source(1)), title],
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, pattern(640, 360, 0));
+    check_at(
+        "title-over-video",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+}
+
+#[test]
+fn text_styles() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let quote = Layer {
+        transform: Transform {
+            position: [-0.18, -0.22],
+            ..Transform::default()
+        },
+        ..Layer::text(text("Left aligned,\nitalic and red", |s| {
+            s.size = 0.07;
+            s.italic = true;
+            s.align = Align::Left;
+            s.color = Color::parse("#E5484D").unwrap();
+        }))
+    };
+    let tag = Layer {
+        transform: Transform {
+            position: [0.2, 0.24],
+            scale: 1.0,
+            rotation: -5.0,
+        },
+        opacity: 0.8,
+        ..Layer::text(text("Bold, right,\nturned, 80%", |s| {
+            s.size = 0.08;
+            s.bold = true;
+            s.align = Align::Right;
+            s.color = Color::parse("#3AA0DC").unwrap();
+        }))
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![Layer::new(source(1)), quote, tag],
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, solid(64, 36, [40, 128, 128]));
+    check_at("text-styles", &mut renderer, &plan, &mut frames, TEXT_SIZE);
 }

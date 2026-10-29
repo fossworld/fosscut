@@ -219,3 +219,90 @@ fn wgpu_texture(size: (u32, u32)) -> wgpu::TextureDescriptor<'static> {
         view_formats: &[],
     }
 }
+
+#[test]
+fn text_matches_between_preview_and_export() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let (mut project, timeline) = project();
+    let title = Clip {
+        id: Id::new(IdKind::Clip, 40),
+        start: Flicks::ZERO,
+        duration: frames(90),
+        content: ClipContent::Text(fosscut_model::TextContent {
+            text: "Preview equals export".into(),
+            style: fosscut_model::TextStyle {
+                size: 0.08,
+                bold: true,
+                ..fosscut_model::TextStyle::default()
+            },
+        }),
+        transform: Transform {
+            position: [0.0, 0.3],
+            ..Transform::default()
+        },
+        opacity: 1.0,
+        volume: 1.0,
+    };
+    project
+        .timelines
+        .get_mut(&timeline)
+        .unwrap()
+        .tracks
+        .push(Track {
+            id: Id::new(IdKind::Track, 22),
+            kind: TrackKind::Text,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            clips: vec![title],
+        });
+    let export = ExportGraph::new(&project, &timeline).unwrap();
+    let preview = PreviewGraph::new(&project, &timeline, (640, 640)).unwrap();
+    let mut provider = Frames::default();
+    provider.moving.insert(asset(1), (1280, 720));
+    provider.moving.insert(asset(2), (1280, 720));
+    let time = frames(10);
+    let full = export
+        .render(&mut renderer, &project, &mut provider, time)
+        .unwrap();
+    let small = preview
+        .grab(&mut renderer, &project, &mut provider, time)
+        .unwrap();
+    let reference = half(&full);
+    let psnr = reference.psnr(&small).unwrap();
+    eprintln!("text parity: {psnr:.1} dB");
+    // Text is rasterized at each output size rather than scaled, so glyph edges differ
+    // between 1280x720 and 640x360 (35.6 dB on Apple M3 Pro; rasterization is on the CPU,
+    // so other GPUs measure the same). A missing or misplaced title costs far more.
+    assert!(psnr > 33.0, "text parity: PSNR {psnr:.1} dB");
+
+    // The title must sit in the same place at both sizes: no one-pixel shift of the
+    // preview may match the export better than no shift.
+    for (dx, dy) in [
+        (-1, 0),
+        (1, 0),
+        (0, -1),
+        (0, 1),
+        (-1, -1),
+        (1, 1),
+        (-1, 1),
+        (1, -1),
+    ] {
+        let mut shifted = small.clone();
+        for y in 1..small.height - 1 {
+            for x in 1..small.width - 1 {
+                let p = small.pixel((x as i32 + dx) as u32, (y as i32 + dy) as u32);
+                let i = ((y * small.width + x) * 4) as usize;
+                shifted.rgba[i..i + 4].copy_from_slice(&p);
+            }
+        }
+        let moved = reference.psnr(&shifted).unwrap();
+        assert!(
+            moved + 2.0 < psnr,
+            "a ({dx}, {dy}) shift matches better: {moved:.1} vs {psnr:.1} dB"
+        );
+    }
+}

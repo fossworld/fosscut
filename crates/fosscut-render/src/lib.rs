@@ -14,6 +14,7 @@ mod gpu;
 mod graph;
 pub mod lut;
 pub mod plan;
+pub mod text;
 
 pub use error::RenderError;
 pub use gpu::{Image, Renderer};

@@ -51,9 +51,35 @@ pub fn layer_quad(
     }
     // "Fitted size": the largest size that shows the whole frame on the canvas.
     let fit = (canvas_w / w).min(canvas_h / h);
+    quad(canvas, (w * fit, h * fit), (0.0, 0.0), rotation, transform)
+}
+
+/// The corners of a layer drawn at its natural `size` in canvas pixels (no fitting),
+/// placed so that the point `offset` canvas pixels from the layer's centre sits at the
+/// canvas centre moved by `transform`. Text layers use it to centre their layout box
+/// rather than their pixel-cropped raster.
+pub fn placed_quad(
+    canvas: (u32, u32),
+    size: (f64, f64),
+    offset: (f64, f64),
+    transform: &Transform,
+) -> [Vertex; 4] {
+    quad(canvas, size, offset, 0, transform)
+}
+
+/// Corners of a layer `size` canvas pixels large (as displayed), whose point `offset`
+/// from its centre is placed by `transform`.
+fn quad(
+    canvas: (u32, u32),
+    size: (f64, f64),
+    offset: (f64, f64),
+    rotation: u16,
+    transform: &Transform,
+) -> [Vertex; 4] {
+    let (canvas_w, canvas_h) = (f64::from(canvas.0), f64::from(canvas.1));
     let (half_w, half_h) = (
-        w * fit * transform.scale / 2.0,
-        h * fit * transform.scale / 2.0,
+        size.0 * transform.scale / 2.0,
+        size.1 * transform.scale / 2.0,
     );
     let center = (
         canvas_w / 2.0 + transform.position[0] * canvas_w,
@@ -63,7 +89,10 @@ pub fn layer_quad(
     // clockwise.
     let (sin, cos) = transform.rotation.to_radians().sin_cos();
     let corner = |lx: f64, ly: f64| {
-        let (dx, dy) = ((2.0 * lx - 1.0) * half_w, (2.0 * ly - 1.0) * half_h);
+        let (dx, dy) = (
+            (2.0 * lx - 1.0) * half_w - offset.0 * transform.scale,
+            (2.0 * ly - 1.0) * half_h - offset.1 * transform.scale,
+        );
         let x = center.0 + dx * cos - dy * sin;
         let y = center.1 + dx * sin + dy * cos;
         let local = [lx as f32, ly as f32];
@@ -137,6 +166,34 @@ mod tests {
         // Clockwise quarter turn: the top-left corner moves to the top-right.
         assert!(close(quad[0].position, [1.0, 1.0]));
         assert!(close(quad[1].position, [1.0, -1.0]));
+    }
+
+    #[test]
+    fn placed_layers_keep_their_natural_size() {
+        let quad = placed_quad(
+            (1920, 1080),
+            (480.0, 108.0),
+            (0.0, 0.0),
+            &Transform::default(),
+        );
+        assert!(close(quad[0].position, [-0.25, 0.1]));
+        assert!(close(quad[3].position, [0.25, -0.1]));
+        // An anchor 96 px right of the layer centre is what lands at the canvas centre.
+        let shifted = placed_quad(
+            (1920, 1080),
+            (480.0, 108.0),
+            (96.0, 0.0),
+            &Transform::default(),
+        );
+        assert!(close(shifted[0].position, [-0.35, 0.1]));
+        let lower = Transform {
+            position: [0.0, 0.35],
+            scale: 2.0,
+            rotation: 0.0,
+        };
+        let quad = placed_quad((1920, 1080), (480.0, 108.0), (0.0, 0.0), &lower);
+        assert!(close(quad[0].position, [-0.5, -0.5]));
+        assert_eq!(quad[3].uv, [1.0, 1.0]);
     }
 
     #[test]

@@ -11,7 +11,7 @@ Governing decision: [ADR-0016](../../../docs/adr/0016-testing-strategy.md), item
 
 1. Build the timeline in code from generated fixtures (FFmpeg `lavfi` test patterns, solid colors, gradients, generated text). Never use downloaded or copyrighted media.
 2. Choose timestamps that exercise the feature: the first frame, a keyframe, between keyframes, a transition midpoint, the last frame.
-3. Render at a small resolution (for example 320x180) unless the feature depends on resolution.
+3. Render at a small resolution (for example 320x180) unless the feature depends on resolution; text goldens use 640x360 so captions stay legible.
 4. Compare against the stored golden PNG with a perceptual metric and an explicit threshold (for example PSNR above 40 dB or SSIM above 0.99). Choose the loosest threshold that still catches a real regression, and comment why. The existing goldens use 36 dB because software adapters (lavapipe, WARP) and GPUs differ slightly along rotated and masked edges; `Image::psnr` computes it.
 5. Add a parity check: the same frame from the preview evaluation path and from a decoded export must match within tolerance. Until export encoding exists, `crates/fosscut-render/tests/parity.rs` compares `PreviewGraph` with `ExportGraph` renders, downscaled in linear light.
 6. Build test frames in code (`tests/support/mod.rs` has NV12 and planar helpers and a moving pattern) so expected values can be computed by hand, and render GPU tests through `support::renderer()`, which honours `FOSSCUT_REQUIRE_GPU`.
