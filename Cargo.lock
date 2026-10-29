@@ -656,6 +656,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fosscut-analysis"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "fosscut-media",
+ "fosscut-model",
+ "fosscut-time",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "fosscut-audio"
 version = "0.1.0"
 dependencies = [
@@ -702,6 +716,7 @@ name = "fosscut-engine"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "fosscut-analysis",
  "fosscut-audio",
  "fosscut-core",
  "fosscut-media",
