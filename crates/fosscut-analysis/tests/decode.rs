@@ -92,11 +92,22 @@ fn audio(name: &str, channels: u16) -> Media<'static> {
     }
 }
 
+/// Analyzers without a model never look in the models folder.
+fn no_models() -> &'static std::path::Path {
+    std::path::Path::new("no-models")
+}
+
 fn run(
     media: Media<'_>,
     analyzers: &[Analyzer],
 ) -> Result<fosscut_analysis::Results, AnalysisError> {
-    analyze(media, analyzers, &Options::default(), &mut |_| true)
+    analyze(
+        media,
+        analyzers,
+        &Options::default(),
+        no_models(),
+        &mut |_| true,
+    )
 }
 
 #[test]
@@ -109,6 +120,7 @@ fn a_calibrated_tone_measures_its_loudness() {
         audio("tone.wav", 1),
         &[Analyzer::Loudness],
         &Options::default(),
+        no_models(),
         &mut |p: Progress| {
             seen.push(p);
             true
@@ -210,6 +222,7 @@ fn missing_streams_and_cancelling_are_typed() {
         audio("gaps.wav", 1),
         &[Analyzer::Silences],
         &Options::default(),
+        no_models(),
         &mut |_| false,
     )
     .unwrap_err();
@@ -218,6 +231,7 @@ fn missing_streams_and_cancelling_are_typed() {
         silent_video,
         &[Analyzer::Scenes],
         &Options::default(),
+        no_models(),
         &mut |_| false,
     )
     .unwrap_err();

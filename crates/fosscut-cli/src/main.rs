@@ -10,8 +10,8 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    Cli, ClipCommand, Command, MediaCommand, ProjectCommand, SkillTarget, SkillsCommand,
-    TextCommand, TimelineCommand, TrackCommand,
+    Cli, ClipCommand, Command, MediaCommand, ModelsCommand, ProjectCommand, SkillTarget,
+    SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -129,8 +129,16 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             min_silence_ms,
             scene_threshold,
             min_shot_ms,
+            model,
+            language,
+            min_pause_ms,
         }) => {
             let mut options = fosscut_engine::analysis::Options::default();
+            options.transcript.model.clone_from(model);
+            options.transcript.language.clone_from(language);
+            if let Some(ms) = min_pause_ms {
+                options.transcript.min_pause_ms = *ms;
+            }
             if let Some(threshold) = silence_threshold {
                 options.silences.threshold_dbfs = *threshold;
             }
@@ -273,6 +281,16 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             dir,
             skill,
         }) => install_skills(cli, *target, *user, dir.as_deref(), skill.as_deref()),
+        Command::Models(ModelsCommand::List) => Ok(Outcome::Query(
+            "models.list".into(),
+            json!({
+                "dir": fosscut_engine::models_dir().display().to_string(),
+                "models": fosscut_engine::analysis::models(&fosscut_engine::models_dir()),
+            }),
+        )),
+        Command::Models(ModelsCommand::Install { name, yes, from }) => {
+            install_model(cli, name, *yes, from.as_deref())
+        }
         Command::Mcp => {
             let project = bundle::bundle_path(cli.project.as_deref()).ok();
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -626,6 +644,44 @@ fn preset_for(output: &Path) -> Result<Preset, ApiError> {
     })
 }
 
+/// `fosscut models install`: a download needs `--yes`; a local file does not.
+fn install_model(
+    cli: &Cli,
+    name: &str,
+    yes: bool,
+    from: Option<&Path>,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::analysis::ModelSource;
+    let source = match from {
+        Some(file) => ModelSource::File(file.to_path_buf()),
+        None => ModelSource::Download(None),
+    };
+    if yes
+        && from.is_none()
+        && !cli.write.dry_run
+        && let Some(model) = fosscut_engine::analysis::models(&fosscut_engine::models_dir())
+            .into_iter()
+            .find(|m| m.name == name && !m.installed)
+    {
+        eprintln!(
+            "downloading {} ({:.1} MB, {}) from {}",
+            model.name,
+            model.size_bytes as f64 / 1e6,
+            model.license,
+            model.url
+        );
+    }
+    let report = fosscut_engine::analysis::install_model(
+        &fosscut_engine::models_dir(),
+        name,
+        &source,
+        yes,
+        cli.write.dry_run,
+    )
+    .map_err(|e| engine_error(&e))?;
+    Ok(Outcome::Query("models.install".into(), json!(report)))
+}
+
 /// `fosscut media analyze`: cached results, or a measurement with progress on stderr.
 fn analyze_media(
     cli: &Cli,
@@ -645,6 +701,7 @@ fn analyze_media(
         options,
         refresh,
         cache: fosscut_engine::cache_dir(),
+        models: fosscut_engine::models_dir(),
     };
     let report = fosscut_engine::analysis::analyze(
         session.project(),

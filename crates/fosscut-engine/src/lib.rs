@@ -18,7 +18,7 @@ mod operations;
 mod preset;
 pub mod project;
 
-pub use cache::cache_dir;
+pub use cache::{cache_dir, models_dir};
 pub use error::{EngineError, engine_error_catalogue};
 pub use export::{
     Encoders, ExportPlan, ExportReport, ExportRequest, Progress, compare, export, plan,

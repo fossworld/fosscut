@@ -1,0 +1,44 @@
+name: Set up the speech model
+description: >
+  Makes whisper-tiny.en (77.7 MB, MIT) available to the speech recognition tests (ADR-0020):
+  restored from the Actions cache, or downloaded once from its published address and checked
+  against the SHA-256 in fosscut-analysis's model manifest. Sets FOSSCUT_MODELS_DIR to its
+  folder and FOSSCUT_REQUIRE_SPEECH=1, so a missing model fails the tests instead of
+  skipping them. Building whisper.cpp needs CMake and a C++ compiler, which GitHub's runners
+  include.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the model
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/fosscut-models
+        key: whisper-tiny.en-921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f
+
+    - name: Download and verify the model
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/fosscut-models"
+        mkdir -p "$dir"
+        curl -fsSL --retry 3 -o "$dir/ggml-tiny.en.bin" \
+          https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+        expected=921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f
+        if command -v sha256sum >/dev/null; then
+          actual="$(sha256sum "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
+        else
+          actual="$(shasum -a 256 "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
+        fi
+        if [ "$actual" != "$expected" ]; then
+          echo "::error::ggml-tiny.en.bin has SHA-256 $actual, expected $expected"
+          rm -f "$dir/ggml-tiny.en.bin"
+          exit 1
+        fi
+
+    - name: Require speech recognition in tests
+      shell: bash
+      run: |
+        echo "FOSSCUT_MODELS_DIR=$RUNNER_TEMP/fosscut-models" >> "$GITHUB_ENV"
+        echo "FOSSCUT_REQUIRE_SPEECH=1" >> "$GITHUB_ENV"

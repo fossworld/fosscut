@@ -8,6 +8,11 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+default = ["speech"]
+# Speech recognition with whisper.cpp (ADR-0020); needs CMake and a C++ compiler to build.
+speech = ["dep:whisper-rs"]
+
 [dependencies]
 blake3.workspace = true
 fosscut-media = { workspace = true, features = ["ffmpeg"] }
@@ -16,7 +21,12 @@ fosscut-time.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
+whisper-rs = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { workspace = true, optional = true, features = ["metal"] }
 
 [lints]
 workspace = true

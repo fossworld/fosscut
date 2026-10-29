@@ -21,6 +21,8 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Change the project | `edit` | `fosscut exec '<request JSON>'` or `fosscut clip ...`, `fosscut text ...` |
 | Undo, redo, history | `undo`, `redo`, `history` | `fosscut undo`, `fosscut redo`, `fosscut history` |
 | Facts about media: loudness, pauses, shot cuts | `media_analyze` | `fosscut media analyze <asset>` |
+| What is said, with a time for every word, fillers and pauses | `media_analyze` with `analyzers: ["transcript"]` | `fosscut media analyze <asset> transcript` |
+| Speech models (installing downloads; ask the user first) | `models` | `fosscut models list`, `fosscut models install <name> --yes` |
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 

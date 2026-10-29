@@ -37,6 +37,8 @@ allow = [
     "MPL-2.0",
     "CC0-1.0",
     "BSL-1.0",
+    # A public-domain dedication like CC0, for the whisper.cpp bindings (ADR-0014, ADR-0020).
+    "Unlicense",
 ]
 # GPL, AGPL, SSPL and non-commercial licenses are not allowed in distributed builds.
 # LGPL native libraries (FFmpeg) are linked dynamically at runtime and are not crates.

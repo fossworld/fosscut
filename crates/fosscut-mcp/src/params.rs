@@ -110,11 +110,13 @@ pub struct MediaAnalyzeArgs {
     pub project: Option<String>,
     /// The asset to analyze, for example `asset_0001` (from `media_list`).
     pub asset: String,
-    /// `loudness`, `silences` and/or `scenes`; every analyzer the asset allows when omitted.
+    /// `loudness`, `silences`, `scenes` and/or `transcript`. When omitted, every analyzer the
+    /// asset allows except `transcript`, which needs an installed speech model (see `models`).
     #[serde(default)]
     pub analyzers: Vec<String>,
     /// Analyzer options, for example `{"silences": {"threshold_dbfs": -35, "min_duration_ms":
-    /// 400}}`; defaults when omitted.
+    /// 400}}` or `{"transcript": {"language": "en", "min_pause_ms": 250}}`; defaults when
+    /// omitted.
     #[serde(default)]
     pub options: fosscut_engine::analysis::Options,
     /// Measure again even if results are cached.
@@ -242,4 +244,16 @@ pub struct JobArgs {
     pub job: String,
     /// Seconds to wait for the job to finish before answering, 0 to 60 (default 0).
     pub wait_seconds: Option<u64>,
+}
+
+/// Arguments of `models`.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ModelsArgs {
+    /// The model to install, for example `whisper-base.en`; omit to list the models.
+    pub install: Option<String>,
+    /// `true` only after the user agreed to the download size and license.
+    #[serde(default)]
+    pub confirm: bool,
+    /// Install from this local file instead of downloading; it is verified the same way.
+    pub from: Option<String>,
 }

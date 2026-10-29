@@ -4,7 +4,7 @@ expression: listing
 ---
 [
   {
-    "description": "List what FossCut can do: every editing command and query with a summary, the engine operations, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
+    "description": "List what FossCut can do: every editing command and query with a summary, the engine operations, the analyzers, the models and whether each is installed, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
     "input": {
       "$defs": {
         "Detail": {
@@ -424,7 +424,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}.",
+    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
     "input": {
       "$defs": {
         "Options": {
@@ -446,6 +446,14 @@ expression: listing
                 "threshold_dbfs": -40.0
               },
               "description": "Options of `silences`."
+            },
+            "transcript": {
+              "$ref": "#/$defs/TranscriptOptions",
+              "default": {
+                "keep_fillers": true,
+                "min_pause_ms": 300
+              },
+              "description": "Options of `transcript`."
             }
           },
           "type": "object"
@@ -489,13 +497,46 @@ expression: listing
             }
           },
           "type": "object"
+        },
+        "TranscriptOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `transcript` analyzer.",
+          "properties": {
+            "keep_fillers": {
+              "default": true,
+              "description": "Prompt the model to write fillers such as \"um\" instead of tidying them away\n(default true).",
+              "type": "boolean"
+            },
+            "language": {
+              "description": "Spoken language as a two-letter code such as `en`; detected when omitted, and always\nEnglish with English-only (`.en`) models.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "min_pause_ms": {
+              "default": 300,
+              "description": "Gaps between words reported as pauses, in milliseconds (default 300).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "model": {
+              "description": "Model name, for example `whisper-base.en`; the most capable installed speech model\nfor the language when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         }
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "analyzers": {
           "default": [],
-          "description": "`loudness`, `silences` and/or `scenes`; every analyzer the asset allows when omitted.",
+          "description": "`loudness`, `silences`, `scenes` and/or `transcript`. When omitted, every analyzer the\nasset allows except `transcript`, which needs an installed speech model (see `models`).",
           "items": {
             "type": "string"
           },
@@ -515,9 +556,13 @@ expression: listing
             "silences": {
               "min_duration_ms": 300,
               "threshold_dbfs": -40.0
+            },
+            "transcript": {
+              "keep_fillers": true,
+              "min_pause_ms": 300
             }
           },
-          "description": "Analyzer options, for example `{\"silences\": {\"threshold_dbfs\": -35, \"min_duration_ms\":\n400}}`; defaults when omitted."
+          "description": "Analyzer options, for example `{\"silences\": {\"threshold_dbfs\": -35, \"min_duration_ms\":\n400}}` or `{\"transcript\": {\"language\": \"en\", \"min_pause_ms\": 250}}`; defaults when\nomitted."
         },
         "project": {
           "description": "Path of a `.fosscut` bundle; the open project when omitted.",
@@ -622,6 +667,36 @@ expression: listing
     },
     "name": "media_list",
     "read_only": true
+  },
+  {
+    "description": "List the models analyzers can use (speech recognition for media_analyze transcript) with size, license, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256: tell the user the size and license first, and pass confirm: true only after they agree. Larger models are more accurate and slower; English-only models (.en) suit English speech.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "confirm": {
+          "default": false,
+          "description": "`true` only after the user agreed to the download size and license.",
+          "type": "boolean"
+        },
+        "from": {
+          "description": "Install from this local file instead of downloading; it is verified the same way.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "install": {
+          "description": "The model to install, for example `whisper-base.en`; omit to list the models.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "models",
+    "read_only": false
   },
   {
     "description": "Project name, current revision, timelines with their formats, and whether undo or redo is possible.",

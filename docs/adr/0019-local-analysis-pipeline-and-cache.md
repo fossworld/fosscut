@@ -47,11 +47,11 @@ What is not yet decided is how analysis is built, cached and reached. Four thing
    - **Discovery:** `capabilities` lists the analyzers with their options.
    - **Errors:** `fosscut.analysis.unknown_analyzer`, `fosscut.analysis.no_audio`, `fosscut.analysis.no_video`, plus the existing asset and missing-media codes.
 5. **Models**, for analyzers that need one (speech first):
-   - Manifests are compiled into the binary: name, task, version, license, size, SHA-256, download URL and languages.
+   - Manifests are compiled into the binary: name, task, license, size, SHA-256, download URL and languages. The SHA-256 identifies the exact weights, so it doubles as the version.
    - A model installs only through an explicit call: `fosscut models install <name>` with confirmation, or the MCP `models` tool with `confirm: true`. Either way, size and license are reported first.
-   - Downloads go to a temporary file in `cache_dir()/models/`, are checked against the SHA-256 and only then renamed into place. Installed models work offline.
+   - Downloads go to a temporary file in `cache_dir()/models/` (or `FOSSCUT_MODELS_DIR`, so tests and CI can share one copy), are checked against the SHA-256 and only then renamed into place. Installed models work offline.
    - `capabilities` reports which are installed.
-   - Errors: `fosscut.model.not_installed`, `fosscut.model.checksum_mismatch`, `fosscut.model.download_failed`.
+   - Errors: `fosscut.model.unknown`, `fosscut.model.not_installed`, `fosscut.model.confirmation_required` (a download without confirmation, with the size and license in its details), `fosscut.model.checksum_mismatch`, `fosscut.model.download_failed`.
    - Only licenses that allow commercial use are listed (ADR-0014).
 6. **Agents decide.** Analysis reports facts; it never edits. Removing fillers, choosing a reframe or placing captions is the agent's call, made with editing commands and its own checks (ADR-0012 item 1). Vertical reframe in this milestone is agent-directed: scene cuts plus frame grabs and contact sheets, with no face or saliency model yet.
 
