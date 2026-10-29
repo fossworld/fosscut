@@ -424,6 +424,132 @@ expression: listing
     "read_only": true
   },
   {
+    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}.",
+    "input": {
+      "$defs": {
+        "Options": {
+          "additionalProperties": false,
+          "description": "Options for every analyzer; each has defaults.",
+          "properties": {
+            "scenes": {
+              "$ref": "#/$defs/SceneOptions",
+              "default": {
+                "min_shot_ms": 500,
+                "threshold": 0.35
+              },
+              "description": "Options of `scenes`."
+            },
+            "silences": {
+              "$ref": "#/$defs/SilenceOptions",
+              "default": {
+                "min_duration_ms": 300,
+                "threshold_dbfs": -40.0
+              },
+              "description": "Options of `silences`."
+            }
+          },
+          "type": "object"
+        },
+        "SceneOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `scenes` analyzer.",
+          "properties": {
+            "min_shot_ms": {
+              "default": 500,
+              "description": "Shortest shot, in milliseconds: a cut sooner than this after the previous one (or\nthe start) is ignored (default 500).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "threshold": {
+              "default": 0.35,
+              "description": "Histogram change, from 0 to 1, that counts as a cut (default 0.35).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "SilenceOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `silences` analyzer.",
+          "properties": {
+            "min_duration_ms": {
+              "default": 300,
+              "description": "Shortest quiet run reported, in milliseconds (default 300).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "threshold_dbfs": {
+              "default": -40.0,
+              "description": "A window is quiet when its RMS level is below this, in dBFS (default -40).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "analyzers": {
+          "default": [],
+          "description": "`loudness`, `silences` and/or `scenes`; every analyzer the asset allows when omitted.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "asset": {
+          "description": "The asset to analyze, for example `asset_0001` (from `media_list`).",
+          "type": "string"
+        },
+        "options": {
+          "$ref": "#/$defs/Options",
+          "default": {
+            "scenes": {
+              "min_shot_ms": 500,
+              "threshold": 0.35
+            },
+            "silences": {
+              "min_duration_ms": 300,
+              "threshold_dbfs": -40.0
+            }
+          },
+          "description": "Analyzer options, for example `{\"silences\": {\"threshold_dbfs\": -35, \"min_duration_ms\":\n400}}`; defaults when omitted."
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refresh": {
+          "default": false,
+          "description": "Measure again even if results are cached.",
+          "type": "boolean"
+        },
+        "wait_seconds": {
+          "description": "Seconds to wait for a measurement to finish before answering, 0 to 60 (default 30).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "asset"
+      ],
+      "type": "object"
+    },
+    "name": "media_analyze",
+    "read_only": true
+  },
+  {
     "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

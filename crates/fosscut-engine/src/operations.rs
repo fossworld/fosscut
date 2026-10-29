@@ -31,6 +31,11 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut export <file> [--preset NAME] [--timeline ID]",
         ),
         (
+            "media.analyze",
+            "Measure an asset's loudness, silences and shot cuts on this machine; results are cached by content.",
+            "fosscut media analyze <asset> [loudness|silences|scenes ...] [--refresh]",
+        ),
+        (
             "frame.grab",
             "Render one frame of a timeline as a PNG image, exactly as an export shows it.",
             "fosscut frame <time> --out <file.png> [--width N] [--timeline ID]",
@@ -72,6 +77,7 @@ pub fn capabilities(
         return Ok(value);
     }
     value["operations"] = json!(operations());
+    value["analyzers"] = json!(fosscut_analysis::analyzers());
     value["export_presets"] = json!(presets());
     if let Some(errors) = value.get_mut("errors").and_then(Value::as_array_mut) {
         errors.extend(
@@ -121,6 +127,7 @@ mod tests {
             operations().len()
         );
         assert!(outline["export_presets"].is_array());
+        assert_eq!(outline["analyzers"][1]["name"], "silences");
         assert!(outline.get("errors").is_none());
 
         let full = capabilities("full", &[], Some(Path::new("/no/such/Show.fosscut"))).unwrap();
@@ -141,5 +148,6 @@ mod tests {
         assert_eq!(named["commands"].as_array().unwrap().len(), 1);
         assert!(named["commands"][0]["input_schema"].is_object());
         assert!(named.get("operations").is_none() && named.get("export_presets").is_none());
+        assert!(named.get("analyzers").is_none());
     }
 }

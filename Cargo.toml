@@ -20,6 +20,7 @@ fosscut-core = { path = "crates/fosscut-core", version = "0.1.0" }
 fosscut-media = { path = "crates/fosscut-media", version = "0.1.0", default-features = false }
 fosscut-render = { path = "crates/fosscut-render", version = "0.1.0" }
 fosscut-audio = { path = "crates/fosscut-audio", version = "0.1.0" }
+fosscut-analysis = { path = "crates/fosscut-analysis", version = "0.1.0" }
 fosscut-engine = { path = "crates/fosscut-engine", version = "0.1.0" }
 fosscut-mcp = { path = "crates/fosscut-mcp", version = "0.1.0" }
 
@@ -43,7 +44,8 @@ rmcp = { version = "3.8.0", default-features = false, features = ["server", "mac
 rsmpeg = { version = "0.18.0", default-features = false, features = ["ffmpeg8", "link_system_ffmpeg"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
+# float_roundtrip: numbers read back from JSON (caches, records) equal what was written.
+serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 wgpu = "30.0.1"
