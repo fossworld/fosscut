@@ -4,7 +4,7 @@ expression: listing
 ---
 [
   {
-    "description": "List every editing command and query with a summary (detail: full adds each command's JSON Schema and all error codes), the engine operations, and the export presets this machine can encode. Read it before your first edit.",
+    "description": "List what FossCut can do: every editing command and query with a summary, the engine operations, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
     "input": {
       "$defs": {
         "Detail": {
@@ -32,7 +32,15 @@ expression: listing
       "properties": {
         "detail": {
           "$ref": "#/$defs/Detail",
-          "description": "`outline` (default) lists names and summaries; `full` adds every command's JSON\nSchema, the request and time schemas, and the error codes."
+          "description": "`outline` (default) lists names and summaries; `full` adds every command's JSON\nSchema, the request and time schemas, and the error codes (large)."
+        },
+        "names": {
+          "default": [],
+          "description": "Only these commands and queries, each with its argument JSON Schema, for example\n`[\"clip.add\", \"text.add\"]`. Ask for the commands you are about to use.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

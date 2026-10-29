@@ -951,3 +951,27 @@ fn skills_install_into_agent_folders() {
     assert!(dir.join("custom/fosscut-basics/SKILL.md").is_file());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn capabilities_describe_the_commands_you_name() {
+    let dir = workspace("capabilities-named");
+    let named = ok(&dir, &["capabilities", "clip.split", "timeline.read"]);
+    assert_eq!(named["commands"][0]["name"], json!("clip.split"));
+    assert_eq!(named["queries"][0]["name"], json!("timeline.read"));
+    assert!(named.get("operations").is_none());
+    let unknown = fails(&dir, &["capabilities", "clip.fold"]);
+    assert_eq!(unknown["code"], json!("fosscut.request.invalid_arguments"));
+    let human = fosscut(&dir, &["capabilities", "clip.split"]);
+    let text = String::from_utf8_lossy(&human.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[0].starts_with("clip.split  Split a clip"), "{text}");
+    assert!(
+        lines[1].starts_with("  at ") && lines[1].contains("required"),
+        "{text}"
+    );
+    assert!(
+        lines[2].starts_with("  clip ") && lines[2].contains("required"),
+        "{text}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

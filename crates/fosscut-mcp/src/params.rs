@@ -34,9 +34,13 @@ impl Detail {
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct CapabilitiesArgs {
     /// `outline` (default) lists names and summaries; `full` adds every command's JSON
-    /// Schema, the request and time schemas, and the error codes.
+    /// Schema, the request and time schemas, and the error codes (large).
     #[serde(default)]
     pub detail: Detail,
+    /// Only these commands and queries, each with its argument JSON Schema, for example
+    /// `["clip.add", "text.add"]`. Ask for the commands you are about to use.
+    #[serde(default)]
+    pub names: Vec<String>,
 }
 
 /// Arguments of `project_new`.

@@ -226,3 +226,47 @@ fn every_command_documents_itself() {
             .any(|e| e["code"] == codes::REVISION_CONFLICT)
     );
 }
+
+#[test]
+fn capabilities_by_name_carry_only_those_schemas() {
+    let session = new_session();
+    let everything = session
+        .query("capabilities", json!({ "detail": "full" }))
+        .unwrap();
+    let named = session
+        .query(
+            "capabilities",
+            json!({ "detail": "outline", "names": ["clip.split", "timeline.read"] }),
+        )
+        .unwrap();
+    let names = |list: &Value| -> Vec<String> {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(names(&named["commands"]), ["clip.split"]);
+    assert_eq!(names(&named["queries"]), ["timeline.read"]);
+    // Schemas even at outline detail, identical to the full listing, and nothing else.
+    let split = everything["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "clip.split")
+        .unwrap();
+    assert_eq!(&named["commands"][0], split);
+    assert!(named["queries"][0]["input_schema"].is_object());
+    assert!(named.get("errors").is_none() && named.get("request_schema").is_none());
+    assert!(named.to_string().len() * 5 < everything.to_string().len());
+
+    let error = session
+        .query(
+            "capabilities",
+            json!({ "names": ["clip.split", "clip.explode", "secrets"] }),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, codes::INVALID_ARGUMENTS);
+    assert_eq!(error.details["unknown"], json!(["clip.explode", "secrets"]));
+    assert!(error.hint.unwrap().contains("outline"));
+}

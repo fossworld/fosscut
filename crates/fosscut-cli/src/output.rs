@@ -226,6 +226,18 @@ fn print_history(v: &Value) {
 }
 
 fn print_capabilities(v: &Value) {
+    // A lookup by name: each command or query with its arguments.
+    if v.get("operations").is_none() {
+        for item in [&v["commands"], &v["queries"]]
+            .into_iter()
+            .filter_map(Value::as_array)
+            .flatten()
+        {
+            println!("{}  {}", s(&item["name"]), s(&item["summary"]));
+            print_fields(&item["input_schema"]);
+        }
+        return;
+    }
     println!(
         "API {}  project format {}",
         s(&v["api_version"]),
@@ -246,6 +258,25 @@ fn print_capabilities(v: &Value) {
     println!("export presets:");
     for p in v["export_presets"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&p["name"]), s(&p["description"]));
+    }
+}
+
+/// One line per argument of a JSON Schema: name, whether it is required, and its description.
+fn print_fields(schema: &Value) {
+    let required: Vec<&str> = schema["required"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    for (name, field) in schema["properties"].as_object().into_iter().flatten() {
+        let need = if required.contains(&name.as_str()) {
+            "required"
+        } else {
+            "optional"
+        };
+        let about = s(&field["description"]).replace('\n', " ");
+        println!("  {name:<16} {need:<9} {about}");
     }
 }
 

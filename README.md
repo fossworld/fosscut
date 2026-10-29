@@ -46,7 +46,7 @@ fosscut -p Demo.fosscut contact-sheet --out Demo-sheet.png
 fosscut -p Demo.fosscut export Demo.mp4
 ```
 
-Every command accepts `--json` for agents, `--dry-run` to preview, `--expected-revision` to guard against stale edits and `--request-id` for safe retries; `fosscut undo` and `fosscut redo` work across sessions. `fosscut export` renders, encodes and then probes the file to check it matches what you asked for; `fosscut export --presets` lists the formats this machine can write. `fosscut frame 2s --out still.png` and `fosscut contact-sheet` render what the export will show, so you or your agent can check an edit first. `fosscut capabilities` lists everything the editor can do.
+Every command accepts `--json` for agents, `--dry-run` to preview, `--expected-revision` to guard against stale edits and `--request-id` for safe retries; `fosscut undo` and `fosscut redo` work across sessions. `fosscut export` renders, encodes and then probes the file to check it matches what you asked for; `fosscut export --presets` lists the formats this machine can write. `fosscut frame 2s --out still.png` and `fosscut contact-sheet` render what the export will show, so you or your agent can check an edit first. `fosscut capabilities` lists everything the editor can do, and `fosscut capabilities clip.split` shows a command's arguments.
 
 ## Use it from an agent
 

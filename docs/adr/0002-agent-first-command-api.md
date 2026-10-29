@@ -36,7 +36,7 @@ CapCut already lets its own built-in assistant edit projects, which shows the ap
   - and `capabilities`.
 
   The server remembers an open project (from `--project`, the single bundle in its working directory, or the last `project_open` or `project_new`); any tool can name another. Reads carry read-only annotations. FossCut errors are tool results with `isError` set and the typed `{code, message, hint, details}`; protocol errors are only for malformed calls. Writes are logged as made by `agent:<client name>`. The server's instructions describe the safe editing loop. Streamable HTTP waits for the local authentication design in the Consequences below.
-- **Capabilities:** beside the core's commands and queries, `capabilities` lists the engine's operations (`export.start`, `frame.grab`, `frame.contact_sheet`) with the command line that runs each, and the export presets. At full detail, the error list includes the engine's codes (export, time range, jobs).
+- **Capabilities:** beside the core's commands and queries, `capabilities` lists the engine's operations (`export.start`, `frame.grab`, `frame.contact_sheet`) with the command line that runs each, and the export presets. At full detail, the error list includes the engine's codes (export, time range, jobs). Every schema at once is about 67 KB, more than agent clients show inline, so `capabilities` also takes `names` and returns only those commands and queries with their schemas (three commands come to about 20 KB): the first real-agent runs had to learn arguments from dry-run errors without it.
 
 ## Consequences
 

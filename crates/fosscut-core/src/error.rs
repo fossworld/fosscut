@@ -169,7 +169,7 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
         entry(
             INVALID_ARGUMENTS,
             "Arguments do not match the command schema.",
-            "Read the command's input schema from capabilities and correct the listed field.",
+            "Read the command's input schema with capabilities (names: [the command]) and correct the field the message names.",
         ),
         entry(
             REQUEST_REUSED,

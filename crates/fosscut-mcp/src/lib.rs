@@ -52,7 +52,7 @@ const INSTRUCTIONS: &str = "\
 FossCut edits video projects (.fosscut bundles). A safe session:
 1. project_open (or project_new) once; later tools use that project.
 2. timeline_read shows tracks and clips in frames, timecode and seconds, and the revision.
-3. edit applies commands from capabilities as one atomic, undoable step. Pass expected_revision from your last read, use dry_run first for large changes and a request_id so retries are safe. Ask the user before setting allow_destructive.
+3. edit applies commands as one atomic, undoable step; get a command's arguments first with capabilities and names, for example [\"clip.add\"]. Pass expected_revision from your last read, use dry_run first for large changes and a request_id so retries are safe. Ask the user before setting allow_destructive.
 4. Check the result with frame_grab or contact_sheet before exporting.
 5. export starts a background job; call job_status with wait_seconds until it succeeds, then read its verification report.
 Times need a unit: {\"frames\": n}, {\"seconds\": \"1.5\"}, {\"timecode\": \"HH:MM:SS:FF\"} or {\"flicks\": n}.
@@ -230,18 +230,20 @@ fn request(
 impl FosscutServer {
     /// Lists what FossCut can do.
     #[tool(
-        description = "List every editing command and query with a summary (detail: full adds each command's JSON Schema and all error codes), the engine operations, and the export presets this machine can encode. Read it before your first edit.",
+        description = "List what FossCut can do: every editing command and query with a summary, the engine operations, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
         annotations(read_only_hint = true)
     )]
     async fn capabilities(
         &self,
         params: Parameters<CapabilitiesArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let detail = params.0.detail;
+        let CapabilitiesArgs { detail, names } = params.0;
         let bundle = lock(&self.state.project).clone();
         reply(
-            blocking(move || fosscut_engine::capabilities(detail.as_str(), bundle.as_deref()))
-                .await,
+            blocking(move || {
+                fosscut_engine::capabilities(detail.as_str(), &names, bundle.as_deref())
+            })
+            .await,
         )
     }
 

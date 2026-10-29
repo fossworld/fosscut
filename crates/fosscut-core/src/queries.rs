@@ -46,6 +46,10 @@ pub(crate) struct CapabilitiesArgs {
     /// `outline` lists names and summaries; `normal` and `full` include JSON Schemas.
     #[serde(default)]
     detail: Detail,
+    /// Only these commands and queries, each with its JSON Schemas, for example
+    /// `["clip.add", "text.add"]`: far smaller than every schema at once.
+    #[serde(default)]
+    names: Vec<String>,
 }
 
 /// Arguments of `project.info` and `media.list`.
@@ -104,10 +108,28 @@ pub(crate) fn register(registry: &mut Registry) {
 
 fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
     let args: CapabilitiesArgs = parse("capabilities", args)?;
-    let brief = args.detail == Detail::Outline;
+    let unknown: Vec<&String> = args
+        .names
+        .iter()
+        .filter(|n| ctx.registry.command(n).is_none() && ctx.registry.query(n).is_none())
+        .collect();
+    if !unknown.is_empty() {
+        let shown: Vec<&str> = unknown.iter().map(|n| n.as_str()).collect();
+        return Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("no command or query named {}", shown.join(", ")),
+        )
+        .with_hint("capabilities with detail outline lists every name.")
+        .with_details(json!({ "unknown": shown })));
+    }
+    // Named lookups always carry schemas and leave out everything else.
+    let named = !args.names.is_empty();
+    let wanted = |name: &str| !named || args.names.iter().any(|n| n == name);
+    let brief = !named && args.detail == Detail::Outline;
     let commands: Vec<Value> = ctx
         .registry
         .commands()
+        .filter(|c| wanted(c.name))
         .map(|c| {
             if brief {
                 json!({ "name": c.name, "summary": c.summary })
@@ -119,6 +141,7 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
     let queries: Vec<Value> = ctx
         .registry
         .queries()
+        .filter(|q| wanted(q.name))
         .map(|q| {
             if brief {
                 json!({ "name": q.name, "summary": q.summary })
@@ -133,7 +156,7 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         "commands": commands,
         "queries": queries,
     });
-    if !brief {
+    if !brief && !named {
         result["request_schema"] =
             serde_json::to_value(schemars::schema_for!(Request)).unwrap_or_default();
         result["time_input_schema"] =

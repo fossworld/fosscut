@@ -110,9 +110,9 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             ))
         }
         Command::Project(ProjectCommand::Info) => query(cli, "project.info", Value::Null),
-        Command::Capabilities { detail } => {
+        Command::Capabilities { detail, names } => {
             let bundle = bundle::bundle_path(cli.project.as_deref()).ok();
-            let value = fosscut_engine::capabilities(detail.as_str(), bundle.as_deref())?;
+            let value = fosscut_engine::capabilities(detail.as_str(), names, bundle.as_deref())?;
             Ok(Outcome::Query("capabilities".into(), value))
         }
         Command::Media(MediaCommand::Import { file, name }) => {
