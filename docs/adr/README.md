@@ -24,12 +24,13 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0016](0016-testing-strategy.md) | Testing strategy: contracts, golden frames, export verification, agent evaluations | Proposed |
 | [0017](0017-provenance.md) | Transparent provenance, no hidden watermarks | Proposed |
 | [0018](0018-ai-assisted-development-workflow.md) | AI-assisted development workflow | Proposed |
+| [0019](0019-local-analysis-pipeline-and-cache.md) | Run media analysis locally in fosscut-analysis, cached by content | Proposed |
 
 ## Reading order
 
 - **Product shape:** 0002, 0006, 0007, 0013.
 - **Data:** 0004, 0005, 0011.
-- **Engine:** 0003, 0008, 0009, 0010, 0012.
+- **Engine:** 0003, 0008, 0009, 0010, 0012, 0019.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 
 ## Suggested first milestones
