@@ -13,7 +13,6 @@ name = "fosscut"
 path = "src/main.rs"
 
 [dependencies]
-blake3.workspace = true
 clap.workspace = true
 fosscut-core.workspace = true
 fosscut-engine.workspace = true

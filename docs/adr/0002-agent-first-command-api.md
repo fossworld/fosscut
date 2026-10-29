@@ -23,6 +23,12 @@ CapCut already lets its own built-in assistant edit projects, which shows the ap
 5. **MCP surface is coarse, CLI surface is fine.** The CLI mirrors the full command tree. The MCP server exposes a small set of tools (on the order of 15 to 25: open and inspect project, read timeline, plan and apply changes, run a named command, import and analyze media, frame grab, contact sheet, export, job status, undo, capabilities) because large tool lists degrade agent performance. Command schemas are discoverable through a `capabilities` tool and MCP resources.
 6. **Capability discovery.** A single `capabilities` query returns the schema version, every command with its JSON Schema, effect types, available codecs on this machine, and installed analysis models.
 
+## Implementation notes
+
+- **Session host** (milestone 4): `fosscut_engine::project` finds, creates, opens and locks project bundles, and `fosscut_engine::import` probes media into `media.add` arguments, so the CLI and the MCP server host projects the same way. Without the desktop app, each write takes the bundle's lock file for the length of one request and reopens the project from disk, so several front ends can work on one project in turn.
+- **Agent eyes, first step:** `fosscut_engine::frame` renders one frame of a timeline, or a contact sheet of frames spread evenly over it, through the same plan and renderer as an export, so an agent checks what it will export. The CLI writes them as PNG files (`fosscut frame`, `fosscut contact-sheet`), reporting every time in frames, timecode, seconds and flicks.
+- **Capabilities:** beside the core's commands and queries, `capabilities` lists the engine's operations (`export.start`, `frame.grab`, `frame.contact_sheet`) with the command line that runs each, and the export presets.
+
 ## Consequences
 
 - Agent support is never an afterthought: a feature is not done until it is reachable from CLI and MCP and covered by an agent-level test.

@@ -20,7 +20,7 @@ use fosscut_render::{DecoderFrames, Renderer};
 use fosscut_time::Flicks;
 use serde::{Deserialize, Serialize};
 
-use crate::ExportError;
+use crate::EngineError;
 
 /// What to export, and where.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,7 +48,7 @@ pub struct ExportRequest {
 }
 
 /// How far an export has come.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Progress {
     /// Frames (or one-second audio chunks for audio-only exports) done.
     pub done: u64,
@@ -110,7 +110,7 @@ pub fn export(
     request: &ExportRequest,
     renderer: &mut Renderer,
     progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<ExportReport, ExportError> {
+) -> Result<ExportReport, EngineError> {
     let started = Instant::now();
     let record = request
         .request_id
@@ -122,7 +122,7 @@ pub fn export(
         if previous.output != request.output.display().to_string()
             || previous.settings != request.settings
         {
-            return Err(ExportError::RequestReused {
+            return Err(EngineError::RequestReused {
                 request_id: id.clone(),
             });
         }
@@ -190,7 +190,7 @@ pub fn export(
     };
     let mismatches = compare(&request.settings, frame_count, expected_duration, &verified);
     if !mismatches.is_empty() {
-        return Err(ExportError::VerificationFailed {
+        return Err(EngineError::VerificationFailed {
             mismatches,
             report: Box::new(verified),
         });
@@ -215,7 +215,7 @@ pub fn export(
 /// the timeline, the settings and encoders, the overwrite guard, the output folder and
 /// every clip's media. Returns what it would write; nothing is rendered or written, so
 /// this is the export's dry run (ADR-0006, item 2).
-pub fn plan(project: &Project, request: &ExportRequest) -> Result<ExportPlan, ExportError> {
+pub fn plan(project: &Project, request: &ExportRequest) -> Result<ExportPlan, EngineError> {
     check(project, request).map(|checked| checked.plan)
 }
 
@@ -226,38 +226,38 @@ struct Checked {
     media: Vec<(Id, PathBuf)>,
 }
 
-fn check(project: &Project, request: &ExportRequest) -> Result<Checked, ExportError> {
+fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineError> {
     let current = project.manifest.revision;
     if let Some(expected) = request.expected_revision
         && expected != current
     {
-        return Err(ExportError::RevisionConflict { expected, current });
+        return Err(EngineError::RevisionConflict { expected, current });
     }
     let doc =
         project
             .timelines
             .get(&request.timeline)
-            .ok_or_else(|| ExportError::TimelineNotFound {
+            .ok_or_else(|| EngineError::TimelineNotFound {
                 timeline: request.timeline.to_string(),
             })?;
     let duration = doc.duration();
     if !duration.is_positive() {
-        return Err(ExportError::EmptyTimeline);
+        return Err(EngineError::EmptyTimeline);
     }
     validate(&request.settings)?;
     if request.output.is_dir() {
-        return Err(ExportError::InvalidSettings {
+        return Err(EngineError::InvalidSettings {
             message: format!("{} is a folder, not a file", request.output.display()),
         });
     }
     if request.output.exists() && !request.allow_overwrite {
-        return Err(ExportError::OutputExists {
+        return Err(EngineError::OutputExists {
             path: request.output.display().to_string(),
         });
     }
     let parent = output_dir(&request.output);
     if !parent.is_dir() {
-        return Err(ExportError::InvalidSettings {
+        return Err(EngineError::InvalidSettings {
             message: format!("{} is not a directory", parent.display()),
         });
     }
@@ -267,7 +267,7 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, ExportEr
             let path = resolve(project, &request.bundle, &asset)?;
             Ok((asset, path))
         })
-        .collect::<Result<Vec<_>, ExportError>>()?;
+        .collect::<Result<Vec<_>, EngineError>>()?;
     let settings = &request.settings;
     let (frames, exported) = match &settings.video {
         // Every frame whose start is before the end of the timeline.
@@ -320,13 +320,13 @@ fn write(
     frames: &mut DecoderFrames,
     audio: &mut DecoderAudio,
     progress: &mut dyn FnMut(Progress) -> bool,
-) -> Result<u64, ExportError> {
+) -> Result<u64, EngineError> {
     let settings = &request.settings;
     let duration = checked.timeline_duration;
     let mut writer = FfmpegWriter::create(path, settings)?;
     let audio_format = settings.audio.as_ref().map(|a| (a.sample_rate, a.channels));
     let mut push_audio =
-        |writer: &mut FfmpegWriter, from: Flicks, to: Flicks| -> Result<(), ExportError> {
+        |writer: &mut FfmpegWriter, from: Flicks, to: Flicks| -> Result<(), EngineError> {
             if let Some((rate, channels)) = audio_format {
                 let buffer = mix(
                     project,
@@ -354,7 +354,7 @@ fn write(
                 done: chunk as u64 + 1,
                 total: total as u64,
             }) {
-                return Err(ExportError::Cancelled);
+                return Err(EngineError::Cancelled);
             }
         }
         writer.finish()?;
@@ -381,19 +381,19 @@ fn write(
             done: n as u64 + 1,
             total: total as u64,
         }) {
-            return Err(ExportError::Cancelled);
+            return Err(EngineError::Cancelled);
         }
     }
     writer.finish()?;
     Ok(total as u64)
 }
 
-fn validate(settings: &OutputSettings) -> Result<(), ExportError> {
+fn validate(settings: &OutputSettings) -> Result<(), EngineError> {
     let video = settings.video.as_ref();
     if let Some(v) = video
         && (v.width == 0 || v.height == 0 || v.width % 2 != 0 || v.height % 2 != 0)
     {
-        return Err(ExportError::InvalidSettings {
+        return Err(EngineError::InvalidSettings {
             message: format!("{}x{} is not an even, non-zero size", v.width, v.height),
         });
     }
@@ -401,7 +401,7 @@ fn validate(settings: &OutputSettings) -> Result<(), ExportError> {
         video.map(|v| v.codec),
         settings.audio.as_ref().map(|a| a.codec),
     ) {
-        return Err(ExportError::InvalidSettings {
+        return Err(EngineError::InvalidSettings {
             message: format!(
                 "{} cannot hold these codecs",
                 settings.container.extension()
@@ -411,7 +411,7 @@ fn validate(settings: &OutputSettings) -> Result<(), ExportError> {
     if let Some(v) = video
         && video_encoder(v.codec).is_none()
     {
-        return Err(ExportError::CodecUnavailable {
+        return Err(EngineError::CodecUnavailable {
             codec: v.codec.probe_name().to_string(),
             available: encoder_capabilities()
                 .video
@@ -541,7 +541,11 @@ fn assets_in(project: &Project, timeline: &Id) -> Vec<Id> {
 }
 
 /// The media file of `asset`: the path relative to the bundle first, then the absolute path.
-fn resolve(project: &Project, bundle: &Path, asset: &Id) -> Result<PathBuf, ExportError> {
+pub(crate) fn resolve(
+    project: &Project,
+    bundle: &Path,
+    asset: &Id,
+) -> Result<PathBuf, EngineError> {
     let hints = project.media.get(asset).map(|a| &a.path);
     let mut tried = Vec::new();
     if let Some(hints) = hints {
@@ -562,7 +566,7 @@ fn resolve(project: &Project, bundle: &Path, asset: &Id) -> Result<PathBuf, Expo
             tried.push(absolute.clone());
         }
     }
-    Err(ExportError::MissingMedia {
+    Err(EngineError::MissingMedia {
         asset: asset.to_string(),
         tried,
     })
@@ -640,8 +644,8 @@ fn write_record(path: &Path, report: &ExportReport) {
     }
 }
 
-fn failed_io(path: &Path, error: &std::io::Error) -> ExportError {
-    ExportError::Failed {
+fn failed_io(path: &Path, error: &std::io::Error) -> EngineError {
+    EngineError::Failed {
         code: "fosscut.media.write_failed".into(),
         message: format!("cannot write {}: {error}", path.display()),
     }

@@ -100,6 +100,8 @@ pub fn print_query(name: &str, value: &Value) {
         "history.list" => print_history(value),
         "capabilities" => print_capabilities(value),
         "export.presets" => print_presets(value),
+        "frame.grab" => print_frame(value),
+        "frame.contact_sheet" => print_contact_sheet(value),
         _ => println!(
             "{}",
             serde_json::to_string_pretty(value).unwrap_or_default()
@@ -235,10 +237,55 @@ fn print_capabilities(v: &Value) {
     for q in v["queries"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&q["name"]), s(&q["summary"]));
     }
+    println!("operations:");
+    for o in v["operations"].as_array().into_iter().flatten() {
+        println!("  {:<20} {}", s(&o["name"]), s(&o["summary"]));
+    }
     println!("export presets:");
     for p in v["export_presets"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&p["name"]), s(&p["description"]));
     }
+}
+
+/// "wrote" or, for a dry run, "would write".
+fn wrote(v: &Value) -> &'static str {
+    if v["dry_run"] == Value::Bool(true) {
+        "dry run: would write"
+    } else {
+        "wrote"
+    }
+}
+
+fn print_frame(v: &Value) {
+    println!(
+        "{} {} ({}x{}): frame {} at {}",
+        wrote(v),
+        s(&v["output"]),
+        v["width"],
+        v["height"],
+        v["at"]["frames"],
+        s(&v["at"]["timecode"])
+    );
+}
+
+fn print_contact_sheet(v: &Value) {
+    let tiles = v["tiles"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let (first, last) = match tiles {
+        [first, .., last] => (&first["at"]["timecode"], &last["at"]["timecode"]),
+        [only] => (&only["at"]["timecode"], &only["at"]["timecode"]),
+        [] => (&Value::Null, &Value::Null),
+    };
+    println!(
+        "{} {} ({}x{}): {} frames in {} columns, {} to {}",
+        wrote(v),
+        s(&v["output"]),
+        v["width"],
+        v["height"],
+        tiles.len(),
+        v["columns"],
+        s(first),
+        s(last)
+    );
 }
 
 fn print_presets(v: &Value) {

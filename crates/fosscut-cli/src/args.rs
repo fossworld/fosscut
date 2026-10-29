@@ -117,6 +117,37 @@ pub enum Command {
         #[arg(long)]
         presets: bool,
     },
+    /// Render one frame of a timeline to a PNG file, exactly as an export shows it.
+    Frame {
+        /// The moment to show, for example 1s, 30f or 00:00:01:00.
+        time: TimeInput,
+        /// PNG file to write.
+        #[arg(long)]
+        out: PathBuf,
+        /// Width in pixels; the timeline's width when omitted. The height keeps the aspect
+        /// ratio.
+        #[arg(long)]
+        width: Option<u32>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Render frames spread evenly over a timeline into one PNG grid, to check an edit at
+    /// a glance.
+    ContactSheet {
+        /// PNG file to write.
+        #[arg(long)]
+        out: PathBuf,
+        /// Number of frames, 1 to 100.
+        #[arg(long, default_value_t = 12)]
+        count: u32,
+        /// Width of each frame in pixels.
+        #[arg(long, default_value_t = 320)]
+        width: u32,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
 }
 
 /// `fosscut project ...`

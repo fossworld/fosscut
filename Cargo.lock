@@ -645,7 +645,6 @@ dependencies = [
 name = "fosscut-cli"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "clap",
  "fosscut-core",
  "fosscut-engine",
@@ -676,10 +675,12 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "fosscut-audio",
+ "fosscut-core",
  "fosscut-media",
  "fosscut-model",
  "fosscut-render",
  "fosscut-time",
+ "png",
  "serde",
  "serde_json",
  "thiserror",
