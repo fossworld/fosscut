@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use serde_json::{Value, json};
 
@@ -15,15 +15,35 @@ fn workspace(name: &str) -> PathBuf {
     dir
 }
 
-fn fosscut(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fosscut"))
+fn command(dir: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_fosscut"));
+    command
         .current_dir(dir)
         .env_remove("FOSSCUT_PROJECT")
         .env("FOSSCUT_ACTOR", "agent:test")
-        .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
+        .env("FOSSCUT_CACHE_DIR", dir.join("cache"));
+    command
+}
+
+fn fosscut(dir: &Path, args: &[&str]) -> Output {
+    command(dir).args(args).output().unwrap()
+}
+
+/// Like [`ok`], but the command's progress goes to the test's own stderr, so a slow or
+/// stuck export shows how far it got when the test fails or times out.
+fn ok_with_progress(dir: &Path, args: &[&str]) -> Value {
+    let output = command(dir)
         .args(args)
+        .arg("--json")
+        .stderr(Stdio::inherit())
         .output()
-        .unwrap()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{args:?} failed:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
 }
 
 /// Runs a command with `--json` and returns the parsed stdout; panics on failure.
@@ -609,7 +629,7 @@ fn round_one_baseline_exports_and_verifies() {
     let revision = ok(&dir, &["project", "info"])["revision"].to_string();
     assert_eq!(stale["details"]["current_revision"].to_string(), revision);
 
-    let report = ok(
+    let report = ok_with_progress(
         &dir,
         &[
             "export",
@@ -718,22 +738,41 @@ fn round_one_baseline_exports_and_verifies() {
     assert!(!dir.join("Audit.fosscut").join("cache").exists());
     let guarded = fails(&dir, &["export", "Baseline.mp4", "--preset", preset]);
     assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    // Overwriting with permission writes a new, verified file. Audio only, so this check
+    // does not render the 1080p timeline a second time (slow on software GPUs in CI).
     let human = fosscut(
         &dir,
         &[
             "export",
             "Baseline.mp4",
             "--preset",
-            preset,
+            "m4a-aac",
             "--allow-destructive",
         ],
     );
     assert!(human.status.success());
     let text = String::from_utf8_lossy(&human.stdout);
     assert!(
-        text.contains("240 frames") && text.contains("verified against the request"),
+        text.contains("exported Baseline.mp4") && text.contains("aac 48000 Hz x 2"),
         "{text}"
     );
+    assert!(
+        text.contains("verified against the request; rendered in"),
+        "{text}"
+    );
+    let rewritten = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(dir.join("Baseline.mp4"))
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&rewritten.stdout).trim(), "audio");
     let dry = fosscut(
         &dir,
         &["export", "Copy.mp4", "--preset", preset, "--dry-run"],
