@@ -18,9 +18,9 @@ mod preset;
 pub mod project;
 
 pub use cache::cache_dir;
-pub use error::EngineError;
+pub use error::{EngineError, engine_error_catalogue};
 pub use export::{
     Encoders, ExportPlan, ExportReport, ExportRequest, Progress, compare, export, plan,
 };
-pub use operations::{OperationInfo, operations};
+pub use operations::{OperationInfo, capabilities, operations};
 pub use preset::{Preset, PresetInfo, presets};

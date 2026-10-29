@@ -21,8 +21,10 @@ fosscut-media = { path = "crates/fosscut-media", version = "0.1.0", default-feat
 fosscut-render = { path = "crates/fosscut-render", version = "0.1.0" }
 fosscut-audio = { path = "crates/fosscut-audio", version = "0.1.0" }
 fosscut-engine = { path = "crates/fosscut-engine", version = "0.1.0" }
+fosscut-mcp = { path = "crates/fosscut-mcp", version = "0.1.0" }
 
 anyhow = "1.0.104"
+base64 = "0.23.1"
 blake3 = "1.8.7"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
@@ -34,12 +36,16 @@ insta = { version = "1.49.0", features = ["json"] }
 png = "0.18.1"
 pollster = "1.0.1"
 proptest = "1.12.0"
+# The official MCP SDK (Apache-2.0): the server, its tool macros and the stdio transport
+# (ADR-0002). Tests add the client and child-process features.
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "macros", "transport-io"] }
 # MIT-licensed FFmpeg 8 bindings, linked against system FFmpeg shared libraries (ADR-0009).
 rsmpeg = { version = "0.18.0", default-features = false, features = ["ffmpeg8", "link_system_ffmpeg"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 wgpu = "30.0.1"
 
 [workspace.lints.rust]

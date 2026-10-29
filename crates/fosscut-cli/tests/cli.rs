@@ -3,17 +3,13 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
+use common::{can_render, ffmpeg_required, has_ffmpeg, test_pattern, workspace};
 use serde_json::{Value, json};
-
-fn workspace(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("fosscut-cli-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn command(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_fosscut"));
@@ -70,39 +66,6 @@ fn fails(dir: &Path, args: &[&str]) -> Value {
     value["error"].clone()
 }
 
-fn has_ffmpeg() -> bool {
-    ["ffmpeg", "ffprobe"].iter().all(|tool| {
-        Command::new(tool)
-            .arg("-version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    })
-}
-
-/// CI sets `FOSSCUT_REQUIRE_FFMPEG=1` so that a missing FFmpeg fails the test instead of
-/// skipping it silently.
-/// Whether FFmpeg and a GPU adapter are available; false skips a test locally, while CI
-/// (`FOSSCUT_REQUIRE_FFMPEG`, `FOSSCUT_REQUIRE_GPU`) fails instead.
-fn can_render() -> bool {
-    if !has_ffmpeg() {
-        assert!(
-            !ffmpeg_required(),
-            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
-        );
-        return false;
-    }
-    if fosscut_render::Renderer::headless().is_err() {
-        let required =
-            std::env::var_os("FOSSCUT_REQUIRE_GPU").is_some_and(|v| !v.is_empty() && v != "0");
-        assert!(
-            !required,
-            "FOSSCUT_REQUIRE_GPU is set but there is no adapter"
-        );
-        return false;
-    }
-    true
-}
-
 /// The size of a PNG file, from its header.
 fn png_size(path: &Path) -> (u32, u32) {
     let bytes = std::fs::read(path).unwrap();
@@ -116,10 +79,6 @@ fn png_size(path: &Path) -> (u32, u32) {
     (number(16), number(20))
 }
 
-fn ffmpeg_required() -> bool {
-    std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0")
-}
-
 #[test]
 fn round_one_sequence_from_the_command_line() {
     if !has_ffmpeg() {
@@ -131,35 +90,7 @@ fn round_one_sequence_from_the_command_line() {
         return;
     }
     let dir = workspace("round-one");
-    let status = Command::new("ffmpeg")
-        .current_dir(&dir)
-        .args([
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=1280x720:rate=30:duration=8",
-        ])
-        .args([
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=48000:duration=8",
-        ])
-        .args([
-            "-c:v",
-            "mpeg4",
-            "-q:v",
-            "5",
-            "-c:a",
-            "aac",
-            "-shortest",
-            "test-pattern.mp4",
-        ])
-        .status()
-        .unwrap();
-    assert!(status.success(), "ffmpeg could not create the fixture");
+    test_pattern(&dir);
 
     ok(
         &dir,
@@ -550,35 +481,7 @@ fn round_one_baseline_exports_and_verifies() {
         return;
     }
     let dir = workspace("baseline");
-    let status = Command::new("ffmpeg")
-        .current_dir(&dir)
-        .args([
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=1280x720:rate=30:duration=8",
-        ])
-        .args([
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=48000:duration=8",
-        ])
-        .args([
-            "-c:v",
-            "mpeg4",
-            "-q:v",
-            "5",
-            "-c:a",
-            "aac",
-            "-shortest",
-            "test-pattern.mp4",
-        ])
-        .status()
-        .unwrap();
-    assert!(status.success());
+    test_pattern(&dir);
     ok(
         &dir,
         &["project", "new", "Audit.fosscut", "--name", "FossCut audit"],

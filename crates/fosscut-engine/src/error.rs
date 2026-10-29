@@ -1,3 +1,4 @@
+use fosscut_core::{ApiError, ErrorCode};
 use fosscut_media::OutputReport;
 use fosscut_time::Flicks;
 use serde_json::{Value, json};
@@ -189,6 +190,85 @@ impl EngineError {
             }
             _ => Value::Null,
         }
+    }
+}
+
+/// Every error code the engine adds to the core's catalogue
+/// ([`fosscut_core::error_catalogue`]), with recovery hints.
+pub fn engine_error_catalogue() -> Vec<ErrorCode> {
+    let entry = |code, meaning, hint| ErrorCode {
+        code,
+        meaning,
+        hint,
+    };
+    vec![
+        entry(
+            "fosscut.export.empty_timeline",
+            "The timeline has no clips, so there is nothing to export or show.",
+            "Add clips first.",
+        ),
+        entry(
+            "fosscut.time.out_of_range",
+            "The time is before 0 or at or after the end of the timeline.",
+            "Choose a time from 0 up to the timeline's duration, which timeline.read reports.",
+        ),
+        entry(
+            "fosscut.export.invalid_settings",
+            "The export settings cannot work: an odd size, a codec the container cannot hold, or a missing folder.",
+            "Use a preset from the export presets, or fix the setting the message names.",
+        ),
+        entry(
+            "fosscut.export.codec_unavailable",
+            "This machine has no working encoder for the requested codec. FossCut never substitutes another.",
+            "Choose one of the codecs listed in details.available, or another preset.",
+        ),
+        entry(
+            "fosscut.export.output_busy",
+            "Another running job is writing the same output file.",
+            "Wait for that job (details.job), cancel it, or choose another path.",
+        ),
+        entry(
+            "fosscut.job.not_found",
+            "No job with this id exists in this session.",
+            "Jobs end with the session that started them; start the export again.",
+        ),
+        entry(
+            "fosscut.export.missing_media",
+            "A clip's media file is not at its recorded paths.",
+            "Restore the file at one of details.tried, or import it again and replace the clip.",
+        ),
+        entry(
+            "fosscut.export.cancelled",
+            "The export was cancelled; nothing was written.",
+            "Start it again when wanted.",
+        ),
+        entry(
+            "fosscut.export.verification_failed",
+            "The written file does not match the request; details.mismatches lists each difference.",
+            "Report it with details.report; the file is kept for inspection.",
+        ),
+        entry(
+            "fosscut.media.write_failed",
+            "The output file could not be written or moved into place.",
+            "Check the folder exists and is writable, and that no other program holds the file open.",
+        ),
+    ]
+}
+
+impl From<&EngineError> for ApiError {
+    /// The error as front ends return it: code, message, hint and details.
+    fn from(error: &EngineError) -> ApiError {
+        let mut api = ApiError::new(error.code(), error.to_string()).with_details(error.details());
+        if let Some(hint) = error.hint() {
+            api = api.with_hint(hint);
+        }
+        api
+    }
+}
+
+impl From<EngineError> for ApiError {
+    fn from(error: EngineError) -> ApiError {
+        ApiError::from(&error)
     }
 }
 
@@ -411,6 +491,12 @@ mod tests {
         assert_eq!(mismatch.details()["mismatches"], json!(["no audio"]));
         assert_eq!(mismatch.details()["report"]["brand"], json!("isom"));
         assert_eq!(EngineError::Cancelled.details(), Value::Null);
+        let api = ApiError::from(EngineError::JobNotFound {
+            job: "job_0009".into(),
+        });
+        assert_eq!(api.code, "fosscut.job.not_found");
+        assert_eq!(api.details, json!({ "job": "job_0009" }));
+        assert!(api.hint.is_some());
         let late = EngineError::TimeOutOfRange {
             time: Flicks::new(1),
             duration: Flicks::new(0),
@@ -428,6 +514,73 @@ mod tests {
             job: "job_0009".into(),
         };
         assert_eq!(gone.details(), json!({ "job": "job_0009" }));
+    }
+
+    #[test]
+    fn every_engine_code_is_catalogued() {
+        let mut known: Vec<&str> = fosscut_core::error_catalogue()
+            .iter()
+            .map(|e| e.code)
+            .collect();
+        known.extend(engine_error_catalogue().iter().map(|e| e.code));
+        let variants = [
+            EngineError::TimelineNotFound {
+                timeline: String::new(),
+            },
+            EngineError::EmptyTimeline,
+            EngineError::TimeOutOfRange {
+                time: Flicks::ZERO,
+                duration: Flicks::ZERO,
+            },
+            EngineError::InvalidArguments {
+                message: String::new(),
+            },
+            EngineError::InvalidSettings {
+                message: String::new(),
+            },
+            EngineError::CodecUnavailable {
+                codec: String::new(),
+                available: Vec::new(),
+            },
+            EngineError::RevisionConflict {
+                expected: 0,
+                current: 1,
+            },
+            EngineError::OutputExists {
+                path: String::new(),
+            },
+            EngineError::OutputBusy {
+                path: String::new(),
+                job: String::new(),
+            },
+            EngineError::JobNotFound { job: String::new() },
+            EngineError::MissingMedia {
+                asset: String::new(),
+                tried: Vec::new(),
+            },
+            EngineError::Cancelled,
+            EngineError::RequestReused {
+                request_id: String::new(),
+            },
+            EngineError::VerificationFailed {
+                mismatches: Vec::new(),
+                report: Box::new(report()),
+            },
+        ];
+        for error in &variants {
+            assert!(
+                known.contains(&error.code()),
+                "{} is not catalogued",
+                error.code()
+            );
+        }
+        let engine = engine_error_catalogue();
+        assert!(
+            engine.iter().all(|e| !fosscut_core::error_catalogue()
+                .iter()
+                .any(|core| core.code == e.code)),
+            "the engine catalogue only adds codes"
+        );
     }
 
     #[test]

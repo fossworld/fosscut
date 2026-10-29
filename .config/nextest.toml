@@ -11,13 +11,18 @@ fail-fast = false
 retries = 0
 slow-timeout = { period = "60s", terminate-after = 5 }
 
-# The milestone 3 exit check renders, encodes and verifies a full 1080p, 240-frame export.
-# On the Windows CI runner (WARP software GPU, Media Foundation's software H.264 encoder)
-# that alone takes about 4.5 minutes, so this one test may run for up to 10.
+# The milestone exit checks render, encode and verify a full 1080p, 240-frame export. On the
+# Windows CI runner (WARP software GPU, Media Foundation's software H.264 encoder) each takes
+# about 4.5 minutes, so they run one at a time and may take up to 10 minutes each.
+[test-groups]
+exit-checks = { max-threads = 1 }
+
 [[profile.default.overrides]]
-filter = "test(round_one_baseline_exports_and_verifies)"
+filter = "test(round_one_baseline_exports_and_verifies) | test(an_agent_reproduces_the_baseline_through_mcp_alone)"
+test-group = "exit-checks"
 slow-timeout = { period = "120s", terminate-after = 5 }
 
 [[profile.ci.overrides]]
-filter = "test(round_one_baseline_exports_and_verifies)"
+filter = "test(round_one_baseline_exports_and_verifies) | test(an_agent_reproduces_the_baseline_through_mcp_alone)"
+test-group = "exit-checks"
 slow-timeout = { period = "120s", terminate-after = 5 }
