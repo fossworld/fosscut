@@ -64,6 +64,10 @@ jobs:
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Bump to start fresh caches when a build input cargo does not track changes,
+          # such as GGML_NATIVE in .cargo/config.toml.
+          prefix-key: v1-rust
       - uses: ./.github/actions/setup-ffmpeg
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
@@ -87,6 +91,10 @@ jobs:
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Bump to start fresh caches when a build input cargo does not track changes,
+          # such as GGML_NATIVE in .cargo/config.toml.
+          prefix-key: v1-rust
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
@@ -113,6 +121,10 @@ jobs:
           rustup toolchain install
           rustup component add llvm-tools
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Bump to start fresh caches when a build input cargo does not track changes,
+          # such as GGML_NATIVE in .cargo/config.toml.
+          prefix-key: v1-rust
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest,cargo-llvm-cov
@@ -171,6 +183,10 @@ jobs:
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Bump to start fresh caches when a build input cargo does not track changes,
+          # such as GGML_NATIVE in .cargo/config.toml.
+          prefix-key: v1-rust
       - name: Build fosscut-time, fosscut-model and fosscut-core for wasm32
         run: |
           packages=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name')

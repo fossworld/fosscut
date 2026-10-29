@@ -1,2 +1,10 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+[env]
+# Build whisper.cpp (ADR-0020) for any CPU of its architecture, not tuned to the machine
+# that compiles it: a native build crashes with an illegal instruction on other CPUs, as CI
+# showed when a cached build ran on a different runner. On x86-64 this still uses AVX2.
+# Set GGML_NATIVE=ON in your environment for a local build tuned to your machine; build
+# caches do not notice the change, so run `cargo clean -p whisper-rs-sys` after switching.
+GGML_NATIVE = "OFF"

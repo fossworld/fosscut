@@ -58,6 +58,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          # Bump to start fresh caches when a build input cargo does not track changes,
+          # such as GGML_NATIVE in .cargo/config.toml.
+          prefix-key: v1-rust
       - run: cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
       - name: Package
         shell: bash
