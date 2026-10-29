@@ -182,6 +182,24 @@ impl FfmpegAudioDecoder {
             frame.sample_rate,
         )
         .map_err(|e| unsupported(format!("cannot resample this audio: {e}")))?;
+        if input_layout.nb_channels == 1 && self.channels == 2 {
+            // A mono recording plays at full level on both channels, as editors expect;
+            // swresample's default places a mono source on both sides at -3 dB.
+            let unity = [1.0_f64, 1.0];
+            // SAFETY: the context is valid and not yet initialized; the matrix has one row
+            // per output channel (2) and one column per input channel (1), read with a stride
+            // of 1 and copied by swresample before this call returns.
+            let rc = unsafe {
+                use rsmpeg::UnsafeDerefMut;
+                ffi::swr_set_matrix(swr.deref_mut(), unity.as_ptr(), 1)
+            };
+            if rc < 0 {
+                return Err(unsupported(format!(
+                    "cannot upmix mono audio: {}",
+                    RsmpegError::from(rc)
+                )));
+            }
+        }
         swr.init()
             .map_err(|e| unsupported(format!("cannot resample this audio: {e}")))?;
         Ok(swr)

@@ -632,13 +632,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "fosscut-audio"
+version = "0.1.0"
+dependencies = [
+ "fosscut-media",
+ "fosscut-model",
+ "fosscut-time",
+ "thiserror",
+]
+
+[[package]]
 name = "fosscut-cli"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "clap",
  "fosscut-core",
+ "fosscut-engine",
+ "fosscut-media",
  "fosscut-model",
+ "fosscut-render",
  "fosscut-time",
  "insta",
  "serde",
@@ -655,6 +668,21 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "fosscut-engine"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "fosscut-audio",
+ "fosscut-media",
+ "fosscut-model",
+ "fosscut-render",
+ "fosscut-time",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

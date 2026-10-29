@@ -1,0 +1,23 @@
+[package]
+name = "fosscut-engine"
+description = "FossCut's session host: drives export jobs (and later preview) over the media, render and audio crates"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+blake3.workspace = true
+fosscut-audio.workspace = true
+fosscut-media = { workspace = true, features = ["ffmpeg"] }
+fosscut-model.workspace = true
+fosscut-render.workspace = true
+fosscut-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

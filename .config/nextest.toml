@@ -10,3 +10,14 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 fail-fast = false
 retries = 0
 slow-timeout = { period = "60s", terminate-after = 5 }
+
+# The milestone 3 exit check renders, encodes and verifies a full 1080p, 240-frame export.
+# On the Windows CI runner (WARP software GPU, Media Foundation's software H.264 encoder)
+# that alone takes about 4.5 minutes, so this one test may run for up to 10.
+[[profile.default.overrides]]
+filter = "test(round_one_baseline_exports_and_verifies)"
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[[profile.ci.overrides]]
+filter = "test(round_one_baseline_exports_and_verifies)"
+slow-timeout = { period = "120s", terminate-after = 5 }

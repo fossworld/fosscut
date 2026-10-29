@@ -12,7 +12,7 @@ mod writer;
 
 pub use audio::{FfmpegAudioDecoder, samples_at};
 pub use report::probe_output;
-pub use writer::{FfmpegWriter, encoder_capabilities};
+pub use writer::{FfmpegWriter, audio_encoder, encoder_capabilities, video_encoder};
 
 /// The mono or stereo channel layout.
 fn channel_layout(channels: u16) -> Result<rsmpeg::avutil::AVChannelLayout, String> {
@@ -24,12 +24,14 @@ fn channel_layout(channels: u16) -> Result<rsmpeg::avutil::AVChannelLayout, Stri
     rsmpeg::avutil::AVChannelLayout::from_mask(mask).ok_or_else(|| "bad channel layout".to_string())
 }
 
-/// Keeps FFmpeg to errors on stderr; its informational output is not useful to editors or
-/// agents. Called by every entry point of this module.
+/// Keeps FFmpeg quiet on stderr except for fatal errors. Failures reach callers as typed
+/// errors; FFmpeg's own messages (for example a hardware decoder declining a codec before
+/// the software fallback takes over) would only clutter the output people and agents read.
+/// Called by every entry point of this module.
 fn quiet() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     // SAFETY: `av_log_set_level` only stores an integer in FFmpeg's global state.
-    ONCE.call_once(|| unsafe { ffi::av_log_set_level(ffi::AV_LOG_ERROR as i32) });
+    ONCE.call_once(|| unsafe { ffi::av_log_set_level(ffi::AV_LOG_FATAL as i32) });
 }
 
 use std::collections::HashMap;
