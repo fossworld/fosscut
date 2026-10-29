@@ -3,7 +3,9 @@
 //!
 //! - [`loudness`]: ITU-R BS.1770-4 integrated loudness and sample peak;
 //! - [`silence`]: ranges quieter than a threshold for at least a minimum duration;
-//! - [`scenes`]: hard shot cuts from luma-histogram differences.
+//! - [`scenes`]: hard shot cuts from luma-histogram differences;
+//! - [`speech`]: words with timings, filler candidates and pauses, recognised by whisper.cpp
+//!   with a model from [`models`] (ADR-0020).
 //!
 //! The analyzers are pure and stream over samples or frames; [`decode`] feeds them from a
 //! media file and [`cache`] stores their results outside the project, keyed by the file's
@@ -14,8 +16,10 @@
 pub mod cache;
 pub mod decode;
 pub mod loudness;
+pub mod models;
 pub mod scenes;
 pub mod silence;
+pub mod speech;
 
 use fosscut_time::Flicks;
 use schemars::JsonSchema;
@@ -25,6 +29,7 @@ use thiserror::Error;
 pub use loudness::Loudness;
 pub use scenes::{Cut, SceneOptions, Scenes};
 pub use silence::{SilenceOptions, Silences};
+pub use speech::{Transcript, TranscriptOptions};
 
 /// A moment in an asset, from its start: exact flicks, with decimal seconds for reading.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -76,6 +81,8 @@ pub enum Analyzer {
     Silences,
     /// Hard shot cuts.
     Scenes,
+    /// Speech as words with timings, filler candidates and pauses.
+    Transcript,
 }
 
 /// What an analyzer reads.
@@ -89,7 +96,12 @@ pub enum Needs {
 
 impl Analyzer {
     /// Every analyzer.
-    pub const ALL: [Analyzer; 3] = [Analyzer::Loudness, Analyzer::Silences, Analyzer::Scenes];
+    pub const ALL: [Analyzer; 4] = [
+        Analyzer::Loudness,
+        Analyzer::Silences,
+        Analyzer::Scenes,
+        Analyzer::Transcript,
+    ];
 
     /// Stable name, as agents pass it.
     pub fn name(self) -> &'static str {
@@ -97,7 +109,14 @@ impl Analyzer {
             Analyzer::Loudness => "loudness",
             Analyzer::Silences => "silences",
             Analyzer::Scenes => "scenes",
+            Analyzer::Transcript => "transcript",
         }
+    }
+
+    /// Whether it runs when no analyzers are named: everything except speech, which needs an
+    /// installed model and takes longer.
+    pub fn by_default(self) -> bool {
+        self != Analyzer::Transcript
     }
 
     /// The analyzer called `name`.
@@ -121,13 +140,16 @@ impl Analyzer {
                 "Ranges whose level stays below a threshold for at least a minimum duration: pauses to cut or keep."
             }
             Analyzer::Scenes => "Hard shot cuts with their frame, time and confidence.",
+            Analyzer::Transcript => {
+                "Speech as words with timings, filler candidates and pauses, recognised locally by whisper.cpp; needs an installed speech model and must be named."
+            }
         }
     }
 
     /// The stream it reads.
     pub fn needs(self) -> Needs {
         match self {
-            Analyzer::Loudness | Analyzer::Silences => Needs::Audio,
+            Analyzer::Loudness | Analyzer::Silences | Analyzer::Transcript => Needs::Audio,
             Analyzer::Scenes => Needs::Video,
         }
     }
@@ -168,6 +190,10 @@ pub fn analyzers() -> Vec<AnalyzerInfo> {
                 Analyzer::Scenes => {
                     serde_json::to_value(schemars::schema_for!(SceneOptions)).unwrap_or_default()
                 }
+                Analyzer::Transcript => {
+                    serde_json::to_value(schemars::schema_for!(TranscriptOptions))
+                        .unwrap_or_default()
+                }
             },
         })
         .collect()
@@ -183,6 +209,9 @@ pub struct Options {
     /// Options of `scenes`.
     #[serde(default)]
     pub scenes: SceneOptions,
+    /// Options of `transcript`.
+    #[serde(default)]
+    pub transcript: TranscriptOptions,
 }
 
 impl Options {
@@ -192,6 +221,7 @@ impl Options {
             Analyzer::Loudness => serde_json::Value::Null,
             Analyzer::Silences => serde_json::to_value(&self.silences).unwrap_or_default(),
             Analyzer::Scenes => serde_json::to_value(&self.scenes).unwrap_or_default(),
+            Analyzer::Transcript => serde_json::to_value(&self.transcript).unwrap_or_default(),
         }
     }
 }
@@ -208,6 +238,9 @@ pub struct Results {
     /// Shot cuts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenes: Option<Scenes>,
+    /// Words, fillers and pauses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<Transcript>,
 }
 
 impl Results {
@@ -217,6 +250,7 @@ impl Results {
             Analyzer::Loudness => self.loudness.as_ref().map(serde_json::to_value),
             Analyzer::Silences => self.silences.as_ref().map(serde_json::to_value),
             Analyzer::Scenes => self.scenes.as_ref().map(serde_json::to_value),
+            Analyzer::Transcript => self.transcript.as_ref().map(serde_json::to_value),
         };
         value.and_then(Result::ok)
     }
@@ -232,6 +266,9 @@ impl Results {
                 .is_ok(),
             Analyzer::Scenes => serde_json::from_value(value)
                 .map(|r| self.scenes = Some(r))
+                .is_ok(),
+            Analyzer::Transcript => serde_json::from_value(value)
+                .map(|r| self.transcript = Some(r))
                 .is_ok(),
         }
     }
@@ -252,6 +289,15 @@ pub enum AnalysisError {
     /// Decoding failed.
     #[error(transparent)]
     Media(#[from] fosscut_media::MediaError),
+    /// The speech model is unknown or not installed.
+    #[error(transparent)]
+    Model(#[from] models::ModelError),
+    /// Speech recognition failed.
+    #[error("speech recognition failed: {0}")]
+    Speech(String),
+    /// This build has no speech recognition (the `speech` feature is off).
+    #[error("this build of FossCut has no speech recognition")]
+    SpeechUnavailable,
 }
 
 /// How far an analysis has come: seconds of audio and frames of video done, of the total.
@@ -280,6 +326,8 @@ mod tests {
         assert!(listed[0].options.is_null());
         assert!(listed[1].options["properties"]["threshold_dbfs"].is_object());
         assert_eq!(listed[2].reads, "video");
+        assert!(listed[3].options["properties"]["model"].is_object());
+        assert!(!Analyzer::Transcript.by_default() && Analyzer::Scenes.by_default());
         assert_eq!(Analyzer::Scenes.needs(), Needs::Video);
         assert_eq!(
             serde_json::to_value(Analyzer::Silences).unwrap(),

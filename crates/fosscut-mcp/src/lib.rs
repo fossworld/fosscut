@@ -43,8 +43,8 @@ use serde_json::{Value, json};
 
 use params::{
     CapabilitiesArgs, Detail, EditArgs, ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs,
-    JobArgs, MediaAnalyzeArgs, MediaImportArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs,
-    QueryArgs, SheetArgs, TimelineReadArgs,
+    JobArgs, MediaAnalyzeArgs, MediaImportArgs, ModelsArgs, ProjectArgs, ProjectNewArgs,
+    ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -87,6 +87,8 @@ struct State {
     renderer: Mutex<Option<Renderer>>,
     /// Where analysis results and export request records are kept.
     cache: PathBuf,
+    /// Where models are installed.
+    models: PathBuf,
 }
 
 /// Locks `mutex`, recovering the data if a tool panicked while holding it.
@@ -157,14 +159,21 @@ impl FosscutServer {
         FosscutServer::with_cache(project, fosscut_engine::cache_dir())
     }
 
-    /// A server that caches analysis results and export request records in `cache`.
+    /// A server that caches analysis results and export request records in `cache`, with
+    /// models in [`fosscut_engine::models_dir`].
     pub fn with_cache(project: Option<PathBuf>, cache: PathBuf) -> FosscutServer {
+        FosscutServer::with_dirs(project, cache, fosscut_engine::models_dir())
+    }
+
+    /// A server that caches in `cache` and installs and reads models in `models`.
+    pub fn with_dirs(project: Option<PathBuf>, cache: PathBuf, models: PathBuf) -> FosscutServer {
         FosscutServer {
             state: Arc::new(State {
                 project: Mutex::new(project),
                 jobs: Jobs::new(),
                 renderer: Mutex::new(None),
                 cache,
+                models,
             }),
             tool_router: FosscutServer::tool_router(),
         }
@@ -239,7 +248,7 @@ fn request(
 impl FosscutServer {
     /// Lists what FossCut can do.
     #[tool(
-        description = "List what FossCut can do: every editing command and query with a summary, the engine operations, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
+        description = "List what FossCut can do: every editing command and query with a summary, the engine operations, the analyzers, the models and whether each is installed, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
         annotations(read_only_hint = true)
     )]
     async fn capabilities(
@@ -248,9 +257,15 @@ impl FosscutServer {
     ) -> Result<CallToolResult, ErrorData> {
         let CapabilitiesArgs { detail, names } = params.0;
         let bundle = lock(&self.state.project).clone();
+        let models = self.state.models.clone();
         reply(
             blocking(move || {
-                fosscut_engine::capabilities(detail.as_str(), &names, bundle.as_deref())
+                let mut value =
+                    fosscut_engine::capabilities(detail.as_str(), &names, bundle.as_deref())?;
+                if value.get("models").is_some() {
+                    value["models"] = json!(fosscut_engine::analysis::models(&models));
+                }
+                Ok(value)
             })
             .await,
         )
@@ -404,7 +419,7 @@ impl FosscutServer {
 
     /// Analyzes media.
     #[tool(
-        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}.",
+        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
         annotations(read_only_hint = true)
     )]
     async fn media_analyze(
@@ -429,6 +444,7 @@ impl FosscutServer {
                 options: args.options,
                 refresh: args.refresh,
                 cache: state.cache.clone(),
+                models: state.models.clone(),
             };
             let project = session.project();
             if let Some(report) = fosscut_engine::analysis::cached(project, &request)? {
@@ -449,6 +465,43 @@ impl FosscutServer {
         })
         .await;
         reply(result)
+    }
+
+    /// Lists or installs models.
+    #[tool(
+        description = "List the models analyzers can use (speech recognition for media_analyze transcript) with size, license, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256: tell the user the size and license first, and pass confirm: true only after they agree. Larger models are more accurate and slower; English-only models (.en) suit English speech.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn models(&self, params: Parameters<ModelsArgs>) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let dir = self.state.models.clone();
+        reply(
+            blocking(move || {
+                let Some(name) = args.install else {
+                    return Ok(json!({
+                        "dir": dir.display().to_string(),
+                        "models": fosscut_engine::analysis::models(&dir),
+                    }));
+                };
+                let source = match args.from {
+                    Some(file) => fosscut_engine::analysis::ModelSource::File(file.into()),
+                    None => fosscut_engine::analysis::ModelSource::Download(None),
+                };
+                let report = fosscut_engine::analysis::install_model(
+                    &dir,
+                    &name,
+                    &source,
+                    args.confirm,
+                    false,
+                )?;
+                Ok(as_value(&report))
+            })
+            .await,
+        )
     }
 
     /// Applies commands.

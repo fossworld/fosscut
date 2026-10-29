@@ -103,6 +103,8 @@ pub fn print_query(name: &str, value: &Value) {
         "frame.grab" => print_frame(value),
         "media.analysis" => print_analysis(value),
         "skills.list" => print_skills(value),
+        "models.list" => print_models(value),
+        "models.install" => print_model_installed(value),
         "skills.install" => print_skills_installed(value),
         "frame.contact_sheet" => print_contact_sheet(value),
         _ => println!(
@@ -260,6 +262,20 @@ fn print_capabilities(v: &Value) {
     for a in v["analyzers"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&a["name"]), s(&a["summary"]));
     }
+    println!("models (fosscut models install <name>):");
+    for m in v["models"].as_array().into_iter().flatten() {
+        println!(
+            "  {:<22} {:>7.1} MB  {:<12} {}",
+            s(&m["name"]),
+            m["size_bytes"].as_f64().unwrap_or(0.0) / 1e6,
+            s(&m["languages"]),
+            if m["installed"] == Value::Bool(true) {
+                "installed"
+            } else {
+                "not installed"
+            }
+        );
+    }
     println!("export presets:");
     for p in v["export_presets"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&p["name"]), s(&p["description"]));
@@ -402,6 +418,86 @@ fn print_analysis(v: &Value) {
             println!("scenes    {} cuts: {}", cuts.len(), cuts.join(", "));
         }
     }
+    if let Some(t) = r.get("transcript") {
+        print_transcript(t);
+    }
+}
+
+/// The transcript part of `media analyze`: counts, fillers, pauses, then the text by segment.
+fn print_transcript(t: &Value) {
+    let list = |key: &str| t[key].as_array().cloned().unwrap_or_default();
+    let (words, segments) = (list("words"), list("segments"));
+    println!(
+        "transcript {} words in {} segments, language {}, model {}",
+        words.len(),
+        segments.len(),
+        s(&t["language"]),
+        s(&t["model"])
+    );
+    let fillers: Vec<String> = list("fillers")
+        .iter()
+        .map(|f| format!("{} ({} s)", s(&f["text"]), s(&f["start"]["seconds"])))
+        .collect();
+    if fillers.is_empty() {
+        println!("fillers   none");
+    } else {
+        println!("fillers   {}: {}", fillers.len(), fillers.join(", "));
+    }
+    let pauses: Vec<String> = list("pauses")
+        .iter()
+        .map(|p| {
+            format!(
+                "{}-{} s",
+                s(&p["start"]["seconds"]),
+                s(&p["end"]["seconds"])
+            )
+        })
+        .collect();
+    if pauses.is_empty() {
+        println!("pauses    none over {} ms", t["min_pause_ms"]);
+    } else {
+        println!(
+            "pauses    {} over {} ms: {}",
+            pauses.len(),
+            t["min_pause_ms"],
+            pauses.join(", ")
+        );
+    }
+    for segment in &segments {
+        println!(
+            "  {}-{} s {}",
+            s(&segment["start"]["seconds"]),
+            s(&segment["end"]["seconds"]),
+            s(&segment["text"]).trim()
+        );
+    }
+}
+
+fn print_models(v: &Value) {
+    for model in v["models"].as_array().into_iter().flatten() {
+        println!(
+            "{:<24} {:>9.1} MB  {:<4} {:<13} {}",
+            s(&model["name"]),
+            model["size_bytes"].as_f64().unwrap_or(0.0) / 1e6,
+            s(&model["license"]),
+            s(&model["languages"]),
+            if model["installed"] == Value::Bool(true) {
+                "installed"
+            } else {
+                "not installed"
+            }
+        );
+    }
+    println!("models folder: {}", s(&v["dir"]));
+}
+
+fn print_model_installed(v: &Value) {
+    let done = match s(&v["status"]) {
+        "unchanged" => "already installed:",
+        "dry_run" => "dry run: would install",
+        _ => "installed",
+    };
+    println!("{done} {} in {}", s(&v["model"]["name"]), s(&v["path"]));
 }
 
 fn print_skills(v: &Value) {

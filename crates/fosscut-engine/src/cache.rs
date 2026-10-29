@@ -25,3 +25,13 @@ pub fn cache_dir() -> PathBuf {
     };
     base.unwrap_or_else(std::env::temp_dir).join("fosscut")
 }
+
+/// Where models are installed (ADR-0019, item 5): `FOSSCUT_MODELS_DIR` when set, otherwise
+/// `models` in [`cache_dir`]. Separate so tests and CI can share one installed model while
+/// keeping other caches apart.
+pub fn models_dir() -> PathBuf {
+    std::env::var_os("FOSSCUT_MODELS_DIR")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| cache_dir().join("models"))
+}

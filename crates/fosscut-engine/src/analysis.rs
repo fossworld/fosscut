@@ -5,8 +5,11 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use fosscut_analysis::decode::{self, Media};
+pub use fosscut_analysis::models::{ModelInfo, Source as ModelSource};
 use fosscut_analysis::{AnalysisError, Needs, cache};
-pub use fosscut_analysis::{Analyzer, Options, Results, SceneOptions, SilenceOptions};
+pub use fosscut_analysis::{
+    Analyzer, Options, Results, SceneOptions, SilenceOptions, Transcript, TranscriptOptions,
+};
 use fosscut_model::{AssetKind, ContentIdentity, Id, Project};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +31,8 @@ pub struct AnalysisRequest {
     pub refresh: bool,
     /// The cache directory, normally [`crate::cache_dir`].
     pub cache: PathBuf,
+    /// Where speech models are installed, normally [`crate::models_dir`].
+    pub models: PathBuf,
 }
 
 /// An asset's analysis results.
@@ -48,6 +53,8 @@ pub struct AnalysisReport {
 /// The analyzers to run, their cache keys and what is cached already.
 struct Plan {
     analyzers: Vec<Analyzer>,
+    /// The request's options with the speech model chosen, so results are cached per model.
+    options: Options,
     identity: ContentIdentity,
     cached: Results,
     missing: Vec<Analyzer>,
@@ -65,6 +72,7 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
     let analyzers: Vec<Analyzer> = if request.analyzers.is_empty() {
         Analyzer::ALL
             .into_iter()
+            .filter(|a| a.by_default())
             .filter(|a| match a.needs() {
                 Needs::Audio => has_audio,
                 Needs::Video => has_video,
@@ -91,6 +99,12 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
             _ => {}
         }
     }
+    let mut options = request.options.clone();
+    if analyzers.contains(&Analyzer::Transcript) {
+        let model = fosscut_analysis::decode::speech_model(&options, &request.models)
+            .map_err(EngineError::from)?;
+        options.transcript.model = Some(model.name.to_string());
+    }
     let identity = match &asset.identity {
         Some(identity) => identity.clone(),
         None => {
@@ -104,10 +118,10 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
     let mut cached = Results::default();
     let mut missing = Vec::new();
     for &analyzer in &analyzers {
-        let options = request.options.for_analyzer(analyzer);
-        let path = cache::entry_path(&request.cache, &identity, analyzer, &options);
+        let key = options.for_analyzer(analyzer);
+        let path = cache::entry_path(&request.cache, &identity, analyzer, &key);
         let hit = (!request.refresh)
-            .then(|| cache::read(&path, analyzer, &options))
+            .then(|| cache::read(&path, analyzer, &key))
             .flatten()
             .is_some_and(|value| cached.set(analyzer, value));
         if !hit {
@@ -116,6 +130,7 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
     }
     Ok(Plan {
         analyzers,
+        options,
         identity,
         cached,
         missing,
@@ -161,12 +176,18 @@ pub fn analyze(
             audio_channels: info.audio.as_ref().map(|a| a.channels),
             video_rate: info.video.as_ref().and_then(|v| v.rate),
         };
-        let measured = decode::analyze(media, &plan.missing, &request.options, &mut |p| {
-            progress(Progress {
-                done: p.done,
-                total: p.total,
-            })
-        })
+        let measured = decode::analyze(
+            media,
+            &plan.missing,
+            &plan.options,
+            &request.models,
+            &mut |p| {
+                progress(Progress {
+                    done: p.done,
+                    total: p.total,
+                })
+            },
+        )
         .map_err(|e| match e {
             AnalysisError::NoAudio => EngineError::NoAudio {
                 asset: request.asset.to_string(),
@@ -176,13 +197,16 @@ pub fn analyze(
             },
             AnalysisError::Cancelled => EngineError::AnalysisCancelled,
             AnalysisError::Media(media) => EngineError::from(media),
+            AnalysisError::Model(model) => EngineError::from(model),
+            AnalysisError::Speech(message) => EngineError::SpeechFailed { message },
+            AnalysisError::SpeechUnavailable => EngineError::SpeechUnavailable,
         })?;
         for &analyzer in &plan.missing {
             if let Some(value) = measured.get(analyzer) {
-                let options = request.options.for_analyzer(analyzer);
-                let path = cache::entry_path(&request.cache, &plan.identity, analyzer, &options);
+                let key = plan.options.for_analyzer(analyzer);
+                let path = cache::entry_path(&request.cache, &plan.identity, analyzer, &key);
                 // The cache only saves time; failing to write it does not fail the analysis.
-                let _ = cache::write(&path, analyzer, &options, &value);
+                let _ = cache::write(&path, analyzer, &key, &value);
                 results.set(analyzer, value);
             }
         }
@@ -200,6 +224,56 @@ pub fn analyze(
         computed: plan.missing,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+/// Every model with whether it is installed in `dir`.
+pub fn models(dir: &std::path::Path) -> Vec<ModelInfo> {
+    fosscut_analysis::models::list(dir)
+}
+
+/// What installing a model did.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ModelInstall {
+    /// The model, with `installed` as it is now.
+    pub model: ModelInfo,
+    /// Where it is, or would be, installed.
+    pub path: String,
+    /// `installed`, `unchanged` (it already was) or `dry_run` (nothing was done).
+    pub status: &'static str,
+}
+
+/// Installs model `name` into `dir` (ADR-0019, item 5). A download needs `confirmed`, so
+/// callers show the size and license first; installing from a local file does not. An
+/// installed model is left as it is, and `dry_run` only reports.
+pub fn install_model(
+    dir: &std::path::Path,
+    name: &str,
+    source: &ModelSource,
+    confirmed: bool,
+    dry_run: bool,
+) -> Result<ModelInstall, EngineError> {
+    use fosscut_analysis::models;
+    let manifest = models::manifest(name)?;
+    let report = |status| ModelInstall {
+        model: models::info(dir, manifest),
+        path: models::path(dir, manifest).display().to_string(),
+        status,
+    };
+    if models::is_installed(dir, manifest) {
+        return Ok(report("unchanged"));
+    }
+    if dry_run {
+        return Ok(report("dry_run"));
+    }
+    if matches!(source, ModelSource::Download(_)) && !confirmed {
+        return Err(EngineError::ModelConfirmation {
+            name: manifest.name.into(),
+            size_bytes: manifest.size,
+            license: manifest.license.into(),
+        });
+    }
+    models::install(dir, manifest, source)?;
+    Ok(report("installed"))
 }
 
 /// Parses analyzer names, failing with the list of known ones.

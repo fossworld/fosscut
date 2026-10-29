@@ -28,6 +28,8 @@ Thank you for helping build an open source video editor that people and AI agent
 | Python 3 | Repository check scripts |
 | FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` and the crates above it, including the CLI ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
 | `ffmpeg` and `ffprobe` command-line tools with libx264 | Generating test fixtures and the end-to-end CLI tests |
+| CMake and a C++ compiler | Building whisper.cpp for speech recognition, the default `speech` feature of `fosscut-analysis` ([ADR-0020](docs/adr/0020-speech-recognition-with-whisper-cpp.md)) |
+| `whisper-tiny.en` speech model (77.7 MB) | Speech tests: `cargo run -p fosscut-cli -- models install whisper-tiny.en --yes`, then set `FOSSCUT_MODELS_DIR` to the folder `fosscut models list` prints |
 
 ### FFmpeg for development
 

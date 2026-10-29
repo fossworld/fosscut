@@ -17,7 +17,9 @@ fn command(dir: &Path) -> Command {
         .current_dir(dir)
         .env_remove("FOSSCUT_PROJECT")
         .env("FOSSCUT_ACTOR", "agent:test")
-        .env("FOSSCUT_CACHE_DIR", dir.join("cache"));
+        .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
+        // Models live in the cache folder above unless a test names another.
+        .env_remove("FOSSCUT_MODELS_DIR");
     command
 }
 
@@ -1056,5 +1058,184 @@ fn media_analysis_from_the_command_line() {
         text.contains("scenes    2 cuts: frame 45 (1.5 s), frame 90 (3 s)"),
         "{text}"
     );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Copies the speech fixture into `dir` and imports it as `asset_0001` of `Talk.fosscut`.
+fn import_speech(dir: &Path) {
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/speech/librispeech-5105-28233-0005/audio.flac"
+        ),
+        dir.join("speech.flac"),
+    )
+    .unwrap();
+    ok(dir, &["project", "new", "Talk.fosscut"]);
+    ok(dir, &["media", "import", "speech.flac"]);
+}
+
+#[test]
+fn models_from_the_command_line() {
+    let dir = workspace("models");
+    let listed = ok(&dir, &["models", "list"]);
+    let models = listed["models"].as_array().unwrap();
+    assert_eq!(models.len(), 4);
+    assert!(models.iter().all(|m| m["installed"] == json!(false)));
+    assert!(Path::new(listed["dir"].as_str().unwrap()).ends_with("cache/models"));
+
+    // Downloading needs --yes; the error says what it would download.
+    let unconfirmed = fails(&dir, &["models", "install", "whisper-tiny.en"]);
+    assert_eq!(
+        unconfirmed["code"],
+        json!("fosscut.model.confirmation_required")
+    );
+    assert_eq!(unconfirmed["details"]["size_bytes"], json!(77_704_715));
+    let human = fosscut(&dir, &["models", "install", "whisper-tiny.en"]);
+    let text = String::from_utf8_lossy(&human.stderr);
+    assert!(
+        text.contains("downloads 77.7 MB (MIT license)") && text.contains("--yes"),
+        "{text}"
+    );
+    let dry = ok(
+        &dir,
+        &["models", "install", "whisper-tiny.en", "--yes", "--dry-run"],
+    );
+    assert_eq!(dry["status"], json!("dry_run"));
+    let unknown = fails(&dir, &["models", "install", "whisper-huge", "--yes"]);
+    assert_eq!(unknown["code"], json!("fosscut.model.unknown"));
+    std::fs::write(dir.join("fake.bin"), "not a model").unwrap();
+    let wrong = fails(
+        &dir,
+        &["models", "install", "whisper-tiny.en", "--from", "fake.bin"],
+    );
+    assert_eq!(wrong["code"], json!("fosscut.model.checksum_mismatch"));
+
+    // A model already in the folder is left alone, and capabilities report it.
+    let folder = dir.join("cache/models");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::File::create(folder.join("ggml-tiny.en.bin"))
+        .unwrap()
+        .set_len(77_704_715)
+        .unwrap();
+    let human = fosscut(&dir, &["models", "install", "whisper-tiny.en", "--yes"]);
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.starts_with("already installed: whisper-tiny.en in "),
+        "{text}"
+    );
+    let human = fosscut(&dir, &["models", "install", "whisper-base.en", "--dry-run"]);
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.starts_with("dry run: would install whisper-base.en in "),
+        "{text}"
+    );
+    let human = fosscut(&dir, &["models", "list"]);
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.contains("whisper-tiny.en               77.7 MB  MIT  en            installed"),
+        "{text}"
+    );
+    assert!(text.contains("whisper-small") && text.contains("not installed"));
+    let capabilities = ok(&dir, &["capabilities"]);
+    assert_eq!(capabilities["models"][3]["name"], json!("whisper-tiny.en"));
+    assert_eq!(capabilities["models"][3]["installed"], json!(true));
+    assert!(
+        capabilities["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o["name"] == json!("models.install"))
+    );
+
+    // Without a model, a transcript fails before decoding, saying how to install one.
+    if has_ffmpeg() {
+        import_speech(&dir);
+        std::fs::remove_file(folder.join("ggml-tiny.en.bin")).unwrap();
+        let missing = fails(&dir, &["media", "analyze", "asset_0001", "transcript"]);
+        assert_eq!(missing["code"], json!("fosscut.model.not_installed"));
+        assert!(missing["hint"].as_str().unwrap().contains("models install"));
+    } else {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+        );
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn transcripts_from_the_command_line() {
+    let models = std::env::var_os("FOSSCUT_MODELS_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| {
+            std::fs::metadata(dir.join("ggml-tiny.en.bin")).is_ok_and(|m| m.len() == 77_704_715)
+        });
+    let required =
+        std::env::var_os("FOSSCUT_REQUIRE_SPEECH").is_some_and(|v| !v.is_empty() && v != "0");
+    assert!(
+        models.is_some() || !required,
+        "FOSSCUT_REQUIRE_SPEECH is set but whisper-tiny.en is not in FOSSCUT_MODELS_DIR"
+    );
+    let Some(models) = models else {
+        return;
+    };
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("transcript");
+    import_speech(&dir);
+    let args = [
+        "media",
+        "analyze",
+        "asset_0001",
+        "transcript",
+        "--model",
+        "whisper-tiny.en",
+        "--language",
+        "en",
+        "--min-pause-ms",
+        "250",
+    ];
+    let output = command(&dir)
+        .env("FOSSCUT_MODELS_DIR", &models)
+        .args(args)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stderr.len() < 200,
+        "whisper.cpp logs stay quiet: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["computed"], json!(["transcript"]));
+    let transcript = &report["results"]["transcript"];
+    assert_eq!(transcript["model"], json!("whisper-tiny.en"));
+    assert_eq!(transcript["language"], json!("en"));
+    assert_eq!(transcript["min_pause_ms"], json!(250));
+    assert!(transcript["words"].as_array().unwrap().len() >= 34);
+
+    let human = command(&dir)
+        .env("FOSSCUT_MODELS_DIR", &models)
+        .args(args)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(text.contains("from the cache: transcript"), "{text}");
+    assert!(
+        text.contains("language en, model whisper-tiny.en") && text.contains("fillers   none"),
+        "{text}"
+    );
+    assert!(
+        text.contains("pauses    ") && text.contains("over 250 ms"),
+        "{text}"
+    );
+    assert!(text.contains("sandy shore"), "{text}");
     std::fs::remove_dir_all(&dir).unwrap();
 }

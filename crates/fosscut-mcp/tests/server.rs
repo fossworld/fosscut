@@ -30,12 +30,18 @@ impl ClientHandler for TestClient {
 type Client = RunningService<RoleClient, TestClient>;
 
 /// A server in this process, connected to a client through an in-memory pipe. It caches
-/// in a folder of this test run, never in the user's cache.
+/// in a folder of this test run, never in the user's cache, and has no models.
 async fn connect(project: Option<PathBuf>) -> Client {
+    let cache = std::env::temp_dir().join(format!("fosscut-mcp-cache-{}", std::process::id()));
+    connect_with_models(project, cache.join("models")).await
+}
+
+/// Like [`connect`], with models in `models`.
+async fn connect_with_models(project: Option<PathBuf>, models: PathBuf) -> Client {
     let (server_io, client_io) = tokio::io::duplex(1 << 22);
     let cache = std::env::temp_dir().join(format!("fosscut-mcp-cache-{}", std::process::id()));
     tokio::spawn(async move {
-        let server = FosscutServer::with_cache(project, cache)
+        let server = FosscutServer::with_dirs(project, cache, models)
             .serve(server_io)
             .await
             .unwrap();
@@ -544,6 +550,99 @@ async fn media_is_analyzed_then_answered_from_the_cache() {
     assert_eq!(missing["code"], "fosscut.asset.not_found");
     let malformed = fails(&client, "media_analyze", json!({ "asset": "pause.wav" })).await;
     assert_eq!(malformed["code"], "fosscut.request.invalid_arguments");
+    client.cancel().await.unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn models_install_only_with_confirmation() {
+    let dir = workspace("models");
+    let folder = dir.join("models");
+    let client = connect_with_models(None, folder.clone()).await;
+    let listed = ok(&client, "models", json!({})).await;
+    let models = listed["models"].as_array().unwrap();
+    assert_eq!(models.len(), 4);
+    assert!(models.iter().all(|m| m["installed"] == json!(false)));
+    assert!(models.iter().all(|m| m["license"] == json!("MIT")));
+
+    // Installing asks the agent to confirm with the user first.
+    let unconfirmed = fails(&client, "models", json!({ "install": "whisper-tiny.en" })).await;
+    assert_eq!(unconfirmed["code"], "fosscut.model.confirmation_required");
+    assert_eq!(unconfirmed["details"]["size_bytes"], 77_704_715);
+    assert!(
+        unconfirmed["hint"]
+            .as_str()
+            .unwrap()
+            .contains("confirm: true")
+    );
+    let unknown = fails(
+        &client,
+        "models",
+        json!({ "install": "whisper-huge", "confirm": true }),
+    )
+    .await;
+    assert_eq!(unknown["code"], "fosscut.model.unknown");
+    std::fs::write(dir.join("fake.bin"), "not a model").unwrap();
+    let wrong = fails(
+        &client,
+        "models",
+        json!({ "install": "whisper-tiny.en", "from": dir.join("fake.bin") }),
+    )
+    .await;
+    assert_eq!(wrong["code"], "fosscut.model.checksum_mismatch");
+
+    // A model already there is reported, in capabilities too.
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::File::create(folder.join("ggml-tiny.en.bin"))
+        .unwrap()
+        .set_len(77_704_715)
+        .unwrap();
+    let unchanged = ok(&client, "models", json!({ "install": "whisper-tiny.en" })).await;
+    assert_eq!(unchanged["status"], "unchanged");
+    assert_eq!(unchanged["model"]["installed"], true);
+    let capabilities = ok(&client, "capabilities", json!({})).await;
+    assert_eq!(capabilities["models"][3]["installed"], true);
+
+    // That file has the right size but is not a model, so the recognition job fails with a
+    // typed error; with no model at all, the analysis says what to install at once.
+    if has_ffmpeg() {
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../fixtures/speech/librispeech-5105-28233-0005/audio.flac"
+            ),
+            dir.join("speech.flac"),
+        )
+        .unwrap();
+        ok(
+            &client,
+            "project_new",
+            json!({ "path": dir.join("Talk.fosscut") }),
+        )
+        .await;
+        ok(
+            &client,
+            "media_import",
+            json!({ "files": [dir.join("speech.flac")] }),
+        )
+        .await;
+        let broken = ok(
+            &client,
+            "media_analyze",
+            json!({ "asset": "asset_0001", "analyzers": ["transcript"], "wait_seconds": 60 }),
+        )
+        .await;
+        assert_eq!(broken["state"], "failed", "{broken}");
+        assert_eq!(broken["error"]["code"], "fosscut.analysis.speech_failed");
+        std::fs::remove_file(folder.join("ggml-tiny.en.bin")).unwrap();
+        let missing = fails(
+            &client,
+            "media_analyze",
+            json!({ "asset": "asset_0001", "analyzers": ["transcript"] }),
+        )
+        .await;
+        assert_eq!(missing["code"], "fosscut.model.not_installed");
+    }
     client.cancel().await.unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -106,6 +106,58 @@ pub enum EngineError {
     /// The analysis was cancelled; nothing was cached.
     #[error("the analysis was cancelled")]
     AnalysisCancelled,
+    /// No model has this name.
+    #[error("there is no model {name}")]
+    ModelUnknown {
+        /// The requested name.
+        name: String,
+    },
+    /// A model the analysis needs is not installed.
+    #[error("{what} is not installed")]
+    ModelNotInstalled {
+        /// The model, or the kind of model needed.
+        what: String,
+    },
+    /// A downloaded or copied model does not match its manifest.
+    #[error("{name} does not match its checksum: expected {expected}, got {actual}")]
+    ModelChecksum {
+        /// The model.
+        name: String,
+        /// What the manifest says.
+        expected: String,
+        /// What the file has.
+        actual: String,
+    },
+    /// A model could not be downloaded or copied.
+    #[error("cannot install {name}: {message}")]
+    ModelDownload {
+        /// The model.
+        name: String,
+        /// What went wrong.
+        message: String,
+    },
+    /// Installing a model downloads it; the caller has to confirm first.
+    #[error(
+        "installing {name} downloads {} ({license} license) and needs confirmation",
+        megabytes(.size_bytes)
+    )]
+    ModelConfirmation {
+        /// The model.
+        name: String,
+        /// Its download size.
+        size_bytes: u64,
+        /// Its license.
+        license: String,
+    },
+    /// Speech recognition failed.
+    #[error("speech recognition failed: {message}")]
+    SpeechFailed {
+        /// What whisper.cpp reported.
+        message: String,
+    },
+    /// This build has no speech recognition.
+    #[error("this build of FossCut has no speech recognition")]
+    SpeechUnavailable,
     /// A clip's media file cannot be found.
     #[error("media for asset {asset} is missing")]
     MissingMedia {
@@ -160,6 +212,13 @@ impl EngineError {
             EngineError::NoVideo { .. } => "fosscut.analysis.no_video",
             EngineError::UnknownAnalyzer { .. } => "fosscut.analysis.unknown_analyzer",
             EngineError::AnalysisCancelled => "fosscut.analysis.cancelled",
+            EngineError::ModelUnknown { .. } => "fosscut.model.unknown",
+            EngineError::ModelNotInstalled { .. } => "fosscut.model.not_installed",
+            EngineError::ModelChecksum { .. } => "fosscut.model.checksum_mismatch",
+            EngineError::ModelDownload { .. } => "fosscut.model.download_failed",
+            EngineError::ModelConfirmation { .. } => "fosscut.model.confirmation_required",
+            EngineError::SpeechFailed { .. } => "fosscut.analysis.speech_failed",
+            EngineError::SpeechUnavailable => "fosscut.analysis.speech_unavailable",
             EngineError::MissingMedia { .. } => "fosscut.export.missing_media",
             EngineError::Cancelled => "fosscut.export.cancelled",
             EngineError::RequestReused { .. } => "fosscut.request.reused",
@@ -201,6 +260,32 @@ impl EngineError {
             EngineError::UnknownAnalyzer { known, .. } => {
                 Some(format!("Analyzers: {}.", known.join(", ")))
             }
+            EngineError::ModelUnknown { .. } => {
+                Some(format!("Models: {}.", model_names()))
+            }
+            EngineError::ModelNotInstalled { .. } => Some(format!(
+                "Ask the user before installing, since it downloads: models install (fosscut models install <name>). Models: {}.",
+                model_sizes()
+            )),
+            EngineError::ModelChecksum { .. } => Some(
+                "The file is damaged or not the published model; install it again from its URL."
+                    .into(),
+            ),
+            EngineError::ModelDownload { .. } => Some(
+                "Check the network and that curl is installed, or download the file yourself and install it with --from <file>."
+                    .into(),
+            ),
+            EngineError::ModelConfirmation { .. } => Some(
+                "Tell the user the size and license; install with --yes (CLI) or confirm: true (MCP) only if they agree."
+                    .into(),
+            ),
+            EngineError::SpeechFailed { .. } => Some(
+                "Try another speech model (options.transcript.model), or report the message."
+                    .into(),
+            ),
+            EngineError::SpeechUnavailable => {
+                Some("Use a FossCut build with the speech feature.".into())
+            }
             EngineError::MissingMedia { .. } => {
                 Some("Relink the media or restore the file at one of the tried paths.".into())
             }
@@ -235,6 +320,22 @@ impl EngineError {
             EngineError::UnknownAnalyzer { name, known } => {
                 json!({ "name": name, "known": known })
             }
+            EngineError::ModelUnknown { name } => json!({ "name": name }),
+            EngineError::ModelNotInstalled { what } => json!({ "what": what }),
+            EngineError::ModelChecksum {
+                name,
+                expected,
+                actual,
+            } => json!({ "name": name, "expected": expected, "actual": actual }),
+            EngineError::ModelDownload { name, message } => {
+                json!({ "name": name, "message": message })
+            }
+            EngineError::ModelConfirmation {
+                name,
+                size_bytes,
+                license,
+            } => json!({ "name": name, "size_bytes": size_bytes, "license": license }),
+            EngineError::SpeechFailed { message } => json!({ "message": message }),
             EngineError::TimeOutOfRange { time, duration } => {
                 json!({ "time": time, "duration": duration })
             }
@@ -306,6 +407,41 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "Start it again when wanted.",
         ),
         entry(
+            "fosscut.model.unknown",
+            "No model has this name.",
+            "capabilities lists the models.",
+        ),
+        entry(
+            "fosscut.model.not_installed",
+            "The analysis needs a model that is not installed.",
+            "Ask the user, then install one with models install; the hint lists sizes.",
+        ),
+        entry(
+            "fosscut.model.checksum_mismatch",
+            "The downloaded or copied model does not match its published checksum.",
+            "Install it again from its URL.",
+        ),
+        entry(
+            "fosscut.model.download_failed",
+            "The model could not be downloaded or copied.",
+            "Check the network and curl, or install from a local file with --from.",
+        ),
+        entry(
+            "fosscut.model.confirmation_required",
+            "Installing a model downloads it, so the call must confirm.",
+            "Tell the user the size and license; confirm only if they agree.",
+        ),
+        entry(
+            "fosscut.analysis.speech_failed",
+            "Speech recognition failed.",
+            "Try another speech model, or report the message.",
+        ),
+        entry(
+            "fosscut.analysis.speech_unavailable",
+            "This build of FossCut has no speech recognition.",
+            "Use a build with the speech feature.",
+        ),
+        entry(
             "fosscut.export.missing_media",
             "A clip's media file is not at its recorded paths.",
             "Restore the file at one of details.tried, or import it again and replace the clip.",
@@ -326,6 +462,51 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "Check the folder exists and is writable, and that no other program holds the file open.",
         ),
     ]
+}
+
+/// A size in megabytes with one decimal, for messages.
+fn megabytes(bytes: &u64) -> String {
+    format!("{:.1} MB", *bytes as f64 / 1e6)
+}
+
+/// Every model name, for hints.
+fn model_names() -> String {
+    fosscut_analysis::models::MODELS
+        .iter()
+        .map(|m| m.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Every model with its download size, for hints.
+fn model_sizes() -> String {
+    fosscut_analysis::models::MODELS
+        .iter()
+        .map(|m| format!("{} ({})", m.name, megabytes(&m.size)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+impl From<fosscut_analysis::models::ModelError> for EngineError {
+    fn from(error: fosscut_analysis::models::ModelError) -> EngineError {
+        use fosscut_analysis::models::ModelError;
+        match error {
+            ModelError::Unknown { name } => EngineError::ModelUnknown { name },
+            ModelError::NotInstalled { what } => EngineError::ModelNotInstalled { what },
+            ModelError::ChecksumMismatch {
+                name,
+                expected,
+                actual,
+            } => EngineError::ModelChecksum {
+                name,
+                expected,
+                actual,
+            },
+            ModelError::DownloadFailed { name, message } => {
+                EngineError::ModelDownload { name, message }
+            }
+        }
+    }
 }
 
 impl From<&EngineError> for ApiError {
@@ -535,6 +716,65 @@ mod tests {
                 false,
             ),
             (
+                EngineError::ModelUnknown {
+                    name: "whisper-huge".into(),
+                },
+                "fosscut.model.unknown",
+                "there is no model whisper-huge",
+                true,
+            ),
+            (
+                EngineError::ModelNotInstalled {
+                    what: "a speech model".into(),
+                },
+                "fosscut.model.not_installed",
+                "a speech model is not installed",
+                true,
+            ),
+            (
+                EngineError::ModelChecksum {
+                    name: "whisper-tiny.en".into(),
+                    expected: "5 bytes".into(),
+                    actual: "2 bytes".into(),
+                },
+                "fosscut.model.checksum_mismatch",
+                "whisper-tiny.en does not match its checksum: expected 5 bytes, got 2 bytes",
+                true,
+            ),
+            (
+                EngineError::ModelDownload {
+                    name: "whisper-tiny.en".into(),
+                    message: "curl: (6) Could not resolve host".into(),
+                },
+                "fosscut.model.download_failed",
+                "cannot install whisper-tiny.en: curl: (6) Could not resolve host",
+                true,
+            ),
+            (
+                EngineError::ModelConfirmation {
+                    name: "whisper-small".into(),
+                    size_bytes: 487_601_967,
+                    license: "MIT".into(),
+                },
+                "fosscut.model.confirmation_required",
+                "installing whisper-small downloads 487.6 MB (MIT license) and needs confirmation",
+                true,
+            ),
+            (
+                EngineError::SpeechFailed {
+                    message: "failed to encode".into(),
+                },
+                "fosscut.analysis.speech_failed",
+                "speech recognition failed: failed to encode",
+                true,
+            ),
+            (
+                EngineError::SpeechUnavailable,
+                "fosscut.analysis.speech_unavailable",
+                "this build of FossCut has no speech recognition",
+                true,
+            ),
+            (
                 EngineError::RequestReused {
                     request_id: "r1".into(),
                 },
@@ -685,6 +925,30 @@ mod tests {
                 known: Vec::new(),
             },
             EngineError::AnalysisCancelled,
+            EngineError::ModelUnknown {
+                name: String::new(),
+            },
+            EngineError::ModelNotInstalled {
+                what: String::new(),
+            },
+            EngineError::ModelChecksum {
+                name: String::new(),
+                expected: String::new(),
+                actual: String::new(),
+            },
+            EngineError::ModelDownload {
+                name: String::new(),
+                message: String::new(),
+            },
+            EngineError::ModelConfirmation {
+                name: String::new(),
+                size_bytes: 0,
+                license: String::new(),
+            },
+            EngineError::SpeechFailed {
+                message: String::new(),
+            },
+            EngineError::SpeechUnavailable,
             EngineError::RequestReused {
                 request_id: String::new(),
             },

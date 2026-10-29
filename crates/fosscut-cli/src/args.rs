@@ -123,6 +123,11 @@ pub enum Command {
     /// Install FossCut's editing skills for AI agents, or list them.
     #[command(subcommand)]
     Skills(SkillsCommand),
+    /// List and install the models some analyzers need, such as speech recognition for
+    /// `media analyze <asset> transcript`. Models are kept in FOSSCUT_MODELS_DIR, or in
+    /// `models` in FossCut's cache folder.
+    #[command(subcommand)]
+    Models(ModelsCommand),
     /// Serve FossCut to an AI agent over MCP on stdin and stdout. Add it to your agent with,
     /// for example, `claude mcp add fosscut -- fosscut mcp`. Tools use --project (or the
     /// single bundle in the working directory) until the agent opens another project.
@@ -181,6 +186,25 @@ pub enum SkillsCommand {
         /// Install only this skill; every skill when omitted.
         #[arg(long)]
         skill: Option<String>,
+    },
+}
+
+/// `fosscut models ...`
+#[derive(Debug, Subcommand)]
+pub enum ModelsCommand {
+    /// List the models with their size, license and languages, and which are installed.
+    List,
+    /// Download a model and verify it against its published SHA-256. Without --yes this
+    /// only shows the size and license, since it downloads.
+    Install {
+        /// Model name, for example whisper-base.en (see `fosscut models list`).
+        name: String,
+        /// Agree to the download.
+        #[arg(long)]
+        yes: bool,
+        /// Install from a file already downloaded instead; it is verified the same way.
+        #[arg(long)]
+        from: Option<PathBuf>,
     },
 }
 
@@ -245,8 +269,8 @@ pub enum MediaCommand {
     Analyze {
         /// The asset, for example `asset_0001`.
         asset: String,
-        /// Analyzers to run: loudness, silences, scenes. Every one the asset allows when
-        /// omitted.
+        /// Analyzers to run: loudness, silences, scenes, transcript. Without names, every one
+        /// the asset allows except transcript, which needs a speech model.
         analyzers: Vec<String>,
         /// Measure again even if results are cached.
         #[arg(long)]
@@ -263,6 +287,17 @@ pub enum MediaCommand {
         /// Scenes: shortest shot, in milliseconds (default 500).
         #[arg(long)]
         min_shot_ms: Option<u32>,
+        /// Transcript: speech model, for example whisper-base.en; the most capable installed
+        /// one for the language when omitted.
+        #[arg(long)]
+        model: Option<String>,
+        /// Transcript: spoken language as a code such as en or de; detected when omitted.
+        #[arg(long)]
+        language: Option<String>,
+        /// Transcript: shortest gap between words reported as a pause, in milliseconds
+        /// (default 300).
+        #[arg(long)]
+        min_pause_ms: Option<u32>,
     },
 }
 

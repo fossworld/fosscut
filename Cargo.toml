@@ -46,9 +46,12 @@ schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 # float_roundtrip: numbers read back from JSON (caches, records) equal what was written.
 serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
+sha2 = "0.10.9"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 wgpu = "30.0.1"
+# whisper.cpp (MIT) built from source with CMake: local speech recognition (ADR-0020).
+whisper-rs = { version = "0.16.0", default-features = false }
 
 [workspace.lints.rust]
 # Crates that must never use unsafe code add `#![forbid(unsafe_code)]`; only backend modules

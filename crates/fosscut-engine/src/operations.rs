@@ -32,8 +32,13 @@ pub fn operations() -> Vec<OperationInfo> {
         ),
         (
             "media.analyze",
-            "Measure an asset's loudness, silences and shot cuts on this machine; results are cached by content.",
-            "fosscut media analyze <asset> [loudness|silences|scenes ...] [--refresh]",
+            "Measure an asset's loudness, silences and shot cuts, or transcribe its speech with word timings, on this machine; results are cached by content.",
+            "fosscut media analyze <asset> [loudness|silences|scenes|transcript ...] [--refresh]",
+        ),
+        (
+            "models.install",
+            "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
+            "fosscut models install <name> --yes [--from <file>]",
         ),
         (
             "frame.grab",
@@ -56,7 +61,8 @@ pub fn operations() -> Vec<OperationInfo> {
 }
 
 /// Everything this editor can do (ADR-0002, item 6): the core's commands and queries at
-/// `detail` (`outline`, `normal` or `full`), the engine's operations, and the export presets
+/// `detail` (`outline`, `normal` or `full`), the engine's operations, the analyzers, the
+/// models with whether each is installed in [`crate::models_dir`], and the export presets
 /// with whether this machine can encode them. At full detail, `errors` lists the core's and
 /// the engine's error codes. With `names`, only those commands and queries, each with its
 /// schemas: a small answer an agent can read before calling a command.
@@ -78,6 +84,7 @@ pub fn capabilities(
     }
     value["operations"] = json!(operations());
     value["analyzers"] = json!(fosscut_analysis::analyzers());
+    value["models"] = json!(fosscut_analysis::models::list(&crate::models_dir()));
     value["export_presets"] = json!(presets());
     if let Some(errors) = value.get_mut("errors").and_then(Value::as_array_mut) {
         errors.extend(
@@ -128,6 +135,8 @@ mod tests {
         );
         assert!(outline["export_presets"].is_array());
         assert_eq!(outline["analyzers"][1]["name"], "silences");
+        assert_eq!(outline["models"][0]["name"], "whisper-large-v3-turbo");
+        assert!(outline["models"][0]["installed"].is_boolean());
         assert!(outline.get("errors").is_none());
 
         let full = capabilities("full", &[], Some(Path::new("/no/such/Show.fosscut"))).unwrap();
@@ -148,6 +157,6 @@ mod tests {
         assert_eq!(named["commands"].as_array().unwrap().len(), 1);
         assert!(named["commands"][0]["input_schema"].is_object());
         assert!(named.get("operations").is_none() && named.get("export_presets").is_none());
-        assert!(named.get("analyzers").is_none());
+        assert!(named.get("analyzers").is_none() && named.get("models").is_none());
     }
 }
