@@ -74,7 +74,7 @@ Agents edit better with FossCut's skills, which teach the safe editing loop: `fo
 
 | | |
 |---|---|
-| [Architecture decision records](docs/adr/README.md) | 18 proposed decisions and suggested first milestones |
+| [Architecture decision records](docs/adr/README.md) | 19 proposed decisions and suggested first milestones |
 | [AGENTS.md](AGENTS.md) | Instructions for AI coding agents working on this repository |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute, DCO sign-off, workflow, releases |
 | [GitHub setup](docs/development/github-setup.md) | Repository settings and branch protection for maintainers |
