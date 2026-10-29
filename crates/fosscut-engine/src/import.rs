@@ -1,4 +1,5 @@
-//! Media probing with ffprobe and content identity hashing.
+//! Importing media: probing with ffprobe, content identity hashing and the path hints a
+//! project stores, combined into the arguments of the `media.add` command.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -14,10 +15,31 @@ const SAMPLE: u64 = 1 << 20;
 
 /// Probed media ready for `media.add`.
 pub struct Probed {
+    /// Video, audio or image.
     pub kind: AssetKind,
+    /// Streams, duration and format details.
     pub info: MediaInfo,
 }
 
+/// The arguments of a `media.add` command that imports `file` into the project at
+/// `bundle`, named `name` or after the file.
+pub fn media_add_args(file: &Path, name: Option<&str>, bundle: &Path) -> Result<Value, ApiError> {
+    let probed = probe(file)?;
+    let name = name.map(str::to_string).unwrap_or_else(|| {
+        file.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    Ok(json!({
+        "name": name,
+        "kind": probed.kind,
+        "path": path_hints(file, bundle)?,
+        "identity": identity(file)?,
+        "info": probed.info,
+    }))
+}
+
+/// The ffprobe program: `FOSSCUT_FFPROBE` when set, otherwise `ffprobe` on the path.
 fn ffprobe_path() -> String {
     std::env::var("FOSSCUT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
 }

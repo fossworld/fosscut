@@ -81,6 +81,41 @@ fn has_ffmpeg() -> bool {
 
 /// CI sets `FOSSCUT_REQUIRE_FFMPEG=1` so that a missing FFmpeg fails the test instead of
 /// skipping it silently.
+/// Whether FFmpeg and a GPU adapter are available; false skips a test locally, while CI
+/// (`FOSSCUT_REQUIRE_FFMPEG`, `FOSSCUT_REQUIRE_GPU`) fails instead.
+fn can_render() -> bool {
+    if !has_ffmpeg() {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+        );
+        return false;
+    }
+    if fosscut_render::Renderer::headless().is_err() {
+        let required =
+            std::env::var_os("FOSSCUT_REQUIRE_GPU").is_some_and(|v| !v.is_empty() && v != "0");
+        assert!(
+            !required,
+            "FOSSCUT_REQUIRE_GPU is set but there is no adapter"
+        );
+        return false;
+    }
+    true
+}
+
+/// The size of a PNG file, from its header.
+fn png_size(path: &Path) -> (u32, u32) {
+    let bytes = std::fs::read(path).unwrap();
+    assert_eq!(
+        &bytes[..8],
+        b"\x89PNG\r\n\x1a\n",
+        "{} is a PNG",
+        path.display()
+    );
+    let number = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+    (number(16), number(20))
+}
+
 fn ffmpeg_required() -> bool {
     std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0")
 }
@@ -511,20 +546,7 @@ fn blocks(frame: &fosscut_media::VideoFrame) -> Vec<f64> {
 #[test]
 fn round_one_baseline_exports_and_verifies() {
     use fosscut_media::VideoDecoder;
-    if !has_ffmpeg() {
-        assert!(
-            !ffmpeg_required(),
-            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
-        );
-        return;
-    }
-    if fosscut_render::Renderer::headless().is_err() {
-        let required =
-            std::env::var_os("FOSSCUT_REQUIRE_GPU").is_some_and(|v| !v.is_empty() && v != "0");
-        assert!(
-            !required,
-            "FOSSCUT_REQUIRE_GPU is set but there is no adapter"
-        );
+    if !can_render() {
         return;
     }
     let dir = workspace("baseline");
@@ -813,5 +835,133 @@ fn export_needs_an_output_and_a_known_preset() {
         let empty = fails(&dir, &["export", "x.m4a"]);
         assert_eq!(empty["code"], json!("fosscut.export.empty_timeline"));
     }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn frames_and_contact_sheets_show_the_edit() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("frames");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("testsrc2=size=320x180:rate=30:duration=2")
+        .args(["-c:v", "mpeg4", "-q:v", "5", "small.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Small.fosscut",
+            "--width",
+            "320",
+            "--height",
+            "180",
+        ],
+    );
+    let asset = ok(&dir, &["media", "import", "small.mp4"])["results"][0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&dir, &["clip", "add", "--asset", &asset]);
+    ok(&dir, &["text", "add", "Hello", "--duration", "1s"]);
+
+    // One frame, at a smaller size, reported in every time unit.
+    let still = ok(
+        &dir,
+        &["frame", "0.5s", "--out", "still.png", "--width", "160"],
+    );
+    assert_eq!(still["at"]["frames"], json!(15));
+    assert_eq!(still["at"]["timecode"], json!("00:00:00:15"));
+    assert_eq!(
+        (still["width"].clone(), still["height"].clone()),
+        (json!(160), json!(90))
+    );
+    assert_eq!(png_size(&dir.join("still.png")), (160, 90));
+
+    // Existing files need permission; a dry run writes nothing.
+    let guarded = fails(&dir, &["frame", "1s", "--out", "still.png"]);
+    assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    ok(
+        &dir,
+        &["frame", "1s", "--out", "still.png", "--allow-destructive"],
+    );
+    assert_eq!(png_size(&dir.join("still.png")), (320, 180));
+    let dry = ok(&dir, &["frame", "1s", "--out", "dry.png", "--dry-run"]);
+    assert_eq!(dry["dry_run"], json!(true));
+    assert!(!dir.join("dry.png").exists());
+
+    // Times outside the timeline and unknown timelines are typed errors.
+    let late = fails(&dir, &["frame", "2s", "--out", "late.png"]);
+    assert_eq!(late["code"], json!("fosscut.time.out_of_range"));
+    assert!(late["hint"].is_string());
+    let unknown = fails(
+        &dir,
+        &[
+            "frame",
+            "1s",
+            "--out",
+            "x.png",
+            "--timeline",
+            "timeline_0099",
+        ],
+    );
+    assert_eq!(unknown["code"], json!("fosscut.timeline.not_found"));
+
+    // A contact sheet: four 80x45 tiles over the 2 s timeline, two per row.
+    let sheet = ok(
+        &dir,
+        &[
+            "contact-sheet",
+            "--out",
+            "sheet.png",
+            "--count",
+            "4",
+            "--width",
+            "80",
+        ],
+    );
+    assert_eq!(sheet["columns"], json!(2));
+    let shown: Vec<Value> = sheet["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["at"]["frames"].clone())
+        .collect();
+    assert_eq!(shown, [json!(7), json!(22), json!(37), json!(52)]);
+    assert_eq!(png_size(&dir.join("sheet.png")), (164, 94));
+    let too_many = fails(
+        &dir,
+        &["contact-sheet", "--out", "big.png", "--count", "500"],
+    );
+    assert_eq!(too_many["code"], json!("fosscut.request.invalid_arguments"));
+
+    let human = |args: &[&str]| {
+        let output = fosscut(&dir, args);
+        assert!(output.status.success(), "{args:?}");
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    };
+    let text = human(&["frame", "15f", "--out", "half.png", "--width", "64"]);
+    assert_eq!(
+        text.trim(),
+        "wrote half.png (64x36): frame 15 at 00:00:00:15"
+    );
+    let text = human(&[
+        "contact-sheet",
+        "--out",
+        "two.png",
+        "--count",
+        "2",
+        "--dry-run",
+    ]);
+    assert_eq!(
+        text.trim(),
+        "dry run: would write two.png (644x180): 2 frames in 2 columns, 00:00:00:15 to 00:00:01:15"
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }

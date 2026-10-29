@@ -1,10 +1,12 @@
-//! Opening project bundles on disk.
+//! Hosting projects on disk (ADR-0002, item 3): finding, creating and opening bundles,
+//! and one writer at a time through a lock file. Every front end that has no desktop app
+//! to connect to (the CLI, the MCP server) edits projects through these functions.
 
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fosscut_core::{ApiError, Session, codes};
+use fosscut_core::{ApiError, Request, Response, Session, codes};
 use fosscut_model::{DirStore, Id, IdKind, Project, TimelineFormat};
 
 const LOCK_FILE: &str = ".lock";
@@ -137,6 +139,23 @@ fn new_project_id(name: &str) -> Id {
     let mut bytes = [0u8; 8];
     bytes[..5].copy_from_slice(&hash.as_bytes()[..5]);
     Id::new(IdKind::Project, u64::from_le_bytes(bytes))
+}
+
+/// Runs `request` against the bundle under its lock: opens the project, executes the
+/// request as one transaction and releases the lock.
+pub fn execute(bundle: &Path, request: Request) -> Result<Response, ApiError> {
+    let _lock = BundleLock::acquire(bundle)?;
+    let mut session = open(bundle)?;
+    session.execute(request)
+}
+
+/// Runs a read-only query against the bundle; reads need no lock.
+pub fn query(
+    bundle: &Path,
+    name: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ApiError> {
+    open(bundle)?.query(name, args)
 }
 
 /// Milliseconds since the Unix epoch.

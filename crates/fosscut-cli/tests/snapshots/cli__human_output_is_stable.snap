@@ -115,6 +115,10 @@ queries:
   media.list     Assets in the media table with durations and stream details.
   project.info   Project name, revision, timelines and undo state.
   timeline.read  Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.
+operations:
+  export.start         Render a timeline to a video or audio file with a preset, then verify the file by probing it.
+  frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
+  frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.
 export presets:
   mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
   mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)

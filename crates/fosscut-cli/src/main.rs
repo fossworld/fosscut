@@ -4,9 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod args;
-mod bundle;
 mod output;
-mod probe;
 
 use std::io::Read;
 use std::process::ExitCode;
@@ -20,9 +18,10 @@ use std::path::Path;
 
 use clap::Parser;
 use fosscut_core::{ApiError, REDO, Request, Response, Session, UNDO, codes};
-use fosscut_engine::{ExportError, ExportPlan, ExportReport, ExportRequest, Preset, Progress};
-use fosscut_model::{DirStore, MemoryStore, Project, TimelineFormat};
-use fosscut_time::Rate;
+use fosscut_engine::project as bundle;
+use fosscut_engine::{EngineError, ExportPlan, ExportReport, ExportRequest, Preset, Progress};
+use fosscut_model::{Id, MemoryStore, Project, TimelineFormat};
+use fosscut_time::{Rate, TimeInput};
 use serde_json::{Map, Value, json};
 
 enum Outcome {
@@ -118,19 +117,13 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                         .query("capabilities", json!({ "detail": detail.as_str() }))?,
                 };
             let mut value = value;
+            value["operations"] = json!(fosscut_engine::operations());
             value["export_presets"] = json!(fosscut_engine::presets());
             Ok(Outcome::Query("capabilities".into(), value))
         }
         Command::Media(MediaCommand::Import { file, name }) => {
             let bundle = bundle::bundle_path(cli.project.as_deref())?;
-            let probed = probe::probe(file)?;
-            let args = json!({
-                "name": name.clone().unwrap_or_else(|| file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
-                "kind": probed.kind,
-                "path": probe::path_hints(file, &bundle)?,
-                "identity": probe::identity(file)?,
-                "info": probed.info,
-            });
+            let args = fosscut_engine::import::media_add_args(file, name.as_deref(), &bundle)?;
             write(cli, "media.add", args)
         }
         Command::Media(MediaCommand::List) => query(cli, "media.list", Value::Null),
@@ -246,6 +239,18 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             timeline.as_deref(),
             *presets,
         ),
+        Command::Frame {
+            time,
+            out,
+            width,
+            timeline,
+        } => frame(cli, time, out, *width, timeline.as_deref()),
+        Command::ContactSheet {
+            out,
+            count,
+            width,
+            timeline,
+        } => contact_sheet(cli, out, *count, *width, timeline.as_deref()),
         Command::Query { name, args } => {
             let args = match args {
                 Some(text) => serde_json::from_str(&read_input(text)?).map_err(|e| {
@@ -286,15 +291,15 @@ fn write(cli: &Cli, command: &str, args: Value) -> Result<Outcome, ApiError> {
 
 fn execute(cli: &Cli, request: Request) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
-    let _lock = bundle::BundleLock::acquire(&path)?;
-    let mut session = bundle::open(&path)?;
-    Ok(Outcome::Write(session.execute(request)?))
+    Ok(Outcome::Write(bundle::execute(&path, request)?))
 }
 
 fn query(cli: &Cli, name: &str, args: Value) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
-    let session: Session<DirStore> = bundle::open(&path)?;
-    Ok(Outcome::Query(name.to_string(), session.query(name, args)?))
+    Ok(Outcome::Query(
+        name.to_string(),
+        bundle::query(&path, name, args)?,
+    ))
 }
 
 /// Renders and verifies an export (milestone 3), or lists the presets.
@@ -318,21 +323,7 @@ fn export(
     let bundle = bundle::bundle_path(cli.project.as_deref())?;
     let session = bundle::open(&bundle)?;
     let project = session.project();
-    let timeline = match timeline {
-        Some(text) => fosscut_model::Id::parse(text)
-            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}")))?,
-        None => project.manifest.primary_timeline.clone(),
-    };
-    let format = &project
-        .timelines
-        .get(&timeline)
-        .ok_or_else(|| {
-            ApiError::new(
-                codes::TIMELINE_NOT_FOUND,
-                format!("timeline {timeline} does not exist"),
-            )
-        })?
-        .format;
+    let (timeline, format) = timeline_of(project, timeline)?;
     let preset = match preset {
         Some(name) => Preset::parse(name).ok_or_else(|| {
             let names: Vec<&str> = Preset::ALL.iter().map(|p| p.name()).collect();
@@ -352,14 +343,134 @@ fn export(
         cache: fosscut_engine::cache_dir(),
     };
     if cli.write.dry_run {
-        let plan = fosscut_engine::plan(project, &request).map_err(|e| export_error(&e))?;
+        let plan = fosscut_engine::plan(project, &request).map_err(|e| engine_error(&e))?;
         return Ok(Outcome::ExportPlan(Box::new(plan)));
     }
-    let mut renderer =
-        fosscut_render::Renderer::headless().map_err(|e| ApiError::new(e.code(), e.to_string()))?;
+    let mut renderer = renderer()?;
     let report = fosscut_engine::export(project, &request, &mut renderer, &mut progress_printer())
-        .map_err(|e| export_error(&e))?;
+        .map_err(|e| engine_error(&e))?;
     Ok(Outcome::Export(Box::new(report)))
+}
+
+/// A timeline by id, or the primary timeline, with its format.
+fn timeline_of<'a>(
+    project: &'a Project,
+    timeline: Option<&str>,
+) -> Result<(Id, &'a TimelineFormat), ApiError> {
+    let timeline = match timeline {
+        Some(text) => Id::parse(text)
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}")))?,
+        None => project.manifest.primary_timeline.clone(),
+    };
+    let format = &project
+        .timelines
+        .get(&timeline)
+        .ok_or_else(|| {
+            ApiError::new(
+                codes::TIMELINE_NOT_FOUND,
+                format!("timeline {timeline} does not exist"),
+            )
+        })?
+        .format;
+    Ok((timeline, format))
+}
+
+fn renderer() -> Result<fosscut_render::Renderer, ApiError> {
+    fosscut_render::Renderer::headless().map_err(|e| ApiError::new(e.code(), e.to_string()))
+}
+
+/// Refuses to replace an existing file without --allow-destructive (ADR-0006, item 6).
+fn guard_output(cli: &Cli, path: &Path) -> Result<(), ApiError> {
+    if path.exists() && !cli.write.allow_destructive {
+        return Err(ApiError::new(
+            codes::GUARD_DESTRUCTIVE,
+            format!("{} already exists", path.display()),
+        )
+        .with_hint("Pass --allow-destructive to overwrite it, or choose another path.")
+        .with_details(json!({ "path": path.display().to_string() })));
+    }
+    Ok(())
+}
+
+/// Writes `image` as PNG unless this is a dry run.
+fn write_png(cli: &Cli, path: &Path, image: &fosscut_render::Image) -> Result<(), ApiError> {
+    if cli.write.dry_run {
+        return Ok(());
+    }
+    let bytes = fosscut_engine::frame::png(image).map_err(|e| engine_error(&e))?;
+    std::fs::write(path, bytes).map_err(|e| {
+        ApiError::new(
+            "fosscut.media.write_failed",
+            format!("cannot write {}: {e}", path.display()),
+        )
+    })
+}
+
+/// `fosscut frame`: one frame of the timeline as a PNG file. A dry run renders and reports
+/// but writes nothing.
+fn frame(
+    cli: &Cli,
+    time: &TimeInput,
+    out: &Path,
+    width: Option<u32>,
+    timeline: Option<&str>,
+) -> Result<Outcome, ApiError> {
+    let bundle = bundle::bundle_path(cli.project.as_deref())?;
+    let session = bundle::open(&bundle)?;
+    let project = session.project();
+    let (timeline, format) = timeline_of(project, timeline)?;
+    let time = time.resolve(format.rate)?;
+    guard_output(cli, out)?;
+    let still =
+        fosscut_engine::frame::frame(project, &bundle, &timeline, time, width, &mut renderer()?)
+            .map_err(|e| engine_error(&e))?;
+    write_png(cli, out, &still.image)?;
+    Ok(Outcome::Query(
+        "frame.grab".into(),
+        json!({
+            "output": out.display().to_string(),
+            "dry_run": cli.write.dry_run,
+            "at": still.at,
+            "width": still.image.width,
+            "height": still.image.height,
+        }),
+    ))
+}
+
+/// `fosscut contact-sheet`: frames spread over the timeline, tiled into one PNG file.
+fn contact_sheet(
+    cli: &Cli,
+    out: &Path,
+    count: u32,
+    width: u32,
+    timeline: Option<&str>,
+) -> Result<Outcome, ApiError> {
+    let bundle = bundle::bundle_path(cli.project.as_deref())?;
+    let session = bundle::open(&bundle)?;
+    let project = session.project();
+    let (timeline, _) = timeline_of(project, timeline)?;
+    guard_output(cli, out)?;
+    let sheet = fosscut_engine::frame::contact_sheet(
+        project,
+        &bundle,
+        &timeline,
+        count,
+        width,
+        &mut renderer()?,
+    )
+    .map_err(|e| engine_error(&e))?;
+    write_png(cli, out, &sheet.image)?;
+    Ok(Outcome::Query(
+        "frame.contact_sheet".into(),
+        json!({
+            "output": out.display().to_string(),
+            "dry_run": cli.write.dry_run,
+            "width": sheet.image.width,
+            "height": sheet.image.height,
+            "columns": sheet.columns,
+            "tiles": sheet.tiles,
+        }),
+    ))
 }
 
 /// The preset an output path implies when none is given.
@@ -403,7 +514,7 @@ fn progress_printer() -> impl FnMut(Progress) -> bool {
     }
 }
 
-fn export_error(error: &ExportError) -> ApiError {
+fn engine_error(error: &EngineError) -> ApiError {
     let mut api = ApiError::new(error.code(), error.to_string()).with_details(error.details());
     if let Some(hint) = error.hint() {
         api = api.with_hint(hint);

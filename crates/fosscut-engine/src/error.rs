@@ -1,19 +1,39 @@
 use fosscut_media::OutputReport;
+use fosscut_time::Flicks;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-/// Why an export did not produce a verified file.
+/// Why an engine job failed: an export that did not produce a verified file, or a frame
+/// grab that could not render.
 #[derive(Debug, Clone, PartialEq, Error)]
-pub enum ExportError {
+pub enum EngineError {
     /// The timeline does not exist.
     #[error("timeline {timeline} does not exist")]
     TimelineNotFound {
         /// The requested timeline.
         timeline: String,
     },
-    /// The timeline has nothing to export.
+    /// The timeline has nothing to export or show.
     #[error("the timeline is empty")]
     EmptyTimeline,
+    /// The requested time is outside the timeline.
+    #[error(
+        "{} s is outside the timeline, which lasts {} s",
+        time.to_seconds_string(),
+        duration.to_seconds_string()
+    )]
+    TimeOutOfRange {
+        /// The requested time.
+        time: Flicks,
+        /// The timeline's duration.
+        duration: Flicks,
+    },
+    /// An argument is out of its allowed range.
+    #[error("{message}")]
+    InvalidArguments {
+        /// What is wrong.
+        message: String,
+    },
     /// The settings cannot work: odd size, impossible container and codec, no streams.
     #[error("invalid export settings: {message}")]
     InvalidSettings {
@@ -41,6 +61,20 @@ pub enum ExportError {
     OutputExists {
         /// The output path.
         path: String,
+    },
+    /// Another running job is writing the same output.
+    #[error("{job} is already writing {path}")]
+    OutputBusy {
+        /// The output path.
+        path: String,
+        /// The running job.
+        job: String,
+    },
+    /// No job has this id in this session.
+    #[error("there is no job {job}")]
+    JobNotFound {
+        /// The requested job id.
+        job: String,
     },
     /// A clip's media file cannot be found.
     #[error("media for asset {asset} is missing")]
@@ -77,42 +111,57 @@ pub enum ExportError {
     },
 }
 
-impl ExportError {
+impl EngineError {
     /// The stable error code used in FossCut API responses (ADR-0006).
     pub fn code(&self) -> &str {
         match self {
-            ExportError::TimelineNotFound { .. } => "fosscut.timeline.not_found",
-            ExportError::EmptyTimeline => "fosscut.export.empty_timeline",
-            ExportError::InvalidSettings { .. } => "fosscut.export.invalid_settings",
-            ExportError::CodecUnavailable { .. } => "fosscut.export.codec_unavailable",
-            ExportError::RevisionConflict { .. } => "fosscut.revision.conflict",
-            ExportError::OutputExists { .. } => "fosscut.guard.destructive",
-            ExportError::MissingMedia { .. } => "fosscut.export.missing_media",
-            ExportError::Cancelled => "fosscut.export.cancelled",
-            ExportError::RequestReused { .. } => "fosscut.request.reused",
-            ExportError::VerificationFailed { .. } => "fosscut.export.verification_failed",
-            ExportError::Failed { code, .. } => code,
+            EngineError::TimelineNotFound { .. } => "fosscut.timeline.not_found",
+            EngineError::EmptyTimeline => "fosscut.export.empty_timeline",
+            EngineError::TimeOutOfRange { .. } => "fosscut.time.out_of_range",
+            EngineError::InvalidArguments { .. } => "fosscut.request.invalid_arguments",
+            EngineError::InvalidSettings { .. } => "fosscut.export.invalid_settings",
+            EngineError::CodecUnavailable { .. } => "fosscut.export.codec_unavailable",
+            EngineError::RevisionConflict { .. } => "fosscut.revision.conflict",
+            EngineError::OutputExists { .. } => "fosscut.guard.destructive",
+            EngineError::OutputBusy { .. } => "fosscut.export.output_busy",
+            EngineError::JobNotFound { .. } => "fosscut.job.not_found",
+            EngineError::MissingMedia { .. } => "fosscut.export.missing_media",
+            EngineError::Cancelled => "fosscut.export.cancelled",
+            EngineError::RequestReused { .. } => "fosscut.request.reused",
+            EngineError::VerificationFailed { .. } => "fosscut.export.verification_failed",
+            EngineError::Failed { code, .. } => code,
         }
     }
 
     /// What an agent or person can do about it.
     pub fn hint(&self) -> Option<String> {
         match self {
-            ExportError::CodecUnavailable { available, .. } => Some(format!(
+            EngineError::CodecUnavailable { available, .. } => Some(format!(
                 "Choose one of the codecs this machine can encode: {}.",
                 available.join(", ")
             )),
-            ExportError::OutputExists { .. } => {
+            EngineError::OutputExists { .. } => {
                 Some(
                     "Pass allow_destructive (--allow-destructive on the command line) to overwrite it, or choose another path."
                         .into(),
                 )
             }
-            ExportError::MissingMedia { .. } => {
+            EngineError::OutputBusy { .. } => Some(
+                "Wait for that job with job_status, cancel it, or choose another path.".into(),
+            ),
+            EngineError::JobNotFound { .. } => Some(
+                "Jobs live as long as the session that started them; start the export again."
+                    .into(),
+            ),
+            EngineError::MissingMedia { .. } => {
                 Some("Relink the media or restore the file at one of the tried paths.".into())
             }
-            ExportError::EmptyTimeline => Some("Add clips before exporting.".into()),
-            ExportError::RevisionConflict { .. } => Some(
+            EngineError::EmptyTimeline => Some("Add clips before exporting.".into()),
+            EngineError::TimeOutOfRange { .. } => Some(
+                "Choose a time from 0 up to the timeline's duration, which timeline.read reports."
+                    .into(),
+            ),
+            EngineError::RevisionConflict { .. } => Some(
                 "Read the timeline again, then export with the current revision.".into(),
             ),
             _ => None,
@@ -122,15 +171,20 @@ impl ExportError {
     /// Machine-readable details.
     pub fn details(&self) -> Value {
         match self {
-            ExportError::CodecUnavailable { codec, available } => {
+            EngineError::CodecUnavailable { codec, available } => {
                 json!({ "codec": codec, "available": available })
             }
-            ExportError::MissingMedia { asset, tried } => json!({ "asset": asset, "tried": tried }),
-            ExportError::VerificationFailed { mismatches, report } => {
+            EngineError::MissingMedia { asset, tried } => json!({ "asset": asset, "tried": tried }),
+            EngineError::VerificationFailed { mismatches, report } => {
                 json!({ "mismatches": mismatches, "report": report })
             }
-            ExportError::OutputExists { path } => json!({ "path": path }),
-            ExportError::RevisionConflict { expected, current } => {
+            EngineError::OutputExists { path } => json!({ "path": path }),
+            EngineError::OutputBusy { path, job } => json!({ "path": path, "job": job }),
+            EngineError::JobNotFound { job } => json!({ "job": job }),
+            EngineError::TimeOutOfRange { time, duration } => {
+                json!({ "time": time, "duration": duration })
+            }
+            EngineError::RevisionConflict { expected, current } => {
                 json!({ "expected_revision": expected, "current_revision": current })
             }
             _ => Value::Null,
@@ -138,16 +192,16 @@ impl ExportError {
     }
 }
 
-impl From<fosscut_media::MediaError> for ExportError {
-    fn from(error: fosscut_media::MediaError) -> ExportError {
+impl From<fosscut_media::MediaError> for EngineError {
+    fn from(error: fosscut_media::MediaError) -> EngineError {
         match error {
             fosscut_media::MediaError::EncoderUnavailable { codec, available } => {
-                ExportError::CodecUnavailable { codec, available }
+                EngineError::CodecUnavailable { codec, available }
             }
             fosscut_media::MediaError::Unsupported { message } => {
-                ExportError::InvalidSettings { message }
+                EngineError::InvalidSettings { message }
             }
-            other => ExportError::Failed {
+            other => EngineError::Failed {
                 code: other.code().to_string(),
                 message: other.to_string(),
             },
@@ -155,18 +209,18 @@ impl From<fosscut_media::MediaError> for ExportError {
     }
 }
 
-impl From<fosscut_render::RenderError> for ExportError {
-    fn from(error: fosscut_render::RenderError) -> ExportError {
-        ExportError::Failed {
+impl From<fosscut_render::RenderError> for EngineError {
+    fn from(error: fosscut_render::RenderError) -> EngineError {
+        EngineError::Failed {
             code: error.code().to_string(),
             message: error.to_string(),
         }
     }
 }
 
-impl From<fosscut_audio::AudioError> for ExportError {
-    fn from(error: fosscut_audio::AudioError) -> ExportError {
-        ExportError::Failed {
+impl From<fosscut_audio::AudioError> for EngineError {
+    fn from(error: fosscut_audio::AudioError) -> EngineError {
+        EngineError::Failed {
             code: error.code().to_string(),
             message: error.to_string(),
         }
@@ -192,7 +246,7 @@ mod tests {
     fn every_error_has_a_stable_code_message_hint_and_details() {
         let cases = [
             (
-                ExportError::TimelineNotFound {
+                EngineError::TimelineNotFound {
                     timeline: "timeline_0009".into(),
                 },
                 "fosscut.timeline.not_found",
@@ -200,13 +254,13 @@ mod tests {
                 false,
             ),
             (
-                ExportError::EmptyTimeline,
+                EngineError::EmptyTimeline,
                 "fosscut.export.empty_timeline",
                 "the timeline is empty",
                 true,
             ),
             (
-                ExportError::InvalidSettings {
+                EngineError::InvalidSettings {
                     message: "odd width".into(),
                 },
                 "fosscut.export.invalid_settings",
@@ -214,7 +268,7 @@ mod tests {
                 false,
             ),
             (
-                ExportError::CodecUnavailable {
+                EngineError::CodecUnavailable {
                     codec: "h264".into(),
                     available: vec!["av1".into(), "prores".into()],
                 },
@@ -223,7 +277,7 @@ mod tests {
                 true,
             ),
             (
-                ExportError::RevisionConflict {
+                EngineError::RevisionConflict {
                     expected: 3,
                     current: 5,
                 },
@@ -232,7 +286,7 @@ mod tests {
                 true,
             ),
             (
-                ExportError::OutputExists {
+                EngineError::OutputExists {
                     path: "Out.mp4".into(),
                 },
                 "fosscut.guard.destructive",
@@ -240,7 +294,7 @@ mod tests {
                 true,
             ),
             (
-                ExportError::MissingMedia {
+                EngineError::MissingMedia {
                     asset: "asset_0001".into(),
                     tried: vec!["clip.mp4".into()],
                 },
@@ -249,13 +303,47 @@ mod tests {
                 true,
             ),
             (
-                ExportError::Cancelled,
+                EngineError::TimeOutOfRange {
+                    time: Flicks::from_seconds(9).unwrap(),
+                    duration: Flicks::from_seconds(8).unwrap(),
+                },
+                "fosscut.time.out_of_range",
+                "9 s is outside the timeline, which lasts 8 s",
+                true,
+            ),
+            (
+                EngineError::InvalidArguments {
+                    message: "count must be 1 to 100".into(),
+                },
+                "fosscut.request.invalid_arguments",
+                "count must be 1 to 100",
+                false,
+            ),
+            (
+                EngineError::OutputBusy {
+                    path: "Out.mp4".into(),
+                    job: "job_0001".into(),
+                },
+                "fosscut.export.output_busy",
+                "job_0001 is already writing Out.mp4",
+                true,
+            ),
+            (
+                EngineError::JobNotFound {
+                    job: "job_0009".into(),
+                },
+                "fosscut.job.not_found",
+                "there is no job job_0009",
+                true,
+            ),
+            (
+                EngineError::Cancelled,
                 "fosscut.export.cancelled",
                 "the export was cancelled",
                 false,
             ),
             (
-                ExportError::RequestReused {
+                EngineError::RequestReused {
                     request_id: "r1".into(),
                 },
                 "fosscut.request.reused",
@@ -263,7 +351,7 @@ mod tests {
                 false,
             ),
             (
-                ExportError::VerificationFailed {
+                EngineError::VerificationFailed {
                     mismatches: vec!["frames 239, expected 240".into(), "no audio".into()],
                     report: Box::new(report()),
                 },
@@ -272,7 +360,7 @@ mod tests {
                 false,
             ),
             (
-                ExportError::Failed {
+                EngineError::Failed {
                     code: "fosscut.media.encode_failed".into(),
                     message: "encoder stopped".into(),
                 },
@@ -287,7 +375,7 @@ mod tests {
             assert_eq!(error.hint().is_some(), has_hint, "{code}");
         }
 
-        let unavailable = ExportError::CodecUnavailable {
+        let unavailable = EngineError::CodecUnavailable {
             codec: "h264".into(),
             available: vec!["av1".into(), "prores".into()],
         };
@@ -296,7 +384,7 @@ mod tests {
             unavailable.details(),
             json!({ "codec": "h264", "available": ["av1", "prores"] })
         );
-        let missing = ExportError::MissingMedia {
+        let missing = EngineError::MissingMedia {
             asset: "asset_0001".into(),
             tried: vec!["clip.mp4".into()],
         };
@@ -304,11 +392,11 @@ mod tests {
             missing.details(),
             json!({ "asset": "asset_0001", "tried": ["clip.mp4"] })
         );
-        let exists = ExportError::OutputExists {
+        let exists = EngineError::OutputExists {
             path: "Out.mp4".into(),
         };
         assert_eq!(exists.details(), json!({ "path": "Out.mp4" }));
-        let conflict = ExportError::RevisionConflict {
+        let conflict = EngineError::RevisionConflict {
             expected: 3,
             current: 5,
         };
@@ -316,29 +404,46 @@ mod tests {
             conflict.details(),
             json!({ "expected_revision": 3, "current_revision": 5 })
         );
-        let mismatch = ExportError::VerificationFailed {
+        let mismatch = EngineError::VerificationFailed {
             mismatches: vec!["no audio".into()],
             report: Box::new(report()),
         };
         assert_eq!(mismatch.details()["mismatches"], json!(["no audio"]));
         assert_eq!(mismatch.details()["report"]["brand"], json!("isom"));
-        assert_eq!(ExportError::Cancelled.details(), Value::Null);
+        assert_eq!(EngineError::Cancelled.details(), Value::Null);
+        let late = EngineError::TimeOutOfRange {
+            time: Flicks::new(1),
+            duration: Flicks::new(0),
+        };
+        assert_eq!(late.details(), json!({ "time": 1, "duration": 0 }));
+        let busy = EngineError::OutputBusy {
+            path: "Out.mp4".into(),
+            job: "job_0001".into(),
+        };
+        assert_eq!(
+            busy.details(),
+            json!({ "path": "Out.mp4", "job": "job_0001" })
+        );
+        let gone = EngineError::JobNotFound {
+            job: "job_0009".into(),
+        };
+        assert_eq!(gone.details(), json!({ "job": "job_0009" }));
     }
 
     #[test]
     fn lower_layer_errors_keep_their_codes() {
-        let unavailable = ExportError::from(fosscut_media::MediaError::EncoderUnavailable {
+        let unavailable = EngineError::from(fosscut_media::MediaError::EncoderUnavailable {
             codec: "hevc".into(),
             available: vec!["av1".into()],
         });
         assert_eq!(
             unavailable,
-            ExportError::CodecUnavailable {
+            EngineError::CodecUnavailable {
                 codec: "hevc".into(),
                 available: vec!["av1".into()],
             }
         );
-        let unsupported = ExportError::from(fosscut_media::MediaError::Unsupported {
+        let unsupported = EngineError::from(fosscut_media::MediaError::Unsupported {
             message: "vp9 in mp4".into(),
         });
         assert_eq!(unsupported.code(), "fosscut.export.invalid_settings");
@@ -347,13 +452,13 @@ mod tests {
             message: "no such file".into(),
         };
         let expected = open.code().to_string();
-        assert_eq!(ExportError::from(open).code(), expected);
+        assert_eq!(EngineError::from(open).code(), expected);
 
         let render = fosscut_render::RenderError::NoAdapter {
             message: "no GPU".into(),
         };
         let expected = render.code().to_string();
-        let converted = ExportError::from(render);
+        let converted = EngineError::from(render);
         assert_eq!(converted.code(), expected);
         assert!(converted.to_string().contains("no GPU"));
 
@@ -361,7 +466,7 @@ mod tests {
             asset: "asset_0002".into(),
             message: "corrupt".into(),
         };
-        let converted = ExportError::from(audio);
+        let converted = EngineError::from(audio);
         assert_eq!(converted.code(), "fosscut.audio.source_failed");
         assert!(converted.to_string().contains("asset_0002"));
     }

@@ -11,10 +11,12 @@ authors.workspace = true
 [dependencies]
 blake3.workspace = true
 fosscut-audio.workspace = true
+fosscut-core.workspace = true
 fosscut-media = { workspace = true, features = ["ffmpeg"] }
 fosscut-model.workspace = true
 fosscut-render.workspace = true
 fosscut-time.workspace = true
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
