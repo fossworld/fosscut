@@ -6,6 +6,32 @@
 
 #![allow(unsafe_code)]
 
+mod audio;
+mod report;
+mod writer;
+
+pub use audio::{FfmpegAudioDecoder, samples_at};
+pub use report::probe_output;
+pub use writer::{FfmpegWriter, encoder_capabilities};
+
+/// The mono or stereo channel layout.
+fn channel_layout(channels: u16) -> Result<rsmpeg::avutil::AVChannelLayout, String> {
+    let mask = match channels {
+        1 => ffi::AV_CH_LAYOUT_MONO,
+        2 => ffi::AV_CH_LAYOUT_STEREO,
+        n => return Err(format!("{n} channels are not supported")),
+    };
+    rsmpeg::avutil::AVChannelLayout::from_mask(mask).ok_or_else(|| "bad channel layout".to_string())
+}
+
+/// Keeps FFmpeg to errors on stderr; its informational output is not useful to editors or
+/// agents. Called by every entry point of this module.
+fn quiet() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    // SAFETY: `av_log_set_level` only stores an integer in FFmpeg's global state.
+    ONCE.call_once(|| unsafe { ffi::av_log_set_level(ffi::AV_LOG_ERROR as i32) });
+}
+
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::path::Path;
@@ -44,9 +70,33 @@ struct Decoded {
 }
 
 impl Decoded {
-    fn contains(&self, time: Flicks) -> bool {
-        self.pts <= time && time < self.pts + self.duration
+    fn contains(&self, time: Flicks, slack: Flicks) -> bool {
+        covers(self.pts, self.duration, time, slack)
     }
+}
+
+/// Whether a frame starting at `pts` and lasting `duration` is displayed at `time`.
+/// `slack` absorbs timestamps the container rounded (WebM stores milliseconds, so frame 17
+/// at 30 fps is stored at 567 ms instead of 566.67 ms).
+fn covers(pts: Flicks, duration: Flicks, time: Flicks, slack: Flicks) -> bool {
+    pts - slack <= time && time < pts + duration - slack
+}
+
+/// Half a time-base tick when the container's ticks cannot represent the frame duration
+/// exactly (so timestamps were rounded), capped at a quarter frame; zero otherwise.
+fn rounding_slack(time_base: (i32, i32), frame_duration: Flicks) -> Flicks {
+    let (num, den) = time_base;
+    if num <= 0 || den <= 0 {
+        return Flicks::ZERO;
+    }
+    // Frame duration in ticks is frame_duration * den / (num * FLICKS_PER_SECOND).
+    let numerator = i128::from(frame_duration.get()) * i128::from(den);
+    let denominator = i128::from(num) * i128::from(fosscut_time::FLICKS_PER_SECOND);
+    if denominator == 0 || numerator % denominator == 0 {
+        return Flicks::ZERO;
+    }
+    let half_tick = timebase::to_flicks(1, num, den).get() / 2;
+    Flicks::new(half_tick.min(frame_duration.get() / 4))
 }
 
 /// Decodes the best video stream of a file with FFmpeg.
@@ -69,6 +119,8 @@ pub struct FfmpegVideoDecoder {
     held: Option<Decoded>,
     /// The most recently returned frame, for repeated requests of the same time.
     last: Option<VideoFrame>,
+    /// Tolerance for rounded container timestamps; see [`rounding_slack`].
+    slack: Flicks,
     scalers: HashMap<i32, SwsContext>,
 }
 
@@ -118,6 +170,7 @@ impl FfmpegVideoDecoder {
             .rate
             .map(Rate::frame_duration)
             .unwrap_or(Rate::FPS_30.frame_duration());
+        let slack = rounding_slack(info.time_base, frame_duration);
         Ok(FfmpegVideoDecoder {
             path: path.display().to_string(),
             input,
@@ -133,6 +186,7 @@ impl FfmpegVideoDecoder {
             at_start: true,
             held: None,
             last: None,
+            slack,
             scalers: HashMap::new(),
         })
     }
@@ -384,20 +438,20 @@ impl VideoDecoder for FfmpegVideoDecoder {
 
     fn frame_at(&mut self, time: Flicks) -> Result<VideoFrame, MediaError> {
         if let Some(last) = &self.last
-            && last.contains(time)
+            && covers(last.pts, last.duration, time, self.slack)
         {
             return Ok(last.clone());
         }
         let limit = Flicks::from_seconds(FORWARD_DECODE_LIMIT_SECONDS).unwrap_or(Flicks::ZERO);
         let must_seek = match &self.held {
-            Some(held) if held.contains(time) => {
+            Some(held) if held.contains(time, self.slack) => {
                 let held = self.held.take();
                 if let Some(held) = held {
                     return self.deliver(held);
                 }
                 false
             }
-            Some(held) => time < held.pts || time >= held.pts + held.duration + limit,
+            Some(held) => time < held.pts - self.slack || time >= held.pts + held.duration + limit,
             None => !(self.at_start && time < limit),
         };
         if must_seek {
@@ -406,8 +460,10 @@ impl VideoDecoder for FfmpegVideoDecoder {
         let mut previous: Option<Decoded> = None;
         loop {
             match self.next_decoded()? {
-                Some(decoded) if decoded.contains(time) => return self.deliver(decoded),
-                Some(decoded) if decoded.pts > time => {
+                Some(decoded) if decoded.contains(time, self.slack) => {
+                    return self.deliver(decoded);
+                }
+                Some(decoded) if decoded.pts - self.slack > time => {
                     // The target falls before this frame: before the first frame of the
                     // stream, or in a gap between frames. Show the earlier frame if any.
                     return self.deliver(previous.unwrap_or(decoded));
@@ -434,6 +490,22 @@ fn open_input(
     ),
     MediaError,
 > {
+    open_stream(path, ffi::AVMEDIA_TYPE_VIDEO)
+}
+
+/// Opens `path` and finds its best stream of `kind` (video or audio).
+fn open_stream(
+    path: &Path,
+    kind: ffi::AVMediaType,
+) -> Result<
+    (
+        AVFormatContextInput,
+        usize,
+        rsmpeg::avcodec::AVCodecRef<'static>,
+    ),
+    MediaError,
+> {
+    quiet();
     let shown = path.display().to_string();
     let open_failed = |message: String| MediaError::OpenFailed {
         path: shown.clone(),
@@ -442,12 +514,20 @@ fn open_input(
     let c_path = CString::new(path.as_os_str().as_encoded_bytes())
         .map_err(|_| open_failed("the path contains a NUL byte".to_string()))?;
     let input = AVFormatContextInput::open(&c_path).map_err(|e| open_failed(e.to_string()))?;
-    let (index, codec) = input
-        .find_best_stream(ffi::AVMEDIA_TYPE_VIDEO)
-        .map_err(|e| open_failed(e.to_string()))?
-        .ok_or_else(|| MediaError::NoVideoStream {
-            path: shown.clone(),
-        })?;
+    let found = input
+        .find_best_stream(kind)
+        .map_err(|e| open_failed(e.to_string()))?;
+    let (index, codec) = found.ok_or_else(|| {
+        if kind == ffi::AVMEDIA_TYPE_AUDIO {
+            MediaError::NoAudioStream {
+                path: shown.clone(),
+            }
+        } else {
+            MediaError::NoVideoStream {
+                path: shown.clone(),
+            }
+        }
+    })?;
     Ok((input, index, codec))
 }
 
@@ -713,6 +793,26 @@ mod tests {
         );
         let hlg = color_info(0, 0, 0, ffi::AVCOL_TRC_ARIB_STD_B67);
         assert_eq!(hlg.transfer, Transfer::Hlg);
+    }
+
+    #[test]
+    fn rounding_slack_only_applies_to_rounded_time_bases() {
+        let frame = Rate::FPS_30.frame_duration();
+        // WebM's millisecond ticks cannot hold 1/30 s: half a millisecond of slack.
+        assert_eq!(rounding_slack((1, 1000), frame), Flicks::new(352_800));
+        // Exact time bases need none.
+        assert_eq!(rounding_slack((1, 30), frame), Flicks::ZERO);
+        assert_eq!(rounding_slack((1, 15_360), frame), Flicks::ZERO);
+        assert_eq!(rounding_slack((1, 90_000), frame), Flicks::ZERO);
+        // Coarse ticks are capped at a quarter frame.
+        assert_eq!(rounding_slack((1, 7), frame), Flicks::new(frame.get() / 4));
+        assert_eq!(rounding_slack((0, 0), frame), Flicks::ZERO);
+        assert!(covers(
+            Flicks::new(400_075_200),
+            frame,
+            Flicks::new(399_840_000),
+            Flicks::new(352_800)
+        ));
     }
 
     #[test]

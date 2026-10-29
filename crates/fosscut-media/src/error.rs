@@ -41,6 +41,40 @@ pub enum MediaError {
         /// What the backend reported.
         message: String,
     },
+    /// The file has no audio stream.
+    #[error("{path} has no audio stream")]
+    NoAudioStream {
+        /// The file that was requested.
+        path: String,
+    },
+    /// No encoder on this machine can produce the requested codec.
+    #[error("this machine cannot encode {codec}; it can encode: {}", available.join(", "))]
+    EncoderUnavailable {
+        /// The requested codec.
+        codec: String,
+        /// Codecs this machine can encode instead.
+        available: Vec<String>,
+    },
+    /// The requested combination of settings is not possible.
+    #[error("unsupported output settings: {message}")]
+    Unsupported {
+        /// What is not possible.
+        message: String,
+    },
+    /// Writing the output file failed.
+    #[error("cannot write {path}: {message}")]
+    WriteFailed {
+        /// The output file.
+        path: String,
+        /// What the backend reported.
+        message: String,
+    },
+    /// Encoding failed part way through.
+    #[error("encoding failed: {message}")]
+    EncodeFailed {
+        /// What the backend reported.
+        message: String,
+    },
     /// The requested time is after the last frame of the stream.
     #[error("no frame at {requested_flicks} flicks: the stream ends at {end_flicks} flicks")]
     EndOfStream {
@@ -62,6 +96,11 @@ impl MediaError {
             MediaError::DecodeFailed { .. } => "fosscut.media.decode_failed",
             MediaError::SeekFailed { .. } => "fosscut.media.seek_failed",
             MediaError::EndOfStream { .. } => "fosscut.media.end_of_stream",
+            MediaError::NoAudioStream { .. } => "fosscut.media.no_audio_stream",
+            MediaError::EncoderUnavailable { .. } => "fosscut.media.encoder_unavailable",
+            MediaError::Unsupported { .. } => "fosscut.media.unsupported",
+            MediaError::WriteFailed { .. } => "fosscut.media.write_failed",
+            MediaError::EncodeFailed { .. } => "fosscut.media.encode_failed",
         }
     }
 }

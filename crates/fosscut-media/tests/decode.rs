@@ -386,3 +386,25 @@ fn the_last_frame_stays_available_after_reading_past_the_end() {
         .unwrap();
     assert_eq!(frame_number(last.mean_luma()), 119);
 }
+
+#[test]
+fn millisecond_time_bases_still_find_exact_frames() {
+    if !have_ffmpeg() {
+        return;
+    }
+    // WebM rounds every timestamp to a millisecond; lossless VP9 keeps the luma exact.
+    let clip = frame_index_clip(
+        "index.webm",
+        "30",
+        2,
+        "",
+        &["-c:v", "libvpx-vp9", "-lossless", "1"],
+    );
+    let info = probe_video(&clip).unwrap();
+    assert_eq!(info.time_base, (1, 1000));
+    let mut decoder = FfmpegVideoDecoder::open(&clip, software()).unwrap();
+    for n in [0, 1, 2, 17, 29, 30, 58, 59, 3, 44] {
+        let frame = decoder.frame_at(Rate::FPS_30.frames_to_flicks(n)).unwrap();
+        assert_eq!(frame_number(frame.mean_luma()), n, "frame {n}");
+    }
+}
