@@ -175,10 +175,13 @@ pub fn export(
             return Err(error);
         }
     };
-    if request.output.exists() {
-        std::fs::remove_file(&request.output).map_err(|e| failed_io(&request.output, &e))?;
+    // `rename` replaces an existing file in one step on every platform. It fails when the
+    // output is held open elsewhere (Windows locks open files) or became a folder; then the
+    // finished temporary file is removed too.
+    if let Err(error) = std::fs::rename(&temporary, &request.output) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(failed_io(&request.output, &error));
     }
-    std::fs::rename(&temporary, &request.output).map_err(|e| failed_io(&request.output, &e))?;
 
     let verified = probe_output(&request.output)?;
     let expected_duration = match &request.settings.video {
@@ -242,6 +245,11 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, ExportEr
         return Err(ExportError::EmptyTimeline);
     }
     validate(&request.settings)?;
+    if request.output.is_dir() {
+        return Err(ExportError::InvalidSettings {
+            message: format!("{} is a folder, not a file", request.output.display()),
+        });
+    }
     if request.output.exists() && !request.allow_overwrite {
         return Err(ExportError::OutputExists {
             path: request.output.display().to_string(),

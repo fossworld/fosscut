@@ -380,6 +380,43 @@ fn dry_runs_predict_the_export_and_stale_revisions_fail() {
 }
 
 #[test]
+fn an_output_that_cannot_be_replaced_leaves_nothing_behind() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let _serial = serial();
+    let project = project("../clip.mp4");
+    let preset = Preset::default_video().unwrap();
+    let mut request = request(&project, preset, &format!("taken.{}", preset.extension()));
+    request.allow_overwrite = true;
+    let partial = workspace().join(format!(".taken.{}.partial", preset.extension()));
+
+    // A folder at the output path is refused before anything renders.
+    std::fs::create_dir_all(request.output.join("inside")).unwrap();
+    let folder = fosscut_engine::plan(&project, &request).unwrap_err();
+    assert_eq!(folder.code(), "fosscut.export.invalid_settings");
+    std::fs::remove_dir_all(&request.output).unwrap();
+
+    // Something takes the path while the export runs, so the finished file cannot be moved
+    // into place: the export fails with a typed error and removes its temporary file.
+    let output = request.output.clone();
+    let error = export(&project, &request, &mut renderer, &mut |progress| {
+        if progress.done == progress.total {
+            std::fs::create_dir_all(output.join("inside")).unwrap();
+        }
+        true
+    })
+    .unwrap_err();
+    assert_eq!(error.code(), "fosscut.media.write_failed");
+    assert!(!partial.exists(), "the temporary file is removed");
+    assert!(
+        request.output.join("inside").is_dir(),
+        "the folder is untouched"
+    );
+    std::fs::remove_dir_all(&request.output).unwrap();
+}
+
+#[test]
 fn impossible_exports_are_typed_errors() {
     let Some(mut renderer) = renderer() else {
         return;

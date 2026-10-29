@@ -719,6 +719,8 @@ fn round_one_baseline_exports_and_verifies() {
         (rms - 0.125 / 2f64.sqrt()).abs() < 0.02,
         "audio level {rms}"
     );
+    // Close the export before replacing it: Windows cannot replace a file that is open.
+    drop((output, source, sound));
 
     // Repeating the request replays it; a new export over the file needs permission.
     let replay = ok(
@@ -750,7 +752,11 @@ fn round_one_baseline_exports_and_verifies() {
             "--allow-destructive",
         ],
     );
-    assert!(human.status.success());
+    assert!(
+        human.status.success(),
+        "overwrite failed: {}",
+        String::from_utf8_lossy(&human.stderr)
+    );
     let text = String::from_utf8_lossy(&human.stdout);
     assert!(
         text.contains("exported Baseline.mp4") && text.contains("aac 48000 Hz x 2"),
