@@ -158,6 +158,28 @@ pub enum EngineError {
     /// This build has no speech recognition.
     #[error("this build of FossCut has no speech recognition")]
     SpeechUnavailable,
+    /// Captions were asked for from transcripts that are not cached.
+    #[error("{message}")]
+    NoTranscript {
+        /// Assets without a cached transcript.
+        assets: Vec<String>,
+        /// What is missing.
+        message: String,
+    },
+    /// A subtitle file could not be read.
+    #[error("line {line}: {message}")]
+    InvalidSrt {
+        /// The line, counting from 1.
+        line: usize,
+        /// What is wrong.
+        message: String,
+    },
+    /// The timeline has no captions to export.
+    #[error("timeline {timeline} has no captions")]
+    NoCaptions {
+        /// The timeline.
+        timeline: String,
+    },
     /// A clip's media file cannot be found.
     #[error("media for asset {asset} is missing")]
     MissingMedia {
@@ -219,6 +241,9 @@ impl EngineError {
             EngineError::ModelConfirmation { .. } => "fosscut.model.confirmation_required",
             EngineError::SpeechFailed { .. } => "fosscut.analysis.speech_failed",
             EngineError::SpeechUnavailable => "fosscut.analysis.speech_unavailable",
+            EngineError::NoTranscript { .. } => "fosscut.captions.no_transcript",
+            EngineError::InvalidSrt { .. } => "fosscut.captions.invalid_srt",
+            EngineError::NoCaptions { .. } => "fosscut.captions.none",
             EngineError::MissingMedia { .. } => "fosscut.export.missing_media",
             EngineError::Cancelled => "fosscut.export.cancelled",
             EngineError::RequestReused { .. } => "fosscut.request.reused",
@@ -286,6 +311,17 @@ impl EngineError {
             EngineError::SpeechUnavailable => {
                 Some("Use a FossCut build with the speech feature.".into())
             }
+            EngineError::NoTranscript { .. } => Some(
+                "Transcribe the clips' media first: media_analyze with analyzers [\"transcript\"] (fosscut media analyze <asset> transcript), with the same transcript options as here."
+                    .into(),
+            ),
+            EngineError::InvalidSrt { .. } => Some(
+                "Each cue needs a timing line HH:MM:SS,mmm --> HH:MM:SS,mmm, text, and a blank line before the next; cues must not overlap."
+                    .into(),
+            ),
+            EngineError::NoCaptions { .. } => Some(
+                "Add captions first: the captions tool with action generate or import, or captions.add.".into(),
+            ),
             EngineError::MissingMedia { .. } => {
                 Some("Relink the media or restore the file at one of the tried paths.".into())
             }
@@ -336,6 +372,9 @@ impl EngineError {
                 license,
             } => json!({ "name": name, "size_bytes": size_bytes, "license": license }),
             EngineError::SpeechFailed { message } => json!({ "message": message }),
+            EngineError::NoTranscript { assets, .. } => json!({ "assets": assets }),
+            EngineError::InvalidSrt { line, .. } => json!({ "line": line }),
+            EngineError::NoCaptions { timeline } => json!({ "timeline": timeline }),
             EngineError::TimeOutOfRange { time, duration } => {
                 json!({ "time": time, "duration": duration })
             }
@@ -440,6 +479,21 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.analysis.speech_unavailable",
             "This build of FossCut has no speech recognition.",
             "Use a build with the speech feature.",
+        ),
+        entry(
+            "fosscut.captions.no_transcript",
+            "Captions were asked for from media without a cached transcript.",
+            "Run media_analyze with transcript on the listed assets first.",
+        ),
+        entry(
+            "fosscut.captions.invalid_srt",
+            "The subtitle file is not valid SRT.",
+            "Fix the line named in details.",
+        ),
+        entry(
+            "fosscut.captions.none",
+            "There are no captions to export.",
+            "Add captions first with generate, import or captions.add.",
         ),
         entry(
             "fosscut.export.missing_media",
@@ -775,6 +829,32 @@ mod tests {
                 true,
             ),
             (
+                EngineError::NoTranscript {
+                    assets: vec!["asset_0001".into()],
+                    message: "no cached transcript for asset_0001".into(),
+                },
+                "fosscut.captions.no_transcript",
+                "no cached transcript for asset_0001",
+                true,
+            ),
+            (
+                EngineError::InvalidSrt {
+                    line: 7,
+                    message: "the cue has no text".into(),
+                },
+                "fosscut.captions.invalid_srt",
+                "line 7: the cue has no text",
+                true,
+            ),
+            (
+                EngineError::NoCaptions {
+                    timeline: "timeline_0000".into(),
+                },
+                "fosscut.captions.none",
+                "timeline timeline_0000 has no captions",
+                true,
+            ),
+            (
                 EngineError::RequestReused {
                     request_id: "r1".into(),
                 },
@@ -949,6 +1029,17 @@ mod tests {
                 message: String::new(),
             },
             EngineError::SpeechUnavailable,
+            EngineError::NoTranscript {
+                assets: Vec::new(),
+                message: String::new(),
+            },
+            EngineError::InvalidSrt {
+                line: 0,
+                message: String::new(),
+            },
+            EngineError::NoCaptions {
+                timeline: String::new(),
+            },
             EngineError::RequestReused {
                 request_id: String::new(),
             },

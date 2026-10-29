@@ -14,11 +14,13 @@ use fosscut_model::{Align, TextContent};
 /// The bundled font family (SIL Open Font License; see `assets/fonts/inter/README.md`).
 pub const DEFAULT_FAMILY: &str = "Inter";
 
-const FONTS: [&[u8]; 4] = [
+const FONTS: [&[u8]; 6] = [
     include_bytes!("../assets/fonts/inter/Inter-Regular.ttf"),
     include_bytes!("../assets/fonts/inter/Inter-Bold.ttf"),
     include_bytes!("../assets/fonts/inter/Inter-Italic.ttf"),
     include_bytes!("../assets/fonts/inter/Inter-BoldItalic.ttf"),
+    include_bytes!("../assets/fonts/inter/Inter-ExtraBold.ttf"),
+    include_bytes!("../assets/fonts/inter/Inter-Black.ttf"),
 ];
 
 /// Line height as a multiple of the font size.
@@ -67,8 +69,8 @@ impl TextRaster {
 
 /// Shapes and rasterizes text with the bundled fonts.
 pub struct TextEngine {
-    fonts: FontSystem,
-    glyphs: SwashCache,
+    pub(crate) fonts: FontSystem,
+    pub(crate) glyphs: SwashCache,
 }
 
 impl Default for TextEngine {

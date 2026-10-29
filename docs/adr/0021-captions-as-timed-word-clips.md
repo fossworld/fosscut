@@ -104,6 +104,15 @@ The forces:
 - **Free-form expressions for animation:** flexible, but agents cannot validate or discover them (ADR-0011 item 3).
 - **Paging in the agent:** no core logic, but every agent would page differently, and long transcripts cost many tokens.
 
+## Implementation notes
+
+- **Paging at frame edges.** A page ends on the frame of the next page's first word. When two words meet inside one frame, the earlier word's end is cut to the frame, so every word start stays exact; highlights begin there.
+- **Explicit breaks.** `captions.add` words take `new_page` and `new_line`. SRT import uses them, with limits high enough that only the cues' own breaks apply. Cue edges are snapped to frames before paging, so an exported file imports back to the same frames.
+- **Captions follow the edit.** A page never lingers past the end of the timeline's other tracks, so captions do not lengthen an export; a real-agent run found the last page adding black frames before this rule.
+- **Line length.** By default, as many characters as fit the safe width at the track's size, from an average glyph width (wider for capitals and the black weight), at most 18 on tall canvases and 32 otherwise.
+- **No captions to export** is `fosscut.captions.none`. Exports return a preview of the first cues, so an agent without file access can check them. With no speech model, `generate` reports `fosscut.captions.no_transcript` too, since no transcript can exist.
+- **Spacing.** Outlines widen the space between words by 1.5 times their width. Presets keep lasting scale changes off emphasised words; only brief pops grow words into the gaps.
+
 ## Validation
 
 - **Paging property tests:**

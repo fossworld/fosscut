@@ -3,7 +3,11 @@
 //!
 //! An evaluation is `skills/<name>/eval/eval.json`:
 //!
-//! - `fixtures`: files generated with FFmpeg (`file`, and `ffmpeg` arguments before it);
+//! - `needs`: optional capabilities beyond FFmpeg and a GPU, so far `speech`: an installed
+//!   `whisper-tiny.en` in `FOSSCUT_MODELS_DIR`. Without it the evaluation is skipped,
+//!   unless `FOSSCUT_REQUIRE_SPEECH` is set, as in CI;
+//! - `fixtures`: files generated with FFmpeg (`file`, and `ffmpeg` arguments before it), or
+//!   copied from the repository (`copy`, a path from its root);
 //! - `steps`: tool calls in order. Each has `tool` and `args`, and optionally:
 //!   - `expect`: values at dotted paths in the result (`results.0.clip`), compared for
 //!     equality or with a matcher: `{"$len": n}`, `{"$min_len": n}`, `{"$one_of": [...]}`;
@@ -102,8 +106,34 @@ fn check(label: &str, result: &Value, expect: Option<&Value>, saved: &HashMap<St
     }
 }
 
+/// Whether an evaluation's `needs` are met here; fails when CI requires one that is not.
+fn needs_met(skill: &str, eval: &Value) -> bool {
+    eval["needs"].as_array().into_iter().flatten().all(|need| {
+        assert_eq!(need, "speech", "{skill}: unknown need {need}");
+        let installed = std::env::var_os("FOSSCUT_MODELS_DIR").is_some_and(|dir| {
+            std::fs::metadata(Path::new(&dir).join("ggml-tiny.en.bin"))
+                .is_ok_and(|m| m.len() == 77_704_715)
+        });
+        let required =
+            std::env::var_os("FOSSCUT_REQUIRE_SPEECH").is_some_and(|v| !v.is_empty() && v != "0");
+        assert!(
+            installed || !required,
+            "{skill}: FOSSCUT_REQUIRE_SPEECH is set but whisper-tiny.en is not in FOSSCUT_MODELS_DIR"
+        );
+        installed
+    })
+}
+
 async fn run(skill: &str, dir: &Path, eval: &Value) {
     for fixture in eval["fixtures"].as_array().into_iter().flatten() {
+        if let Some(source) = fixture["copy"].as_str() {
+            std::fs::copy(
+                skills_dir().join("..").join(source),
+                dir.join(fixture["file"].as_str().unwrap()),
+            )
+            .unwrap_or_else(|e| panic!("{skill}: fixture {source}: {e}"));
+            continue;
+        }
         let args: Vec<&str> = fixture["ffmpeg"]
             .as_array()
             .unwrap()
@@ -240,6 +270,7 @@ async fn every_skill_is_well_formed() {
                         "dry_run",
                         "wait_seconds",
                         "clip_count",
+                        "source_track",
                     ]
                     .contains(&tool);
                 assert!(
@@ -262,6 +293,10 @@ async fn every_skill_passes_its_evaluation() {
         let eval: Value =
             serde_json::from_str(&std::fs::read_to_string(path.join("eval/eval.json")).unwrap())
                 .unwrap();
+        if !needs_met(&name, &eval) {
+            eprintln!("{name}: skipped, its evaluation needs {}", eval["needs"]);
+            continue;
+        }
         let dir = workspace(&format!("skill-{name}"));
         run(&name, &dir, &eval).await;
         std::fs::remove_dir_all(&dir).unwrap();

@@ -164,6 +164,22 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
                 .unwrap_or_default();
         result["errors"] = serde_json::to_value(error_catalogue()).unwrap_or_default();
     }
+    if !named {
+        let presets: Vec<Value> = crate::presets::caption_presets()
+            .into_iter()
+            .map(|p| {
+                if brief {
+                    json!({ "name": p.name, "description": p.description })
+                } else {
+                    json!(p)
+                }
+            })
+            .collect();
+        result["captions"] = json!({
+            "presets": presets,
+            "animators": crate::presets::caption_animators(brief),
+        });
+    }
     Ok(result)
 }
 
@@ -268,6 +284,34 @@ fn clip_view(
                 view["style"] = json!(text.style);
             }
         }
+        ClipContent::Caption(caption) => {
+            view["text"] = json!(caption.text());
+            if detail == Detail::Full {
+                // Word times on the timeline, so agents never add the clip's start.
+                view["lines"] = caption
+                    .lines
+                    .iter()
+                    .map(|line| {
+                        line.words
+                            .iter()
+                            .map(|word| {
+                                let mut w = json!({
+                                    "text": word.text,
+                                    "start": TimeReport::new(clip.start + word.start, rate),
+                                    "end": TimeReport::new(clip.start + word.end, rate),
+                                });
+                                if word.emphasis {
+                                    w["emphasis"] = json!(true);
+                                }
+                                w
+                            })
+                            .collect::<Value>()
+                    })
+                    .collect();
+            } else {
+                view["words"] = json!(caption.words().count());
+            }
+        }
     }
     if detail == Detail::Full {
         view["transform"] = json!(clip.transform);
@@ -313,6 +357,9 @@ fn timeline_read(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError>
                 if value {
                     view[flag] = json!(true);
                 }
+            }
+            if args.detail == Detail::Full && track.kind == fosscut_model::TrackKind::Caption {
+                view["caption_style"] = json!(track.caption_style.clone().unwrap_or_default());
             }
             if args.detail != Detail::Outline {
                 view["clips"] = track

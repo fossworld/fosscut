@@ -93,6 +93,7 @@ pub(crate) fn track_kind_for(content: &ClipContent) -> TrackKind {
         ClipContent::Video { .. } | ClipContent::Image { .. } => TrackKind::Video,
         ClipContent::Audio { .. } => TrackKind::Audio,
         ClipContent::Text(_) => TrackKind::Text,
+        ClipContent::Caption(_) => TrackKind::Caption,
     }
 }
 
@@ -190,6 +191,7 @@ pub(crate) fn find_or_create_track(
         muted: false,
         hidden: false,
         locked: false,
+        caption_style: None,
         clips: Vec::new(),
     });
     Ok(id)

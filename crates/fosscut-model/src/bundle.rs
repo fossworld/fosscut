@@ -5,8 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-    FORMAT_VERSION, Id, IdKind, Manifest, Media, ModelError, ProjectStore, Timeline, TimelineEntry,
-    TimelineFormat, validate,
+    FORMAT_VERSION, Id, IdKind, Manifest, Media, ModelError, ProjectStore, READABLE_VERSIONS,
+    Timeline, TimelineEntry, TimelineFormat, validate,
 };
 
 /// Path of the manifest inside a bundle.
@@ -132,13 +132,15 @@ impl Project {
             .get("format_version")
             .and_then(|v| v.as_str())
             .unwrap_or("missing");
-        if found != FORMAT_VERSION {
+        if found != FORMAT_VERSION && !READABLE_VERSIONS.contains(&found) {
             return Err(ModelError::UnsupportedVersion {
                 found: found.to_string(),
                 supported: FORMAT_VERSION,
             });
         }
-        let manifest: Manifest = from_value(MANIFEST_PATH, manifest_value)?;
+        let mut manifest: Manifest = from_value(MANIFEST_PATH, manifest_value)?;
+        // Older versions are subsets of this one; they are saved as the current version.
+        manifest.format_version = FORMAT_VERSION.to_string();
         let media: Media = if store.exists(MEDIA_PATH) {
             read_json(store, MEDIA_PATH)?
         } else {

@@ -23,6 +23,7 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Facts about media: loudness, pauses, shot cuts | `media_analyze` | `fosscut media analyze <asset>` |
 | What is said, with a time for every word, fillers and pauses | `media_analyze` with `analyzers: ["transcript"]` | `fosscut media analyze <asset> transcript` |
 | Speech models (installing downloads; ask the user first) | `models` | `fosscut models list`, `fosscut models install <name> --yes` |
+| Word-timed captions, SRT files (the `viral-captions` skill has the flow) | `captions` | `fosscut captions generate`, `fosscut captions import <file.srt>` |
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 

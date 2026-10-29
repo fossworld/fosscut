@@ -12,11 +12,16 @@ mod support;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use fosscut_model::{Align, Color, TextContent, TextStyle, Transform};
+use fosscut_model::{
+    Align, Animated, Animator, CaptionBox, CaptionContent, CaptionLine, CaptionStyle, CaptionWord,
+    Color, FontWeight, PageFade, Placement, TextContent, TextStyle, Transform, WordReveal,
+};
+use fosscut_render::caption::CaptionLayer;
 use fosscut_render::color::TransferFunction;
 use fosscut_render::lut::Lut3d;
 use fosscut_render::plan::{Layer, Mask, MaskShape, RenderPlan};
 use fosscut_render::{Image, Renderer};
+use fosscut_time::Flicks;
 use support::*;
 
 const SIZE: (u32, u32) = (320, 180);
@@ -242,4 +247,160 @@ fn text_styles() {
     };
     let mut frames = Frames::default().with(1, solid(64, 36, [40, 128, 128]));
     check_at("text-styles", &mut renderer, &plan, &mut frames, TEXT_SIZE);
+}
+
+/// A caption page of timed words, from (text, start ms, end ms, emphasis) per line.
+fn page(lines: &[&[(&str, i64, i64, bool)]]) -> CaptionContent {
+    CaptionContent {
+        lines: lines
+            .iter()
+            .map(|words| CaptionLine {
+                words: words
+                    .iter()
+                    .map(|&(text, start, end, emphasis)| CaptionWord {
+                        text: text.into(),
+                        start: Flicks::from_millis(start),
+                        end: Flicks::from_millis(end),
+                        emphasis,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+fn preset(name: &str) -> CaptionStyle {
+    fosscut_core::caption_preset(name).unwrap()
+}
+
+/// A caption page over the test pattern on `canvas`, at `time_ms` into the page.
+fn caption_scene(
+    canvas: (u32, u32),
+    style: CaptionStyle,
+    content: CaptionContent,
+    time_ms: i64,
+) -> RenderPlan {
+    RenderPlan {
+        canvas,
+        layers: vec![
+            Layer::new(source(1)),
+            Layer::caption(CaptionLayer {
+                style,
+                content,
+                time: Flicks::from_millis(time_ms),
+                duration: Flicks::from_millis(2000),
+            }),
+        ],
+        skipped: Vec::new(),
+    }
+}
+
+/// Vertical goldens render at 360x640, the text goldens' size turned on its side.
+const TALL_SIZE: (u32, u32) = (360, 640);
+
+#[test]
+fn caption_presets_and_placements() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default().with(1, pattern(640, 360, 0));
+    // Tall canvases get a tall picture, so captions sit over video, not letterboxing.
+    let mut tall = Frames::default().with(1, pattern(360, 640, 0));
+    let speech: &[&[(&str, i64, i64, bool)]] = &[
+        &[("This", 0, 250, false), ("changes", 250, 700, true)],
+        &[("everything", 750, 1300, false)],
+    ];
+
+    // Highlight at the bottom of a tall canvas: "changes" is spoken and emphasised.
+    let plan = caption_scene((1080, 1920), preset("highlight"), page(speech), 450);
+    check_at(
+        "caption-highlight-tall",
+        &mut renderer,
+        &plan,
+        &mut tall,
+        TALL_SIZE,
+    );
+
+    // Karaoke on a wide canvas: "everything" half filled.
+    let plan = caption_scene((1920, 1080), preset("karaoke"), page(speech), 1025);
+    check_at(
+        "caption-karaoke-wide",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+
+    // Boxed at the top of a tall canvas, with the second line spoken.
+    let mut boxed = preset("boxed");
+    boxed.placement = Placement::Top;
+    let plan = caption_scene((1080, 1920), boxed, page(speech), 900);
+    check_at(
+        "caption-boxed-top",
+        &mut renderer,
+        &plan,
+        &mut tall,
+        TALL_SIZE,
+    );
+
+    // Bold pop in the middle of a wide canvas, 60 ms in: the page and "This" are popping.
+    let mut pop = preset("bold-pop");
+    pop.placement = Placement::Middle;
+    let plan = caption_scene((1920, 1080), pop, page(speech), 60);
+    check_at(
+        "caption-bold-pop-middle",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+
+    // Words revealed one by one while the page fades in, black weight with a box per line
+    // and a hand-set colour.
+    let reveal = CaptionStyle {
+        weight: FontWeight::Black,
+        color: Color::parse("#7CFC9A").unwrap(),
+        align: Align::Left,
+        background: CaptionBox {
+            enabled: true,
+            ..CaptionBox::default()
+        },
+        animators: vec![
+            Animator::PageFade(Animated {
+                params: PageFade {
+                    in_ms: 400,
+                    out_ms: 0,
+                },
+                ..Animated::default()
+            }),
+            Animator::WordReveal(Animated {
+                params: WordReveal { fade_ms: 200 },
+                ..Animated::default()
+            }),
+        ],
+        ..CaptionStyle::default()
+    };
+    let plan = caption_scene((1080, 1920), reveal, page(speech), 300);
+    check_at(
+        "caption-reveal-fade",
+        &mut renderer,
+        &plan,
+        &mut tall,
+        TALL_SIZE,
+    );
+
+    // A caption moved and turned by its clip's transform keeps its look.
+    let mut plan = caption_scene((1920, 1080), preset("highlight"), page(speech), 450);
+    plan.layers[1].transform = Transform {
+        position: [0.0, -0.3],
+        scale: 1.2,
+        rotation: -4.0,
+    };
+    check_at(
+        "caption-transformed",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
 }

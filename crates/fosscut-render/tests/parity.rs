@@ -85,6 +85,7 @@ fn project() -> (Project, Id) {
                 muted: false,
                 hidden: false,
                 locked: false,
+                caption_style: None,
                 clips: vec![clip],
             });
     }
@@ -257,6 +258,7 @@ fn text_matches_between_preview_and_export() {
             muted: false,
             hidden: false,
             locked: false,
+            caption_style: None,
             clips: vec![title],
         });
     let export = ExportGraph::new(&project, &timeline).unwrap();

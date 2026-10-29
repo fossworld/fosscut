@@ -9,6 +9,7 @@
 
 pub mod analysis;
 mod cache;
+pub mod captions;
 mod error;
 mod export;
 pub mod frame;
