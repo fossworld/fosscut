@@ -26,11 +26,12 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0018](0018-ai-assisted-development-workflow.md) | AI-assisted development workflow | Proposed |
 | [0019](0019-local-analysis-pipeline-and-cache.md) | Run media analysis locally in fosscut-analysis, cached by content | Proposed |
 | [0020](0020-speech-recognition-with-whisper-cpp.md) | Recognize speech locally with whisper.cpp, with word timings | Proposed |
+| [0021](0021-captions-as-timed-word-clips.md) | Store captions as pages of timed words on caption tracks, animated by declarative animators | Proposed |
 
 ## Reading order
 
 - **Product shape:** 0002, 0006, 0007, 0013.
-- **Data:** 0004, 0005, 0011.
+- **Data:** 0004, 0005, 0011, 0021.
 - **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 
