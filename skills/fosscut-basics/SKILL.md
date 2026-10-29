@@ -13,7 +13,8 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 
 | Need | MCP tool | CLI |
 |---|---|---|
-| What FossCut can do, with each command's schema | `capabilities` (`detail: "full"`) | `fosscut capabilities --detail full --json` |
+| What FossCut can do | `capabilities` | `fosscut capabilities` |
+| The arguments of the commands you will use | `capabilities` with `names: ["clip.add", "text.add"]` | `fosscut capabilities clip.add text.add` |
 | Create or open a project | `project_new`, `project_open` | `fosscut project new <path>`, `-p <path>` on every command |
 | Read the timeline | `timeline_read` | `fosscut timeline read --json` |
 | Import media | `media_import` | `fosscut media import <file>` |
@@ -22,12 +23,12 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 
-The commands `edit` runs include `clip.add`, `clip.split`, `clip.move`, `clip.remove`, `text.add` and `track.add`. Read their argument schemas in `capabilities` before first use; do not guess field names.
+The commands `edit` runs include `clip.add`, `clip.split`, `clip.move`, `clip.remove`, `text.add` and `track.add`. Before using one the first time, ask `capabilities` for it by name to get its arguments; do not guess field names. `detail: "full"` returns every schema at once and is too large to read comfortably.
 
 ## The safe editing loop
 
 1. **Open.** `project_open` with the user's `.fosscut` bundle, or `project_new` (1920x1080 at 30 fps by default; 1080x1920 for vertical video). Media must be imported with `media_import` before clips can use it.
-2. **Read.** `timeline_read` before every change. Note its `revision` and the ids of the tracks and clips you will touch (`clip_0003`, `track_0002`).
+2. **Read.** `timeline_read` before every change. Note its `revision` and the ids of the tracks and clips you will touch (`clip_0003`, `track_0002`). Look up the arguments of the commands you plan to use with `capabilities` and `names`.
 3. **Plan.** Turn the request into commands. For anything beyond one or two simple additions, run `edit` with `dry_run: true` and check the change summary. When a change moves or cuts much of the edit, tell the user the plan before applying it.
 4. **Apply.** `edit` with `expected_revision` set to the revision you read, a `request_id` that names this change (reuse it only to retry the same change after a timeout), and a short `reason`. Batch the commands of one logical change into one `edit`, so it is one undo step.
 5. **Check.** `frame_grab` at the moments that matter (a title, both sides of a cut), and `contact_sheet` for the whole timeline. Look at the images; if something is wrong, fix it or `undo` before going on.

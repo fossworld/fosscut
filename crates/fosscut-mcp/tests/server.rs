@@ -205,6 +205,13 @@ async fn a_session_edits_safely_and_recovers_from_errors() {
     assert!(
         codes.contains(&"fosscut.revision.conflict") && codes.contains(&"fosscut.job.not_found")
     );
+    // An agent asks for just the commands it will use: small, with their schemas.
+    let named = ok(&client, "capabilities", json!({ "names": ["clip.split"] })).await;
+    assert_eq!(named["commands"][0]["name"], "clip.split");
+    assert!(named["commands"][0]["input_schema"]["properties"]["at"].is_object());
+    assert!(named.to_string().len() * 10 < full.to_string().len());
+    let unknown_name = fails(&client, "capabilities", json!({ "names": ["clip.fold"] })).await;
+    assert_eq!(unknown_name["details"]["unknown"], json!(["clip.fold"]));
 
     // A dry run changes nothing; a write needs the current revision and replays on retry.
     let title = json!([{ "command": "text.add", "args": { "text": "Hello", "duration": { "seconds": "2" } } }]);

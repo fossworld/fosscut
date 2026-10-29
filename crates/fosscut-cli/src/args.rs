@@ -63,6 +63,9 @@ pub enum Command {
         /// `outline` for names only; `full` for schemas.
         #[arg(long, value_enum, default_value_t = Detail::Outline)]
         detail: Detail,
+        /// Commands or queries to describe with their arguments, for example `clip.add
+        /// text.add`.
+        names: Vec<String>,
     },
     /// Import and list media.
     #[command(subcommand)]

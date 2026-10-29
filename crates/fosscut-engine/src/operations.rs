@@ -53,16 +53,24 @@ pub fn operations() -> Vec<OperationInfo> {
 /// Everything this editor can do (ADR-0002, item 6): the core's commands and queries at
 /// `detail` (`outline`, `normal` or `full`), the engine's operations, and the export presets
 /// with whether this machine can encode them. At full detail, `errors` lists the core's and
-/// the engine's error codes.
+/// the engine's error codes. With `names`, only those commands and queries, each with its
+/// schemas: a small answer an agent can read before calling a command.
 ///
 /// With a `bundle` that opens, the core reports for that project; otherwise for a default
 /// 1080p30 project, so capabilities work before any project exists.
-pub fn capabilities(detail: &str, bundle: Option<&Path>) -> Result<Value, ApiError> {
-    let args = json!({ "detail": detail });
+pub fn capabilities(
+    detail: &str,
+    names: &[String],
+    bundle: Option<&Path>,
+) -> Result<Value, ApiError> {
+    let args = json!({ "detail": detail, "names": names });
     let mut value = match bundle.map(project::open) {
         Some(Ok(session)) => session.query("capabilities", args)?,
         _ => scratch_session()?.query("capabilities", args)?,
     };
+    if !names.is_empty() {
+        return Ok(value);
+    }
     value["operations"] = json!(operations());
     value["export_presets"] = json!(presets());
     if let Some(errors) = value.get_mut("errors").and_then(Value::as_array_mut) {
@@ -106,7 +114,7 @@ mod tests {
 
     #[test]
     fn capabilities_combine_core_and_engine() {
-        let outline = capabilities("outline", None).unwrap();
+        let outline = capabilities("outline", &[], None).unwrap();
         assert!(outline["commands"].as_array().unwrap().len() > 3);
         assert_eq!(
             outline["operations"].as_array().unwrap().len(),
@@ -115,7 +123,7 @@ mod tests {
         assert!(outline["export_presets"].is_array());
         assert!(outline.get("errors").is_none());
 
-        let full = capabilities("full", Some(Path::new("/no/such/Show.fosscut"))).unwrap();
+        let full = capabilities("full", &[], Some(Path::new("/no/such/Show.fosscut"))).unwrap();
         let codes: Vec<&str> = full["errors"]
             .as_array()
             .unwrap()
@@ -126,8 +134,12 @@ mod tests {
         assert!(codes.contains(&"fosscut.time.out_of_range"));
         assert!(full["commands"][0]["input_schema"].is_object());
         assert_eq!(
-            capabilities("loud", None).unwrap_err().code,
+            capabilities("loud", &[], None).unwrap_err().code,
             "fosscut.request.invalid_arguments"
         );
+        let named = capabilities("outline", &["text.add".to_string()], None).unwrap();
+        assert_eq!(named["commands"].as_array().unwrap().len(), 1);
+        assert!(named["commands"][0]["input_schema"].is_object());
+        assert!(named.get("operations").is_none() && named.get("export_presets").is_none());
     }
 }

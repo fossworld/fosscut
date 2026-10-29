@@ -20,10 +20,20 @@
       "expect": { "revision": 0 }
     },
     {
-      "about": "Learn the commands and their schemas.",
+      "about": "See what FossCut can do.",
       "tool": "capabilities",
-      "args": { "detail": "full" },
-      "expect": { "commands": { "$min_len": 6 }, "errors": { "$min_len": 20 } }
+      "args": {},
+      "expect": { "commands": { "$min_len": 6 }, "export_presets": { "$min_len": 6 } }
+    },
+    {
+      "about": "Look up the arguments of the commands this edit uses.",
+      "tool": "capabilities",
+      "args": { "names": ["clip.add", "clip.split", "text.add"] },
+      "expect": {
+        "commands": { "$len": 3 },
+        "commands.0.input_schema.required": ["asset"],
+        "commands.2.input_schema.required": ["text"]
+      }
     },
     {
       "about": "Import the clip.",

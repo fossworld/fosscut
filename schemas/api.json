@@ -1501,7 +1501,7 @@
     },
     {
       "code": "fosscut.request.invalid_arguments",
-      "hint": "Read the command's input schema from capabilities and correct the listed field.",
+      "hint": "Read the command's input schema with capabilities (names: [the command]) and correct the field the message names.",
       "meaning": "Arguments do not match the command schema."
     },
     {
@@ -1718,6 +1718,14 @@
           "detail": {
             "$ref": "#/$defs/Detail",
             "description": "`outline` lists names and summaries; `normal` and `full` include JSON Schemas."
+          },
+          "names": {
+            "default": [],
+            "description": "Only these commands and queries, each with its JSON Schemas, for example\n`[\"clip.add\", \"text.add\"]`: far smaller than every schema at once.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "title": "CapabilitiesArgs",
