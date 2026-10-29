@@ -5,6 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+pub mod mcp;
+
 /// A fresh, empty directory for one test.
 pub fn workspace(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("fosscut-cli-{name}-{}", std::process::id()));

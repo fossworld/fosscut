@@ -101,6 +101,8 @@ pub fn print_query(name: &str, value: &Value) {
         "capabilities" => print_capabilities(value),
         "export.presets" => print_presets(value),
         "frame.grab" => print_frame(value),
+        "skills.list" => print_skills(value),
+        "skills.install" => print_skills_installed(value),
         "frame.contact_sheet" => print_contact_sheet(value),
         _ => println!(
             "{}",
@@ -286,6 +288,26 @@ fn print_contact_sheet(v: &Value) {
         s(first),
         s(last)
     );
+}
+
+fn print_skills(v: &Value) {
+    for skill in v["skills"].as_array().into_iter().flatten() {
+        println!("{}  {}", s(&skill["name"]), s(&skill["description"]));
+    }
+}
+
+fn print_skills_installed(v: &Value) {
+    let dry = v["dry_run"] == Value::Bool(true);
+    for skill in v["skills"].as_array().into_iter().flatten() {
+        let done = match (s(&skill["status"]), dry) {
+            ("unchanged", _) => "already up to date:",
+            ("updated", false) => "updated",
+            ("updated", true) => "dry run: would update",
+            (_, false) => "installed",
+            (_, true) => "dry run: would install",
+        };
+        println!("{done} {} in {}", s(&skill["skill"]), s(&skill["path"]));
+    }
 }
 
 fn print_presets(v: &Value) {

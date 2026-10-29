@@ -117,6 +117,9 @@ pub enum Command {
         #[arg(long)]
         presets: bool,
     },
+    /// Install FossCut's editing skills for AI agents, or list them.
+    #[command(subcommand)]
+    Skills(SkillsCommand),
     /// Serve FossCut to an AI agent over MCP on stdin and stdout. Add it to your agent with,
     /// for example, `claude mcp add fosscut -- fosscut mcp`. Tools use --project (or the
     /// single bundle in the working directory) until the agent opens another project.
@@ -152,6 +155,49 @@ pub enum Command {
         #[arg(long)]
         timeline: Option<String>,
     },
+}
+
+/// `fosscut skills ...`
+#[derive(Debug, Subcommand)]
+pub enum SkillsCommand {
+    /// List the built-in skills and what each is for.
+    List,
+    /// Copy skills into an agent's skill folder: Claude Code reads `.claude/skills` and
+    /// Codex reads `.agents/skills`, in this folder or, with --user, in your home folder.
+    /// Replacing a changed copy needs --allow-destructive.
+    Install {
+        /// The agent: claude or codex. Use --dir for any other folder.
+        #[arg(long, value_enum)]
+        target: Option<SkillTarget>,
+        /// Install for all your projects (in your home folder) instead of this folder.
+        #[arg(long, requires = "target")]
+        user: bool,
+        /// Install into this folder instead, one subfolder per skill.
+        #[arg(long, conflicts_with_all = ["target", "user"])]
+        dir: Option<PathBuf>,
+        /// Install only this skill; every skill when omitted.
+        #[arg(long)]
+        skill: Option<String>,
+    },
+}
+
+/// Agents whose skill folders FossCut knows.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum SkillTarget {
+    /// Claude Code: `.claude/skills`.
+    Claude,
+    /// Codex: `.agents/skills`.
+    Codex,
+}
+
+impl SkillTarget {
+    /// The skill folder relative to a project or home folder.
+    pub fn folder(self) -> &'static str {
+        match self {
+            SkillTarget::Claude => ".claude/skills",
+            SkillTarget::Codex => ".agents/skills",
+        }
+    }
 }
 
 /// `fosscut project ...`

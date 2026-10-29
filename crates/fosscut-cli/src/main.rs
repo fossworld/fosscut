@@ -10,11 +10,11 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    Cli, ClipCommand, Command, MediaCommand, ProjectCommand, TextCommand, TimelineCommand,
-    TrackCommand,
+    Cli, ClipCommand, Command, MediaCommand, ProjectCommand, SkillTarget, SkillsCommand,
+    TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use fosscut_core::{ApiError, REDO, Request, Response, UNDO, codes};
@@ -233,6 +233,22 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             timeline.as_deref(),
             *presets,
         ),
+        Command::Skills(SkillsCommand::List) => {
+            let skills: Vec<Value> = fosscut_mcp::skills::SKILLS
+                .iter()
+                .map(|skill| json!({ "name": skill.name, "description": skill.description() }))
+                .collect();
+            Ok(Outcome::Query(
+                "skills.list".into(),
+                json!({ "skills": skills }),
+            ))
+        }
+        Command::Skills(SkillsCommand::Install {
+            target,
+            user,
+            dir,
+            skill,
+        }) => install_skills(cli, *target, *user, dir.as_deref(), skill.as_deref()),
         Command::Mcp => {
             let project = bundle::bundle_path(cli.project.as_deref()).ok();
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -463,6 +479,112 @@ fn contact_sheet(
             "tiles": sheet.tiles,
         }),
     ))
+}
+
+/// `fosscut skills install`: copies built-in skills into an agent's skill folder. Nothing
+/// is written when a dry run is asked for, or when a changed copy would be replaced without
+/// --allow-destructive.
+fn install_skills(
+    cli: &Cli,
+    target: Option<SkillTarget>,
+    user: bool,
+    dir: Option<&Path>,
+    only: Option<&str>,
+) -> Result<Outcome, ApiError> {
+    let root = match (dir, target) {
+        (Some(dir), _) => dir.to_path_buf(),
+        (None, Some(target)) if user => home_dir()?.join(target.folder()),
+        (None, Some(target)) => PathBuf::from(target.folder()),
+        (None, None) => {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "choose where to install the skills",
+            )
+            .with_hint("Pass --target claude, --target codex, or --dir <folder>."));
+        }
+    };
+    let skills: Vec<&fosscut_mcp::skills::Skill> = match only {
+        Some(name) => vec![fosscut_mcp::skills::skill(name).ok_or_else(|| {
+            let names: Vec<&str> = fosscut_mcp::skills::SKILLS.iter().map(|s| s.name).collect();
+            ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                format!("there is no skill {name}"),
+            )
+            .with_hint(format!("Skills: {}.", names.join(", ")))
+        })?],
+        None => fosscut_mcp::skills::SKILLS.iter().collect(),
+    };
+    let mut plan = Vec::new();
+    for skill in &skills {
+        let folder = root.join(skill.name);
+        let mut status = "unchanged";
+        for (path, text) in skill.files {
+            match std::fs::read_to_string(folder.join(path)) {
+                Ok(existing) if existing == *text => {}
+                Ok(_) => status = "updated",
+                Err(_) if status == "unchanged" => status = "installed",
+                Err(_) => {}
+            }
+        }
+        plan.push((skill, folder, status));
+    }
+    let changed: Vec<String> = plan
+        .iter()
+        .filter(|(_, _, status)| *status == "updated")
+        .map(|(_, folder, _)| folder.display().to_string())
+        .collect();
+    if !changed.is_empty() && !cli.write.allow_destructive {
+        return Err(ApiError::new(
+            codes::GUARD_DESTRUCTIVE,
+            format!("{} has local changes", changed.join(", ")),
+        )
+        .with_hint(
+            "Pass --allow-destructive to replace them with this version of FossCut's skills.",
+        )
+        .with_details(json!({ "paths": changed })));
+    }
+    if !cli.write.dry_run {
+        for (skill, folder, status) in &plan {
+            if *status == "unchanged" {
+                continue;
+            }
+            for (path, text) in skill.files {
+                let file = folder.join(path);
+                let written = file
+                    .parent()
+                    .map_or(Ok(()), std::fs::create_dir_all)
+                    .and_then(|()| std::fs::write(&file, text));
+                written.map_err(|e| {
+                    ApiError::new(
+                        "fosscut.media.write_failed",
+                        format!("cannot write {}: {e}", file.display()),
+                    )
+                })?;
+            }
+        }
+    }
+    let skills: Vec<Value> = plan
+        .iter()
+        .map(|(skill, folder, status)| {
+            json!({ "skill": skill.name, "path": folder.display().to_string(), "status": status })
+        })
+        .collect();
+    Ok(Outcome::Query(
+        "skills.install".into(),
+        json!({ "dry_run": cli.write.dry_run, "skills": skills }),
+    ))
+}
+
+/// The user's home folder, from `HOME` (or `USERPROFILE` on Windows).
+fn home_dir() -> Result<PathBuf, ApiError> {
+    ["HOME", "USERPROFILE"]
+        .iter()
+        .find_map(|var| std::env::var_os(var).filter(|v| !v.is_empty()))
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            ApiError::new(codes::INVALID_ARGUMENTS, "cannot find your home folder")
+                .with_hint("Set HOME, or install into a folder with --dir.")
+        })
 }
 
 /// The preset an output path implies when none is given.

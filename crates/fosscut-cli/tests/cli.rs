@@ -868,3 +868,86 @@ fn frames_and_contact_sheets_show_the_edit() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn skills_install_into_agent_folders() {
+    let dir = workspace("skills");
+    let shipped = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../skills/fosscut-basics/SKILL.md"),
+    )
+    .unwrap();
+    let listed = ok(&dir, &["skills", "list"]);
+    assert_eq!(listed["skills"][0]["name"], json!("fosscut-basics"));
+    assert!(listed["skills"][0]["description"].as_str().unwrap().len() > 40);
+    let nowhere = fails(&dir, &["skills", "install"]);
+    assert_eq!(nowhere["code"], json!("fosscut.request.invalid_arguments"));
+    let unknown = fails(
+        &dir,
+        &[
+            "skills", "install", "--target", "claude", "--skill", "magic",
+        ],
+    );
+    assert!(unknown["hint"].as_str().unwrap().contains("fosscut-basics"));
+
+    // Claude Code, in this folder: installed, then up to date, and guarded once changed.
+    let installed = ok(&dir, &["skills", "install", "--target", "claude"]);
+    assert_eq!(installed["skills"][0]["status"], json!("installed"));
+    let file = dir.join(".claude/skills/fosscut-basics/SKILL.md");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), shipped);
+    let again = ok(&dir, &["skills", "install", "--target", "claude"]);
+    assert_eq!(again["skills"][0]["status"], json!("unchanged"));
+    std::fs::write(&file, "my own notes").unwrap();
+    let guarded = fails(&dir, &["skills", "install", "--target", "claude"]);
+    assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "my own notes");
+    let updated = ok(
+        &dir,
+        &[
+            "skills",
+            "install",
+            "--target",
+            "claude",
+            "--allow-destructive",
+        ],
+    );
+    assert_eq!(updated["skills"][0]["status"], json!("updated"));
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), shipped);
+
+    // Codex, for the user: into the home folder; a dry run writes nothing.
+    let home = dir.join("home");
+    let codex = |args: &[&str]| {
+        let mut all = vec!["skills", "install", "--target", "codex", "--user", "--json"];
+        all.extend_from_slice(args);
+        let output = command(&dir)
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .args(&all)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let planned = codex(&["--dry-run"]);
+    assert_eq!(planned["dry_run"], json!(true));
+    assert!(!home.join(".agents").exists());
+    codex(&[]);
+    assert_eq!(
+        std::fs::read_to_string(home.join(".agents/skills/fosscut-basics/SKILL.md")).unwrap(),
+        shipped
+    );
+
+    // Any folder, and the human output.
+    let human = fosscut(&dir, &["skills", "install", "--dir", "custom"]);
+    assert!(human.status.success());
+    let expected = format!(
+        "installed fosscut-basics in {}",
+        Path::new("custom").join("fosscut-basics").display()
+    );
+    assert_eq!(String::from_utf8_lossy(&human.stdout).trim(), expected);
+    assert!(dir.join("custom/fosscut-basics/SKILL.md").is_file());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

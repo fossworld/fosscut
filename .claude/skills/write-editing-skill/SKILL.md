@@ -23,7 +23,7 @@ skills/<skill-name>/
 
 1. **Start from the goal and the checks**, not from commands: what does a good result look like, measurably (target duration, no fillers left, captions inside the 9:16 safe area, cuts on beats)?
 2. **Use only the public API** (MCP tools and CLI commands listed by `capabilities`). Reference commands by name; do not hard-code schemas that `capabilities` already provides.
-3. **Follow the safe editing loop** from `fosscut-basics`: read the timeline, gather facts (transcript, beats, scenes, faces), plan with `timeline.plan`, show the user the plan summary for large changes, apply with `base_revision`, verify with frame grabs or a contact sheet, export and check the export report.
+3. **Follow the safe editing loop** from `fosscut-basics` (`skills/fosscut-basics/SKILL.md`): read the timeline, gather facts (transcript, beats, scenes, faces), plan with an `edit` dry run, show the user the plan summary for large changes, apply with `expected_revision` and a `request_id`, verify with `frame_grab` or `contact_sheet`, export and check the export report. When ADR-0007's patches exist, planning becomes `timeline.plan` and applying needs `base_revision`.
 4. **Respect guards.** Ask the user before destructive operations; never pass `allow_destructive` without their consent.
 5. **Handle failure modes explicitly:** missing analysis models (offer to install), low transcript confidence, no beats detected, revision conflicts (re-read and re-plan).
 6. **Keep it short.** Put long style guides and presets in `references/` and tell the agent when to read them.
@@ -31,13 +31,17 @@ skills/<skill-name>/
 
 ## Evaluation
 
-Every skill needs `eval/` with:
+Every skill needs `eval/eval.json` with:
 
-- a fixture specification (generated or licensed media; never personal or copyrighted footage),
-- a scripted run that an evaluation harness can execute through MCP deterministically,
-- checks on the resulting timeline projection and export report.
+- `fixtures`: media generated with FFmpeg (`file`, and the `ffmpeg` arguments before it), never personal or copyrighted footage;
+- `steps`: the tool calls an agent following the skill would make, each with `tool`, `args` and an `about` line, checked with:
+  - `expect`: values at dotted paths of the result (`results.0.left.end.frames`), equal or matching `{"$len": n}`, `{"$min_len": n}` or `{"$one_of": [...]}`;
+  - `expect_error`: the error code a step must fail with (`expect` then checks the error);
+  - `expect_image`: the size of the PNG a frame or contact sheet returns;
+  - `save`: values to reuse later as `"${name}"` (ids, revisions, job ids);
+  - `repeat_while`: polling, for `job_status`.
 
-Run the deterministic evaluation in CI. Before changing a skill's behaviour, also run it with at least one real agent (Claude Code or Codex) and record the outcome in the PR.
+`crates/fosscut-cli/tests/skills.rs` replays every evaluation through `fosscut mcp` in CI, and checks each `SKILL.md` (frontmatter name and description, tool names that exist). `skills/fosscut-basics/eval/eval.json` is the model to copy. Also add the skill to `SKILLS` in `crates/fosscut-mcp/src/skills.rs`, which builds it into `fosscut skills install` and the MCP prompts; a test fails until you do. Before changing a skill's behaviour, also run it with at least one real agent (Claude Code or Codex) and record the outcome in the PR.
 
 ## Clean room
 

@@ -9,7 +9,8 @@ use std::path::PathBuf;
 use base64::Engine;
 use fosscut_mcp::FosscutServer;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, Implementation,
+    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig,
+    GetPromptRequestParams, Implementation, ReadResourceRequestParams, ResourceContents,
 };
 use rmcp::service::RunningService;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};
@@ -377,4 +378,52 @@ async fn frames_and_export_jobs_on_a_title() {
     assert!(preset["hint"].as_str().unwrap().contains("mp4-h264"));
     client.cancel().await.unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn skills_are_prompts_and_resources_for_any_client() {
+    let client = connect(None).await;
+    let capabilities = &client.peer_info().unwrap().capabilities;
+    assert!(capabilities.prompts.is_some() && capabilities.resources.is_some());
+    let skill = fosscut_mcp::skills::skill("fosscut-basics").unwrap();
+
+    let prompts = client.list_all_prompts().await.unwrap();
+    let names: Vec<&str> = prompts.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["fosscut-basics"]);
+    assert_eq!(prompts[0].description.as_deref(), Some(skill.description()));
+    let prompt = client
+        .get_prompt(GetPromptRequestParams::new("fosscut-basics"))
+        .await
+        .unwrap();
+    let message = serde_json::to_value(&prompt.messages[0]).unwrap();
+    assert_eq!(message["role"], "user");
+    assert_eq!(message["content"]["text"], skill.text());
+    assert!(
+        client
+            .get_prompt(GetPromptRequestParams::new("fosscut-magic"))
+            .await
+            .is_err()
+    );
+
+    let resources = client.list_all_resources().await.unwrap();
+    assert_eq!(resources.len(), 1);
+    assert_eq!(resources[0].uri, "fosscut://skills/fosscut-basics");
+    assert_eq!(resources[0].mime_type.as_deref(), Some("text/markdown"));
+    let read = client
+        .read_resource(ReadResourceRequestParams::new(
+            "fosscut://skills/fosscut-basics",
+        ))
+        .await
+        .unwrap();
+    let ResourceContents::TextResourceContents { text, .. } = &read.contents[0] else {
+        panic!("the skill is text");
+    };
+    assert_eq!(text, skill.text());
+    assert!(
+        client
+            .read_resource(ReadResourceRequestParams::new("fosscut://skills/none"))
+            .await
+            .is_err()
+    );
+    client.cancel().await.unwrap();
 }
