@@ -26,10 +26,12 @@ runs:
         curl -fsSL --retry 3 -o "$dir/ggml-tiny.en.bin" \
           https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
         expected=921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f
+        # Hashed from stdin: given a path with backslashes, as on Windows, sha256sum escapes
+        # its output with a leading backslash.
         if command -v sha256sum >/dev/null; then
-          actual="$(sha256sum "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
+          actual="$(sha256sum < "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
         else
-          actual="$(shasum -a 256 "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
+          actual="$(shasum -a 256 < "$dir/ggml-tiny.en.bin" | cut -d' ' -f1)"
         fi
         if [ "$actual" != "$expected" ]; then
           echo "::error::ggml-tiny.en.bin has SHA-256 $actual, expected $expected"
