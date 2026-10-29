@@ -1,0 +1,22 @@
+[package]
+name = "fosscut-analysis"
+description = "FossCut's local media analysis: loudness, silences and scene cuts, cached by content (ADR-0012, ADR-0019)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+blake3.workspace = true
+fosscut-media = { workspace = true, features = ["ffmpeg"] }
+fosscut-model.workspace = true
+fosscut-time.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

@@ -101,6 +101,7 @@ pub fn print_query(name: &str, value: &Value) {
         "capabilities" => print_capabilities(value),
         "export.presets" => print_presets(value),
         "frame.grab" => print_frame(value),
+        "media.analysis" => print_analysis(value),
         "skills.list" => print_skills(value),
         "skills.install" => print_skills_installed(value),
         "frame.contact_sheet" => print_contact_sheet(value),
@@ -255,6 +256,10 @@ fn print_capabilities(v: &Value) {
     for o in v["operations"].as_array().into_iter().flatten() {
         println!("  {:<20} {}", s(&o["name"]), s(&o["summary"]));
     }
+    println!("analyzers:");
+    for a in v["analyzers"].as_array().into_iter().flatten() {
+        println!("  {:<14} {}", s(&a["name"]), s(&a["summary"]));
+    }
     println!("export presets:");
     for p in v["export_presets"].as_array().into_iter().flatten() {
         println!("  {:<14} {}", s(&p["name"]), s(&p["description"]));
@@ -319,6 +324,84 @@ fn print_contact_sheet(v: &Value) {
         s(first),
         s(last)
     );
+}
+
+fn names(list: &Value) -> String {
+    let names: Vec<&str> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if names.is_empty() {
+        "none".into()
+    } else {
+        names.join(", ")
+    }
+}
+
+fn print_analysis(v: &Value) {
+    println!(
+        "{}: measured {}; from the cache: {}",
+        s(&v["asset"]),
+        names(&v["computed"]),
+        names(&v["cached"])
+    );
+    let r = &v["results"];
+    if let Some(l) = r.get("loudness") {
+        match (
+            l["integrated_lufs"].as_f64(),
+            l["sample_peak_dbfs"].as_f64(),
+        ) {
+            (Some(lufs), Some(peak)) => {
+                println!("loudness  {lufs:.2} LUFS integrated, sample peak {peak:.2} dBFS")
+            }
+            (None, Some(peak)) => {
+                println!("loudness  too short or quiet to integrate, sample peak {peak:.2} dBFS")
+            }
+            _ => println!("loudness  silent"),
+        }
+    }
+    if let Some(silences) = r.get("silences") {
+        let ranges: Vec<String> = silences["ranges"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|span| {
+                format!(
+                    "{}-{} s",
+                    s(&span["start"]["seconds"]),
+                    s(&span["end"]["seconds"])
+                )
+            })
+            .collect();
+        if ranges.is_empty() {
+            println!(
+                "silences  none below {} dBFS for {} ms",
+                silences["threshold_dbfs"], silences["min_duration_ms"]
+            );
+        } else {
+            println!(
+                "silences  {} ranges, {} s in total: {}",
+                ranges.len(),
+                s(&silences["total"]["seconds"]),
+                ranges.join(", ")
+            );
+        }
+    }
+    if let Some(scenes) = r.get("scenes") {
+        let cuts: Vec<String> = scenes["cuts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|cut| format!("frame {} ({} s)", cut["frame"], s(&cut["time"]["seconds"])))
+            .collect();
+        if cuts.is_empty() {
+            println!("scenes    no cuts in {} frames", scenes["frames"]);
+        } else {
+            println!("scenes    {} cuts: {}", cuts.len(), cuts.join(", "));
+        }
+    }
 }
 
 fn print_skills(v: &Value) {

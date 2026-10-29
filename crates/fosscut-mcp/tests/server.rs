@@ -29,11 +29,16 @@ impl ClientHandler for TestClient {
 
 type Client = RunningService<RoleClient, TestClient>;
 
-/// A server in this process, connected to a client through an in-memory pipe.
+/// A server in this process, connected to a client through an in-memory pipe. It caches
+/// in a folder of this test run, never in the user's cache.
 async fn connect(project: Option<PathBuf>) -> Client {
     let (server_io, client_io) = tokio::io::duplex(1 << 22);
+    let cache = std::env::temp_dir().join(format!("fosscut-mcp-cache-{}", std::process::id()));
     tokio::spawn(async move {
-        let server = FosscutServer::new(project).serve(server_io).await.unwrap();
+        let server = FosscutServer::with_cache(project, cache)
+            .serve(server_io)
+            .await
+            .unwrap();
         let _ = server.waiting().await;
     });
     TestClient.serve(client_io).await.unwrap()
@@ -129,6 +134,7 @@ async fn agents_see_a_few_well_described_tools() {
         "frame_grab",
         "history",
         "job_status",
+        "media_analyze",
         "media_list",
         "project_info",
         "project_open",
@@ -433,4 +439,111 @@ async fn skills_are_prompts_and_resources_for_any_client() {
             .is_err()
     );
     client.cancel().await.unwrap();
+}
+
+fn has_ffmpeg() -> bool {
+    let present = ["ffmpeg", "ffprobe"].iter().all(|tool| {
+        std::process::Command::new(tool)
+            .arg("-version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    });
+    let required =
+        std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0");
+    assert!(
+        present || !required,
+        "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+    );
+    present
+}
+
+#[tokio::test]
+async fn media_is_analyzed_then_answered_from_the_cache() {
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("analyze");
+    let status = std::process::Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("aevalsrc=if(between(t\\,1\\,1.5)\\,0\\,0.25*sin(2*PI*440*t)):s=48000:d=3")
+        .args(["-c:a", "pcm_s16le", "pause.wav"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let client = connect(None).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Talk.fosscut") }),
+    )
+    .await;
+    ok(
+        &client,
+        "media_import",
+        json!({ "files": [dir.join("pause.wav")] }),
+    )
+    .await;
+
+    let first = ok(
+        &client,
+        "media_analyze",
+        json!({ "asset": "asset_0001", "wait_seconds": 60 }),
+    )
+    .await;
+    assert_eq!(first["state"], "succeeded", "{first}");
+    assert_eq!(first["kind"], "analysis");
+    let analysis = &first["analysis"];
+    assert_eq!(
+        analysis["computed"],
+        json!(["loudness", "silences"]),
+        "audio only: no scenes"
+    );
+    let pause = &analysis["results"]["silences"]["ranges"][0];
+    assert_eq!(
+        (
+            pause["start"]["seconds"].clone(),
+            pause["end"]["seconds"].clone()
+        ),
+        (json!("1"), json!("1.5"))
+    );
+    assert!(analysis["results"]["loudness"]["integrated_lufs"].is_number());
+
+    // The second time comes straight from the cache, without a job.
+    let again = ok(&client, "media_analyze", json!({ "asset": "asset_0001" })).await;
+    assert!(again.get("job").is_none());
+    assert_eq!(again["analysis"]["cached"], json!(["loudness", "silences"]));
+    assert_eq!(again["analysis"]["results"], analysis["results"]);
+    // Other options measure again.
+    let stricter = ok(
+        &client,
+        "media_analyze",
+        json!({ "asset": "asset_0001", "analyzers": ["silences"], "options": { "silences": { "min_duration_ms": 600 } } }),
+    )
+    .await;
+    assert_eq!(
+        stricter["analysis"]["results"]["silences"]["ranges"],
+        json!([])
+    );
+
+    let unknown = fails(
+        &client,
+        "media_analyze",
+        json!({ "asset": "asset_0001", "analyzers": ["faces"] }),
+    )
+    .await;
+    assert_eq!(unknown["code"], "fosscut.analysis.unknown_analyzer");
+    let no_video = fails(
+        &client,
+        "media_analyze",
+        json!({ "asset": "asset_0001", "analyzers": ["scenes"] }),
+    )
+    .await;
+    assert_eq!(no_video["code"], "fosscut.analysis.no_video");
+    let missing = fails(&client, "media_analyze", json!({ "asset": "asset_0042" })).await;
+    assert_eq!(missing["code"], "fosscut.asset.not_found");
+    let malformed = fails(&client, "media_analyze", json!({ "asset": "pause.wav" })).await;
+    assert_eq!(malformed["code"], "fosscut.request.invalid_arguments");
+    client.cancel().await.unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
 }

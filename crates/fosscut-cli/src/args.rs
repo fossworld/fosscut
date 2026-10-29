@@ -240,6 +240,30 @@ pub enum MediaCommand {
     },
     /// List imported media.
     List,
+    /// Measure an asset's loudness, silences and shot cuts on this machine. Results are
+    /// cached by the file's content, so asking again is instant.
+    Analyze {
+        /// The asset, for example `asset_0001`.
+        asset: String,
+        /// Analyzers to run: loudness, silences, scenes. Every one the asset allows when
+        /// omitted.
+        analyzers: Vec<String>,
+        /// Measure again even if results are cached.
+        #[arg(long)]
+        refresh: bool,
+        /// Silences: level below which audio counts as quiet, in dBFS (default -40).
+        #[arg(long, allow_hyphen_values = true)]
+        silence_threshold: Option<f64>,
+        /// Silences: shortest quiet run reported, in milliseconds (default 300).
+        #[arg(long)]
+        min_silence_ms: Option<u32>,
+        /// Scenes: picture change that counts as a cut, from 0 to 1 (default 0.35).
+        #[arg(long)]
+        scene_threshold: Option<f64>,
+        /// Scenes: shortest shot, in milliseconds (default 500).
+        #[arg(long)]
+        min_shot_ms: Option<u32>,
+    },
 }
 
 /// `fosscut track ...`
