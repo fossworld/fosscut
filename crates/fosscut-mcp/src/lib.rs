@@ -10,10 +10,13 @@
 //!   `agent:<client name>`.
 //! - FossCut errors are tool results with `isError` set and the typed
 //!   `{"error": {code, message, hint, details}}`, so agents can recover.
+//! - The built-in skills ([`skills`]) are MCP prompts and resources too, for clients
+//!   without skill support (ADR-0013, item 3).
 
 #![forbid(unsafe_code)]
 
 mod params;
+pub mod skills;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -28,7 +31,12 @@ use fosscut_render::Renderer;
 use fosscut_time::Rate;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{
+    CallToolResult, ContentBlock, GetPromptRequestParams, GetPromptResponse, GetPromptResult,
+    Implementation, ListPromptsResult, ListResourcesResult, PaginatedRequestParams, Prompt,
+    PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+    ResourceContents, Role, ServerCapabilities, ServerConfig,
+};
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use serde_json::{Value, json};
@@ -48,7 +56,8 @@ FossCut edits video projects (.fosscut bundles). A safe session:
 4. Check the result with frame_grab or contact_sheet before exporting.
 5. export starts a background job; call job_status with wait_seconds until it succeeds, then read its verification report.
 Times need a unit: {\"frames\": n}, {\"seconds\": \"1.5\"}, {\"timecode\": \"HH:MM:SS:FF\"} or {\"flicks\": n}.
-Errors come back as {\"error\": {code, message, hint, details}}: follow the hint.";
+Errors come back as {\"error\": {code, message, hint, details}}: follow the hint.
+The fosscut-basics prompt (also the resource fosscut://skills/fosscut-basics) is the full guide.";
 
 /// Longest `job_status` wait, in seconds.
 const MAX_WAIT_SECONDS: u64 = 60;
@@ -673,8 +682,69 @@ impl FosscutServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for FosscutServer {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("fosscut", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::new("fosscut", env!("CARGO_PKG_VERSION")))
+        .with_instructions(INSTRUCTIONS)
+    }
+
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        let prompts = skills::SKILLS
+            .iter()
+            .map(|skill| Prompt::new(skill.name, Some(skill.description()), None))
+            .collect();
+        Ok(ListPromptsResult::with_all_items(prompts))
+    }
+
+    async fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<GetPromptResponse, ErrorData> {
+        let skill = skills::skill(&request.name).ok_or_else(|| {
+            ErrorData::invalid_params(format!("no FossCut skill {}", request.name), None)
+        })?;
+        Ok(
+            GetPromptResult::new(vec![PromptMessage::new_text(Role::User, skill.text())])
+                .with_description(skill.description())
+                .into(),
+        )
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        let resources = skills::SKILLS
+            .iter()
+            .map(|skill| {
+                Resource::new(skill.uri(), skill.name)
+                    .with_description(skill.description())
+                    .with_mime_type("text/markdown")
+            })
+            .collect();
+        Ok(ListResourcesResult::with_all_items(resources))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        let skill = skills::SKILLS
+            .iter()
+            .find(|skill| skill.uri() == request.uri)
+            .ok_or_else(|| ErrorData::resource_not_found(request.uri.clone(), None))?;
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(skill.text(), request.uri)]).into())
     }
 }

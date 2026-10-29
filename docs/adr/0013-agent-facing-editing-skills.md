@@ -24,6 +24,12 @@ Tools alone do not make an agent a good editor. CapCut's assistant offers guided
 4. **Every skill has an evaluation**: a fixture project or media, a scripted run, and checks on the resulting timeline and export (duration bounds, no remaining fillers, captions within safe area, cuts on beats). Skills change only with passing evaluations.
 5. **Skills never encode private knowledge or copied text** from CapCut or other products ([ADR-0015](0015-clean-room-policy.md)); they are written from editing practice and FossCut's own API.
 
+## Implementation notes
+
+- **`fosscut-basics`** (milestone 4) is the first skill: the safe editing loop (open, read, plan with a dry run, apply with `expected_revision` and a `request_id`, check with frame grabs and contact sheets, export as a job and check the report), permissions, times, and what to do for each common error code. Every step names the MCP tool and the CLI command.
+- **Evaluations** are `eval/eval.json`: generated fixtures, then scripted tool calls with expected values, expected errors, image sizes and saved values. `crates/fosscut-cli/tests/skills.rs` replays every skill's evaluation through `fosscut mcp` in CI and checks each `SKILL.md` names real tools. A real-agent run is recorded in the pull request that changes a skill.
+- **Distribution:** skills are built into the binary (`crates/fosscut-mcp/src/skills.rs`; a test keeps it equal to `skills/`). `fosscut skills install --target claude` writes `.claude/skills/`, `--target codex` writes `.agents/skills/` (Codex's folder), `--user` uses the home folder, and `--dir` any folder. Replacing a copy with local changes needs `--allow-destructive`. Cursor has no skill folder FossCut writes yet. The MCP server lists every skill as a prompt and as a `fosscut://skills/<name>` resource.
+
 ## Consequences
 
 - Users get high-quality results from natural-language requests without prompt engineering.

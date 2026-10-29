@@ -7,63 +7,9 @@
 
 mod common;
 
-use std::path::Path;
-
-use base64::Engine;
+use common::mcp::{Client, call, json_of, png_size, start};
 use common::{can_render, test_pattern, workspace};
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ClientCapabilities, ClientConfig, Implementation,
-};
-use rmcp::service::RunningService;
-use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
-use rmcp::{ClientHandler, RoleClient, ServiceExt};
 use serde_json::{Value, json};
-
-struct ExitCheck;
-
-impl ClientHandler for ExitCheck {
-    fn get_info(&self) -> ClientConfig {
-        ClientConfig::new(
-            ClientCapabilities::default(),
-            Implementation::new("fosscut-exit-check", "1.0"),
-        )
-    }
-}
-
-type Client = RunningService<RoleClient, ExitCheck>;
-
-/// Starts `fosscut mcp` in `dir` and connects to it.
-async fn start(dir: &Path) -> Client {
-    let command = tokio::process::Command::new(env!("CARGO_BIN_EXE_fosscut")).configure(|cmd| {
-        cmd.arg("mcp")
-            .current_dir(dir)
-            .env_remove("FOSSCUT_PROJECT")
-            .env("FOSSCUT_CACHE_DIR", dir.join("cache"));
-    });
-    ExitCheck
-        .serve(TokioChildProcess::new(command).unwrap())
-        .await
-        .unwrap()
-}
-
-async fn call(client: &Client, tool: &str, args: Value) -> CallToolResult {
-    let arguments = args.as_object().cloned().unwrap_or_default();
-    client
-        .call_tool(CallToolRequestParams::new(tool.to_string()).with_arguments(arguments))
-        .await
-        .unwrap()
-}
-
-fn json_of(result: &CallToolResult) -> Value {
-    let text = result
-        .content
-        .iter()
-        .rev()
-        .find_map(|c| c.as_text())
-        .map(|t| t.text.clone())
-        .unwrap();
-    serde_json::from_str(&text).unwrap()
-}
 
 async fn ok(client: &Client, tool: &str, args: Value) -> Value {
     let result = call(client, tool, args).await;
@@ -84,7 +30,7 @@ async fn an_agent_reproduces_the_baseline_through_mcp_alone() {
     }
     let dir = workspace("mcp-baseline");
     test_pattern(&dir);
-    let client = start(&dir).await;
+    let client = start(&dir, "fosscut-exit-check").await;
 
     // The round 1 edit, as tool calls with the safety contract.
     let info = ok(
@@ -146,13 +92,8 @@ async fn an_agent_reproduces_the_baseline_through_mcp_alone() {
 
     // Agent eyes: frames come back as PNG images (the engine's tests check their pixels).
     let frame = call(&client, "frame_grab", json!({ "time": "1s" })).await;
-    let image = frame.content[0].as_image().unwrap();
-    let png = base64::engine::general_purpose::STANDARD
-        .decode(&image.data)
-        .unwrap();
-    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
-    assert_eq!(json_of(&frame)["width"], 640);
-    assert_eq!(json_of(&frame)["height"], 360);
+    assert_eq!(png_size(&frame), (640, 360));
+    assert_eq!(json_of(&frame)["at"]["frames"], 30);
     let sheet = call(&client, "contact_sheet", json!({ "count": 6 })).await;
     assert_eq!(json_of(&sheet)["tiles"].as_array().unwrap().len(), 6);
 
