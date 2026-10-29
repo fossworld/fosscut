@@ -1,6 +1,7 @@
-//! Background jobs (ADR-0006, item 8): an export runs on its own thread and is followed by
-//! id, so a long-lived host (the MCP server, later the desktop app) answers at once and
-//! reports progress, the result and cancellation. Jobs live as long as their [`Jobs`].
+//! Background jobs (ADR-0006, item 8; ADR-0019, item 4): an export or an analysis runs on
+//! its own thread and is followed by id, so a long-lived host (the MCP server, later the
+//! desktop app) answers at once and reports progress, the result and cancellation. Jobs
+//! live as long as their [`Jobs`].
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,6 +13,7 @@ use fosscut_render::Renderer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::analysis::{AnalysisReport, AnalysisRequest, analyze};
 use crate::{EngineError, ExportReport, ExportRequest, Progress, export};
 
 /// Where a job stands.
@@ -59,7 +61,7 @@ impl From<&EngineError> for JobError {
 pub struct JobStatus {
     /// The job id, for example `job_0001`.
     pub job: String,
-    /// What the job does: `export`.
+    /// What the job does: `export` or `analysis`.
     pub kind: String,
     /// Where it stands.
     pub state: JobState,
@@ -67,11 +69,18 @@ pub struct JobStatus {
     pub progress: Progress,
     /// Time since the job started, in milliseconds.
     pub elapsed_ms: u64,
-    /// The file being written.
-    pub output: String,
-    /// The verified export, once the job succeeded.
+    /// The file an export writes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    /// The asset an analysis reads.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<String>,
+    /// The verified export, once an export succeeded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<ExportReport>,
+    /// The results, once an analysis succeeded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<AnalysisReport>,
     /// The typed error, once the job failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JobError>,
@@ -83,38 +92,83 @@ pub struct Jobs {
     jobs: Mutex<BTreeMap<String, Arc<Job>>>,
 }
 
+/// What a finished job produced.
+enum Done {
+    Export(ExportReport),
+    Analysis(AnalysisReport),
+}
+
+type Outcome = Option<Result<Done, EngineError>>;
+
 struct Job {
     id: String,
-    output: String,
-    request_id: Option<String>,
+    kind: &'static str,
+    output: Option<String>,
+    asset: Option<String>,
+    /// Identifies the work, so the same request joins a running job: the export's request
+    /// id, or the analysis's asset, analyzers and options.
+    key: Option<String>,
     started: Instant,
     cancel: AtomicBool,
     progress: Mutex<Progress>,
-    outcome: Mutex<Option<Result<ExportReport, EngineError>>>,
+    outcome: Mutex<Outcome>,
     finished: Condvar,
 }
 
 impl Job {
-    fn status(&self, outcome: &Option<Result<ExportReport, EngineError>>) -> JobStatus {
-        let (state, report, error) = match outcome {
+    fn status(&self, outcome: &Outcome) -> JobStatus {
+        let (state, done, error) = match outcome {
             None => (JobState::Running, None, None),
-            Some(Ok(report)) => (JobState::Succeeded, Some(report.clone()), None),
-            Some(Err(EngineError::Cancelled)) => (
-                JobState::Cancelled,
-                None,
-                Some(JobError::from(&EngineError::Cancelled)),
-            ),
+            Some(Ok(done)) => (JobState::Succeeded, Some(done), None),
+            Some(Err(error @ (EngineError::Cancelled | EngineError::AnalysisCancelled))) => {
+                (JobState::Cancelled, None, Some(JobError::from(error)))
+            }
             Some(Err(error)) => (JobState::Failed, None, Some(JobError::from(error))),
         };
         JobStatus {
             job: self.id.clone(),
-            kind: "export".into(),
+            kind: self.kind.into(),
             state,
             progress: *lock(&self.progress),
             elapsed_ms: self.started.elapsed().as_millis() as u64,
             output: self.output.clone(),
-            report,
+            asset: self.asset.clone(),
+            report: match done {
+                Some(Done::Export(report)) => Some(report.clone()),
+                _ => None,
+            },
+            analysis: match done {
+                Some(Done::Analysis(report)) => Some(report.clone()),
+                _ => None,
+            },
             error,
+        }
+    }
+
+    fn running(&self) -> bool {
+        lock(&self.outcome).is_none()
+    }
+}
+
+impl Job {
+    fn new(
+        index: usize,
+        kind: &'static str,
+        output: Option<String>,
+        asset: Option<String>,
+        key: Option<String>,
+    ) -> Job {
+        Job {
+            id: format!("job_{:04}", index + 1),
+            kind,
+            output,
+            asset,
+            key,
+            started: Instant::now(),
+            cancel: AtomicBool::new(false),
+            progress: Mutex::new(Progress::default()),
+            outcome: Mutex::new(None),
+            finished: Condvar::new(),
         }
     }
 }
@@ -144,12 +198,12 @@ impl Jobs {
         request: ExportRequest,
     ) -> Result<JobStatus, EngineError> {
         let output = request.output.display().to_string();
-        let mut jobs = lock(&self.jobs);
+        let jobs = lock(&self.jobs);
         if let Some(running) = jobs
             .values()
-            .find(|job| job.output == output && lock(&job.outcome).is_none())
+            .find(|job| job.output.as_deref() == Some(output.as_str()) && job.running())
         {
-            if running.request_id.is_some() && running.request_id == request.request_id {
+            if running.key.is_some() && running.key == request.request_id {
                 return Ok(running.status(&None));
             }
             return Err(EngineError::OutputBusy {
@@ -157,34 +211,60 @@ impl Jobs {
                 job: running.id.clone(),
             });
         }
-        let job = Arc::new(Job {
-            id: format!("job_{:04}", jobs.len() + 1),
-            output,
-            request_id: request.request_id.clone(),
-            started: Instant::now(),
-            cancel: AtomicBool::new(false),
-            progress: Mutex::new(Progress::default()),
-            outcome: Mutex::new(None),
-            finished: Condvar::new(),
-        });
+        let key = request.request_id.clone();
+        let job = Job::new(jobs.len(), "export", Some(output), None, key);
+        Ok(self.spawn(jobs, job, move |progress| {
+            let mut renderer = Renderer::headless()?;
+            export(&project, &request, &mut renderer, progress).map(Done::Export)
+        }))
+    }
+
+    /// Starts analyzing as `request` describes, on a new thread, and returns the job's
+    /// status at once. The same request while one is running joins that job.
+    pub fn start_analysis(&self, project: Project, request: AnalysisRequest) -> JobStatus {
+        let asset = request.asset.to_string();
+        let key = format!(
+            "{asset}:{:?}:{}:{}",
+            request.analyzers,
+            serde_json::to_string(&request.options).unwrap_or_default(),
+            request.refresh
+        );
+        let jobs = lock(&self.jobs);
+        if let Some(running) = jobs
+            .values()
+            .find(|job| job.key.as_deref() == Some(key.as_str()) && job.running())
+        {
+            return running.status(&None);
+        }
+        let job = Job::new(jobs.len(), "analysis", None, Some(asset), Some(key));
+        self.spawn(jobs, job, move |progress| {
+            analyze(&project, &request, progress).map(Done::Analysis)
+        })
+    }
+
+    /// Registers `job` and runs `work` on a new thread, reporting progress and honouring
+    /// cancellation.
+    fn spawn(
+        &self,
+        mut jobs: MutexGuard<'_, BTreeMap<String, Arc<Job>>>,
+        job: Job,
+        work: impl FnOnce(&mut dyn FnMut(Progress) -> bool) -> Result<Done, EngineError>
+        + Send
+        + 'static,
+    ) -> JobStatus {
+        let job = Arc::new(job);
         jobs.insert(job.id.clone(), Arc::clone(&job));
         drop(jobs);
-
         let worker = Arc::clone(&job);
         std::thread::spawn(move || {
-            let result =
-                Renderer::headless()
-                    .map_err(EngineError::from)
-                    .and_then(|mut renderer| {
-                        export(&project, &request, &mut renderer, &mut |progress| {
-                            *lock(&worker.progress) = progress;
-                            !worker.cancel.load(Ordering::Relaxed)
-                        })
-                    });
+            let result = work(&mut |progress| {
+                *lock(&worker.progress) = progress;
+                !worker.cancel.load(Ordering::Relaxed)
+            });
             *lock(&worker.outcome) = Some(result);
             worker.finished.notify_all();
         });
-        Ok(job.status(&None))
+        job.status(&None)
     }
 
     /// The status of job `id`, waiting up to `wait` for it to finish first.

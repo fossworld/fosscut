@@ -43,8 +43,8 @@ use serde_json::{Value, json};
 
 use params::{
     CapabilitiesArgs, Detail, EditArgs, ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs,
-    JobArgs, MediaImportArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs, SheetArgs,
-    TimelineReadArgs,
+    JobArgs, MediaAnalyzeArgs, MediaImportArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs,
+    QueryArgs, SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -85,6 +85,8 @@ struct State {
     project: Mutex<Option<PathBuf>>,
     jobs: Jobs,
     renderer: Mutex<Option<Renderer>>,
+    /// Where analysis results and export request records are kept.
+    cache: PathBuf,
 }
 
 /// Locks `mutex`, recovering the data if a tool panicked while holding it.
@@ -149,13 +151,20 @@ fn as_value<T: serde::Serialize>(value: &T) -> Value {
 }
 
 impl FosscutServer {
-    /// A server whose tools use `project` when they are given none.
+    /// A server whose tools use `project` when they are given none, caching in the user's
+    /// cache directory ([`fosscut_engine::cache_dir`]).
     pub fn new(project: Option<PathBuf>) -> FosscutServer {
+        FosscutServer::with_cache(project, fosscut_engine::cache_dir())
+    }
+
+    /// A server that caches analysis results and export request records in `cache`.
+    pub fn with_cache(project: Option<PathBuf>, cache: PathBuf) -> FosscutServer {
         FosscutServer {
             state: Arc::new(State {
                 project: Mutex::new(project),
                 jobs: Jobs::new(),
                 renderer: Mutex::new(None),
+                cache,
             }),
             tool_router: FosscutServer::tool_router(),
         }
@@ -393,6 +402,55 @@ impl FosscutServer {
         reply(self.read(params.0.project, "media.list", Value::Null).await)
     }
 
+    /// Analyzes media.
+    #[tool(
+        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}.",
+        annotations(read_only_hint = true)
+    )]
+    async fn media_analyze(
+        &self,
+        params: Parameters<MediaAnalyzeArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let bundle = match self.bundle(args.project) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let wait = Duration::from_secs(args.wait_seconds.unwrap_or(30).min(MAX_WAIT_SECONDS));
+        let state = Arc::clone(&self.state);
+        let result = blocking(move || {
+            let session = project::open(&bundle)?;
+            let asset = fosscut_model::Id::parse(&args.asset)
+                .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("asset: {e}")))?;
+            let request = fosscut_engine::analysis::AnalysisRequest {
+                bundle: bundle.clone(),
+                asset,
+                analyzers: fosscut_engine::analysis::analyzers(&args.analyzers)?,
+                options: args.options,
+                refresh: args.refresh,
+                cache: state.cache.clone(),
+            };
+            let project = session.project();
+            if let Some(report) = fosscut_engine::analysis::cached(project, &request)? {
+                return Ok(json!({
+                    "state": "succeeded",
+                    "kind": "analysis",
+                    "asset": report.asset,
+                    "analysis": report,
+                }));
+            }
+            let started = state.jobs.start_analysis(project.clone(), request);
+            let status = state.jobs.status(&started.job, wait)?;
+            let mut value = as_value(&status);
+            if status.state == fosscut_engine::jobs::JobState::Running {
+                value["next"] = json!("Call job_status with this job and wait_seconds.");
+            }
+            Ok(value)
+        })
+        .await;
+        reply(result)
+    }
+
     /// Applies commands.
     #[tool(
         description = "Change the project: apply one or more commands (clip.add, clip.split, clip.move, clip.remove, text.add, track.add and others from capabilities) in order as one atomic transaction and one undo step. Pass expected_revision from your last read; dry_run: true reports the changes without committing; a request_id makes retries safe. Returns the new revision, each command's result and a summary of changes.",
@@ -620,7 +678,7 @@ impl FosscutServer {
                 allow_overwrite: args.allow_destructive,
                 expected_revision: args.expected_revision,
                 request_id: args.request_id,
-                cache: fosscut_engine::cache_dir(),
+                cache: state.cache.clone(),
             };
             if args.dry_run {
                 let plan = fosscut_engine::plan(&project, &request)?;

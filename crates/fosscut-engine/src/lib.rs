@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod analysis;
 mod cache;
 mod error;
 mod export;

@@ -975,3 +975,86 @@ fn capabilities_describe_the_commands_you_name() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn media_analysis_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("analysis");
+    // Shots joined at 1.5 s and 3 s, audio with pauses at 1-1.5 s and 3-3.6 s.
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-filter_complex"])
+        .arg("color=c=0x202020:s=320x180:r=30:d=1.5[a];color=c=0xE0E0E0:s=320x180:r=30:d=1.5[b];testsrc2=s=320x180:r=30:d=1[c];[a][b][c]concat=n=3:v=1:a=0[v]")
+        .args(["-f", "lavfi", "-i"])
+        .arg("aevalsrc=if(between(t\\,1\\,1.5)+between(t\\,3\\,3.6)\\,0\\,0.25*sin(2*PI*440*t)):s=48000:d=4")
+        .args(["-map", "[v]", "-map", "0:a", "-c:v", "mpeg4", "-q:v", "3", "-c:a", "aac", "-shortest", "talk.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(&dir, &["project", "new", "Talk.fosscut"]);
+    ok(&dir, &["media", "import", "talk.mp4"]);
+
+    let first = ok(&dir, &["media", "analyze", "asset_0001"]);
+    assert_eq!(first["computed"], json!(["loudness", "silences", "scenes"]));
+    let ranges: Vec<(Value, Value)> = first["results"]["silences"]["ranges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["start"]["seconds"].clone(), r["end"]["seconds"].clone()))
+        .collect();
+    assert_eq!(
+        ranges,
+        [(json!("1"), json!("1.5")), (json!("3"), json!("3.6"))]
+    );
+    let cuts: Vec<Value> = first["results"]["scenes"]["cuts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["frame"].clone())
+        .collect();
+    assert_eq!(cuts, [json!(45), json!(90)]);
+
+    // Cached the second time; options measure again.
+    let again = ok(&dir, &["media", "analyze", "asset_0001"]);
+    assert_eq!(again["cached"], first["computed"]);
+    assert_eq!(again["results"], first["results"]);
+    let long_pauses = ok(
+        &dir,
+        &[
+            "media",
+            "analyze",
+            "asset_0001",
+            "silences",
+            "--min-silence-ms",
+            "550",
+        ],
+    );
+    assert_eq!(long_pauses["computed"], json!(["silences"]));
+    assert_eq!(
+        long_pauses["results"]["silences"]["ranges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let unknown = fails(&dir, &["media", "analyze", "asset_0001", "faces"]);
+    assert_eq!(unknown["code"], json!("fosscut.analysis.unknown_analyzer"));
+
+    let human = fosscut(&dir, &["media", "analyze", "asset_0001"]);
+    let text = String::from_utf8_lossy(&human.stdout);
+    assert!(
+        text.contains("from the cache: loudness, silences, scenes"),
+        "{text}"
+    );
+    assert!(
+        text.contains("silences  2 ranges, 1.1 s in total: 1-1.5 s, 3-3.6 s"),
+        "{text}"
+    );
+    assert!(
+        text.contains("scenes    2 cuts: frame 45 (1.5 s), frame 90 (3 s)"),
+        "{text}"
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}

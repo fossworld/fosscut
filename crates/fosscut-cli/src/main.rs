@@ -121,6 +121,30 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             write(cli, "media.add", args)
         }
         Command::Media(MediaCommand::List) => query(cli, "media.list", Value::Null),
+        Command::Media(MediaCommand::Analyze {
+            asset,
+            analyzers,
+            refresh,
+            silence_threshold,
+            min_silence_ms,
+            scene_threshold,
+            min_shot_ms,
+        }) => {
+            let mut options = fosscut_engine::analysis::Options::default();
+            if let Some(threshold) = silence_threshold {
+                options.silences.threshold_dbfs = *threshold;
+            }
+            if let Some(ms) = min_silence_ms {
+                options.silences.min_duration_ms = *ms;
+            }
+            if let Some(threshold) = scene_threshold {
+                options.scenes.threshold = *threshold;
+            }
+            if let Some(ms) = min_shot_ms {
+                options.scenes.min_shot_ms = *ms;
+            }
+            analyze_media(cli, asset, analyzers, options, *refresh)
+        }
         Command::Track(TrackCommand::Add {
             kind,
             name,
@@ -368,8 +392,13 @@ fn export(
         return Ok(Outcome::ExportPlan(Box::new(plan)));
     }
     let mut renderer = renderer()?;
-    let report = fosscut_engine::export(project, &request, &mut renderer, &mut progress_printer())
-        .map_err(|e| engine_error(&e))?;
+    let report = fosscut_engine::export(
+        project,
+        &request,
+        &mut renderer,
+        &mut progress_printer("exporting"),
+    )
+    .map_err(|e| engine_error(&e))?;
     Ok(Outcome::Export(Box::new(report)))
 }
 
@@ -597,13 +626,42 @@ fn preset_for(output: &Path) -> Result<Preset, ApiError> {
     })
 }
 
+/// `fosscut media analyze`: cached results, or a measurement with progress on stderr.
+fn analyze_media(
+    cli: &Cli,
+    asset: &str,
+    names: &[String],
+    options: fosscut_engine::analysis::Options,
+    refresh: bool,
+) -> Result<Outcome, ApiError> {
+    let bundle = bundle::bundle_path(cli.project.as_deref())?;
+    let session = bundle::open(&bundle)?;
+    let asset = Id::parse(asset)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("asset: {e}")))?;
+    let request = fosscut_engine::analysis::AnalysisRequest {
+        bundle: bundle.clone(),
+        asset,
+        analyzers: fosscut_engine::analysis::analyzers(names).map_err(|e| engine_error(&e))?,
+        options,
+        refresh,
+        cache: fosscut_engine::cache_dir(),
+    };
+    let report = fosscut_engine::analysis::analyze(
+        session.project(),
+        &request,
+        &mut progress_printer("analyzing"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    Ok(Outcome::Query("media.analysis".into(), json!(report)))
+}
+
 /// Progress on stderr: a live counter in a terminal, every tenth otherwise (for agents).
-fn progress_printer() -> impl FnMut(Progress) -> bool {
+fn progress_printer(doing: &'static str) -> impl FnMut(Progress) -> bool {
     let terminal = std::io::stderr().is_terminal();
     let mut reported = 0;
     move |progress: Progress| {
         if terminal {
-            eprint!("\rexporting {}/{}", progress.done, progress.total);
+            eprint!("\r{doing} {}/{}", progress.done, progress.total);
             if progress.done == progress.total {
                 eprintln!();
             }
@@ -611,7 +669,7 @@ fn progress_printer() -> impl FnMut(Progress) -> bool {
             let tenth = progress.done * 10 / progress.total.max(1);
             if tenth > reported {
                 reported = tenth;
-                eprintln!("exporting {}%", tenth * 10);
+                eprintln!("{doing} {}%", tenth * 10);
             }
         }
         true

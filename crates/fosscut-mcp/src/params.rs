@@ -103,6 +103,27 @@ pub struct MediaImportArgs {
     pub reason: Option<String>,
 }
 
+/// Arguments of `media_analyze`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MediaAnalyzeArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// The asset to analyze, for example `asset_0001` (from `media_list`).
+    pub asset: String,
+    /// `loudness`, `silences` and/or `scenes`; every analyzer the asset allows when omitted.
+    #[serde(default)]
+    pub analyzers: Vec<String>,
+    /// Analyzer options, for example `{"silences": {"threshold_dbfs": -35, "min_duration_ms":
+    /// 400}}`; defaults when omitted.
+    #[serde(default)]
+    pub options: fosscut_engine::analysis::Options,
+    /// Measure again even if results are cached.
+    #[serde(default)]
+    pub refresh: bool,
+    /// Seconds to wait for a measurement to finish before answering, 0 to 60 (default 30).
+    pub wait_seconds: Option<u64>,
+}
+
 /// Arguments of `edit`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EditArgs {

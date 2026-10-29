@@ -117,8 +117,13 @@ queries:
   timeline.read  Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.
 operations:
   export.start         Render a timeline to a video or audio file with a preset, then verify the file by probing it.
+  media.analyze        Measure an asset's loudness, silences and shot cuts on this machine; results are cached by content.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.
+analyzers:
+  loudness       Integrated loudness in LUFS (ITU-R BS.1770-4) and sample peak in dBFS.
+  silences       Ranges whose level stays below a threshold for at least a minimum duration: pauses to cut or keep.
+  scenes         Hard shot cuts with their frame, time and confidence.
 export presets:
   mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
   mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)

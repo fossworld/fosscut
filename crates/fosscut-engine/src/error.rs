@@ -77,6 +77,35 @@ pub enum EngineError {
         /// The requested job id.
         job: String,
     },
+    /// No asset has this id.
+    #[error("asset {asset} does not exist")]
+    AssetNotFound {
+        /// The requested asset.
+        asset: String,
+    },
+    /// An audio analyzer was asked for an asset without sound.
+    #[error("asset {asset} has no audio to analyze")]
+    NoAudio {
+        /// The asset.
+        asset: String,
+    },
+    /// A video analyzer was asked for an asset without moving pictures.
+    #[error("asset {asset} has no video to analyze")]
+    NoVideo {
+        /// The asset.
+        asset: String,
+    },
+    /// No analyzer has this name.
+    #[error("there is no analyzer {name}")]
+    UnknownAnalyzer {
+        /// The requested name.
+        name: String,
+        /// The analyzers that exist.
+        known: Vec<String>,
+    },
+    /// The analysis was cancelled; nothing was cached.
+    #[error("the analysis was cancelled")]
+    AnalysisCancelled,
     /// A clip's media file cannot be found.
     #[error("media for asset {asset} is missing")]
     MissingMedia {
@@ -126,6 +155,11 @@ impl EngineError {
             EngineError::OutputExists { .. } => "fosscut.guard.destructive",
             EngineError::OutputBusy { .. } => "fosscut.export.output_busy",
             EngineError::JobNotFound { .. } => "fosscut.job.not_found",
+            EngineError::AssetNotFound { .. } => "fosscut.asset.not_found",
+            EngineError::NoAudio { .. } => "fosscut.analysis.no_audio",
+            EngineError::NoVideo { .. } => "fosscut.analysis.no_video",
+            EngineError::UnknownAnalyzer { .. } => "fosscut.analysis.unknown_analyzer",
+            EngineError::AnalysisCancelled => "fosscut.analysis.cancelled",
             EngineError::MissingMedia { .. } => "fosscut.export.missing_media",
             EngineError::Cancelled => "fosscut.export.cancelled",
             EngineError::RequestReused { .. } => "fosscut.request.reused",
@@ -154,6 +188,19 @@ impl EngineError {
                 "Jobs live as long as the session that started them; start the export again."
                     .into(),
             ),
+            EngineError::AssetNotFound { .. } => {
+                Some("media_list (fosscut media list) shows the project's assets.".into())
+            }
+            EngineError::NoAudio { .. } => Some(
+                "Choose an analyzer that reads video (scenes), or an asset with sound.".into(),
+            ),
+            EngineError::NoVideo { .. } => Some(
+                "Choose an analyzer that reads audio (loudness, silences), or a video asset."
+                    .into(),
+            ),
+            EngineError::UnknownAnalyzer { known, .. } => {
+                Some(format!("Analyzers: {}.", known.join(", ")))
+            }
             EngineError::MissingMedia { .. } => {
                 Some("Relink the media or restore the file at one of the tried paths.".into())
             }
@@ -182,6 +229,12 @@ impl EngineError {
             EngineError::OutputExists { path } => json!({ "path": path }),
             EngineError::OutputBusy { path, job } => json!({ "path": path, "job": job }),
             EngineError::JobNotFound { job } => json!({ "job": job }),
+            EngineError::AssetNotFound { asset }
+            | EngineError::NoAudio { asset }
+            | EngineError::NoVideo { asset } => json!({ "asset": asset }),
+            EngineError::UnknownAnalyzer { name, known } => {
+                json!({ "name": name, "known": known })
+            }
             EngineError::TimeOutOfRange { time, duration } => {
                 json!({ "time": time, "duration": duration })
             }
@@ -231,6 +284,26 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.job.not_found",
             "No job with this id exists in this session.",
             "Jobs end with the session that started them; start the export again.",
+        ),
+        entry(
+            "fosscut.analysis.no_audio",
+            "An audio analyzer (loudness, silences) was asked for an asset without sound.",
+            "Choose another analyzer or asset.",
+        ),
+        entry(
+            "fosscut.analysis.no_video",
+            "A video analyzer (scenes) was asked for an asset without moving pictures.",
+            "Choose another analyzer or asset.",
+        ),
+        entry(
+            "fosscut.analysis.unknown_analyzer",
+            "No analyzer has this name.",
+            "Use one of the names in details.known; capabilities lists them.",
+        ),
+        entry(
+            "fosscut.analysis.cancelled",
+            "The analysis was cancelled; nothing was cached.",
+            "Start it again when wanted.",
         ),
         entry(
             "fosscut.export.missing_media",
@@ -423,6 +496,45 @@ mod tests {
                 false,
             ),
             (
+                EngineError::AssetNotFound {
+                    asset: "asset_0009".into(),
+                },
+                "fosscut.asset.not_found",
+                "asset asset_0009 does not exist",
+                true,
+            ),
+            (
+                EngineError::NoAudio {
+                    asset: "asset_0001".into(),
+                },
+                "fosscut.analysis.no_audio",
+                "asset asset_0001 has no audio to analyze",
+                true,
+            ),
+            (
+                EngineError::NoVideo {
+                    asset: "asset_0001".into(),
+                },
+                "fosscut.analysis.no_video",
+                "asset asset_0001 has no video to analyze",
+                true,
+            ),
+            (
+                EngineError::UnknownAnalyzer {
+                    name: "faces".into(),
+                    known: vec!["loudness".into(), "scenes".into()],
+                },
+                "fosscut.analysis.unknown_analyzer",
+                "there is no analyzer faces",
+                true,
+            ),
+            (
+                EngineError::AnalysisCancelled,
+                "fosscut.analysis.cancelled",
+                "the analysis was cancelled",
+                false,
+            ),
+            (
                 EngineError::RequestReused {
                     request_id: "r1".into(),
                 },
@@ -559,6 +671,20 @@ mod tests {
                 tried: Vec::new(),
             },
             EngineError::Cancelled,
+            EngineError::AssetNotFound {
+                asset: String::new(),
+            },
+            EngineError::NoAudio {
+                asset: String::new(),
+            },
+            EngineError::NoVideo {
+                asset: String::new(),
+            },
+            EngineError::UnknownAnalyzer {
+                name: String::new(),
+                known: Vec::new(),
+            },
+            EngineError::AnalysisCancelled,
             EngineError::RequestReused {
                 request_id: String::new(),
             },
