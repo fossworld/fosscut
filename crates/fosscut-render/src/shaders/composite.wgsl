@@ -1,5 +1,6 @@
 // Draws one layer over the canvas in linear light with premultiplied alpha: LUT, mask and
-// opacity (ADR-0008 item 2, ADR-0011 item 4).
+// opacity (ADR-0008 item 2, ADR-0011 item 4). Layer textures are premultiplied: video is
+// opaque, text carries its glyph coverage in alpha.
 
 struct Layer {
     // x: opacity; y: mask (0 none, 1 rectangle, 2 ellipse); z: feather; w: invert (0 or 1).
@@ -58,7 +59,8 @@ fn mask_alpha(local: vec2f) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
-    var color = textureSample(layer_texture, layer_sampler, in.uv).rgb;
+    let texel = textureSample(layer_texture, layer_sampler, in.uv);
+    var color = texel.rgb / max(texel.a, 1e-6);
     let entries = layer.lut.x;
     if entries > 0.5 {
         // LUTs expect the display-referred signal: encode, look up, decode.
@@ -66,6 +68,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4f {
         let coord = signal * ((entries - 1.0) / entries) + vec3f(0.5 / entries);
         color = decode_transfer(textureSampleLevel(lut_texture, lut_sampler, coord, 0.0).rgb, 0u);
     }
-    let alpha = clamp(layer.params.x, 0.0, 1.0) * mask_alpha(in.local);
+    let alpha = texel.a * clamp(layer.params.x, 0.0, 1.0) * mask_alpha(in.local);
     return vec4f(color * alpha, alpha);
 }

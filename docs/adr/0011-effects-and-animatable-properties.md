@@ -18,6 +18,10 @@ In CapCut, effects, filters, transitions and text templates arrive as downloadab
 6. **Third-party effects later, sandboxed:** user effect packages may contain only a manifest and WGSL (no scripts) so they are portable and safe. OpenFX plug-in hosting for native desktop plug-ins is a later, optional feature behind a feature flag.
 7. **Presets are data.** Looks, text styles and animation presets are JSON documents over the same parameter vocabulary, shipped with clear licenses and provenance.
 
+## Implementation notes
+
+- **Text, first step** (milestone 3): text clips render as layers in `fosscut-render`. `cosmic-text` shapes and wraps the text with only the bundled Inter fonts (Regular, Bold, Italic, Bold Italic; SIL Open Font License, provenance in `crates/fosscut-render/assets/fonts/inter/README.md`), never system fonts, so text renders identically everywhere. Size is a fraction of the canvas height, lines wrap at 90% of the canvas width and align within the text block, and colors are sRGB hex decoded to linear light. Text is rasterized on the CPU at the output resolution (sharp in preview and export) and composited as a premultiplied layer with the clip's transform, opacity, mask and LUT. Placement centres the exact layout box rather than the pixel-cropped raster, so text keeps its position at every output size; styled runs, per-word timing and animators come later.
+
 ## Consequences
 
 - Agents can enumerate effects and parameters, and invalid values are rejected before rendering.

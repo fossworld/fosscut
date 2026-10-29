@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use fosscut_model::{ClipContent, Id, Project, TrackKind, Transform};
+use fosscut_model::{ClipContent, Id, Project, TextContent, TrackKind, Transform};
 use fosscut_time::Flicks;
 
 use crate::RenderError;
@@ -17,6 +17,15 @@ pub struct SourceRef {
     pub asset: Id,
     /// Time within the asset; zero for still images.
     pub time: Flicks,
+}
+
+/// What a layer shows.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LayerSource {
+    /// A frame of a video or image asset.
+    Frame(SourceRef),
+    /// Styled text, rasterized at the output resolution.
+    Text(TextContent),
 }
 
 /// Mask shape, in the layer's displayed coordinates.
@@ -48,8 +57,8 @@ pub struct Mask {
 pub struct Layer {
     /// The clip this layer comes from, when it comes from a timeline.
     pub clip: Option<Id>,
-    /// The source frame.
-    pub source: SourceRef,
+    /// What the layer shows.
+    pub source: LayerSource,
     /// Degrees clockwise the source frame is rotated for display (0, 90, 180 or 270).
     pub rotation: u16,
     /// Placement relative to the fitted size.
@@ -63,8 +72,17 @@ pub struct Layer {
 }
 
 impl Layer {
-    /// A full-opacity layer showing `source` with the default placement.
+    /// A full-opacity layer showing a frame of `source` with the default placement.
     pub fn new(source: SourceRef) -> Layer {
+        Layer::with_source(LayerSource::Frame(source))
+    }
+
+    /// A full-opacity text layer, centred on the canvas.
+    pub fn text(content: TextContent) -> Layer {
+        Layer::with_source(LayerSource::Text(content))
+    }
+
+    fn with_source(source: LayerSource) -> Layer {
         Layer {
             clip: None,
             source,
@@ -118,8 +136,8 @@ pub fn source_geometry(project: &Project, asset: &Id) -> Option<((u32, u32), u16
     ))
 }
 
-/// Plans the frame of `timeline` displayed at `time`: every visible clip on a video track
-/// that covers `time`, bottom track first.
+/// Plans the frame of `timeline` displayed at `time`: every visible video, image and text
+/// clip that covers `time`, bottom track first.
 pub fn plan_frame(
     project: &Project,
     timeline: &Id,
@@ -149,16 +167,19 @@ pub fn plan_frame(
                 asset: asset.clone(),
                 time: Flicks::ZERO,
             },
-            (ClipContent::Text(_), _) => {
-                plan.skipped.push(Skipped {
-                    clip: clip.id.clone(),
-                    reason: "text rendering is not implemented yet".to_string(),
+            (ClipContent::Text(text), _) => {
+                plan.layers.push(Layer {
+                    clip: Some(clip.id.clone()),
+                    transform: clip.transform.clone(),
+                    opacity: clip.opacity.clamp(0.0, 1.0) as f32,
+                    ..Layer::text(text.clone())
                 });
                 continue;
             }
             _ => continue,
         };
         let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
+        let source = LayerSource::Frame(source);
         plan.layers.push(Layer {
             clip: Some(clip.id.clone()),
             source,
@@ -183,6 +204,13 @@ mod tests {
 
     fn frames(n: i64) -> Flicks {
         Rate::FPS_30.frames_to_flicks(n)
+    }
+
+    fn time(layer: &Layer) -> Option<Flicks> {
+        match &layer.source {
+            LayerSource::Frame(source) => Some(source.time),
+            LayerSource::Text(_) => None,
+        }
     }
 
     fn clip(project: &mut Project, start: i64, length: i64, content: ClipContent) -> Clip {
@@ -284,17 +312,27 @@ mod tests {
         let (project, timeline) = project();
         let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
         assert_eq!(plan.canvas, (1920, 1080));
-        assert_eq!(plan.layers.len(), 2);
-        assert_eq!(plan.layers[0].source.time, frames(90), "source_in + offset");
-        assert_eq!(plan.layers[1].source.time, frames(10));
+        assert_eq!(plan.layers.len(), 3, "two video layers and the title");
+        assert_eq!(
+            time(&plan.layers[0]),
+            Some(frames(90)),
+            "source_in + offset"
+        );
+        assert_eq!(time(&plan.layers[1]), Some(frames(10)));
+        assert!(matches!(&plan.layers[2].source, LayerSource::Text(t) if t.text == "Hi"));
+        assert_eq!(plan.layers[2].rotation, 0);
         assert_eq!(plan.layers[1].opacity, 1.0, "opacity is clamped");
         assert_eq!(
             plan.layers[0].rotation, 90,
             "from the media table, clockwise"
         );
-        assert_eq!(plan.skipped.len(), 1, "text is reported, not drawn");
+        assert!(plan.skipped.is_empty());
         let plan = plan_frame(&project, &timeline, frames(120)).unwrap();
-        assert_eq!(plan.layers.len(), 1, "the base clip has ended");
+        assert_eq!(
+            plan.layers.len(),
+            1,
+            "the base clip and the title have ended"
+        );
         assert!(
             plan_frame(&project, &timeline, frames(400))
                 .unwrap()
@@ -308,7 +346,7 @@ mod tests {
         let (mut project, timeline) = project();
         project.timelines.get_mut(&timeline).unwrap().tracks[1].hidden = true;
         let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
-        assert_eq!(plan.layers.len(), 1);
+        assert_eq!(plan.layers.len(), 2, "base video and title");
         let missing = plan_frame(
             &project,
             &Id::new(fosscut_model::IdKind::Timeline, 9),

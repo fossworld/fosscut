@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+cosmic-text.workspace = true
 fosscut-media.workspace = true
 fosscut-model.workspace = true
 fosscut-time.workspace = true
