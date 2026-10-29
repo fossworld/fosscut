@@ -116,6 +116,22 @@ impl Preset {
         video.is_none_or(|v| video_encoder(v).is_some()) && audio_encoder(audio).is_some()
     }
 
+    /// The preset an output file implies: `.mov` is ProRes, `.webm` is VP9, `.m4a` is audio
+    /// only, and anything else is the most compatible video preset this machine can encode
+    /// (`None` when it can encode no video).
+    pub fn for_output(path: &std::path::Path) -> Option<Preset> {
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        match extension.as_str() {
+            "mov" => Some(Preset::MovProRes),
+            "webm" => Some(Preset::WebmVp9),
+            "m4a" => Some(Preset::M4aAac),
+            _ => Preset::default_video(),
+        }
+    }
+
     /// The most compatible video preset this machine can encode.
     pub fn default_video() -> Option<Preset> {
         Preset::ALL
@@ -136,4 +152,29 @@ pub fn presets() -> Vec<PresetInfo> {
             available: preset.available(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn extensions_choose_presets() {
+        assert_eq!(
+            Preset::for_output(Path::new("a.mov")),
+            Some(Preset::MovProRes)
+        );
+        assert_eq!(
+            Preset::for_output(Path::new("a.WEBM")),
+            Some(Preset::WebmVp9)
+        );
+        assert_eq!(Preset::for_output(Path::new("a.m4a")), Some(Preset::M4aAac));
+        assert_eq!(
+            Preset::for_output(Path::new("a.mp4")),
+            Preset::default_video()
+        );
+        assert_eq!(Preset::for_output(Path::new("a")), Preset::default_video());
+    }
 }

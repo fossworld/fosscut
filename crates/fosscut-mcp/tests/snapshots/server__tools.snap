@@ -1,0 +1,732 @@
+---
+source: crates/fosscut-mcp/tests/server.rs
+expression: listing
+---
+[
+  {
+    "description": "List every editing command and query with a summary (detail: full adds each command's JSON Schema and all error codes), the engine operations, and the export presets this machine can encode. Read it before your first edit.",
+    "input": {
+      "$defs": {
+        "Detail": {
+          "description": "How much `capabilities` and `timeline_read` include.",
+          "oneOf": [
+            {
+              "const": "outline",
+              "description": "Names and summaries only.",
+              "type": "string"
+            },
+            {
+              "const": "normal",
+              "description": "Everything except schemas.",
+              "type": "string"
+            },
+            {
+              "const": "full",
+              "description": "Everything, including JSON Schemas.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "detail": {
+          "$ref": "#/$defs/Detail",
+          "description": "`outline` (default) lists names and summaries; `full` adds every command's JSON\nSchema, the request and time schemas, and the error codes."
+        }
+      },
+      "type": "object"
+    },
+    "name": "capabilities",
+    "read_only": true
+  },
+  {
+    "description": "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "count": {
+          "description": "Frames to show, 1 to 100 (default 12), from the middle of equal parts of the\ntimeline.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeline": {
+          "description": "Timeline id; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Width of each frame in pixels (default 240).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "contact_sheet",
+    "read_only": true
+  },
+  {
+    "description": "Change the project: apply one or more commands (clip.add, clip.split, clip.move, clip.remove, text.add, track.add and others from capabilities) in order as one atomic transaction and one undo step. Pass expected_revision from your last read; dry_run: true reports the changes without committing; a request_id makes retries safe. Returns the new revision, each command's result and a summary of changes.",
+    "input": {
+      "$defs": {
+        "CommandCall": {
+          "additionalProperties": false,
+          "description": "One command invocation inside a request.",
+          "properties": {
+            "args": {
+              "default": null,
+              "description": "Arguments matching the command's input schema."
+            },
+            "command": {
+              "description": "Command name, for example `clip.split`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "allow_destructive": {
+          "default": false,
+          "description": "Allow destructive changes such as removing clips from the main video track. Ask the\nuser first.",
+          "type": "boolean"
+        },
+        "commands": {
+          "description": "Commands applied in order as one transaction and one undo step, for example\n`[{\"command\": \"clip.split\", \"args\": {\"clip\": \"clip_0003\", \"at\": {\"timecode\": \"00:00:03:28\"}}}]`.\n`capabilities` with `detail: full` gives each command's argument schema.",
+          "items": {
+            "$ref": "#/$defs/CommandCall"
+          },
+          "type": "array"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Validate and report the changes without committing them.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision; pass\nthe revision from your last read.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key: repeating it with the same commands returns the first result instead of\napplying them twice.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "commands"
+      ],
+      "type": "object"
+    },
+    "name": "edit",
+    "read_only": false
+  },
+  {
+    "description": "Export the timeline to a video or audio file in the background and return a job id at once; then call job_status with wait_seconds until the job succeeds. The file is probed and checked against the request (codec, size, rate, frame count, duration, audio); a codec this machine cannot encode fails with the codecs that work instead, never a substitute. dry_run: true checks everything and reports frames, duration and encoders without writing.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "allow_destructive": {
+          "default": false,
+          "description": "Replace the output if it exists. Ask the user first.",
+          "type": "boolean"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Check everything and report frames, duration and encoders without writing.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision, so the\nexport matches the edit you checked.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output": {
+          "description": "File to write, for example `Promo.mp4`.",
+          "type": "string"
+        },
+        "preset": {
+          "description": "`mp4-h264`, `mp4-hevc`, `mp4-av1`, `mov-prores`, `webm-vp9` or `m4a-aac`. When\nomitted the extension decides: `.mov` ProRes, `.webm` VP9, `.m4a` audio only, and\nanything else the most compatible video preset this machine can encode.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key: repeating it returns the running or finished export.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeline": {
+          "description": "Timeline id; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "output"
+      ],
+      "type": "object"
+    },
+    "name": "export",
+    "read_only": false
+  },
+  {
+    "description": "Render the frame of the timeline at a time as a PNG image, exactly as the export will show it (default 640 pixels wide). Use it to check titles, placement and cuts. Returns the image and the frame's time in every unit.",
+    "input": {
+      "$defs": {
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time": {
+          "$ref": "#/$defs/TimeInput",
+          "description": "The moment to show, with a unit: `{\"seconds\": \"1.5\"}`, `{\"frames\": 45}`,\n`{\"timecode\": \"00:00:01:15\"}` or `{\"flicks\": n}`."
+        },
+        "timeline": {
+          "description": "Timeline id; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Image width in pixels (default 640); the height keeps the aspect ratio.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "time"
+      ],
+      "type": "object"
+    },
+    "name": "frame_grab",
+    "read_only": true
+  },
+  {
+    "description": "List the project's recent changes, newest first: revision, who made it (human or agent:<name>), the commands and the reason.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "limit": {
+          "description": "Most recent entries to list (default 20).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "history",
+    "read_only": true
+  },
+  {
+    "description": "Cancel a running export job; nothing is written. A finished job is not affected. wait_seconds (up to 60) waits for it to stop.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "job": {
+          "description": "Job id from `export`, for example `job_0001`.",
+          "type": "string"
+        },
+        "wait_seconds": {
+          "description": "Seconds to wait for the job to finish before answering, 0 to 60 (default 0).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "job"
+      ],
+      "type": "object"
+    },
+    "name": "job_cancel",
+    "read_only": false
+  },
+  {
+    "description": "The state of an export job (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "job": {
+          "description": "Job id from `export`, for example `job_0001`.",
+          "type": "string"
+        },
+        "wait_seconds": {
+          "description": "Seconds to wait for the job to finish before answering, 0 to 60 (default 0).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "job"
+      ],
+      "type": "object"
+    },
+    "name": "job_status",
+    "read_only": true
+  },
+  {
+    "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "description": "Report what would be added without changing the project.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "files": {
+          "description": "Media files to import: video, audio or images. All are added in one revision.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key: repeating it with the same files returns the first result.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "type": "object"
+    },
+    "name": "media_import",
+    "read_only": false
+  },
+  {
+    "description": "List the project's media: asset ids, names, kinds, durations and stream details.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "media_list",
+    "read_only": true
+  },
+  {
+    "description": "Project name, current revision, timelines with their formats, and whether undo or redo is possible.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "project_info",
+    "read_only": true
+  },
+  {
+    "description": "Create a new project bundle (a directory ending in .fosscut) with an empty timeline, and make it the open project. Defaults: 1920x1080 at 30 fps; use width 1080 and height 1920 for vertical video. Returns project info.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "height": {
+          "description": "Timeline height in pixels (default 1080; 1920 for vertical video).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Project name; the directory name when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Bundle directory to create, for example `Promo.fosscut`. It must not exist or must\nbe empty.",
+          "type": "string"
+        },
+        "rate": {
+          "description": "Frame rate, for example `30`, `25` or `30000/1001` (default 30).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Timeline width in pixels (default 1920; 1080 for vertical video).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "project_new",
+    "read_only": false
+  },
+  {
+    "description": "Open an existing .fosscut project; later tools use it when they get no project argument. Returns project info: name, revision, timelines and undo state.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "description": "Path of an existing `.fosscut` bundle.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "name": "project_open",
+    "read_only": true
+  },
+  {
+    "description": "Run any read-only query from capabilities by name with its arguments, for queries no other tool covers.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "args": {
+          "description": "Query arguments matching its schema."
+        },
+        "name": {
+          "description": "Query name from `capabilities`, for example `history.list`.",
+          "type": "string"
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "query",
+    "read_only": true
+  },
+  {
+    "description": "Redo the most recently undone change. Returns the new revision.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "redo",
+    "read_only": false
+  },
+  {
+    "description": "Read a timeline: its format, duration and revision, and every track with its clips (ids, start, duration, source range, text) in frames, timecode and seconds. Use the revision as expected_revision in edit.",
+    "input": {
+      "$defs": {
+        "Detail": {
+          "description": "How much `capabilities` and `timeline_read` include.",
+          "oneOf": [
+            {
+              "const": "outline",
+              "description": "Names and summaries only.",
+              "type": "string"
+            },
+            {
+              "const": "normal",
+              "description": "Everything except schemas.",
+              "type": "string"
+            },
+            {
+              "const": "full",
+              "description": "Everything, including JSON Schemas.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Detail"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`outline` counts clips per track, `normal` (default) lists every clip, `full` adds\nstyles and transforms."
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeline": {
+          "description": "Timeline id; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "timeline_read",
+    "read_only": true
+  },
+  {
+    "description": "Undo the most recent change to the project (one edit, import or redo), whoever made it. Returns the new revision.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "name": "undo",
+    "read_only": false
+  }
+]

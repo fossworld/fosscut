@@ -117,6 +117,10 @@ pub enum Command {
         #[arg(long)]
         presets: bool,
     },
+    /// Serve FossCut to an AI agent over MCP on stdin and stdout. Add it to your agent with,
+    /// for example, `claude mcp add fosscut -- fosscut mcp`. Tools use --project (or the
+    /// single bundle in the working directory) until the agent opens another project.
+    Mcp,
     /// Render one frame of a timeline to a PNG file, exactly as an export shows it.
     Frame {
         /// The moment to show, for example 1s, 30f or 00:00:01:00.

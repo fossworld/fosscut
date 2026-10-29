@@ -27,7 +27,16 @@ CapCut already lets its own built-in assistant edit projects, which shows the ap
 
 - **Session host** (milestone 4): `fosscut_engine::project` finds, creates, opens and locks project bundles, and `fosscut_engine::import` probes media into `media.add` arguments, so the CLI and the MCP server host projects the same way. Without the desktop app, each write takes the bundle's lock file for the length of one request and reopens the project from disk, so several front ends can work on one project in turn.
 - **Agent eyes, first step:** `fosscut_engine::frame` renders one frame of a timeline, or a contact sheet of frames spread evenly over it, through the same plan and renderer as an export, so an agent checks what it will export. The CLI writes them as PNG files (`fosscut frame`, `fosscut contact-sheet`), reporting every time in frames, timecode, seconds and flicks.
-- **Capabilities:** beside the core's commands and queries, `capabilities` lists the engine's operations (`export.start`, `frame.grab`, `frame.contact_sheet`) with the command line that runs each, and the export presets.
+- **MCP server** (milestone 4): the `fosscut-mcp` crate, on the official Rust SDK `rmcp`, serves 17 tools on stdio as `fosscut mcp`:
+  - projects: `project_new`, `project_open`, `project_info`;
+  - reads: `timeline_read`, `media_list`, `history`, and `query` for any other query;
+  - writes: `media_import`, `edit` (any registered command, as one atomic batch with `expected_revision`, `dry_run`, `request_id`, `allow_destructive` and `reason`), `undo`, `redo`;
+  - agent eyes: `frame_grab` and `contact_sheet`, which return PNG images;
+  - export: `export` (a dry run, or a background job), `job_status` (which can wait up to 60 s) and `job_cancel`;
+  - and `capabilities`.
+
+  The server remembers an open project (from `--project`, the single bundle in its working directory, or the last `project_open` or `project_new`); any tool can name another. Reads carry read-only annotations. FossCut errors are tool results with `isError` set and the typed `{code, message, hint, details}`; protocol errors are only for malformed calls. Writes are logged as made by `agent:<client name>`. The server's instructions describe the safe editing loop. Streamable HTTP waits for the local authentication design in the Consequences below.
+- **Capabilities:** beside the core's commands and queries, `capabilities` lists the engine's operations (`export.start`, `frame.grab`, `frame.contact_sheet`) with the command line that runs each, and the export presets. At full detail, the error list includes the engine's codes (export, time range, jobs).
 
 ## Consequences
 

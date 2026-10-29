@@ -158,6 +158,22 @@ pub fn query(
     open(bundle)?.query(name, args)
 }
 
+/// The timeline with id `id`, or the primary timeline when `id` is `None`.
+pub fn timeline(project: &Project, id: Option<&str>) -> Result<Id, ApiError> {
+    let timeline = match id {
+        Some(text) => Id::parse(text)
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}")))?,
+        None => project.manifest.primary_timeline.clone(),
+    };
+    if !project.timelines.contains_key(&timeline) {
+        return Err(ApiError::new(
+            codes::TIMELINE_NOT_FOUND,
+            format!("timeline {timeline} does not exist"),
+        ));
+    }
+    Ok(timeline)
+}
+
 /// Milliseconds since the Unix epoch.
 pub fn now_ms() -> Option<u64> {
     SystemTime::now()

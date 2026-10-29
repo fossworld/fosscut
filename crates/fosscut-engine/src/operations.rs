@@ -1,7 +1,15 @@
 //! The engine's operations as `capabilities` lists them (ADR-0002, item 6): work that reads
 //! a project and produces files or images, beside the core's commands and queries.
 
+use std::path::Path;
+
+use fosscut_core::{ApiError, Session};
+use fosscut_model::{Id, IdKind, MemoryStore, Project, TimelineFormat};
+use fosscut_time::Rate;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::{engine_error_catalogue, presets, project};
 
 /// One engine operation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +50,43 @@ pub fn operations() -> Vec<OperationInfo> {
     .collect()
 }
 
+/// Everything this editor can do (ADR-0002, item 6): the core's commands and queries at
+/// `detail` (`outline`, `normal` or `full`), the engine's operations, and the export presets
+/// with whether this machine can encode them. At full detail, `errors` lists the core's and
+/// the engine's error codes.
+///
+/// With a `bundle` that opens, the core reports for that project; otherwise for a default
+/// 1080p30 project, so capabilities work before any project exists.
+pub fn capabilities(detail: &str, bundle: Option<&Path>) -> Result<Value, ApiError> {
+    let args = json!({ "detail": detail });
+    let mut value = match bundle.map(project::open) {
+        Some(Ok(session)) => session.query("capabilities", args)?,
+        _ => scratch_session()?.query("capabilities", args)?,
+    };
+    value["operations"] = json!(operations());
+    value["export_presets"] = json!(presets());
+    if let Some(errors) = value.get_mut("errors").and_then(Value::as_array_mut) {
+        errors.extend(
+            engine_error_catalogue()
+                .into_iter()
+                .map(|e| serde_json::to_value(e).unwrap_or_default()),
+        );
+    }
+    Ok(value)
+}
+
+/// A throwaway in-memory session, so capabilities work without a project.
+fn scratch_session() -> Result<Session<MemoryStore>, ApiError> {
+    let format = TimelineFormat {
+        width: 1920,
+        height: 1080,
+        rate: Rate::FPS_30,
+        sample_rate: 48_000,
+    };
+    let id = Id::new(IdKind::Project, 0);
+    Session::create(MemoryStore::new(), Project::new(id, "capabilities", format))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +101,33 @@ mod tests {
         assert!(
             all.iter()
                 .all(|o| o.name.contains('.') && o.cli.starts_with("fosscut "))
+        );
+    }
+
+    #[test]
+    fn capabilities_combine_core_and_engine() {
+        let outline = capabilities("outline", None).unwrap();
+        assert!(outline["commands"].as_array().unwrap().len() > 3);
+        assert_eq!(
+            outline["operations"].as_array().unwrap().len(),
+            operations().len()
+        );
+        assert!(outline["export_presets"].is_array());
+        assert!(outline.get("errors").is_none());
+
+        let full = capabilities("full", Some(Path::new("/no/such/Show.fosscut"))).unwrap();
+        let codes: Vec<&str> = full["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|e| e["code"].as_str())
+            .collect();
+        assert!(codes.contains(&"fosscut.revision.conflict"));
+        assert!(codes.contains(&"fosscut.time.out_of_range"));
+        assert!(full["commands"][0]["input_schema"].is_object());
+        assert_eq!(
+            capabilities("loud", None).unwrap_err().code,
+            "fosscut.request.invalid_arguments"
         );
     }
 }

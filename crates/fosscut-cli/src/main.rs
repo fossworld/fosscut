@@ -17,10 +17,10 @@ use std::io::IsTerminal;
 use std::path::Path;
 
 use clap::Parser;
-use fosscut_core::{ApiError, REDO, Request, Response, Session, UNDO, codes};
+use fosscut_core::{ApiError, REDO, Request, Response, UNDO, codes};
 use fosscut_engine::project as bundle;
 use fosscut_engine::{EngineError, ExportPlan, ExportReport, ExportRequest, Preset, Progress};
-use fosscut_model::{Id, MemoryStore, Project, TimelineFormat};
+use fosscut_model::{Id, Project, TimelineFormat};
 use fosscut_time::{Rate, TimeInput};
 use serde_json::{Map, Value, json};
 
@@ -29,6 +29,8 @@ enum Outcome {
     Query(String, Value),
     Export(Box<ExportReport>),
     ExportPlan(Box<ExportPlan>),
+    /// Nothing to print: the MCP session used stdout itself.
+    Served,
 }
 
 fn main() -> ExitCode {
@@ -59,6 +61,7 @@ fn print(cli: &Cli, outcome: &Outcome) {
             println!("{}", pretty(&value));
         }
         Outcome::ExportPlan(plan) => output::print_export_plan(plan),
+        Outcome::Served => {}
     }
 }
 
@@ -108,17 +111,8 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         }
         Command::Project(ProjectCommand::Info) => query(cli, "project.info", Value::Null),
         Command::Capabilities { detail } => {
-            let value =
-                match bundle::bundle_path(cli.project.as_deref()).and_then(|p| bundle::open(&p)) {
-                    Ok(session) => {
-                        session.query("capabilities", json!({ "detail": detail.as_str() }))?
-                    }
-                    Err(_) => scratch_session()?
-                        .query("capabilities", json!({ "detail": detail.as_str() }))?,
-                };
-            let mut value = value;
-            value["operations"] = json!(fosscut_engine::operations());
-            value["export_presets"] = json!(fosscut_engine::presets());
+            let bundle = bundle::bundle_path(cli.project.as_deref()).ok();
+            let value = fosscut_engine::capabilities(detail.as_str(), bundle.as_deref())?;
             Ok(Outcome::Query("capabilities".into(), value))
         }
         Command::Media(MediaCommand::Import { file, name }) => {
@@ -239,6 +233,17 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             timeline.as_deref(),
             *presets,
         ),
+        Command::Mcp => {
+            let project = bundle::bundle_path(cli.project.as_deref()).ok();
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| ApiError::new(codes::INTERNAL, format!("cannot start: {e}")))?;
+            runtime
+                .block_on(fosscut_mcp::serve_stdio(project))
+                .map_err(|e| ApiError::new(codes::INTERNAL, format!("MCP session failed: {e}")))?;
+            Ok(Outcome::Served)
+        }
         Command::Frame {
             time,
             out,
@@ -357,21 +362,8 @@ fn timeline_of<'a>(
     project: &'a Project,
     timeline: Option<&str>,
 ) -> Result<(Id, &'a TimelineFormat), ApiError> {
-    let timeline = match timeline {
-        Some(text) => Id::parse(text)
-            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}")))?,
-        None => project.manifest.primary_timeline.clone(),
-    };
-    let format = &project
-        .timelines
-        .get(&timeline)
-        .ok_or_else(|| {
-            ApiError::new(
-                codes::TIMELINE_NOT_FOUND,
-                format!("timeline {timeline} does not exist"),
-            )
-        })?
-        .format;
+    let timeline = bundle::timeline(project, timeline)?;
+    let format = &project.timelines[&timeline].format;
     Ok((timeline, format))
 }
 
@@ -475,17 +467,7 @@ fn contact_sheet(
 
 /// The preset an output path implies when none is given.
 fn preset_for(output: &Path) -> Result<Preset, ApiError> {
-    let extension = output
-        .extension()
-        .map(|e| e.to_string_lossy().to_ascii_lowercase())
-        .unwrap_or_default();
-    let by_extension = match extension.as_str() {
-        "mov" => Some(Preset::MovProRes),
-        "webm" => Some(Preset::WebmVp9),
-        "m4a" => Some(Preset::M4aAac),
-        _ => None,
-    };
-    by_extension.or_else(Preset::default_video).ok_or_else(|| {
+    Preset::for_output(output).ok_or_else(|| {
         ApiError::new(
             "fosscut.export.codec_unavailable",
             "this machine cannot encode video",
@@ -515,23 +497,7 @@ fn progress_printer() -> impl FnMut(Progress) -> bool {
 }
 
 fn engine_error(error: &EngineError) -> ApiError {
-    let mut api = ApiError::new(error.code(), error.to_string()).with_details(error.details());
-    if let Some(hint) = error.hint() {
-        api = api.with_hint(hint);
-    }
-    api
-}
-
-/// A throwaway in-memory session so that `capabilities` works without a project.
-fn scratch_session() -> Result<Session<MemoryStore>, ApiError> {
-    let format = TimelineFormat {
-        width: 1920,
-        height: 1080,
-        rate: Rate::FPS_30,
-        sample_rate: 48_000,
-    };
-    let id = fosscut_model::Id::new(fosscut_model::IdKind::Project, 0);
-    Session::create(MemoryStore::new(), Project::new(id, "capabilities", format))
+    ApiError::from(error)
 }
 
 /// Reads JSON text given inline, as `@file`, or `-` for stdin.
