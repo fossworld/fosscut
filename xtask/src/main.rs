@@ -232,6 +232,9 @@ fn lcov_lines(report: &str) -> BTreeMap<PathBuf, Lines> {
     }
     files
         .into_iter()
+        // Instrumented binaries from older builds can still mention files that were moved
+        // or deleted since; only count source that exists.
+        .filter(|(path, _)| path.exists())
         .map(|(path, lines)| {
             let covered = lines.values().filter(|hit| **hit).count();
             let count = lines.len();
