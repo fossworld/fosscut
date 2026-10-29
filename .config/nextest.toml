@@ -11,18 +11,30 @@ fail-fast = false
 retries = 0
 slow-timeout = { period = "60s", terminate-after = 5 }
 
-# The milestone exit checks render, encode and verify a full 1080p, 240-frame export. On the
-# Windows CI runner (WARP software GPU, Media Foundation's software H.264 encoder) each takes
-# about 4.5 minutes, so they run one at a time and may take up to 10 minutes each.
+# Tests that keep every CPU core busy run one at a time, never beside each other:
+# - the milestone exit checks render, encode and verify a full 1080p, 240-frame export. On the
+#   Windows CI runner (WARP software GPU, Media Foundation's software H.264 encoder) each takes
+#   about 4.5 minutes, so they may take up to 10 minutes each;
+# - every test that transcribes speech. whisper.cpp's worker threads spin while they wait, so
+#   several transcriptions at once on the 4-core Windows runner starved each other: a 5 s
+#   test ran past 5 minutes.
 [test-groups]
-exit-checks = { max-threads = 1 }
+cpu-heavy = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "test(round_one_baseline_exports_and_verifies) | test(an_agent_reproduces_the_baseline_through_mcp_alone)"
-test-group = "exit-checks"
+test-group = "cpu-heavy"
 slow-timeout = { period = "120s", terminate-after = 5 }
+
+[[profile.default.overrides]]
+filter = "test(speech_is_transcribed_with_word_timings) | test(recognition_can_be_cancelled) | test(transcripts_are_measured_and_cached_per_model) | test(transcripts_from_the_command_line) | test(captions_generated_from_a_transcript) | test(every_skill_passes_its_evaluation)"
+test-group = "cpu-heavy"
 
 [[profile.ci.overrides]]
 filter = "test(round_one_baseline_exports_and_verifies) | test(an_agent_reproduces_the_baseline_through_mcp_alone)"
-test-group = "exit-checks"
+test-group = "cpu-heavy"
 slow-timeout = { period = "120s", terminate-after = 5 }
+
+[[profile.ci.overrides]]
+filter = "test(speech_is_transcribed_with_word_timings) | test(recognition_can_be_cancelled) | test(transcripts_are_measured_and_cached_per_model) | test(transcripts_from_the_command_line) | test(captions_generated_from_a_transcript) | test(every_skill_passes_its_evaluation)"
+test-group = "cpu-heavy"
