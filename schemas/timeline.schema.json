@@ -20,6 +20,24 @@
         }
       ]
     },
+    "Animation": {
+      "description": "One of a clip's animations: a preset and how long it takes.",
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/Flicks",
+          "description": "How long it takes; combo animations repeat with this period."
+        },
+        "preset": {
+          "description": "The preset, such as `fade` or `slide_left`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "preset",
+        "duration"
+      ],
+      "type": "object"
+    },
     "Animator": {
       "description": "A caption animator (ADR-0021 item 3): its type, version, switch and parameters.",
       "oneOf": [
@@ -633,6 +651,10 @@
         }
       ],
       "properties": {
+        "animations": {
+          "$ref": "#/$defs/ClipAnimations",
+          "description": "How the clip moves in, out and while it shows."
+        },
         "audio": {
           "$ref": "#/$defs/ClipAudio",
           "description": "Fades, pan and channels of the clip's sound; unchanged when omitted."
@@ -694,6 +716,17 @@
           "$ref": "#/$defs/Transform",
           "description": "Placement on the canvas; identity when omitted."
         },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The transition into the next clip on the track, played over the cut when the next\nclip starts where this one ends."
+        },
         "volume": {
           "description": "Linear audio gain (1 is unchanged, 0 is silent).",
           "format": "double",
@@ -705,6 +738,45 @@
         "start",
         "duration"
       ],
+      "type": "object"
+    },
+    "ClipAnimations": {
+      "description": "How a clip moves in, out and while it shows.",
+      "properties": {
+        "combo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Animation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Repeats for as long as the clip shows."
+        },
+        "in": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Animation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Plays from the clip's start."
+        },
+        "out": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Animation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Plays up to the clip's end."
+        }
+      },
       "type": "object"
     },
     "ClipAudio": {
@@ -1483,6 +1555,31 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "Transition": {
+      "description": "A transition from a clip to the next one on its track.",
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/Flicks",
+          "description": "How long it lasts, centred on the cut."
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ParamValue"
+          },
+          "description": "Parameters that differ from their defaults.",
+          "type": "object"
+        },
+        "type": {
+          "description": "The transition type, such as `dissolve` or `wipe`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "duration"
+      ],
       "type": "object"
     },
     "WordEmphasis": {

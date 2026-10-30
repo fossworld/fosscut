@@ -110,6 +110,11 @@ enum Slot {
     Curves(usize),
     /// A layer's mask coverage.
     Mask(usize),
+    /// The two sides of a transition, each drawn alone.
+    TransitionSide {
+        layer: usize,
+        side: u8,
+    },
     CanvasSamples,
     Readback,
 }
@@ -543,158 +548,31 @@ impl Renderer {
     ) -> Result<(), RenderError> {
         let mut steps = Vec::with_capacity(plan.layers.len());
         for (index, layer) in plan.layers.iter().enumerate() {
-            let mut opacity = layer.opacity;
-            let (texture, vertices) = match &layer.source {
-                LayerSource::Frame(source) => {
-                    let frame = frames.frame(source)?;
-                    let texture = self.convert_layer(encoder, index, &frame, source)?;
-                    let vertices = layer_quad(
-                        plan.canvas,
-                        (frame.width, frame.height),
-                        layer.rotation,
-                        &layer.transform,
-                        layer.crop,
-                    );
-                    (texture, vertices)
-                }
-                LayerSource::Text(content) => {
-                    // Rasterize at the output resolution: output pixels per canvas pixel.
-                    let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
-                    let raster = self.rasterize(content, plan.canvas, scale);
-                    if raster.is_empty() {
-                        continue;
-                    }
-                    let color = linear_color(content.style.color.as_str());
-                    let texture = self.upload_text(encoder, index, &raster, color);
-                    let scale = f64::from(scale);
-                    let natural = (
-                        f64::from(raster.width) / scale,
-                        f64::from(raster.height) / scale,
-                    );
-                    // Centre the exact layout box, not the pixel-cropped raster.
-                    let [x, y, w, h] = raster.layout_box.map(f64::from);
-                    let offset = (
-                        (x + w / 2.0 - f64::from(raster.width) / 2.0) / scale,
-                        (y + h / 2.0 - f64::from(raster.height) / 2.0) / scale,
-                    );
-                    (
-                        texture,
-                        placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
-                    )
-                }
-                LayerSource::Caption(caption) => {
-                    let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
-                    let look = evaluate(caption);
-                    if look.alpha <= 0.0 {
-                        continue;
-                    }
-                    let raster = self.caption_raster(caption, &look, plan.canvas, scale);
-                    if raster.is_empty() {
-                        continue;
-                    }
-                    opacity *= look.alpha;
-                    let texture = self.upload_caption(encoder, index, &raster);
-                    let scale = f64::from(scale);
-                    let natural = (
-                        f64::from(raster.width) / scale,
-                        f64::from(raster.height) / scale,
-                    );
-                    // The page sits in the safe area; the clip's transform moves it from
-                    // there, and a page pop scales it around its own centre.
-                    let (x, y) = anchor(
-                        plan.canvas,
-                        caption.style.placement,
-                        f64::from(raster.lines_height),
-                    );
-                    let (w, h) = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
-                    let mut placed = layer.transform.clone();
-                    placed.position[0] += (x - w / 2.0) / w;
-                    placed.position[1] += (y - h / 2.0) / h;
-                    placed.scale *= f64::from(look.scale);
-                    (
-                        texture,
-                        placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
-                    )
-                }
-                LayerSource::Adjustment => {
-                    steps.push(Step::Adjust {
-                        layer: index,
-                        opacity,
-                    });
-                    continue;
-                }
-            };
-            let layer_view = if layer.effects.is_empty() {
-                texture.create_view(&Default::default())
-            } else {
-                self.apply_effects(encoder, index, &texture, &layer.effects, frames)?
-            };
-            // Masks follow the picture as displayed: a quarter-turned source swaps sides.
-            let shown = if layer.rotation == 90 || layer.rotation == 270 {
-                (texture.height(), texture.width())
-            } else {
-                (texture.width(), texture.height())
-            };
-            let coverage = self.mask_view(index, &layer.masks, shown);
-            let (mask_kind, mask) = match &layer.mask {
-                Some(mask) => (
-                    match mask.shape {
-                        MaskShape::Rectangle => 1.0,
-                        MaskShape::Ellipse => 2.0,
-                    },
-                    Some(mask),
-                ),
-                None => (0.0, None),
-            };
-            let uniform = LayerUniform {
-                params: [
-                    opacity,
-                    mask_kind,
-                    mask.map_or(0.0, |m| m.feather.clamp(0.0, 1.0)),
-                    mask.map_or(0.0, |m| if m.invert { 1.0 } else { 0.0 }),
-                ],
-                mask: mask.map_or([0.0; 4], |m| {
-                    [m.center[0], m.center[1], m.size[0], m.size[1]]
+            match &layer.source {
+                LayerSource::Adjustment => steps.push(Step::Adjust {
+                    layer: index,
+                    opacity: layer.opacity,
                 }),
-                lut: [
-                    layer.lut.as_ref().map_or(0.0, |l| l.size as f32),
-                    if coverage.is_some() { 1.0 } else { 0.0 },
-                    0.0,
-                    0.0,
-                ],
-            };
-            let blank = self.blank.create_view(&Default::default());
-            let lut_view = match &layer.lut {
-                Some(lut) => self.lut_view(lut),
-                None => self.no_lut.create_view(&Default::default()),
-            };
-            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("layer"),
-                layout: &self.composite.get_bind_group_layout(0),
-                entries: &[
-                    entry(0, wgpu::BindingResource::TextureView(&layer_view)),
-                    entry(1, wgpu::BindingResource::Sampler(&self.linear)),
-                    entry(2, wgpu::BindingResource::TextureView(&lut_view)),
-                    entry(3, wgpu::BindingResource::Sampler(&self.linear)),
-                    entry(4, self.uniform(&uniform).as_entire_binding()),
-                    entry(
-                        5,
-                        wgpu::BindingResource::TextureView(coverage.as_ref().unwrap_or(&blank)),
-                    ),
-                ],
-            });
-            let vertex_buffer = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("layer quad"),
-                    contents: bytemuck::cast_slice(&vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            steps.push(Step::Layer(Draw {
-                bind_group,
-                vertex_buffer,
-                blend: layer.blend,
-            }));
+                LayerSource::Transition(transition) => {
+                    // The two clips get slots of their own, after every plain layer's.
+                    let base = plan.layers.len() + 2 * index;
+                    let outgoing =
+                        self.prepare(plan, &transition.outgoing, base, size, encoder, frames)?;
+                    let incoming =
+                        self.prepare(plan, &transition.incoming, base + 1, size, encoder, frames)?;
+                    steps.push(Step::Transition(Box::new(TransitionStep {
+                        outgoing,
+                        incoming,
+                        params: crate::transitions::pack(transition),
+                        index,
+                    })));
+                }
+                _ => {
+                    if let Some(draw) = self.prepare(plan, layer, index, size, encoder, frames)? {
+                        steps.push(Step::Layer(draw));
+                    }
+                }
+            }
         }
 
         // Runs of normal layers draw straight onto the canvas in one multisampled pass. A
@@ -737,7 +615,7 @@ impl Renderer {
                 pass.set_pipeline(&self.composite);
                 let run = steps[index..run_end].iter().filter_map(|step| match step {
                     Step::Layer(draw) => Some(draw),
-                    Step::Adjust { .. } => None,
+                    _ => None,
                 });
                 for draw in copy.iter().chain(run) {
                     pass.set_bind_group(0, &draw.bind_group, &[]);
@@ -760,6 +638,80 @@ impl Renderer {
             let target_view = target.create_view(&Default::default());
             flip ^= 1;
             match step {
+                Step::Transition(transition) => {
+                    let TransitionStep {
+                        outgoing,
+                        incoming,
+                        params,
+                        index,
+                    } = transition.as_ref();
+                    // Each side alone on a transparent canvas, mipmapped for the blur case.
+                    let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
+                    let mut sides = Vec::with_capacity(2);
+                    for (side, draw) in [(0u8, outgoing), (1u8, incoming)] {
+                        let texture = self.texture(
+                            Slot::TransitionSide {
+                                layer: *index,
+                                side,
+                            },
+                            size,
+                            CANVAS_FORMAT,
+                            mips,
+                            wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                        );
+                        let level = texture.create_view(&wgpu::TextureViewDescriptor {
+                            base_mip_level: 0,
+                            mip_level_count: Some(1),
+                            ..Default::default()
+                        });
+                        {
+                            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("transition side"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &samples_view,
+                                    depth_slice: None,
+                                    resolve_target: Some(&level),
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                        store: wgpu::StoreOp::Discard,
+                                    },
+                                })],
+                                ..Default::default()
+                            });
+                            pass.set_pipeline(&self.composite);
+                            if let Some(draw) = draw {
+                                pass.set_bind_group(0, &draw.bind_group, &[]);
+                                pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                                pass.draw(0..4, 0..1);
+                            }
+                        }
+                        self.generate_mips(encoder, &texture, mips);
+                        sides.push(texture.create_view(&Default::default()));
+                    }
+                    let mixed = self.canvas(Slot::Placed, size);
+                    self.effect_pass(
+                        encoder,
+                        "fs_transition",
+                        &sides[0],
+                        Some(&sides[1]),
+                        None,
+                        None,
+                        params,
+                        &mixed,
+                    );
+                    let none = [[0.0f32; 4]; SLOTS];
+                    self.effect_pass(
+                        encoder,
+                        "fs_over",
+                        &mixed,
+                        Some(&below_view),
+                        None,
+                        None,
+                        &none,
+                        &target_view,
+                    );
+                }
                 Step::Adjust { layer, opacity } => {
                     // Effects on everything so far, mixed back in by the layer's opacity.
                     let effects = &plan.layers[*layer].effects;
@@ -865,6 +817,166 @@ impl Renderer {
     fn canvas(&mut self, slot: Slot, size: (u32, u32)) -> wgpu::TextureView {
         self.canvas_texture(slot, size)
             .create_view(&Default::default())
+    }
+
+    /// Converts, rasterizes or uploads one layer's picture, applies its effects and masks,
+    /// and returns what compositing draws; `None` when it shows nothing.
+    #[allow(clippy::too_many_arguments)]
+    fn prepare(
+        &mut self,
+        plan: &RenderPlan,
+        layer: &crate::plan::Layer,
+        index: usize,
+        size: (u32, u32),
+        encoder: &mut wgpu::CommandEncoder,
+        frames: &mut dyn FrameProvider,
+    ) -> Result<Option<Draw>, RenderError> {
+        let mut opacity = layer.opacity;
+        let (texture, vertices) = match &layer.source {
+            LayerSource::Frame(source) => {
+                let frame = frames.frame(source)?;
+                let texture = self.convert_layer(encoder, index, &frame, source)?;
+                let vertices = layer_quad(
+                    plan.canvas,
+                    (frame.width, frame.height),
+                    layer.rotation,
+                    &layer.transform,
+                    layer.crop,
+                );
+                (texture, vertices)
+            }
+            LayerSource::Text(content) => {
+                // Rasterize at the output resolution: output pixels per canvas pixel.
+                let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
+                let raster = self.rasterize(content, plan.canvas, scale);
+                if raster.is_empty() {
+                    return Ok(None);
+                }
+                let color = linear_color(content.style.color.as_str());
+                let texture = self.upload_text(encoder, index, &raster, color);
+                let scale = f64::from(scale);
+                let natural = (
+                    f64::from(raster.width) / scale,
+                    f64::from(raster.height) / scale,
+                );
+                // Centre the exact layout box, not the pixel-cropped raster.
+                let [x, y, w, h] = raster.layout_box.map(f64::from);
+                let offset = (
+                    (x + w / 2.0 - f64::from(raster.width) / 2.0) / scale,
+                    (y + h / 2.0 - f64::from(raster.height) / 2.0) / scale,
+                );
+                (
+                    texture,
+                    placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
+                )
+            }
+            LayerSource::Caption(caption) => {
+                let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
+                let look = evaluate(caption);
+                if look.alpha <= 0.0 {
+                    return Ok(None);
+                }
+                let raster = self.caption_raster(caption, &look, plan.canvas, scale);
+                if raster.is_empty() {
+                    return Ok(None);
+                }
+                opacity *= look.alpha;
+                let texture = self.upload_caption(encoder, index, &raster);
+                let scale = f64::from(scale);
+                let natural = (
+                    f64::from(raster.width) / scale,
+                    f64::from(raster.height) / scale,
+                );
+                // The page sits in the safe area; the clip's transform moves it from
+                // there, and a page pop scales it around its own centre.
+                let (x, y) = anchor(
+                    plan.canvas,
+                    caption.style.placement,
+                    f64::from(raster.lines_height),
+                );
+                let (w, h) = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
+                let mut placed = layer.transform.clone();
+                placed.position[0] += (x - w / 2.0) / w;
+                placed.position[1] += (y - h / 2.0) / h;
+                placed.scale *= f64::from(look.scale);
+                (
+                    texture,
+                    placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
+                )
+            }
+            LayerSource::Adjustment | LayerSource::Transition(_) => return Ok(None),
+        };
+        let layer_view = if layer.effects.is_empty() {
+            texture.create_view(&Default::default())
+        } else {
+            self.apply_effects(encoder, index, &texture, &layer.effects, frames)?
+        };
+        // Masks follow the picture as displayed: a quarter-turned source swaps sides.
+        let shown = if layer.rotation == 90 || layer.rotation == 270 {
+            (texture.height(), texture.width())
+        } else {
+            (texture.width(), texture.height())
+        };
+        let coverage = self.mask_view(index, &layer.masks, shown);
+        let (mask_kind, mask) = match &layer.mask {
+            Some(mask) => (
+                match mask.shape {
+                    MaskShape::Rectangle => 1.0,
+                    MaskShape::Ellipse => 2.0,
+                },
+                Some(mask),
+            ),
+            None => (0.0, None),
+        };
+        let uniform = LayerUniform {
+            params: [
+                opacity,
+                mask_kind,
+                mask.map_or(0.0, |m| m.feather.clamp(0.0, 1.0)),
+                mask.map_or(0.0, |m| if m.invert { 1.0 } else { 0.0 }),
+            ],
+            mask: mask.map_or([0.0; 4], |m| {
+                [m.center[0], m.center[1], m.size[0], m.size[1]]
+            }),
+            lut: [
+                layer.lut.as_ref().map_or(0.0, |l| l.size as f32),
+                if coverage.is_some() { 1.0 } else { 0.0 },
+                0.0,
+                0.0,
+            ],
+        };
+        let blank = self.blank.create_view(&Default::default());
+        let lut_view = match &layer.lut {
+            Some(lut) => self.lut_view(lut),
+            None => self.no_lut.create_view(&Default::default()),
+        };
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("layer"),
+            layout: &self.composite.get_bind_group_layout(0),
+            entries: &[
+                entry(0, wgpu::BindingResource::TextureView(&layer_view)),
+                entry(1, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(2, wgpu::BindingResource::TextureView(&lut_view)),
+                entry(3, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(4, self.uniform(&uniform).as_entire_binding()),
+                entry(
+                    5,
+                    wgpu::BindingResource::TextureView(coverage.as_ref().unwrap_or(&blank)),
+                ),
+            ],
+        });
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("layer quad"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        Ok(Some(Draw {
+            bind_group,
+            vertex_buffer,
+            blend: layer.blend,
+        }))
     }
 
     /// The coverage of `masks` over a picture `size` pixels large as a texture, or `None`
@@ -1047,7 +1159,7 @@ impl Renderer {
             let Some(pass) = pass_for(&effect.effect_type) else {
                 continue;
             };
-            let needs_mips = matches!(pass, Pass::Blur | Pass::Sharpen);
+            let needs_mips = matches!(pass, Pass::Blur | Pass::Sharpen | Pass::Mipped(_));
             if needs_mips && !mipped {
                 if current.mip_level_count() == 1 {
                     let copy = self.texture(
@@ -1086,6 +1198,19 @@ impl Renderer {
             let input_view = current.create_view(&Default::default());
             let height = size.1 as f32;
             match pass {
+                Pass::Mipped(entry_point) => {
+                    let params = pack(effect, size, 0);
+                    self.effect_pass(
+                        encoder,
+                        entry_point,
+                        &input_view,
+                        None,
+                        None,
+                        None,
+                        &params,
+                        &target,
+                    );
+                }
                 Pass::Pixel(entry_point) => {
                     let mut lut_size = 0;
                     let mut lut_view = None;
@@ -1590,10 +1715,20 @@ impl Renderer {
     }
 }
 
-/// What compositing does for one layer: draw it, or adjust the canvas below it.
+/// What compositing does for one layer: draw it, adjust the canvas below it, or mix two
+/// clips with a transition.
 enum Step {
     Layer(Draw),
     Adjust { layer: usize, opacity: f32 },
+    Transition(Box<TransitionStep>),
+}
+
+/// Two clips and the transition between them.
+struct TransitionStep {
+    outgoing: Option<Draw>,
+    incoming: Option<Draw>,
+    params: [[f32; 4]; SLOTS],
+    index: usize,
 }
 
 /// One layer ready to draw.

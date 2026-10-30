@@ -137,6 +137,10 @@ pub mod codes {
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The clip has no mask with this id.
     pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
+    /// No transition type has this name.
+    pub const TRANSITION_UNKNOWN_TYPE: &str = "fosscut.transition.unknown_type";
+    /// No clip starts where the clip ends, so there is no cut to transition over.
+    pub const TRANSITION_NO_NEIGHBOR: &str = "fosscut.transition.no_neighbor";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
     /// Media information is missing or inconsistent with the asset kind.
@@ -303,6 +307,16 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             EFFECT_NOT_FOUND,
             "The clip has no effect with this id.",
             "Read the clip's effects with timeline.read; effect ids look like effect_0007.",
+        ),
+        entry(
+            TRANSITION_UNKNOWN_TYPE,
+            "No transition type has this name.",
+            "List the transitions with capabilities (under transitions).",
+        ),
+        entry(
+            TRANSITION_NO_NEIGHBOR,
+            "No clip starts where the clip ends, so there is no cut to transition over.",
+            "Move the next clip on the track so it starts where this clip ends, then add the transition.",
         ),
         entry(
             MASK_NOT_FOUND,

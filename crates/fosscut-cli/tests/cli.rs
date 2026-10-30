@@ -2363,3 +2363,107 @@ fn masks_and_chroma_keys_from_the_command_line() {
         "the square stays"
     );
 }
+
+#[test]
+fn transitions_animations_and_effects_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("transitions");
+    for (name, source) in [
+        ("white.mp4", "color=c=white:s=320x180:r=30:d=3"),
+        ("red.mp4", "color=c=0xff0000:s=320x180:r=30:d=3"),
+    ] {
+        let status = Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args(["-v", "error", "-f", "lavfi", "-i", source])
+            .args(["-c:v", "mpeg4", "-q:v", "2", name])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let new = [
+        "project",
+        "new",
+        "Cuts.fosscut",
+        "--width",
+        "320",
+        "--height",
+        "180",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "white.mp4"]);
+    ok(&dir, &["media", "import", "red.mp4"]);
+    let first = ok(
+        &dir,
+        &["clip", "add", "--asset", "asset_0001", "--duration", "2s"],
+    );
+    let first = first["results"][0]["clip"].as_str().unwrap().to_string();
+    let second = ok(
+        &dir,
+        &["clip", "add", "--asset", "asset_0002", "--duration", "2s"],
+    );
+    let second = second["results"][0]["clip"].as_str().unwrap().to_string();
+    let channels = |time: &str, out: &str| {
+        ok(&dir, &["frame", time, "--out", out, "--width", "160"]);
+        let path = dir.join(out);
+        (mean_channel(&path, 0), mean_channel(&path, 1))
+    };
+    let (_, green) = channels("2s", "cut.png");
+    assert!(green < 20.0, "a plain cut: red at 2 s");
+    ok(
+        &dir,
+        &[
+            "transition",
+            "set",
+            "--clip",
+            &first,
+            "--type",
+            "dissolve",
+            "--duration",
+            "1s",
+        ],
+    );
+    let (red, green) = channels("2s", "middle.png");
+    assert!(
+        red > 240.0 && green > 100.0 && green < 230.0,
+        "half way: {red} {green}"
+    );
+    let lonely = fails(
+        &dir,
+        &["transition", "set", "--clip", &second, "--type", "wipe"],
+    );
+    assert_eq!(lonely["code"], json!("fosscut.transition.no_neighbor"));
+
+    ok(
+        &dir,
+        &["animation", "set", "--clip", &first, "--in", "fade:1s"],
+    );
+    let (red, _) = channels("0s", "start.png");
+    assert!(red < 10.0, "faded in from black: {red}");
+    ok(
+        &dir,
+        &[
+            "effect",
+            "add",
+            "--clip",
+            &second,
+            "--type",
+            "stylize.invert",
+        ],
+    );
+    let (red, green) = channels("3.5s", "inverted.png");
+    assert!(
+        red < 20.0 && green > 230.0,
+        "red inverted to cyan: {red} {green}"
+    );
+    let bad = fails(
+        &dir,
+        &["animation", "set", "--clip", &first, "--combo", "fade"],
+    );
+    assert_eq!(bad["code"], json!("fosscut.request.invalid_arguments"));
+    // The export renders through the transition, and the edit keeps its length.
+    let exported = ok_with_progress(&dir, &["export", "Cuts.mp4"]);
+    assert_eq!(exported["frames"], json!(120), "{exported}");
+    ok(&dir, &["transition", "remove", "--clip", &first]);
+}

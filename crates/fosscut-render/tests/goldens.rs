@@ -216,6 +216,7 @@ fn planned(kind: &str, values: &[(&str, fosscut_model::ParamValue)]) -> PlannedE
         effect_type: kind.into(),
         values: all,
         seed: 3,
+        time: 0.5,
     }
 }
 
@@ -409,6 +410,126 @@ fn mask_shapes() {
     };
     let mut frames = Frames::default().with(1, pattern(320, 180, 0));
     check_at("mask-shapes", &mut renderer, &plan, &mut frames, (640, 360));
+}
+
+/// Every transition 40% of the way from the test pattern to a flat purple, one 128x72
+/// render each, stitched left to right and top to bottom in `transition_types()` order.
+#[test]
+fn transitions_half_way() {
+    use fosscut_render::plan::{LayerSource, TransitionLayer};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default()
+        .with(1, pattern(320, 180, 0))
+        .with(2, solid(160, 90, [90, 160, 170]));
+    let (tile_w, tile_h) = (128u32, 72u32);
+    let kinds: Vec<&str> = fosscut_model::transition_types()
+        .iter()
+        .map(|t| t.name)
+        .collect();
+    let columns = 5u32;
+    let rows = (kinds.len() as u32).div_ceil(columns);
+    let mut sheet = Image {
+        width: tile_w * columns,
+        height: tile_h * rows,
+        rgba: vec![0; (tile_w * columns * tile_h * rows * 4) as usize],
+    };
+    for (index, kind) in kinds.iter().enumerate() {
+        let plan = RenderPlan {
+            canvas: (1920, 1080),
+            layers: vec![Layer {
+                source: LayerSource::Transition(Box::new(TransitionLayer {
+                    outgoing: Layer::new(source(1)),
+                    incoming: Layer::new(source(2)),
+                    kind: kind.to_string(),
+                    params: Default::default(),
+                    progress: 0.4,
+                })),
+                ..Layer::new(source(1))
+            }],
+            skipped: Vec::new(),
+        };
+        let tile = renderer
+            .render_image(
+                &plan,
+                &mut frames,
+                (tile_w, tile_h),
+                TransferFunction::Bt709,
+            )
+            .unwrap();
+        let (x0, y0) = (
+            (index as u32 % columns) * tile_w,
+            (index as u32 / columns) * tile_h,
+        );
+        for y in 0..tile_h {
+            let from = (y * tile_w * 4) as usize;
+            let to = (((y0 + y) * sheet.width + x0) * 4) as usize;
+            sheet.rgba[to..to + (tile_w * 4) as usize]
+                .copy_from_slice(&tile.rgba[from..from + (tile_w * 4) as usize]);
+        }
+    }
+    let golden = goldens_dir().join("transitions.png");
+    if std::env::var_os("FOSSCUT_UPDATE_GOLDENS").is_some() {
+        write_png(&golden, &sheet);
+        return;
+    }
+    let psnr = sheet.psnr(&read_png(&golden)).unwrap();
+    assert!(psnr >= MIN_PSNR_DB, "transitions: PSNR {psnr:.1} dB");
+}
+
+/// The test pattern in a 4x3 grid, each tile with one stylizing or moving effect: glitch,
+/// RGB split, pixelate, VHS, mirror, posterize, invert, shake, zoom blur, flash, rainbow
+/// and zoom pulse.
+#[test]
+fn stylize_and_motion_effects() {
+    use fosscut_model::ParamValue::Number;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let tiles = vec![
+        planned("stylize.glitch", &[("amount", Number(0.9))]),
+        planned("stylize.rgb_split", &[("amount", Number(0.03))]),
+        planned("stylize.pixelate", &[("size", Number(0.06))]),
+        planned("stylize.vhs", &[("amount", Number(1.0))]),
+        planned("stylize.mirror", &[]),
+        planned("stylize.posterize", &[("levels", Number(3.0))]),
+        planned("stylize.invert", &[]),
+        planned("motion.shake", &[("amount", Number(0.08))]),
+        planned("motion.zoom_blur", &[("amount", Number(0.8))]),
+        PlannedEffect {
+            time: 0.0,
+            ..planned("motion.flash", &[("amount", Number(0.5))])
+        },
+        planned("motion.rainbow", &[]),
+        planned("motion.zoom_pulse", &[("amount", Number(0.4))]),
+    ];
+    let mut layers = Vec::new();
+    for (index, effect) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 4) as f64, (index / 4) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.375 + column * 0.25, -0.333 + row * 0.333],
+                scale: 0.24,
+                ..Transform::default()
+            },
+            effects: vec![effect],
+            ..Layer::new(source(1))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, pattern(320, 180, 0));
+    check_at(
+        "stylize-effects",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        (640, 360),
+    );
 }
 
 #[test]

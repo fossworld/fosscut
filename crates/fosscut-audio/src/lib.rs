@@ -89,7 +89,7 @@ pub fn mix(
     let mut out = AudioBuffer::silence(sample_rate, channels, frames);
     let end = start + duration;
     for track in doc.tracks.iter().filter(|t| !t.muted) {
-        for clip in &track.clips {
+        for (index, clip) in track.clips.iter().enumerate() {
             let (asset, source_in) = match (&clip.content, track.kind) {
                 (ClipContent::Audio { asset, source_in }, TrackKind::Audio) => (asset, *source_in),
                 (ClipContent::Video { asset, source_in }, TrackKind::Video)
@@ -102,23 +102,36 @@ pub fn mix(
             if !clip.enabled {
                 continue;
             }
-            let (from, to) = (clip.start.max(start), clip.end().min(end));
+            // A transition plays both clips over the cut: the sound crossfades there.
+            let (lead, tail) = transition_halves(&track.clips, index);
+            let (from, to) = ((clip.start - lead).max(start), (clip.end() + tail).min(end));
             if from >= to || silent(clip) {
+                continue;
+            }
+            // Before the media's start there is nothing to read: begin later, in silence.
+            let wanted = source_in + (from - clip.start);
+            let skip = if wanted.is_negative() {
+                Flicks::ZERO - wanted
+            } else {
+                Flicks::ZERO
+            };
+            let read_from = from + skip;
+            if read_from >= to {
                 continue;
             }
             let audio = source.read(
                 asset,
-                source_in + (from - clip.start),
-                to - from,
+                source_in + (read_from - clip.start),
+                to - read_from,
                 sample_rate,
                 channels,
             )?;
             // Positions in samples on the timeline, so clips meet without gaps or overlaps.
-            let offset = (samples_in(from, sample_rate) - first).max(0) as usize;
+            let offset = (samples_in(read_from, sample_rate) - first).max(0) as usize;
             let count =
-                (samples_in(to, sample_rate) - samples_in(from, sample_rate)).max(0) as usize;
+                (samples_in(to, sample_rate) - samples_in(read_from, sample_rate)).max(0) as usize;
             let shaped = Shaping::of(clip);
-            let clip_first = samples_in(from - clip.start, sample_rate);
+            let clip_first = samples_in(read_from - clip.start, sample_rate);
             let mut frame = vec![0.0f32; channels_n];
             for i in 0..count.min(audio.frames()) {
                 let target = offset + i;
@@ -128,8 +141,9 @@ pub fn mix(
                 frame.copy_from_slice(&audio.samples[i * channels_n..(i + 1) * channels_n]);
                 let at = sample_time(clip_first + i as i64, sample_rate);
                 shaped.apply(clip, at, &mut frame);
+                let cross = crossfade(clip, at, lead, tail);
                 for (c, value) in frame.iter().enumerate() {
-                    out.samples[target * channels_n + c] += value;
+                    out.samples[target * channels_n + c] += value * cross;
                 }
             }
         }
@@ -138,6 +152,41 @@ pub fn mix(
         *sample = sample.clamp(-1.0, 1.0);
     }
     Ok(out)
+}
+
+/// How far a clip's sound reaches before its start and after its end for transitions: half
+/// of the previous clip's transition into it, and half of its own into the next clip.
+fn transition_halves(clips: &[Clip], index: usize) -> (Flicks, Flicks) {
+    let half = |out: &Clip, into: &Clip| match &out.transition {
+        Some(t) if into.start == out.end() && t.duration.is_positive() => {
+            Flicks::new(t.duration.get() / 2)
+        }
+        _ => Flicks::ZERO,
+    };
+    let lead = index
+        .checked_sub(1)
+        .map_or(Flicks::ZERO, |i| half(&clips[i], &clips[index]));
+    let tail = clips
+        .get(index + 1)
+        .map_or(Flicks::ZERO, |next| half(&clips[index], next));
+    (lead, tail)
+}
+
+/// The equal-power crossfade gain of a clip at `at` from its start: rising over the
+/// `lead` around its start, falling over the `tail` around its end, 1 in between.
+fn crossfade(clip: &Clip, at: Flicks, lead: Flicks, tail: Flicks) -> f32 {
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let mut gain = 1.0f64;
+    if lead.is_positive() && at < lead {
+        let p = ((at + lead).get() as f64 / (2 * lead.get()) as f64).clamp(0.0, 1.0);
+        gain *= (p * quarter).sin();
+    }
+    if tail.is_positive() && at > clip.duration - tail {
+        let p =
+            ((at - (clip.duration - tail)).get() as f64 / (2 * tail.get()) as f64).clamp(0.0, 1.0);
+        gain *= (p * quarter).cos();
+    }
+    gain as f32
 }
 
 /// The time of sample `index` counted from a clip's start.
@@ -668,5 +717,87 @@ mod tests {
         assert_eq!(balance(0.0), (1.0, 1.0));
         let (l, r) = balance(-0.5);
         assert!((r - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6 && l == 1.0);
+    }
+
+    #[test]
+    fn transitions_crossfade_the_two_clips() {
+        let format = TimelineFormat {
+            width: 1920,
+            height: 1080,
+            rate: Rate::FPS_30,
+            sample_rate: 48_000,
+        };
+        let mut project = Project::new(Id::new(IdKind::Project, 1), "Cross", format);
+        let one = asset(&mut project, AssetKind::Audio, true);
+        let two = asset(&mut project, AssetKind::Audio, true);
+        let mut first = clip(
+            &mut project,
+            ClipContent::Audio {
+                asset: one.clone(),
+                source_in: frames(0),
+            },
+            0,
+            60,
+            1.0,
+        );
+        first.transition = Some(fosscut_model::Transition {
+            transition_type: "dissolve".into(),
+            duration: frames(30),
+            params: Default::default(),
+        });
+        let second = clip(
+            &mut project,
+            ClipContent::Audio {
+                asset: two.clone(),
+                source_in: frames(5),
+            },
+            60,
+            60,
+            1.0,
+        );
+        track(&mut project, TrackKind::Audio, false, vec![first, second]);
+        let timeline = project.manifest.primary_timeline.clone();
+        let mut source = Levels {
+            levels: HashMap::from([(one.clone(), 0.4), (two.clone(), 0.4)]),
+            reads: Vec::new(),
+        };
+        let out = mix(
+            &project,
+            &timeline,
+            Flicks::ZERO,
+            frames(120),
+            RATE,
+            2,
+            &mut source,
+        )
+        .unwrap();
+        assert_eq!(
+            level_at(&out, 30),
+            0.4,
+            "before the transition: the first clip alone"
+        );
+        let both = level_at(&out, 60);
+        assert!(
+            (both - 0.8 * std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3,
+            "at the cut both play at -3 dB: {both}"
+        );
+        let late = level_at(&out, 72);
+        assert!(
+            late > 0.4 * 0.9 && late < 0.4 * 1.2,
+            "near the end the second dominates: {late}"
+        );
+        assert_eq!(level_at(&out, 100), 0.4, "after it: the second clip alone");
+        // The second clip starts reading 15 frames early, from frame 5 of its media: the
+        // first 10 of those frames are before the media and stay silent.
+        let early = source.reads.iter().find(|(a, ..)| a == &two).unwrap();
+        assert_eq!(early.1, Flicks::ZERO, "read from the media's start");
+        let silent = level_at(&out, 46);
+        assert!((silent - 0.4 * crossfade_out(46)).abs() < 1e-3, "{silent}");
+    }
+
+    /// The first clip's gain in the transition test at `frame`.
+    fn crossfade_out(frame: i64) -> f32 {
+        let p = (frame - 45) as f64 / 30.0;
+        (p * std::f64::consts::FRAC_PI_2).cos() as f32
     }
 }

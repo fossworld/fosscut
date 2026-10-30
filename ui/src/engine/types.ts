@@ -111,6 +111,14 @@ export interface ClipView {
   masks?: MaskView[];
   /** Width and height of the picture as displayed (video and image clips). */
   picture?: [number, number];
+  /** The transition into the next clip on the track. */
+  transition?: { type: string; duration: Moment; params?: Record<string, unknown> };
+  /** How the clip moves in, out and while it shows; durations in flicks. */
+  animations?: {
+    in?: { preset: string; duration: number };
+    out?: { preset: string; duration: number };
+    combo?: { preset: string; duration: number };
+  };
 }
 
 export type MaskShape = "rectangle" | "ellipse" | "linear" | "mirror" | "star" | "heart" | "path" | "text" | "brush";
@@ -191,10 +199,27 @@ export interface LookView {
   description: string;
 }
 
+/** A transition type. */
+export interface TransitionSpec {
+  type: string;
+  title: string;
+  summary: string;
+  params: ParamSpec[];
+}
+
+/** An animation preset and where it applies ("in or out", or "combo"). */
+export interface AnimationPreset {
+  preset: string;
+  applies: string;
+  meaning: string;
+}
+
 /** What the UI needs from `capabilities` (detail full). */
 export interface Catalog {
   effects: EffectSpec[];
   looks: LookView[];
+  transitions: TransitionSpec[];
+  animations: AnimationPreset[];
 }
 
 /** A color correction measured by the engine, ready for `effect.add`. */

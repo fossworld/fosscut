@@ -88,6 +88,12 @@ pub enum Command {
     /// Mask clips: shapes, pen paths, text and brush strokes.
     #[command(subcommand)]
     Mask(MaskCommand),
+    /// Transitions over the cut from a clip to the next one.
+    #[command(subcommand)]
+    Transition(TransitionCommand),
+    /// Animate clips in, out and while they show.
+    #[command(subcommand)]
+    Animation(AnimationCommand),
     /// Apply built-in looks (filters) as effects.
     #[command(subcommand)]
     Look(LookCommand),
@@ -577,6 +583,56 @@ pub enum MaskCommand {
         /// Mask id.
         #[arg(long)]
         mask: String,
+    },
+}
+
+/// `fosscut transition ...`
+#[derive(Debug, Subcommand)]
+pub enum TransitionCommand {
+    /// Add or replace the transition from a clip into the next one on its track.
+    Set {
+        /// The clip the transition leaves.
+        #[arg(long)]
+        clip: String,
+        /// dissolve, dip, wipe, slide, push, zoom, blur, iris, clock or spin.
+        #[arg(long = "type")]
+        transition_type: String,
+        /// How long it lasts, centred on the cut; 0.5s when omitted.
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+        /// A parameter as NAME=VALUE, for example direction=up or color=#FFFFFF.
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        params: Vec<String>,
+    },
+    /// Remove a clip's transition: a plain cut again.
+    Remove {
+        /// The clip the transition leaves.
+        #[arg(long)]
+        clip: String,
+    },
+}
+
+/// `fosscut animation ...`
+#[derive(Debug, Subcommand)]
+pub enum AnimationCommand {
+    /// Set a clip's animations; each as PRESET or PRESET:DURATION, for example fade:1s.
+    Set {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Entrance: fade, slide_left, slide_right, slide_up, slide_down, zoom_in,
+        /// zoom_out, spin, pop or drop.
+        #[arg(long = "in")]
+        entrance: Option<String>,
+        /// Exit: the same presets.
+        #[arg(long = "out")]
+        exit: Option<String>,
+        /// Repeating: pulse, swing, float or shake.
+        #[arg(long)]
+        combo: Option<String>,
+        /// Remove in, out or combo. Repeatable.
+        #[arg(long)]
+        clear: Vec<String>,
     },
 }
 

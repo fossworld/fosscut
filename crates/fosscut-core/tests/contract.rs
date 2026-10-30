@@ -86,6 +86,26 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             json!({ "start": "1s", "duration": "2s", "effects": [{ "type": "color.adjust", "params": { "saturation": -1 } }] })
         }
         "look.apply" => json!({ "clip": clip, "look": "teal_orange" }),
+        "transition.set" | "transition.remove" => {
+            run(
+                &mut session,
+                "clip.split",
+                json!({ "clip": clip, "at": "4s" }),
+            );
+            if command == "transition.remove" {
+                run(
+                    &mut session,
+                    "transition.set",
+                    json!({ "clip": clip, "type": "dissolve" }),
+                );
+                json!({ "clip": clip })
+            } else {
+                json!({ "clip": clip, "type": "wipe", "duration": "1s", "params": { "direction": "up" } })
+            }
+        }
+        "animation.set" => {
+            json!({ "clip": clip, "in": { "preset": "fade" }, "combo": { "preset": "pulse", "duration": "2s" } })
+        }
         "mask.add" => {
             json!({ "clip": clip, "shape": "ellipse", "feather": 0.3, "center": [0.4, 0.5] })
         }

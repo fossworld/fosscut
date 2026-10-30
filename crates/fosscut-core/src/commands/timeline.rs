@@ -441,9 +441,12 @@ fn cut_track(
             part.shift_keyframes(Flicks::ZERO - offset);
             if from != clip.start {
                 part.audio.fade_in = Flicks::ZERO;
+                part.animations.entrance = None;
             }
             if to != clip.end() {
                 part.audio.fade_out = Flicks::ZERO;
+                part.animations.exit = None;
+                part.transition = None;
             }
             if renew {
                 renew_effect_ids(project, &mut part);

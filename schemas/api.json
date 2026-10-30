@@ -1,4 +1,76 @@
 {
+  "animations": [
+    {
+      "applies": "in or out",
+      "meaning": "fades from or to transparent",
+      "preset": "fade"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "slides in from the right towards the left, or out to the left",
+      "preset": "slide_left"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "slides in from the left towards the right, or out to the right",
+      "preset": "slide_right"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "slides in from below, or out upwards",
+      "preset": "slide_up"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "slides in from above, or out downwards",
+      "preset": "slide_down"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "grows from small, or shrinks away",
+      "preset": "zoom_in"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "shrinks from large, or grows away",
+      "preset": "zoom_out"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "turns a full circle while fading",
+      "preset": "spin"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "springs in past full size and settles, or the reverse",
+      "preset": "pop"
+    },
+    {
+      "applies": "in or out",
+      "meaning": "falls in from above with a bounce",
+      "preset": "drop"
+    },
+    {
+      "applies": "combo",
+      "meaning": "breathes larger and smaller",
+      "preset": "pulse"
+    },
+    {
+      "applies": "combo",
+      "meaning": "rocks from side to side",
+      "preset": "swing"
+    },
+    {
+      "applies": "combo",
+      "meaning": "drifts up and down",
+      "preset": "float"
+    },
+    {
+      "applies": "combo",
+      "meaning": "shakes quickly",
+      "preset": "shake"
+    }
+  ],
   "api_version": "0.1.0",
   "captions": {
     "animators": [
@@ -568,6 +640,344 @@
         "type": "object"
       },
       "summary": "Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "AnimationInput": {
+            "additionalProperties": false,
+            "description": "An animation to give a clip.",
+            "properties": {
+              "duration": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TimeInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "How long it takes; half a second for in and out, one second per cycle for combo."
+              },
+              "preset": {
+                "description": "The preset (capabilities lists them under animations, with where each applies).",
+                "type": "string"
+              }
+            },
+            "required": [
+              "preset"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Sets how a clip moves in, out and while it shows.",
+        "properties": {
+          "clear": {
+            "default": [],
+            "description": "Animations to remove: any of `in`, `out` and `combo`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "combo": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AnimationInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A repeating animation: `pulse`, `swing`, `float` or `shake`."
+          },
+          "in": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AnimationInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The entrance: `fade`, `slide_left`, `slide_right`, `slide_up`, `slide_down`,\n`zoom_in`, `zoom_out`, `spin`, `pop` or `drop`."
+          },
+          "out": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/AnimationInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exit: the same presets, played backwards up to the clip's end."
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "AnimationSet",
+        "type": "object"
+      },
+      "name": "animation.set",
+      "output_schema": {
+        "$defs": {
+          "Animation": {
+            "description": "One of a clip's animations: a preset and how long it takes.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it takes; combo animations repeat with this period."
+              },
+              "preset": {
+                "description": "The preset, such as `fade` or `slide_left`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "preset",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "ClipAnimations": {
+            "description": "How a clip moves in, out and while it shows.",
+            "properties": {
+              "combo": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Repeats for as long as the clip shows."
+              },
+              "in": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays from the clip's start."
+              },
+              "out": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays up to the clip's end."
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          },
+          "Transition": {
+            "description": "A transition from a clip to the next one on its track.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it lasts, centred on the cut."
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "The transition type, such as `dissolve` or `wipe`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "duration"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's transition and animations after a change.",
+        "properties": {
+          "animations": {
+            "$ref": "#/$defs/ClipAnimations",
+            "description": "Its animations."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Transition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its transition into the next clip, if any."
+          }
+        },
+        "required": [
+          "clip",
+          "animations"
+        ],
+        "title": "MotionChanged",
+        "type": "object"
+      },
+      "summary": "Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes."
     },
     {
       "input_schema": {
@@ -8211,6 +8621,509 @@
         "type": "object"
       },
       "summary": "Add an empty video, audio or text track; later tracks draw on top of earlier ones."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes a clip's transition into the next clip.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip the transition leaves."
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "TransitionRemove",
+        "type": "object"
+      },
+      "name": "transition.remove",
+      "output_schema": {
+        "$defs": {
+          "Animation": {
+            "description": "One of a clip's animations: a preset and how long it takes.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it takes; combo animations repeat with this period."
+              },
+              "preset": {
+                "description": "The preset, such as `fade` or `slide_left`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "preset",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "ClipAnimations": {
+            "description": "How a clip moves in, out and while it shows.",
+            "properties": {
+              "combo": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Repeats for as long as the clip shows."
+              },
+              "in": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays from the clip's start."
+              },
+              "out": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays up to the clip's end."
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          },
+          "Transition": {
+            "description": "A transition from a clip to the next one on its track.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it lasts, centred on the cut."
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "The transition type, such as `dissolve` or `wipe`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "duration"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's transition and animations after a change.",
+        "properties": {
+          "animations": {
+            "$ref": "#/$defs/ClipAnimations",
+            "description": "Its animations."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Transition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its transition into the next clip, if any."
+          }
+        },
+        "required": [
+          "clip",
+          "animations"
+        ],
+        "title": "MotionChanged",
+        "type": "object"
+      },
+      "summary": "Remove the transition from a clip into the next one: a plain cut again."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Plays a transition over the cut from a clip to the next one on its track.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip the transition leaves; the next clip on its track must start where it ends."
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How long it lasts, centred on the cut; half a second when omitted. No longer than\neither clip."
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "Parameters, such as `{\"direction\": \"up\"}` or `{\"color\": \"#FFFFFF\"}`.",
+            "type": "object"
+          },
+          "type": {
+            "description": "`dissolve`, `dip`, `wipe`, `slide`, `push`, `zoom`, `blur`, `iris`, `clock` or `spin`\n(capabilities lists them with their parameters under transitions).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "type"
+        ],
+        "title": "TransitionSet",
+        "type": "object"
+      },
+      "name": "transition.set",
+      "output_schema": {
+        "$defs": {
+          "Animation": {
+            "description": "One of a clip's animations: a preset and how long it takes.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it takes; combo animations repeat with this period."
+              },
+              "preset": {
+                "description": "The preset, such as `fade` or `slide_left`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "preset",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "ClipAnimations": {
+            "description": "How a clip moves in, out and while it shows.",
+            "properties": {
+              "combo": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Repeats for as long as the clip shows."
+              },
+              "in": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays from the clip's start."
+              },
+              "out": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Animation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Plays up to the clip's end."
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          },
+          "Transition": {
+            "description": "A transition from a clip to the next one on its track.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "How long it lasts, centred on the cut."
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "The transition type, such as `dissolve` or `wipe`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "duration"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's transition and animations after a change.",
+        "properties": {
+          "animations": {
+            "$ref": "#/$defs/ClipAnimations",
+            "description": "Its animations."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "transition": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Transition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its transition into the next clip, if any."
+          }
+        },
+        "required": [
+          "clip",
+          "animations"
+        ],
+        "title": "MotionChanged",
+        "type": "object"
+      },
+      "summary": "Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it."
     }
   ],
   "effects": [
@@ -8769,6 +9682,288 @@
       "version": 1
     },
     {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how often and how far bands jump",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 0.05,
+          "kind": "number",
+          "max": 0.2,
+          "meaning": "height of the jumping bands",
+          "min": 0.01,
+          "name": "block",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Digital glitches: bands of the picture jump sideways and the colors split, changing every few frames.",
+      "title": "Glitch",
+      "type": "stylize.glitch",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.01,
+          "kind": "number",
+          "max": 0.05,
+          "meaning": "how far the colors part",
+          "min": 0.0,
+          "name": "amount",
+          "unit": "of width"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 180.0,
+          "meaning": "the direction they part in",
+          "min": -180.0,
+          "name": "angle",
+          "unit": "degrees"
+        }
+      ],
+      "summary": "Shifts red one way and blue the other, like a misaligned lens.",
+      "title": "RGB split",
+      "type": "stylize.rgb_split",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.02,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "block size",
+          "min": 0.002,
+          "name": "size",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Turns the picture into large square blocks.",
+      "title": "Pixelate",
+      "type": "stylize.pixelate",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how worn the tape looks",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Old tape: wobbling lines, bleeding color, scanlines and noise.",
+      "title": "VHS",
+      "type": "stylize.vhs",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "horizontal",
+            "vertical",
+            "quad"
+          ],
+          "default": "horizontal",
+          "kind": "choice",
+          "meaning": "horizontal reflects the left half, vertical the top half, quad the top-left quarter",
+          "name": "mode"
+        }
+      ],
+      "summary": "Reflects one half of the picture onto the other, or a quarter into all four.",
+      "title": "Mirror",
+      "type": "stylize.mirror",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 6.0,
+          "kind": "number",
+          "max": 32.0,
+          "meaning": "levels per channel",
+          "min": 2.0,
+          "name": "levels"
+        }
+      ],
+      "summary": "Reduces each channel to a few flat levels.",
+      "title": "Posterize",
+      "type": "stylize.posterize",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much: 1 is the full negative",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Turns the picture into its negative.",
+      "title": "Invert",
+      "type": "stylize.invert",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.02,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "how far it shakes",
+          "min": 0.0,
+          "name": "amount",
+          "unit": "of size"
+        },
+        {
+          "animatable": true,
+          "default": 2.0,
+          "kind": "number",
+          "max": 10.0,
+          "meaning": "how fast",
+          "min": 0.1,
+          "name": "speed",
+          "unit": "per second"
+        }
+      ],
+      "summary": "Shakes the picture like a handheld camera on the move.",
+      "title": "Shake",
+      "type": "motion.shake",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.3,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "length of the streaks",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Streaks the picture outwards from the middle, as in a fast zoom.",
+      "title": "Zoom blur",
+      "type": "motion.zoom_blur",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how bright the flashes are",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 2.0,
+          "kind": "number",
+          "max": 10.0,
+          "meaning": "flashes per second",
+          "min": 0.1,
+          "name": "rate",
+          "unit": "per second"
+        }
+      ],
+      "summary": "Brief white flashes on a beat.",
+      "title": "Flash",
+      "type": "motion.flash",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.8,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how strongly the hues turn",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 4.0,
+          "meaning": "cycles per second",
+          "min": 0.0,
+          "name": "speed",
+          "unit": "per second"
+        }
+      ],
+      "summary": "Cycles the colors through the rainbow.",
+      "title": "Rainbow",
+      "type": "motion.rainbow",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.1,
+          "kind": "number",
+          "max": 0.5,
+          "meaning": "how far it zooms",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 2.0,
+          "kind": "number",
+          "max": 10.0,
+          "meaning": "pulses per second",
+          "min": 0.1,
+          "name": "rate",
+          "unit": "per second"
+        }
+      ],
+      "summary": "Zooms in and out on a beat.",
+      "title": "Zoom pulse",
+      "type": "motion.zoom_pulse",
+      "version": 1
+    },
+    {
       "category": "key",
       "params": [
         {
@@ -9013,6 +10208,16 @@
       "meaning": "The clip has no effect with this id."
     },
     {
+      "code": "fosscut.transition.unknown_type",
+      "hint": "List the transitions with capabilities (under transitions).",
+      "meaning": "No transition type has this name."
+    },
+    {
+      "code": "fosscut.transition.no_neighbor",
+      "hint": "Move the next clip on the track so it starts where this clip ends, then add the transition.",
+      "meaning": "No clip starts where the clip ends, so there is no cut to transition over."
+    },
+    {
       "code": "fosscut.mask.not_found",
       "hint": "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
       "meaning": "The clip has no mask with this id."
@@ -9123,7 +10328,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.5.0",
+  "format_version": "0.6.0",
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",
@@ -9838,5 +11043,146 @@
       }
     ],
     "title": "TimeInput"
-  }
+  },
+  "transitions": [
+    {
+      "params": [],
+      "summary": "The first clip fades into the second.",
+      "title": "Dissolve",
+      "type": "dissolve"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "default": "#000000",
+          "kind": "color",
+          "meaning": "the color it fades through",
+          "name": "color"
+        }
+      ],
+      "summary": "Fades through a color, black by default.",
+      "title": "Dip to color",
+      "type": "dip"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ],
+          "default": "left",
+          "kind": "choice",
+          "meaning": "where the movement goes: left, right, up or down",
+          "name": "direction"
+        },
+        {
+          "animatable": false,
+          "default": 0.1,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how soft the moving edge is",
+          "min": 0.0,
+          "name": "softness"
+        }
+      ],
+      "summary": "An edge sweeps across, revealing the second clip.",
+      "title": "Wipe",
+      "type": "wipe"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ],
+          "default": "left",
+          "kind": "choice",
+          "meaning": "where the movement goes: left, right, up or down",
+          "name": "direction"
+        }
+      ],
+      "summary": "The second clip slides in over the first.",
+      "title": "Slide",
+      "type": "slide"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ],
+          "default": "left",
+          "kind": "choice",
+          "meaning": "where the movement goes: left, right, up or down",
+          "name": "direction"
+        }
+      ],
+      "summary": "The second clip pushes the first out of the frame.",
+      "title": "Push",
+      "type": "push"
+    },
+    {
+      "params": [],
+      "summary": "The first clip zooms in and fades into the second.",
+      "title": "Zoom",
+      "type": "zoom"
+    },
+    {
+      "params": [],
+      "summary": "The first clip blurs into the second.",
+      "title": "Blur",
+      "type": "blur"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.1,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how soft the moving edge is",
+          "min": 0.0,
+          "name": "softness"
+        }
+      ],
+      "summary": "A circle opens from the middle, revealing the second clip.",
+      "title": "Iris",
+      "type": "iris"
+    },
+    {
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.1,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how soft the moving edge is",
+          "min": 0.0,
+          "name": "softness"
+        }
+      ],
+      "summary": "A hand sweeps around the middle, revealing the second clip.",
+      "title": "Clock wipe",
+      "type": "clock"
+    },
+    {
+      "params": [],
+      "summary": "The first clip turns and shrinks away as the second turns in.",
+      "title": "Spin",
+      "type": "spin"
+    }
+  ]
 }

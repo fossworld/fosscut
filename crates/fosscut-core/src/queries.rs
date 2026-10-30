@@ -215,6 +215,9 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             })
             .collect();
         result["looks"] = json!(looks);
+        let motion = crate::commands::motion_capabilities(brief);
+        result["transitions"] = motion["transitions"].clone();
+        result["animations"] = motion["animations"].clone();
     }
     Ok(result)
 }
@@ -370,6 +373,16 @@ fn clip_view(
     }
     if !clip.enabled {
         view["enabled"] = json!(false);
+    }
+    if let Some(t) = &clip.transition {
+        view["transition"] = json!({
+            "type": t.transition_type,
+            "duration": TimeReport::new(t.duration, rate),
+            "params": t.params,
+        });
+    }
+    if !clip.animations.is_empty() && detail == Detail::Full {
+        view["animations"] = json!(clip.animations);
     }
     if !clip.masks.is_empty() {
         view["masks"] = clip

@@ -616,7 +616,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
-    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0"] {
+    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"] {
         manifest["format_version"] = older.into();
         store
             .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
@@ -626,7 +626,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.5.0");
+    assert_eq!(FORMAT_VERSION, "0.6.0");
 }
 
 #[test]
@@ -703,4 +703,81 @@ fn caption_rules_report_their_codes() {
         assert!(!animator.enabled());
     }
     assert!(serde_json::from_str::<Animator>(r#"{ "type": "word.wobble" }"#).is_err());
+}
+
+#[test]
+fn transitions_and_animations_round_trip_and_are_checked() {
+    let mut project = round_one_project();
+    let clip = &mut first_clips(&mut project)[0];
+    let mut params = std::collections::BTreeMap::new();
+    params.insert("direction".to_string(), ParamValue::Name("up".into()));
+    clip.transition = Some(Transition {
+        transition_type: "push".into(),
+        duration: frames(12),
+        params,
+    });
+    clip.animations = ClipAnimations {
+        entrance: Some(Animation {
+            preset: "pop".into(),
+            duration: frames(15),
+        }),
+        combo: Some(Animation {
+            preset: "swing".into(),
+            duration: frames(30),
+        }),
+        ..Default::default()
+    };
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let id = project.manifest.primary_timeline.clone();
+    let json = serde_json::to_value(&project.timelines[&id]).unwrap();
+    let saved = &json["tracks"][0]["clips"][0];
+    assert_eq!(saved["transition"]["type"], "push");
+    assert_eq!(saved["animations"]["in"]["preset"], "pop");
+    assert!(saved["animations"].get("out").is_none(), "{saved}");
+    assert!(
+        json["tracks"][0]["clips"][1].get("animations").is_none(),
+        "clips without animations store none"
+    );
+
+    type Breakage = fn(&mut Clip);
+    let cases: [(&str, &str, Breakage); 7] = [
+        ("unknown type", "fosscut.model.transition", |c| {
+            c.transition.as_mut().unwrap().transition_type = "morph".into();
+        }),
+        ("bad choice", "fosscut.model.transition", |c| {
+            c.transition
+                .as_mut()
+                .unwrap()
+                .params
+                .insert("direction".into(), ParamValue::Name("sideways".into()));
+        }),
+        ("unknown parameter", "fosscut.model.transition", |c| {
+            c.transition
+                .as_mut()
+                .unwrap()
+                .params
+                .insert("speed".into(), ParamValue::Number(1.0));
+        }),
+        ("longer than the clip", "fosscut.model.transition", |c| {
+            c.transition.as_mut().unwrap().duration = c.duration + frames(1);
+        }),
+        ("a combo as an entrance", "fosscut.model.animation", |c| {
+            c.animations.entrance.as_mut().unwrap().preset = "pulse".into();
+        }),
+        ("an entrance as a combo", "fosscut.model.animation", |c| {
+            c.animations.combo.as_mut().unwrap().preset = "fade".into();
+        }),
+        ("no time", "fosscut.model.animation", |c| {
+            c.animations.entrance.as_mut().unwrap().duration = Flicks::ZERO;
+        }),
+    ];
+    for (case, code, breakage) in cases {
+        let mut broken = project.clone();
+        breakage(&mut first_clips(&mut broken)[0]);
+        let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
+        assert_eq!(codes, vec![code.to_string()], "{case}");
+    }
 }

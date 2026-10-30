@@ -351,6 +351,288 @@ fn fs_chroma(@builtin(position) position: vec4f) -> @location(0) vec4f {
     return finish(from_display(vec3f(r, g, b)), texel.a * keep);
 }
 
+// ---- Stylize and motion effects ----
+
+fn input_size() -> vec2f {
+    return vec2f(textureDimensions(input_texture));
+}
+
+fn sample_at(uv: vec2f) -> vec4f {
+    return textureSampleLevel(input_texture, linear_sampler, uv, 0.0);
+}
+
+fn noise1(x: f32) -> f32 {
+    return fract(sin(x * 12.9898) * 43758.547);
+}
+
+// Bands jump sideways and colors split; p[0]: amount, band height, frame seed.
+@fragment
+fn fs_glitch(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let size = input_size();
+    let uv = position.xy / size;
+    let step = floor(p.z / 3.0);
+    let band = floor(uv.y / max(p.y, 0.001));
+    let chance = noise1(band * 7.31 + step * 1.17);
+    var shifted = uv;
+    if chance > 1.0 - p.x * 0.4 {
+        shifted.x = shifted.x + (noise1(band + step * 3.7) - 0.5) * p.x * 0.2;
+    }
+    let split = p.x * 0.012 * (noise1(step * 5.3) - 0.5);
+    let r = sample_at(shifted + vec2f(split, 0.0));
+    let g = sample_at(shifted);
+    let b = sample_at(shifted - vec2f(split, 0.0));
+    return vec4f(r.r, g.g, b.b, g.a);
+}
+
+// Red one way, blue the other; p[0]: distance as a fraction of the width, angle.
+@fragment
+fn fs_rgb_split(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let uv = position.xy / input_size();
+    let offset = vec2f(cos(p.y), sin(p.y)) * p.x;
+    let r = sample_at(uv + offset);
+    let g = sample_at(uv);
+    let b = sample_at(uv - offset);
+    return vec4f(r.r, g.g, b.b, max(g.a, max(r.a, b.a)));
+}
+
+// Square blocks, each the average of its area (a mip level); p[0].x: block size in pixels.
+@fragment
+fn fs_pixelate(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let cell = max(effect.p[0].x, 1.0);
+    let size = input_size();
+    let centre = (floor(position.xy / cell) + 0.5) * cell;
+    return textureSampleLevel(input_texture, linear_sampler, centre / size, log2(cell));
+}
+
+// Worn tape; p[0]: amount, frame seed.
+@fragment
+fn fs_vhs(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let size = input_size();
+    let uv = position.xy / size;
+    let line = floor(position.y);
+    let wobble = (noise1(line * 0.37 + p.y) - 0.5) * 0.004 * p.x;
+    let bleed = 0.006 * p.x;
+    let base = sample_at(uv + vec2f(wobble, 0.0));
+    let r = sample_at(uv + vec2f(wobble + bleed, 0.0)).r;
+    let b = sample_at(uv + vec2f(wobble - bleed, 0.0)).b;
+    var v = to_display(unpremultiply(vec4f(r, base.g, b, base.a)));
+    let scan = 1.0 - 0.15 * p.x * (0.5 + 0.5 * sin(position.y * 3.14159));
+    let grain = (noise1(position.x * 1.3 + line * 7.1 + p.y) - 0.5) * 0.1 * p.x;
+    v = v * scan + vec3f(grain);
+    return finish(from_display(v), base.a);
+}
+
+// Halves reflected; p[0].x: 0 horizontal, 1 vertical, 2 quad.
+@fragment
+fn fs_mirror(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let mode = effect.p[0].x;
+    var uv = position.xy / input_size();
+    if mode < 0.5 || mode > 1.5 {
+        uv.x = 0.5 - abs(uv.x - 0.5);
+    }
+    if mode > 0.5 {
+        uv.y = 0.5 - abs(uv.y - 0.5);
+    }
+    return sample_at(uv);
+}
+
+@fragment
+fn fs_posterize(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let levels = max(effect.p[0].x, 2.0);
+    let v = floor(to_display(unpremultiply(texel)) * levels) / (levels - 1.0);
+    return finish(from_display(v), texel.a);
+}
+
+@fragment
+fn fs_invert(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let v = to_display(unpremultiply(texel));
+    return finish(from_display(mix(v, vec3f(1.0) - v, clamp(effect.p[0].x, 0.0, 1.0))), texel.a);
+}
+
+// A smooth random walk; p[0]: amount, speed, seconds.
+@fragment
+fn fs_shake(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let t = p.z * p.y;
+    let k = floor(t);
+    let f = smoothstep(0.0, 1.0, fract(t));
+    let x = mix(noise1(k), noise1(k + 1.0), f) - 0.5;
+    let y = mix(noise1(k + 51.0), noise1(k + 52.0), f) - 0.5;
+    let uv = position.xy / input_size() + vec2f(x, y) * 2.0 * p.x;
+    return sample_at(uv);
+}
+
+// Streaks towards the middle; p[0].x: amount.
+@fragment
+fn fs_zoom_blur(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let amount = effect.p[0].x;
+    let uv = position.xy / input_size();
+    var sum = vec4f(0.0);
+    for (var i = 0; i < 16; i = i + 1) {
+        let scale = 1.0 - amount * 0.3 * f32(i) / 15.0;
+        sum = sum + sample_at(vec2f(0.5) + (uv - vec2f(0.5)) * scale);
+    }
+    return sum / 16.0;
+}
+
+// White flashes on a beat; p[0]: amount, rate, seconds.
+@fragment
+fn fs_flash(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let p = effect.p[0];
+    let beat = pow(max(cos(6.28318 * p.y * p.z), 0.0), 8.0) * p.x;
+    let v = to_display(unpremultiply(texel));
+    return finish(from_display(v + (vec3f(1.0) - v) * beat), texel.a);
+}
+
+// Hues cycle; p[0]: amount, cycles per second, seconds.
+@fragment
+fn fs_rainbow(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let p = effect.p[0];
+    var hsl = rgb_to_hsl(to_display(unpremultiply(texel)));
+    hsl.x = hsl.x + 360.0 * fract(p.y * p.z) * p.x + 60.0 * p.x * position.x / input_size().x;
+    hsl.y = clamp(hsl.y + 0.3 * p.x, 0.0, 1.0);
+    return finish(from_display(hsl_to_rgb(hsl)), texel.a);
+}
+
+// Zooms in and out on a beat; p[0]: amount, rate, seconds.
+@fragment
+fn fs_zoom_pulse(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let scale = 1.0 + p.x * (0.5 + 0.5 * sin(6.28318 * p.y * p.z));
+    let uv = vec2f(0.5) + (position.xy / input_size() - vec2f(0.5)) / scale;
+    return sample_at(uv);
+}
+
+// ---- Transitions: the outgoing clip (input) into the incoming clip (aux) ----
+
+// Premultiplied `top` over `bottom`.
+fn over(top: vec4f, bottom: vec4f) -> vec4f {
+    return top + bottom * (1.0 - top.a);
+}
+
+fn inside(uv: vec2f) -> bool {
+    return all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0));
+}
+
+fn outgoing_at(uv: vec2f, lod: f32) -> vec4f {
+    if !inside(uv) {
+        return vec4f(0.0);
+    }
+    return textureSampleLevel(input_texture, linear_sampler, uv, lod);
+}
+
+fn incoming_at(uv: vec2f, lod: f32) -> vec4f {
+    if !inside(uv) {
+        return vec4f(0.0);
+    }
+    return textureSampleLevel(aux_texture, linear_sampler, uv, lod);
+}
+
+fn turn(v: vec2f, degrees: f32, aspect: f32) -> vec2f {
+    let a = radians(degrees);
+    let d = (v - vec2f(0.5)) * vec2f(aspect, 1.0);
+    let r = vec2f(d.x * cos(a) + d.y * sin(a), -d.x * sin(a) + d.y * cos(a));
+    return r / vec2f(aspect, 1.0) + vec2f(0.5);
+}
+
+// p[0]: case (0 dissolve, 1 dip, 2 wipe, 3 slide, 4 push, 5 zoom, 6 blur, 7 iris, 8 clock,
+// 9 spin), progress, softness, direction (0 left, 1 right, 2 up, 3 down); p[1]: dip color.
+@fragment
+fn fs_transition(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let kind = u32(p.x + 0.5);
+    let t = clamp(p.y, 0.0, 1.0);
+    let soft = max(p.z, 0.001);
+    let size = input_size();
+    let aspect = size.x / max(size.y, 1.0);
+    let uv = position.xy / size;
+    var d = vec2f(-1.0, 0.0);
+    let way = u32(p.w + 0.5);
+    if way == 1u {
+        d = vec2f(1.0, 0.0);
+    } else if way == 2u {
+        d = vec2f(0.0, -1.0);
+    } else if way == 3u {
+        d = vec2f(0.0, 1.0);
+    }
+    let a = outgoing_at(uv, 0.0);
+    let b = incoming_at(uv, 0.0);
+    switch kind {
+        case 1u: {
+            let color = vec4f(decode_transfer(effect.p[1].rgb, 1u), 1.0);
+            if t < 0.5 {
+                return mix(a, color, t * 2.0);
+            }
+            return mix(color, b, t * 2.0 - 1.0);
+        }
+        case 2u: {
+            // The edge travels along d; behind it the incoming clip shows.
+            let q = 0.5 - dot(uv - vec2f(0.5), d);
+            let edge = t * (1.0 + soft) - soft;
+            return mix(a, b, 1.0 - smoothstep(edge, edge + soft, 1.0 - q));
+        }
+        case 3u: {
+            return over(incoming_at(uv + (1.0 - t) * d, 0.0), a);
+        }
+        case 4u: {
+            return over(incoming_at(uv + (1.0 - t) * d, 0.0), outgoing_at(uv - t * d, 0.0));
+        }
+        case 5u: {
+            let zoomed = outgoing_at(vec2f(0.5) + (uv - vec2f(0.5)) / (1.0 + 2.0 * t), 0.0);
+            return mix(zoomed, b, smoothstep(0.0, 1.0, t));
+        }
+        case 6u: {
+            let lod = 6.0 * (1.0 - abs(2.0 * t - 1.0));
+            return mix(outgoing_at(uv, lod), incoming_at(uv, lod), smoothstep(0.3, 0.7, t));
+        }
+        case 7u: {
+            let distance = length((uv - vec2f(0.5)) * vec2f(aspect, 1.0)) / length(vec2f(aspect, 1.0) * 0.5);
+            let edge = t * (1.0 + soft);
+            return mix(a, b, 1.0 - smoothstep(edge - soft, edge, distance));
+        }
+        case 8u: {
+            let v = uv - vec2f(0.5);
+            let angle = fract(atan2(v.x * aspect, -v.y) / 6.28318 + 1.0);
+            let edge = t * (1.0 + soft);
+            return mix(a, b, 1.0 - smoothstep(edge - soft, edge, angle));
+        }
+        case 9u: {
+            let out = outgoing_at(vec2f(0.5) + (turn(uv, 90.0 * t, aspect) - vec2f(0.5)) / max(1.0 - t, 0.01), 0.0);
+            let into = incoming_at(vec2f(0.5) + (turn(uv, -90.0 * (1.0 - t), aspect) - vec2f(0.5)) / max(t, 0.01), 0.0);
+            return mix(out, into, t);
+        }
+        default: {
+            return mix(a, b, t);
+        }
+    }
+}
+
+// The input (premultiplied) over the canvas in aux, in linear light.
+@fragment
+fn fs_over(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = vec2i(position.xy);
+    return over(textureLoad(input_texture, p, 0), textureLoad(aux_texture, p, 0));
+}
+
 // ---- blur.gaussian and the blur half of detail.sharpen ----
 
 // One direction of a separable Gaussian blur on premultiplied color. p[0]: direction,

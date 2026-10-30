@@ -10,9 +10,10 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    AdjustmentCommand, CaptionsCommand, Cli, ClipCommand, ColorCommand, Command, EffectCommand,
-    KeyframeCommand, LookCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand,
-    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    AdjustmentCommand, AnimationCommand, CaptionsCommand, Cli, ClipCommand, ColorCommand, Command,
+    EffectCommand, KeyframeCommand, LookCommand, MaskCommand, MediaCommand, ModelsCommand,
+    ProjectCommand, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -482,6 +483,58 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             json!({ "clip": clip, "look": look, "replace": replace }),
         ),
         Command::Color(command) => color(cli, command),
+        Command::Transition(TransitionCommand::Set {
+            clip,
+            transition_type,
+            duration,
+            params,
+        }) => write(
+            cli,
+            "transition.set",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("type", Some(json!(transition_type))),
+                ("duration", some(duration)),
+                ("params", Some(params_of(params)?)),
+            ]),
+        ),
+        Command::Transition(TransitionCommand::Remove { clip }) => {
+            write(cli, "transition.remove", json!({ "clip": clip }))
+        }
+        Command::Animation(AnimationCommand::Set {
+            clip,
+            entrance,
+            exit,
+            combo,
+            clear,
+        }) => {
+            let animation = |text: &Option<String>| -> Result<Option<Value>, ApiError> {
+                let Some(text) = text else {
+                    return Ok(None);
+                };
+                Ok(Some(match text.split_once(':') {
+                    Some((preset, duration)) => {
+                        let duration: TimeInput =
+                            duration.parse().map_err(|e: fosscut_time::TimeError| {
+                                ApiError::new(codes::INVALID_ARGUMENTS, format!("{text}: {e}"))
+                            })?;
+                        json!({ "preset": preset, "duration": duration })
+                    }
+                    None => json!({ "preset": text }),
+                }))
+            };
+            write(
+                cli,
+                "animation.set",
+                object(vec![
+                    ("clip", Some(json!(clip))),
+                    ("in", animation(entrance)?),
+                    ("out", animation(exit)?),
+                    ("combo", animation(combo)?),
+                    ("clear", Some(json!(clear))),
+                ]),
+            )
+        }
         Command::Mask(command) => {
             let (name, mut args, settings) = match command {
                 MaskCommand::Add {

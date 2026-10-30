@@ -69,6 +69,23 @@ function block(ctx: CanvasRenderingContext2D, clip: ClipView, x0: number, x1: nu
   }
 }
 
+/** A transition from `clip` into the next: a bow tie across the cut, as long as it lasts. */
+function bowTie(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, y: number): void {
+  if (!clip.transition) return;
+  const top = y + 5;
+  const bottom = y + ROW - 5;
+  const cut = timeToX(clip.end.flicks, view);
+  const half = Math.max(4, (clip.transition.duration.flicks / FLICKS_PER_SECOND / 2) * view.zoom);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.beginPath();
+  ctx.moveTo(cut - half, top);
+  ctx.lineTo(cut + half, bottom);
+  ctx.lineTo(cut + half, top);
+  ctx.lineTo(cut - half, bottom);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function label(clip: ClipView): string {
   const name = clip.text ?? clip.asset_name ?? clip.kind;
   return clip.enabled === false ? `${name} (off)` : name;
@@ -139,6 +156,10 @@ export function drawTimeline(
       block(ctx, clip, x0, x1, y, !dragged && clip.id === state.selection);
       marks(ctx, clip, view, x0, x1, y);
       ctx.globalAlpha = 1;
+    }
+    // Transitions sit on top of both clips they join.
+    for (const clip of track.clips) {
+      if (clip.end.flicks >= first && clip.end.flicks <= last) bowTie(ctx, clip, view, y);
     }
   });
 

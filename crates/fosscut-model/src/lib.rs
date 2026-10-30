@@ -27,6 +27,7 @@ mod media;
 mod project;
 mod store;
 mod timeline;
+mod transition;
 mod validate;
 
 pub use animation::{
@@ -55,18 +56,22 @@ pub use timeline::{
     Align, BlendMode, ChannelMode, Clip, ClipAudio, ClipContent, Color, Crop, TextContent,
     TextStyle, Timeline, TimelineFormat, Track, TrackKind, Transform,
 };
+pub use transition::{
+    ANIMATION_PRESETS, Animation, AnimationDelta, ClipAnimations, Transition, TransitionSpec,
+    animate, transition_type, transition_types,
+};
 pub use validate::{Issue, validate};
 
 /// Current project format version (semantic version, ADR-0004). 0.2.0 added caption
 /// tracks and caption clips (ADR-0021); 0.3.0 added keyframes, crop, stretch, flips, blend
 /// modes, audio fades, pan and channels, and deactivated clips (ADR-0011); 0.4.0 added
 /// effects, adjustment clips and LUT assets (ADR-0011); 0.5.0 added masks and the color
-/// parameter kind (chroma key).
-pub const FORMAT_VERSION: &str = "0.5.0";
+/// parameter kind (chroma key); 0.6.0 added transitions and clip animations.
+pub const FORMAT_VERSION: &str = "0.6.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
-pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0"];
+pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.
 pub fn document_schemas() -> Vec<(&'static str, schemars::Schema)> {

@@ -174,6 +174,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                     );
                 }
                 check_properties(&mut issues, clip, &clip_path);
+                check_motion(&mut issues, clip, &clip_path);
                 if matches!(clip.content, ClipContent::Audio { .. }) && !clip.effects.is_empty() {
                     issues.push(
                         &clip_path,
@@ -420,6 +421,64 @@ fn check_effect(issues: &mut Issues, project: &Project, effect: &Effect, path: &
                     ),
                 );
             }
+        }
+    }
+}
+
+/// A transition needs a known type, valid parameters and a positive length no longer than
+/// its clip; animations need known presets in their places and positive lengths.
+fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
+    let mut bad = |code: &str, message: String| issues.push(path, code, message);
+    if let Some(t) = &clip.transition {
+        match crate::transition_type(&t.transition_type) {
+            None => bad(
+                "fosscut.model.transition",
+                format!("{} is not a transition this build knows", t.transition_type),
+            ),
+            Some(spec) => {
+                for (name, value) in &t.params {
+                    let ok = spec.param(name).is_some_and(|p| match (p.kind, value) {
+                        (ParamKind::Choice, ParamValue::Name(n)) => p.choices.contains(&n.as_str()),
+                        (ParamKind::Color, ParamValue::Name(n)) => crate::Color::parse(n).is_ok(),
+                        (ParamKind::Number, ParamValue::Number(v)) => {
+                            v.is_finite()
+                                && p.min.is_none_or(|m| *v >= m)
+                                && p.max.is_none_or(|m| *v <= m)
+                        }
+                        _ => false,
+                    });
+                    if !ok {
+                        bad(
+                            "fosscut.model.transition",
+                            format!("{} has no valid parameter {name} = {value:?}", spec.name),
+                        );
+                    }
+                }
+            }
+        }
+        if !t.duration.is_positive() || t.duration > clip.duration {
+            bad(
+                "fosscut.model.transition",
+                "a transition lasts more than zero and no longer than its clip".into(),
+            );
+        }
+    }
+    let a = &clip.animations;
+    for (place, animation) in [("in", &a.entrance), ("out", &a.exit), ("combo", &a.combo)] {
+        let Some(animation) = animation else {
+            continue;
+        };
+        let fits = crate::ANIMATION_PRESETS
+            .iter()
+            .any(|(name, places, _)| *name == animation.preset && places.contains(place));
+        if !fits || !animation.duration.is_positive() {
+            bad(
+                "fosscut.model.animation",
+                format!(
+                    "{} is not a positive-length {place} animation",
+                    animation.preset
+                ),
+            );
         }
     }
 }

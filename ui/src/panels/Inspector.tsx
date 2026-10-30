@@ -5,6 +5,7 @@ import type { Editor } from "../app/editor";
 import type { Catalog, ClipView } from "../engine/types";
 import { Effects } from "./Effects";
 import { Masks } from "./Masks";
+import { Motion } from "./Motion";
 import {
   type Field,
   type Viewing,
@@ -266,6 +267,9 @@ export function Inspector({
         <Effects editor={editor} clip={clip} playhead={playhead} catalog={catalog} luts={luts} others={others} />
       )}
       {hasPicture(clip) && <Masks editor={editor} clip={clip} playhead={playhead} tool={editor.getState().maskTool} />}
+      {isPlaced(clip) && editor.getState().timeline && (
+        <Motion editor={editor} clip={clip} timeline={editor.getState().timeline!} catalog={catalog} />
+      )}
     </section>
   );
 }

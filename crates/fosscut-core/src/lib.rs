@@ -37,6 +37,7 @@ pub use commands::{
     EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply, MaskAdd, MaskFields,
     MaskRemove, MaskSet, MasksChanged,
 };
+pub use commands::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub use commands::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
     ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,

@@ -268,7 +268,11 @@ impl Command for ClipSplit {
             })
             .collect();
         right.audio.fade_in = Flicks::ZERO;
+        right.animations.entrance = None;
         track.clips[location.clip].audio.fade_out = Flicks::ZERO;
+        // The transition and the exit animation belong to the end, now the right part's.
+        track.clips[location.clip].transition = None;
+        track.clips[location.clip].animations.exit = None;
         track.clips[location.clip].duration = offset;
         let left = ClipPlacement::of(&track.clips[location.clip], &track.id, rate);
         let right_placement = ClipPlacement::of(&right, &track.id, rate);
