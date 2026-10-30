@@ -135,6 +135,17 @@ pub enum Command {
     /// for example, `claude mcp add fosscut -- fosscut mcp`. Tools use --project (or the
     /// single bundle in the working directory) until the agent opens another project.
     Mcp,
+    /// Keep the project open in this process as its live host until Ctrl-C, so edits from
+    /// other terminals and agents (CLI or MCP) run in one session, in order, and undo in
+    /// one place. The desktop app hosts projects the same way.
+    Host {
+        /// Print each change as it is committed.
+        #[arg(long)]
+        events: bool,
+        /// Also stop when standard input closes, so a parent process can end the host.
+        #[arg(long)]
+        exit_on_eof: bool,
+    },
     /// Render one frame of a timeline to a PNG file, exactly as an export shows it.
     Frame {
         /// The moment to show, for example 1s, 30f or 00:00:01:00.

@@ -1,73 +1,22 @@
-//! Hosting projects on disk (ADR-0002, item 3): finding, creating and opening bundles,
-//! and one writer at a time through a lock file. Every front end that has no desktop app
-//! to connect to (the CLI, the MCP server) edits projects through these functions.
+//! Hosting projects on disk (ADR-0002, item 3) and reaching live hosts (ADR-0022): finding,
+//! creating and opening bundles, and one writer at a time through the bundle's writer lock.
+//! The CLI and the MCP server edit projects through [`Projects`] (or the functions of the
+//! same names), which forward to the host when the desktop app or `fosscut host` has the
+//! project open, and write on disk otherwise.
 
-use std::fs::OpenOptions;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fosscut_core::{ApiError, Request, Response, Session, codes};
-use fosscut_model::{DirStore, Id, IdKind, Project, TimelineFormat};
+use fosscut_model::{DirStore, Id, IdKind, MemoryStore, Project, ProjectStore, TimelineFormat};
+use serde::Serialize;
+use serde_json::{Value, json};
 
-const LOCK_FILE: &str = ".lock";
-const LOCK_WAIT: Duration = Duration::from_secs(10);
-const LOCK_STALE: Duration = Duration::from_secs(120);
-
-/// Exclusive write access to a bundle, released on drop.
-pub struct BundleLock {
-    path: PathBuf,
-}
-
-impl BundleLock {
-    /// Waits up to ten seconds for other writers; locks older than two minutes are stale.
-    pub fn acquire(bundle: &Path) -> Result<BundleLock, ApiError> {
-        BundleLock::acquire_with(bundle, LOCK_WAIT, LOCK_STALE)
-    }
-
-    fn acquire_with(
-        bundle: &Path,
-        wait: Duration,
-        stale_after: Duration,
-    ) -> Result<BundleLock, ApiError> {
-        let path = bundle.join(LOCK_FILE);
-        let started = Instant::now();
-        loop {
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(_) => return Ok(BundleLock { path }),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let stale = std::fs::metadata(&path)
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .and_then(|t| t.elapsed().ok())
-                        .is_some_and(|age| age > stale_after);
-                    if stale {
-                        let _ = std::fs::remove_file(&path);
-                        continue;
-                    }
-                    if started.elapsed() > wait {
-                        return Err(ApiError::new(
-                            codes::PROJECT_BUSY,
-                            format!("{} is locked by another process", bundle.display()),
-                        ));
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => {
-                    return Err(ApiError::new(
-                        "fosscut.project.storage",
-                        format!("cannot lock {}: {e}", bundle.display()),
-                    ));
-                }
-            }
-        }
-    }
-}
-
-impl Drop for BundleLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
+use crate::live::{
+    self, CallError, Connection, HostName, OpenError, PROTOCOL_MISMATCH, UNAVAILABLE, WriterLock,
+};
 
 /// The bundle path from `--project`, or a single `*.fosscut` directory in the working directory.
 pub fn bundle_path(explicit: Option<&Path>) -> Result<PathBuf, ApiError> {
@@ -92,16 +41,30 @@ pub fn bundle_path(explicit: Option<&Path>) -> Result<PathBuf, ApiError> {
     }
 }
 
-/// Opens an existing bundle.
-pub fn open(bundle: &Path) -> Result<Session<DirStore>, ApiError> {
-    if !bundle.join(fosscut_model::MANIFEST_PATH).exists() {
-        return Err(ApiError::new(
-            "fosscut.project.not_found",
-            format!("{} is not a FossCut project", bundle.display()),
-        )
-        .with_hint("Create one with: fosscut project new <path.fosscut>"));
+/// Fails unless `bundle` holds a FossCut project.
+pub(crate) fn require_project(bundle: &Path) -> Result<(), ApiError> {
+    if bundle.join(fosscut_model::MANIFEST_PATH).exists() {
+        return Ok(());
     }
+    Err(ApiError::new(
+        "fosscut.project.not_found",
+        format!("{} is not a FossCut project", bundle.display()),
+    )
+    .with_hint("Create one with: fosscut project new <path.fosscut>"))
+}
+
+/// Opens a bundle's session from disk. Only for a writer holding the writer lock, or a
+/// reader when no host runs.
+pub(crate) fn open(bundle: &Path) -> Result<Session<DirStore>, ApiError> {
+    require_project(bundle)?;
     Session::open(DirStore::new(bundle))
+}
+
+/// Opens a bundle's session to read it, writing nothing: a host or a local writer may be
+/// writing it at the same time.
+fn open_to_read(bundle: &Path) -> Result<Session<DirStore>, ApiError> {
+    require_project(bundle)?;
+    Session::open_read_only(DirStore::new(bundle))
 }
 
 /// Creates a new bundle directory with an empty primary timeline.
@@ -141,21 +104,312 @@ fn new_project_id(name: &str) -> Id {
     Id::new(IdKind::Project, u64::from_le_bytes(bytes))
 }
 
-/// Runs `request` against the bundle under its lock: opens the project, executes the
-/// request as one transaction and releases the lock.
+/// Runs `request` against the bundle as one transaction, through its live host when one
+/// runs. The client is named `cli` to the host.
 pub fn execute(bundle: &Path, request: Request) -> Result<Response, ApiError> {
-    let _lock = BundleLock::acquire(bundle)?;
-    let mut session = open(bundle)?;
-    session.execute(request)
+    Projects::new("cli").execute(bundle, request)
 }
 
-/// Runs a read-only query against the bundle; reads need no lock.
-pub fn query(
-    bundle: &Path,
-    name: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, ApiError> {
-    open(bundle)?.query(name, args)
+/// Runs a read-only query, through the live host when one runs.
+pub fn query(bundle: &Path, name: &str, args: Value) -> Result<Value, ApiError> {
+    Projects::new("cli").query(bundle, name, args)
+}
+
+/// The project as it is now: from its live host, or from disk.
+pub fn snapshot(bundle: &Path) -> Result<Project, ApiError> {
+    Projects::new("cli").snapshot(bundle)
+}
+
+/// Whether a host serves a bundle, as `project_info` reports it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SessionStatus {
+    /// True when a host (the desktop app or `fosscut host`) has the project open, so edits
+    /// appear there live and the user may be editing too.
+    pub live: bool,
+    /// The host program, when live.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<HostName>,
+}
+
+/// How a front end reaches projects (ADR-0022, item 8). Each call decides afresh: when the
+/// bundle's writer lock is free no host runs, and the call works on disk under the lock;
+/// when a host holds it, the call goes to the host its record names. Connections to hosts
+/// are kept for later calls, so a long-lived front end shows as one connected client.
+pub struct Projects {
+    runtime: PathBuf,
+    wait: Duration,
+    client: Mutex<String>,
+    links: Mutex<HashMap<String, Connection>>,
+}
+
+fn guard<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// What a call through a host came to.
+enum Routed {
+    /// The host answered, or the request may have run: report it.
+    Done(Result<Value, ApiError>),
+    /// The request did not run; route it again.
+    Retry(ApiError),
+}
+
+impl Projects {
+    /// A front end called `client` (`cli`, `agent:<name>`, …), with records in the user's
+    /// [`live::runtime_dir`].
+    pub fn new(client: impl Into<String>) -> Projects {
+        Projects::with_runtime(client, live::runtime_dir())
+    }
+
+    /// The same, with records in `runtime`.
+    pub fn with_runtime(client: impl Into<String>, runtime: impl Into<PathBuf>) -> Projects {
+        Projects {
+            runtime: runtime.into(),
+            wait: live::WAIT,
+            client: Mutex::new(client.into()),
+            links: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Waits at most `wait` for other writers (ten seconds by default).
+    pub fn with_wait(mut self, wait: Duration) -> Projects {
+        self.wait = wait;
+        self
+    }
+
+    /// Renames the front end for connections opened from now on.
+    pub fn set_client(&self, client: impl Into<String>) {
+        *guard(&self.client) = client.into();
+    }
+
+    /// Where records are looked up.
+    pub fn runtime(&self) -> &Path {
+        &self.runtime
+    }
+
+    /// Runs `request` as one transaction: under the writer lock on disk, or on the host.
+    /// Waits up to ten seconds for another writer, then reports `fosscut.project.busy`.
+    /// A host lost after the request was sent is `fosscut.session.unavailable` with
+    /// `details.outcome` `unknown`; it is never retried here.
+    pub fn execute(&self, bundle: &Path, request: Request) -> Result<Response, ApiError> {
+        require_project(bundle)?;
+        let key = live::bundle_key(bundle)?;
+        let params = serde_json::to_value(&request)
+            .map_err(|e| ApiError::new(codes::INTERNAL, format!("request: {e}")))?;
+        let client = if request.actor == "unknown" {
+            guard(&self.client).clone()
+        } else {
+            request.actor.clone()
+        };
+        let request_id = request.request_id.clone();
+        let response = |value: Value| {
+            serde_json::from_value::<Response>(value)
+                .map_err(|e| live::error(PROTOCOL_MISMATCH, format!("response: {e}")))
+        };
+        let started = Instant::now();
+        let mut last = None;
+        loop {
+            // The writer lock decides: free means no host runs, whatever connections
+            // were kept.
+            if let Some(_lock) = WriterLock::try_acquire(bundle)? {
+                guard(&self.links).remove(&key);
+                if let Ok(Some(leftover)) = live::read_record(&self.runtime, &key) {
+                    live::remove_record(&self.runtime, &key, Some(&leftover));
+                }
+                return open(bundle)?.execute(request);
+            }
+            match self
+                .linked(&key)
+                .map_or_else(|| self.connect(bundle, &key, &client), |c| Ok(Some(c)))
+            {
+                Ok(Some(connection)) => {
+                    match self.send(&key, connection, "execute", &params, request_id.as_deref()) {
+                        Routed::Done(done) => return done.and_then(response),
+                        Routed::Retry(error) => last = Some(error),
+                    }
+                }
+                Ok(None) => {}
+                Err(error) if error.code == PROTOCOL_MISMATCH => return Err(error),
+                Err(error) => last = Some(error),
+            }
+            if started.elapsed() >= self.wait {
+                return Err(self.busy(bundle, last));
+            }
+            std::thread::sleep(live::RETRY);
+        }
+    }
+
+    /// Runs a read-only query: on the host when one answers, otherwise on disk. Reads take
+    /// no lock; the disk holds every commit.
+    pub fn query(&self, bundle: &Path, name: &str, args: Value) -> Result<Value, ApiError> {
+        require_project(bundle)?;
+        let params = json!({ "name": name, "args": args });
+        if let Some(done) = self.read_remote(bundle, "query", &params) {
+            return done;
+        }
+        open_to_read(bundle)?.query(name, args)
+    }
+
+    /// The project as it is now: the host's documents, loaded and validated like a bundle,
+    /// or the bundle on disk.
+    pub fn snapshot(&self, bundle: &Path) -> Result<Project, ApiError> {
+        require_project(bundle)?;
+        if let Some(done) = self.read_remote(bundle, "snapshot", &Value::Null) {
+            return from_snapshot(&done?);
+        }
+        Ok(open_to_read(bundle)?.project().clone())
+    }
+
+    /// Whether a host serves the bundle now: the writer lock is held and its host answers.
+    pub fn status(&self, bundle: &Path) -> Result<SessionStatus, ApiError> {
+        require_project(bundle)?;
+        let key = live::bundle_key(bundle)?;
+        let linked = self.linked(&key);
+        if WriterLock::try_acquire(bundle)?.is_some() {
+            return Ok(SessionStatus {
+                live: false,
+                host: None,
+            });
+        }
+        let client = guard(&self.client).clone();
+        let connection = match linked {
+            Some(connection) => Some(connection),
+            None => self.connect(bundle, &key, &client).ok().flatten(),
+        };
+        let host = connection.and_then(|mut connection| {
+            let ping = json!({ "name": "project.info", "args": null });
+            connection.call("query", ping).ok()?;
+            let host = connection.welcome().host.clone();
+            guard(&self.links).insert(key, connection);
+            Some(host)
+        });
+        Ok(SessionStatus {
+            live: host.is_some(),
+            host,
+        })
+    }
+
+    /// Opens a connection to the host named by the bundle's record, if there is one.
+    fn connect(
+        &self,
+        bundle: &Path,
+        key: &str,
+        client: &str,
+    ) -> Result<Option<Connection>, ApiError> {
+        let Some(record) = live::read_record(&self.runtime, key)? else {
+            return Ok(None);
+        };
+        match Connection::open(&record, key, bundle, client) {
+            Ok(connection) => Ok(Some(connection)),
+            Err(OpenError::Refused(error)) => Err(error),
+            Err(OpenError::Unreachable(message)) => Err(live::error(UNAVAILABLE, message)),
+        }
+    }
+
+    /// Calls the host through `connection`, keeping the connection when it still works.
+    fn send(
+        &self,
+        key: &str,
+        mut connection: Connection,
+        method: &str,
+        params: &Value,
+        request_id: Option<&str>,
+    ) -> Routed {
+        match connection.call(method, params.clone()) {
+            Ok(value) => {
+                guard(&self.links).insert(key.to_string(), connection);
+                Routed::Done(Ok(value))
+            }
+            Err(CallError::Api(error)) if not_executed(&error) => Routed::Retry(error),
+            Err(CallError::Api(error)) => {
+                guard(&self.links).insert(key.to_string(), connection);
+                Routed::Done(Err(error))
+            }
+            Err(CallError::NotSent(e)) => Routed::Retry(live::error(
+                UNAVAILABLE,
+                format!("the host connection broke: {e}"),
+            )),
+            Err(CallError::Lost(e)) => Routed::Done(Err(lost(&e, request_id))),
+        }
+    }
+
+    /// The connection kept for `key`, unless the host has hung up on it.
+    fn linked(&self, key: &str) -> Option<Connection> {
+        guard(&self.links)
+            .remove(key)
+            .filter(|connection| !connection.hung_up())
+    }
+
+    /// A read through the host. `None` sends the read to disk: no host, or one that cannot
+    /// be reached (reads are safe to repeat).
+    fn read_remote(
+        &self,
+        bundle: &Path,
+        method: &str,
+        params: &Value,
+    ) -> Option<Result<Value, ApiError>> {
+        let key = match live::bundle_key(bundle) {
+            Ok(key) => key,
+            Err(error) => return Some(Err(error)),
+        };
+        if let Some(connection) = self.linked(&key) {
+            match self.send(&key, connection, method, params, None) {
+                Routed::Done(Ok(value)) => return Some(Ok(value)),
+                Routed::Done(Err(error)) if error.code != UNAVAILABLE => return Some(Err(error)),
+                _ => {}
+            }
+        }
+        let client = guard(&self.client).clone();
+        match self.connect(bundle, &key, &client) {
+            Ok(Some(connection)) => match self.send(&key, connection, method, params, None) {
+                Routed::Done(Err(error)) if error.code == UNAVAILABLE => None,
+                Routed::Done(done) => Some(done),
+                Routed::Retry(_) => None,
+            },
+            Err(error) if error.code == PROTOCOL_MISMATCH => Some(Err(error)),
+            _ => None,
+        }
+    }
+
+    fn busy(&self, bundle: &Path, last: Option<ApiError>) -> ApiError {
+        let mut details = json!({ "runtime_dir": self.runtime });
+        if let Some(last) = last {
+            details["last_error"] = json!(last);
+        }
+        live::busy(bundle).with_details(details)
+    }
+}
+
+/// A host's refusal that guarantees the request did not run.
+fn not_executed(error: &ApiError) -> bool {
+    error.code == UNAVAILABLE && error.details["outcome"] == "not_executed"
+}
+
+fn lost(error: &std::io::Error, request_id: Option<&str>) -> ApiError {
+    live::error(
+        UNAVAILABLE,
+        format!("the host was lost before it answered: {error}"),
+    )
+    .with_details(json!({ "outcome": "unknown", "request_id": request_id }))
+}
+
+/// Loads a host's snapshot as a bundle would load: format checks and validation included.
+fn from_snapshot(snapshot: &Value) -> Result<Project, ApiError> {
+    let mut store = MemoryStore::new();
+    let documents = snapshot
+        .get("documents")
+        .and_then(Value::as_object)
+        .ok_or_else(|| live::error(PROTOCOL_MISMATCH, "snapshot: no documents"))?;
+    for (path, document) in documents {
+        let bytes = serde_json::to_vec(document)
+            .map_err(|e| ApiError::new(codes::INTERNAL, format!("{path}: {e}")))?;
+        store
+            .write_atomic(path, &bytes)
+            .map_err(|e| ApiError::new(codes::INTERNAL, format!("{path}: {e}")))?;
+    }
+    Ok(Project::load(&store)?)
 }
 
 /// The timeline with id `id`, or the primary timeline when `id` is `None`.
@@ -180,57 +434,4 @@ pub fn now_ms() -> Option<u64> {
         .duration_since(UNIX_EPOCH)
         .ok()
         .map(|d| d.as_millis() as u64)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn bundle_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("fosscut-lock-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[test]
-    fn a_held_lock_makes_other_writers_wait_then_fail() {
-        let dir = bundle_dir("busy");
-        let held = BundleLock::acquire(&dir).unwrap();
-        let Err(error) = BundleLock::acquire_with(&dir, Duration::from_millis(120), LOCK_STALE)
-        else {
-            panic!("a second writer must not get the lock");
-        };
-        assert_eq!(error.code, codes::PROJECT_BUSY);
-        drop(held);
-        assert!(
-            !dir.join(LOCK_FILE).exists(),
-            "dropping the lock removes the file"
-        );
-        let again = BundleLock::acquire(&dir).unwrap();
-        drop(again);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn stale_locks_are_taken_over() {
-        let dir = bundle_dir("stale");
-        let file = std::fs::File::create(dir.join(LOCK_FILE)).unwrap();
-        file.set_modified(SystemTime::now() - Duration::from_secs(600))
-            .unwrap();
-        drop(file);
-        let lock = BundleLock::acquire_with(&dir, Duration::ZERO, LOCK_STALE).unwrap();
-        drop(lock);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn locking_a_missing_bundle_is_a_storage_error() {
-        let dir = std::env::temp_dir().join(format!("fosscut-lock-missing-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let Err(error) = BundleLock::acquire(&dir) else {
-            panic!("a missing bundle cannot be locked");
-        };
-        assert_eq!(error.code, "fosscut.project.storage");
-    }
 }

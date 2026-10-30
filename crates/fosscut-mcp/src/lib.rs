@@ -5,8 +5,9 @@
 //! - One generic `edit` tool runs any command from `capabilities` as an atomic batch with
 //!   the agent safety contract (ADR-0006); a few dedicated tools cover what most sessions
 //!   need: projects, timeline reads, media import, frame grabs, contact sheets, export jobs.
-//! - Every write takes the bundle's lock for one request and reopens the project, so the
-//!   CLI and this server can work on one project in turn. Writes are logged as made by
+//! - Writes go to the project's live host when the desktop app or `fosscut host` has it
+//!   open, so the user sees them at once (ADR-0022); otherwise each write takes the
+//!   bundle's writer lock for one request. Writes are logged as made by
 //!   `agent:<client name>`.
 //! - FossCut errors are tool results with `isError` set and the typed
 //!   `{"error": {code, message, hint, details}}`, so agents can recover.
@@ -25,6 +26,7 @@ use std::time::Duration;
 use base64::Engine;
 use fosscut_core::{ApiError, CommandCall, REDO, Request, UNDO, codes};
 use fosscut_engine::jobs::Jobs;
+use fosscut_engine::project::Projects;
 use fosscut_engine::{EngineError, ExportRequest, Preset, project};
 use fosscut_model::TimelineFormat;
 use fosscut_render::Renderer;
@@ -37,7 +39,7 @@ use rmcp::model::{
     PromptMessage, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
     ResourceContents, Role, ServerCapabilities, ServerConfig,
 };
-use rmcp::service::RequestContext;
+use rmcp::service::{NotificationContext, RequestContext};
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use serde_json::{Value, json};
 
@@ -57,6 +59,7 @@ FossCut edits video projects (.fosscut bundles). A safe session:
 5. export starts a background job; call job_status with wait_seconds until it succeeds, then read its verification report.
 Times need a unit: {\"frames\": n}, {\"seconds\": \"1.5\"}, {\"timecode\": \"HH:MM:SS:FF\"} or {\"flicks\": n}.
 Errors come back as {\"error\": {code, message, hint, details}}: follow the hint.
+When project_info or project_open shows session.live, the user has the project open in the FossCut app: your edits appear there live and the user may edit too, so after a fosscut.revision.conflict read again and re-plan.
 The fosscut-basics prompt (also the resource fosscut://skills/fosscut-basics) is the full guide.";
 
 /// Longest `job_status` wait, in seconds.
@@ -83,6 +86,8 @@ pub struct FosscutServer {
 
 struct State {
     project: Mutex<Option<PathBuf>>,
+    /// Reaches projects on disk or through their live host (ADR-0022).
+    projects: Projects,
     jobs: Jobs,
     renderer: Mutex<Option<Renderer>>,
     /// Where analysis results and export request records are kept.
@@ -152,6 +157,14 @@ fn as_value<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap_or_default()
 }
 
+/// Project info with `session`: whether the desktop app or `fosscut host` has the project
+/// open, so the user may be watching and editing too (ADR-0022).
+fn info(projects: &Projects, bundle: &Path) -> Result<Value, ApiError> {
+    let mut value = projects.query(bundle, "project.info", Value::Null)?;
+    value["session"] = as_value(&projects.status(bundle)?);
+    Ok(value)
+}
+
 impl FosscutServer {
     /// A server whose tools use `project` when they are given none, caching in the user's
     /// cache directory ([`fosscut_engine::cache_dir`]).
@@ -167,9 +180,21 @@ impl FosscutServer {
 
     /// A server that caches in `cache` and installs and reads models in `models`.
     pub fn with_dirs(project: Option<PathBuf>, cache: PathBuf, models: PathBuf) -> FosscutServer {
+        FosscutServer::with_runtime(project, cache, models, fosscut_engine::live::runtime_dir())
+    }
+
+    /// The same, finding live hosts (the desktop app, `fosscut host`) through the records
+    /// in `runtime` (ADR-0022).
+    pub fn with_runtime(
+        project: Option<PathBuf>,
+        cache: PathBuf,
+        models: PathBuf,
+        runtime: PathBuf,
+    ) -> FosscutServer {
         FosscutServer {
             state: Arc::new(State {
                 project: Mutex::new(project),
+                projects: Projects::with_runtime("agent:mcp", runtime),
                 jobs: Jobs::new(),
                 renderer: Mutex::new(None),
                 cache,
@@ -198,13 +223,20 @@ impl FosscutServer {
         args: Value,
     ) -> Result<Value, ApiError> {
         let bundle = self.bundle(project)?;
-        blocking(move || project::query(&bundle, name, args)).await
+        let state = Arc::clone(&self.state);
+        blocking(move || state.projects.query(&bundle, name, args)).await
     }
 
     async fn execute(&self, project: Option<String>, request: Request) -> Result<Value, ApiError> {
         let bundle = self.bundle(project)?;
-        blocking(move || project::execute(&bundle, request).map(|response| as_value(&response)))
-            .await
+        let state = Arc::clone(&self.state);
+        blocking(move || {
+            state
+                .projects
+                .execute(&bundle, request)
+                .map(|response| as_value(&response))
+        })
+        .await
     }
 
     /// Runs `work` with the session's renderer, creating it on first use.
@@ -317,7 +349,8 @@ impl FosscutServer {
     ) -> Result<CallToolResult, ErrorData> {
         let path = PathBuf::from(params.0.path);
         let opened = path.clone();
-        let result = blocking(move || project::query(&opened, "project.info", Value::Null)).await;
+        let state = Arc::clone(&self.state);
+        let result = blocking(move || info(&state.projects, &opened)).await;
         if result.is_ok() {
             *lock(&self.state.project) = Some(path);
         }
@@ -333,10 +366,12 @@ impl FosscutServer {
         &self,
         params: Parameters<ProjectArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        reply(
-            self.read(params.0.project, "project.info", Value::Null)
-                .await,
-        )
+        let bundle = match self.bundle(params.0.project) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let state = Arc::clone(&self.state);
+        reply(blocking(move || info(&state.projects, &bundle)).await)
     }
 
     /// Reads a timeline.
@@ -372,6 +407,7 @@ impl FosscutServer {
             Err(error) => return Ok(failure(&error)),
         };
         let files = args.files;
+        let state = Arc::clone(&self.state);
         let envelope = (
             args.expected_revision,
             args.dry_run,
@@ -399,7 +435,10 @@ impl FosscutServer {
                 request_id,
                 reason,
             );
-            project::execute(&bundle, request).map(|response| as_value(&response))
+            state
+                .projects
+                .execute(&bundle, request)
+                .map(|response| as_value(&response))
         })
         .await;
         reply(result)
@@ -434,7 +473,7 @@ impl FosscutServer {
         let wait = Duration::from_secs(args.wait_seconds.unwrap_or(30).min(MAX_WAIT_SECONDS));
         let state = Arc::clone(&self.state);
         let result = blocking(move || {
-            let session = project::open(&bundle)?;
+            let snapshot = state.projects.snapshot(&bundle)?;
             let asset = fosscut_model::Id::parse(&args.asset)
                 .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("asset: {e}")))?;
             let request = fosscut_engine::analysis::AnalysisRequest {
@@ -446,7 +485,7 @@ impl FosscutServer {
                 cache: state.cache.clone(),
                 models: state.models.clone(),
             };
-            let project = session.project();
+            let project = &snapshot;
             if let Some(report) = fosscut_engine::analysis::cached(project, &request)? {
                 return Ok(json!({
                     "state": "succeeded",
@@ -546,7 +585,7 @@ impl FosscutServer {
         let state = Arc::clone(&self.state);
         reply(
             blocking(move || {
-                let session = project::open(&bundle)?;
+                let snapshot = state.projects.snapshot(&bundle)?;
                 let id = |value: &Option<String>, what: &str| {
                     value
                         .as_deref()
@@ -567,7 +606,7 @@ impl FosscutServer {
                     CaptionsAction::Export => {
                         let path = file("export")?;
                         let srt = fosscut_engine::captions::export_srt(
-                            session.project(),
+                            &snapshot,
                             timeline.as_ref(),
                             track.as_ref(),
                         )?;
@@ -594,7 +633,7 @@ impl FosscutServer {
                     }
                     CaptionsAction::Generate => {
                         let generated = fosscut_engine::captions::generate(
-                            session.project(),
+                            &snapshot,
                             &fosscut_engine::captions::GenerateRequest {
                                 bundle: bundle.clone(),
                                 timeline: timeline.clone(),
@@ -617,9 +656,8 @@ impl FosscutServer {
                         let cues = fosscut_engine::captions::parse_srt(&text)?;
                         let timeline_id = timeline
                             .clone()
-                            .unwrap_or_else(|| session.project().manifest.primary_timeline.clone());
-                        let rate = session
-                            .project()
+                            .unwrap_or_else(|| snapshot.manifest.primary_timeline.clone());
+                        let rate = snapshot
                             .timelines
                             .get(&timeline_id)
                             .map(|t| t.format.rate)
@@ -657,8 +695,10 @@ impl FosscutServer {
                 write.reason = args.reason;
                 write.actor = actor;
                 write.at_ms = project::now_ms();
-                drop(session);
-                project::execute(&bundle, write).map(|response| as_value(&response))
+                state
+                    .projects
+                    .execute(&bundle, write)
+                    .map(|response| as_value(&response))
             })
             .await,
         )
@@ -740,7 +780,8 @@ impl FosscutServer {
         };
         let query_args = args.args.unwrap_or(Value::Null);
         let name = args.name;
-        reply(blocking(move || project::query(&bundle, &name, query_args)).await)
+        let state = Arc::clone(&self.state);
+        reply(blocking(move || state.projects.query(&bundle, &name, query_args)).await)
     }
 
     /// Renders one frame.
@@ -756,8 +797,8 @@ impl FosscutServer {
         };
         let state = Arc::clone(&self.state);
         let result = blocking(move || {
-            let session = project::open(&bundle)?;
-            let project = session.project();
+            let project = state.projects.snapshot(&bundle)?;
+            let project = &project;
             let timeline = project::timeline(project, args.timeline.as_deref())?;
             let time = args
                 .time
@@ -802,8 +843,8 @@ impl FosscutServer {
         };
         let state = Arc::clone(&self.state);
         let result = blocking(move || {
-            let session = project::open(&bundle)?;
-            let project = session.project();
+            let project = state.projects.snapshot(&bundle)?;
+            let project = &project;
             let timeline = project::timeline(project, args.timeline.as_deref())?;
             let sheet = FosscutServer::with_renderer(&state, |renderer| {
                 fosscut_engine::frame::contact_sheet(
@@ -843,8 +884,7 @@ impl FosscutServer {
         };
         let state = Arc::clone(&self.state);
         let result = blocking(move || {
-            let session = project::open(&bundle)?;
-            let project = session.project().clone();
+            let project = state.projects.snapshot(&bundle)?;
             let timeline = project::timeline(&project, args.timeline.as_deref())?;
             let output = PathBuf::from(&args.output);
             let preset = match args.preset.as_deref() {
@@ -931,6 +971,16 @@ impl FosscutServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for FosscutServer {
+    /// Names this server to live hosts after the client that connected (ADR-0022), so the
+    /// app lists it as `agent:<client name>`.
+    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
+        if let Some(peer) = context.peer.peer_info() {
+            self.state
+                .projects
+                .set_client(format!("agent:{}", peer.client_info.name));
+        }
+    }
+
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(
             ServerCapabilities::builder()

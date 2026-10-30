@@ -15,6 +15,7 @@ mod export;
 pub mod frame;
 pub mod import;
 pub mod jobs;
+pub mod live;
 mod operations;
 mod preset;
 pub mod project;

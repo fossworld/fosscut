@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use fosscut_core::{ApiError, REDO, Request, Response, UNDO, codes};
+use fosscut_engine::live;
 use fosscut_engine::project as bundle;
 use fosscut_engine::{EngineError, ExportPlan, ExportReport, ExportRequest, Preset, Progress};
 use fosscut_model::{Id, Project, TimelineFormat};
@@ -109,7 +110,13 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 session.query("project.info", Value::Null)?,
             ))
         }
-        Command::Project(ProjectCommand::Info) => query(cli, "project.info", Value::Null),
+        Command::Project(ProjectCommand::Info) => {
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let projects = bundle::Projects::new("cli");
+            let mut value = projects.query(&path, "project.info", Value::Null)?;
+            value["session"] = serde_json::to_value(projects.status(&path)?).unwrap_or_default();
+            Ok(Outcome::Query("project.info".into(), value))
+        }
         Command::Capabilities { detail, names } => {
             let bundle = bundle::bundle_path(cli.project.as_deref()).ok();
             let value = fosscut_engine::capabilities(detail.as_str(), names, bundle.as_deref())?;
@@ -380,6 +387,10 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 .map_err(|e| ApiError::new(codes::INTERNAL, format!("MCP session failed: {e}")))?;
             Ok(Outcome::Served)
         }
+        Command::Host {
+            events,
+            exit_on_eof,
+        } => host(cli, *events, *exit_on_eof),
         Command::Frame {
             time,
             out,
@@ -430,6 +441,52 @@ fn write(cli: &Cli, command: &str, args: Value) -> Result<Outcome, ApiError> {
     execute(cli, request)
 }
 
+/// `fosscut host`: serves the project until Ctrl-C (or, with `exit_on_eof`, until standard
+/// input closes), printing a ready line and, with `events`, each committed change.
+fn host(cli: &Cli, events: bool, exit_on_eof: bool) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let options = live::HostOptions::new("fosscut host", env!("CARGO_PKG_VERSION"));
+    let host = live::Host::start(&path, options)?;
+    let changes = host.subscribe();
+    output::print_host_event(
+        &json!({
+            "event": "ready",
+            "bundle": host.bundle(),
+            "revision": host.revision(),
+            "pid": std::process::id(),
+        }),
+        cli.json,
+    );
+    let (stop, stopped) = std::sync::mpsc::channel::<()>();
+    if exit_on_eof {
+        std::thread::spawn(move || {
+            let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+            let _ = stop.send(());
+        });
+    }
+    loop {
+        if stopped.try_recv().is_ok() {
+            break;
+        }
+        match changes.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(change) if events => {
+                let mut event = serde_json::to_value(&change).unwrap_or_default();
+                event["event"] = json!("changed");
+                output::print_host_event(&event, cli.json);
+            }
+            Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    let revision = host.revision();
+    host.close();
+    output::print_host_event(
+        &json!({ "event": "stopped", "revision": revision }),
+        cli.json,
+    );
+    Ok(Outcome::Served)
+}
+
 fn execute(cli: &Cli, request: Request) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
     Ok(Outcome::Write(bundle::execute(&path, request)?))
@@ -462,8 +519,8 @@ fn export(
             .with_hint("For example: fosscut export Promo.mp4. List presets with --presets.")
     })?;
     let bundle = bundle::bundle_path(cli.project.as_deref())?;
-    let session = bundle::open(&bundle)?;
-    let project = session.project();
+    let project = bundle::snapshot(&bundle)?;
+    let project = &project;
     let (timeline, format) = timeline_of(project, timeline)?;
     let preset = match preset {
         Some(name) => Preset::parse(name).ok_or_else(|| {
@@ -549,8 +606,8 @@ fn frame(
     timeline: Option<&str>,
 ) -> Result<Outcome, ApiError> {
     let bundle = bundle::bundle_path(cli.project.as_deref())?;
-    let session = bundle::open(&bundle)?;
-    let project = session.project();
+    let project = bundle::snapshot(&bundle)?;
+    let project = &project;
     let (timeline, format) = timeline_of(project, timeline)?;
     let time = time.resolve(format.rate)?;
     guard_output(cli, out)?;
@@ -579,8 +636,8 @@ fn contact_sheet(
     timeline: Option<&str>,
 ) -> Result<Outcome, ApiError> {
     let bundle = bundle::bundle_path(cli.project.as_deref())?;
-    let session = bundle::open(&bundle)?;
-    let project = session.project();
+    let project = bundle::snapshot(&bundle)?;
+    let project = &project;
     let (timeline, _) = timeline_of(project, timeline)?;
     guard_output(cli, out)?;
     let sheet = fosscut_engine::frame::contact_sheet(
@@ -739,7 +796,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
             min_pause_ms,
             replace,
         } => {
-            let session = bundle::open(&path)?;
+            let snapshot = bundle::snapshot(&path)?;
             let mut transcript = fosscut_engine::analysis::TranscriptOptions {
                 model: model.clone(),
                 language: language.clone(),
@@ -755,7 +812,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                     .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
             };
             let generated = fosscut_engine::captions::generate(
-                session.project(),
+                &snapshot,
                 &fosscut_engine::captions::GenerateRequest {
                     bundle: path.clone(),
                     timeline: parse(timeline, "timeline")?,
@@ -797,9 +854,9 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                 )
             })?;
             let cues = fosscut_engine::captions::parse_srt(&text).map_err(|e| engine_error(&e))?;
-            let session = bundle::open(&path)?;
-            let (timeline_id, _) = timeline_of(session.project(), timeline.as_deref())?;
-            let rate = session.project().timelines[&timeline_id].format.rate;
+            let snapshot = bundle::snapshot(&path)?;
+            let (timeline_id, _) = timeline_of(&snapshot, timeline.as_deref())?;
+            let rate = snapshot.timelines[&timeline_id].format.rate;
             write(
                 cli,
                 "captions.add",
@@ -821,7 +878,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
             track,
             timeline,
         } => {
-            let session = bundle::open(&path)?;
+            let snapshot = bundle::snapshot(&path)?;
             let ids = |id: &Option<String>| id.as_deref().map(Id::parse).transpose();
             let (timeline, track) = (
                 ids(timeline).map_err(|e| {
@@ -830,12 +887,9 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                 ids(track)
                     .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("track: {e}")))?,
             );
-            let srt = fosscut_engine::captions::export_srt(
-                session.project(),
-                timeline.as_ref(),
-                track.as_ref(),
-            )
-            .map_err(|e| engine_error(&e))?;
+            let srt =
+                fosscut_engine::captions::export_srt(&snapshot, timeline.as_ref(), track.as_ref())
+                    .map_err(|e| engine_error(&e))?;
             if file.exists() && !cli.write.allow_destructive {
                 return Err(engine_error(&EngineError::OutputExists {
                     path: file.display().to_string(),
@@ -949,7 +1003,7 @@ fn analyze_media(
     refresh: bool,
 ) -> Result<Outcome, ApiError> {
     let bundle = bundle::bundle_path(cli.project.as_deref())?;
-    let session = bundle::open(&bundle)?;
+    let snapshot = bundle::snapshot(&bundle)?;
     let asset = Id::parse(asset)
         .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("asset: {e}")))?;
     let request = fosscut_engine::analysis::AnalysisRequest {
@@ -961,12 +1015,9 @@ fn analyze_media(
         cache: fosscut_engine::cache_dir(),
         models: fosscut_engine::models_dir(),
     };
-    let report = fosscut_engine::analysis::analyze(
-        session.project(),
-        &request,
-        &mut progress_printer("analyzing"),
-    )
-    .map_err(|e| engine_error(&e))?;
+    let report =
+        fosscut_engine::analysis::analyze(&snapshot, &request, &mut progress_printer("analyzing"))
+            .map_err(|e| engine_error(&e))?;
     Ok(Outcome::Query("media.analysis".into(), json!(report)))
 }
 

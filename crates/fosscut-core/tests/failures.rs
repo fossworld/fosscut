@@ -145,8 +145,34 @@ fn torn_documents_are_rebuilt_from_the_log() {
     let path = format!("timelines/{}.json", expected.manifest.primary_timeline);
     crashed.write_atomic(&path, b"{\"id\": \"timel").unwrap();
 
+    let read_only = Session::open_read_only(crashed.clone()).unwrap();
+    assert_eq!(read_only.project(), &expected);
+    assert_eq!(
+        read_only.store().read(&path).unwrap(),
+        b"{\"id\": \"timel",
+        "a reader completes the save in memory and writes nothing"
+    );
+    assert_eq!(read_only.log().len(), session.log().len());
+
     let recovered = Session::open(crashed).unwrap();
     assert_eq!(recovered.project(), &expected);
+    assert_ne!(recovered.store().read(&path).unwrap(), b"{\"id\": \"timel");
+}
+
+/// A project with nothing to complete reads the same either way.
+#[test]
+fn read_only_sessions_see_what_writers_see() {
+    let (session, _, _) = session_with_clip();
+    let read_only = Session::open_read_only(session.store().clone()).unwrap();
+    assert_eq!(read_only.project(), session.project());
+    assert_eq!(
+        read_only
+            .query("project.info", serde_json::Value::Null)
+            .unwrap(),
+        session
+            .query("project.info", serde_json::Value::Null)
+            .unwrap()
+    );
 }
 
 /// The first import creates `media.json`; a crash before it exists is recovered too.

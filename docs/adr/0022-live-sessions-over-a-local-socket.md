@@ -69,6 +69,25 @@ The forces:
 - **gRPC or another RPC framework:** typed streams, but a large dependency and code generation for a handful of methods whose requests and responses are already the core's JSON types.
 - **Sending the key in `hello`:** simpler, but a process that took over a dead host's endpoint would receive it.
 
+## Implementation notes
+
+- **Where it lives:**
+  - `fosscut_engine::live`: the host, records, wire format, handshake and transports.
+  - `fosscut_engine::project::Projects`: the routing. The CLI uses it per call, and the MCP server keeps one per process.
+  - `fosscut host [--events] [--exit-on-eof]`: hosting without the app, for tests and scripts.
+  - `project info` (CLI) and `project_info` and `project_open` (MCP) report `session`, live or not, with the host's name.
+- **Readers never repair.** Opening a project from disk completes a save that a crash interrupted, by writing the missing documents. A reader doing that next to a writer collides with it: two hundred concurrent clients made a reader's repair overwrite the host's half-written manifest.
+  - Reads from disk now use `Session::open_read_only`, which completes such a save in memory only.
+  - Only writers, holding the lock, repair.
+- **The lock decides before every write, even with a kept connection.** On macOS, writing into a socket whose host has shut it down can still succeed, so only the reply's absence shows the host is gone, and then the outcome is unknown.
+  - Before reusing a connection, a client first tries the writer lock. A free lock means no host runs, so the write goes local.
+  - A kept connection the host has hung up on is dropped unused.
+- **One direction at a time.** Windows serialises synchronous I/O on one pipe handle, so neither side reads and writes a connection at once.
+  - `subscribe` turns its connection into a stream of notifications.
+  - Windows pipe handles have no read timeout; a client there waits until the host answers or the pipe breaks.
+  - Closing wakes the host's accept loop with a connection that stays open until the loop ends. Windows discards a pipe client that leaves before the host waits for it, and the first CI run on Windows hung closing a host that had just started.
+- **Change kinds** are the operation log's: `commit`, `undo` and `redo`.
+
 ## Validation
 
 - **Engine tests**, in-process with explicit runtime directories: directory and record permissions, the record key for symlinked paths, a wrong key, a fake host failing the client's check, a protocol mismatch, both size caps, identical errors locally and through a host, and snapshot tests of every message.

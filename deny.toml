@@ -39,6 +39,8 @@ allow = [
     "BSL-1.0",
     # A public-domain dedication like CC0, for the whisper.cpp bindings (ADR-0014, ADR-0020).
     "Unlicense",
+    # Public-domain-equivalent, for dependencies of the Windows pipe server (ADR-0014, ADR-0022).
+    "0BSD",
 ]
 # GPL, AGPL, SSPL and non-commercial licenses are not allowed in distributed builds.
 # LGPL native libraries (FFmpeg) are linked dynamically at runtime and are not crates.

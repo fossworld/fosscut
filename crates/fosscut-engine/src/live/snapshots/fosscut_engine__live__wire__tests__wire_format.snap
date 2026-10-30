@@ -1,0 +1,129 @@
+---
+source: crates/fosscut-engine/src/live/wire.rs
+expression: messages
+---
+[
+  {
+    "id": 1,
+    "jsonrpc": "2.0",
+    "method": "hello",
+    "params": {
+      "bundle": "/work/Demo.fosscut",
+      "client": "agent:claude-code",
+      "nonce": "0000000000000000000000000000000000000000000000000000000000000000",
+      "protocol": 1
+    }
+  },
+  {
+    "id": 1,
+    "jsonrpc": "2.0",
+    "result": {
+      "host": {
+        "name": "FossCut",
+        "version": "0.1.0"
+      },
+      "nonce": "1111111111111111111111111111111111111111111111111111111111111111",
+      "project": "project_0001",
+      "proof": "2222222222222222222222222222222222222222222222222222222222222222",
+      "protocol": 1,
+      "revision": 4
+    }
+  },
+  {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "method": "auth",
+    "params": {
+      "proof": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  {
+    "id": 2,
+    "jsonrpc": "2.0",
+    "result": {}
+  },
+  {
+    "id": 3,
+    "jsonrpc": "2.0",
+    "method": "execute",
+    "params": {
+      "actor": "agent:claude-code",
+      "allow_destructive": false,
+      "commands": [
+        {
+          "args": {
+            "at": "105f",
+            "clip": "clip_0003"
+          },
+          "command": "clip.split"
+        }
+      ],
+      "dry_run": false,
+      "expected_revision": 4,
+      "request_id": "split-1"
+    }
+  },
+  {
+    "error": {
+      "code": -32000,
+      "data": {
+        "code": "fosscut.revision.conflict",
+        "details": {
+          "current_revision": 5,
+          "expected_revision": 4
+        },
+        "hint": "Read the project again, re-plan the edit against the current revision, then retry with the new revision.",
+        "message": "the project is at revision 5, not 4"
+      },
+      "message": "the project is at revision 5, not 4"
+    },
+    "id": 3,
+    "jsonrpc": "2.0"
+  },
+  {
+    "id": 4,
+    "jsonrpc": "2.0",
+    "method": "query",
+    "params": {
+      "args": {
+        "detail": "full"
+      },
+      "name": "timeline.read"
+    }
+  },
+  {
+    "id": 5,
+    "jsonrpc": "2.0",
+    "method": "snapshot"
+  },
+  {
+    "id": 6,
+    "jsonrpc": "2.0",
+    "method": "subscribe"
+  },
+  {
+    "jsonrpc": "2.0",
+    "method": "changed",
+    "params": {
+      "actor": "human",
+      "commands": [
+        "clip.move"
+      ],
+      "kind": "commit",
+      "revision": 5,
+      "seq": 5
+    }
+  },
+  {
+    "error": {
+      "code": -32700,
+      "data": {
+        "code": "fosscut.session.protocol",
+        "message": "the message is not JSON"
+      },
+      "message": "the message is not JSON"
+    },
+    "id": null,
+    "jsonrpc": "2.0"
+  }
+]
