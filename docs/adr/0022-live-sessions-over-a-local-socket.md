@@ -85,6 +85,7 @@ The forces:
 - **One direction at a time.** Windows serialises synchronous I/O on one pipe handle, so neither side reads and writes a connection at once.
   - `subscribe` turns its connection into a stream of notifications.
   - Windows pipe handles have no read timeout; a client there waits until the host answers or the pipe breaks.
+  - Closing wakes the host's accept loop with a connection that stays open until the loop ends. Windows discards a pipe client that leaves before the host waits for it, and the first CI run on Windows hung closing a host that had just started.
 - **Change kinds** are the operation log's: `commit`, `undo` and `redo`.
 
 ## Validation

@@ -265,6 +265,18 @@ fn a_host_waits_for_a_local_write_and_then_loads_it() {
 }
 
 #[test]
+fn a_host_closed_as_soon_as_it_starts_shuts_down() {
+    // Closing wakes the host's accept loop with a connection; on Windows a client that
+    // left before the loop waited for it was discarded, and closing hung.
+    let (bundle, runtime) = (bundle("quick"), runtime("quick"));
+    for _ in 0..20 {
+        host(&bundle, &runtime).close();
+    }
+    assert!(records(&runtime).is_empty());
+    assert!(WriterLock::try_acquire(&bundle).unwrap().is_some());
+}
+
+#[test]
 fn a_held_lock_without_a_host_is_busy_and_names_the_runtime_directory() {
     let (bundle, runtime) = (bundle("busy"), runtime("busy"));
     let _lock = WriterLock::acquire(&bundle).unwrap();

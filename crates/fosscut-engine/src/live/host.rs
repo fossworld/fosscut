@@ -286,9 +286,12 @@ impl Host {
     fn shutdown(&mut self) {
         self.shared.close();
         if let Some(accept) = self.accept.take() {
-            // A connection wakes the accept loop, which sees the host closing and ends.
-            let _ = transport::connect(&self.shared.endpoint);
+            // A connection wakes the accept loop, which sees the host closing and ends. It
+            // stays open until then: Windows discards a pipe client that leaves before the
+            // host waits for it, and the loop would wait for another forever.
+            let wake = transport::connect(&self.shared.endpoint);
             let _ = accept.join();
+            drop(wake);
         }
         record::remove_socket(&self.shared.runtime, &self.shared.endpoint);
         for (_, closer) in guard(&self.shared.clients).values() {
