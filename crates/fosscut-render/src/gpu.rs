@@ -115,6 +115,8 @@ enum Slot {
         layer: usize,
         side: u8,
     },
+    /// Two source frames of a layer mixed for smooth slow motion.
+    Between(usize),
     CanvasSamples,
     Readback,
 }
@@ -835,7 +837,15 @@ impl Renderer {
         let (texture, vertices) = match &layer.source {
             LayerSource::Frame(source) => {
                 let frame = frames.frame(source)?;
-                let texture = self.convert_layer(encoder, index, &frame, source)?;
+                let mut texture = self.convert_layer(encoder, index, &frame, source)?;
+                if let Some((next, amount)) = &layer.next_frame {
+                    let other = frames.frame(next)?;
+                    if (other.width, other.height) == (frame.width, frame.height) {
+                        let second =
+                            self.convert_layer(encoder, index + NEXT_FRAME_SLOTS, &other, next)?;
+                        texture = self.mix_frames(encoder, index, &texture, &second, *amount);
+                    }
+                }
                 let vertices = layer_quad(
                     plan.canvas,
                     (frame.width, frame.height),
@@ -1433,6 +1443,47 @@ impl Renderer {
         Ok(layer)
     }
 
+    /// `first` and `second` mixed in linear light, `amount` of the second, mipmapped like a
+    /// layer texture: the in-between frame of smooth slow motion.
+    fn mix_frames(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        first: &wgpu::Texture,
+        second: &wgpu::Texture,
+        amount: f32,
+    ) -> wgpu::Texture {
+        let size = (first.width(), first.height());
+        let mips = first.mip_level_count();
+        let mixed = self.texture(
+            Slot::Between(index),
+            size,
+            CANVAS_FORMAT,
+            mips,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let mut params = [[0.0f32; 4]; SLOTS];
+        // The transition pass's dissolve: kind 0 at `amount` of the way.
+        params[0] = [0.0, amount, 0.0, 0.0];
+        let target = mixed.create_view(&wgpu::TextureViewDescriptor {
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        self.effect_pass(
+            encoder,
+            "fs_transition",
+            &first.create_view(&Default::default()),
+            Some(&second.create_view(&Default::default())),
+            None,
+            None,
+            &params,
+            &target,
+        );
+        self.generate_mips(encoder, &mixed, mips);
+        mixed
+    }
+
     /// Fills mip levels 1.. of `texture` from level 0 with the box-filter pass.
     fn generate_mips(
         &self,
@@ -1714,6 +1765,9 @@ impl Renderer {
             .clone()
     }
 }
+
+/// Slot numbers for a layer's second source frame start this far above its own.
+const NEXT_FRAME_SLOTS: usize = 1 << 24;
 
 /// What compositing does for one layer: draw it, adjust the canvas below it, or mix two
 /// clips with a transition.

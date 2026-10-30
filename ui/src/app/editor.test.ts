@@ -337,6 +337,30 @@ describe("editor", () => {
     ]);
   });
 
+  it("changes speed with ripple and freezes the frame at the playhead", async () => {
+    const fake = engine();
+    fake.answers["capabilities"] = {
+      effects: [],
+      looks: [],
+      speed_presets: [{ preset: "hero", meaning: "" }],
+    };
+    const { editor } = await started(fake);
+    expect(editor.getState().catalog?.speed_presets[0]?.preset).toBe("hero");
+    await editor.setSpeed("clip_0003", { rate: 2 });
+    await editor.setSpeed("clip_0003", { preset: "hero" });
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.freeze("clip_0003");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "clip.speed", args: { clip: "clip_0003", ripple: true, rate: 2 } },
+      { command: "clip.speed", args: { clip: "clip_0003", ripple: true, preset: "hero" } },
+      {
+        command: "clip.freeze",
+        args: { clip: "clip_0003", at: { flicks: FLICKS_PER_SECOND }, duration: { seconds: "2" } },
+      },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

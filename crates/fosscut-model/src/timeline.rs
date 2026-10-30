@@ -8,6 +8,7 @@ use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
 use crate::mask::Mask;
+use crate::speed::Speed;
 use crate::transition::{ClipAnimations, Transition};
 use crate::{Id, is_default};
 
@@ -176,6 +177,10 @@ pub struct Clip {
     /// How the clip moves in, out and while it shows.
     #[serde(default, skip_serializing_if = "ClipAnimations::is_empty")]
     pub animations: ClipAnimations,
+    /// How a video or audio clip plays its source: faster, slower, along a curve,
+    /// backwards or frozen (ADR-0023). Absent, it plays one to one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<Speed>,
     /// Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted
     /// by time with at most one keyframe per time. A property with keyframes takes its
     /// value from them, not from its field.
@@ -202,6 +207,7 @@ impl Clip {
             masks: Vec::new(),
             transition: None,
             animations: ClipAnimations::default(),
+            speed: None,
             keyframes: BTreeMap::new(),
         }
     }
@@ -214,6 +220,63 @@ impl Clip {
     /// Timeline position just after the last frame.
     pub fn end(&self) -> Flicks {
         self.start + self.duration
+    }
+
+    /// How much source the clip uses: its duration, or what its speed makes of it.
+    pub fn source_length(&self) -> Flicks {
+        match &self.speed {
+            Some(speed) => speed.source_length(self.duration),
+            None => self.duration,
+        }
+    }
+
+    /// The exact source position shown or heard at `offset` from the clip's start, in
+    /// flicks of its media, through its speed (ADR-0023); `None` for clips without media
+    /// time. Offsets outside the clip continue at the edge rates, for transitions.
+    pub fn source_position(&self, offset: Flicks) -> Option<f64> {
+        let source_in = self.content.source_in()?.get() as f64;
+        Some(match &self.speed {
+            Some(speed) => source_in + speed.source_offset(offset, self.duration),
+            None => source_in + offset.get() as f64,
+        })
+    }
+
+    /// [`Clip::source_position`] rounded to the nearest flick.
+    pub fn source_at(&self, offset: Flicks) -> Option<Flicks> {
+        self.source_position(offset)
+            .map(|p| Flicks::new(p.round() as i64))
+    }
+
+    /// The offset from the clip's start where source time `source` plays, through the
+    /// speed; `None` when the clip does not play it (outside its range, or frozen).
+    pub fn offset_of_source(&self, source: Flicks) -> Option<Flicks> {
+        let source_in = self.content.source_in()?;
+        let position = source - source_in;
+        match &self.speed {
+            Some(speed) => speed.offset_of(position.get() as f64, self.duration),
+            None => (!position.is_negative() && position <= self.duration).then_some(position),
+        }
+    }
+
+    /// Makes this clip the part of itself from `from` (an offset from its start, negative
+    /// to reach earlier) lasting `length`: moves its `source_in` and cuts its speed curve
+    /// to match (ADR-0023 item 7). Call it before changing the clip's duration; placement,
+    /// keyframes and the rest are the caller's.
+    pub fn retime_part(&mut self, from: Flicks, length: Flicks) {
+        let duration = self.duration;
+        let (moved, speed) = match &self.speed {
+            Some(speed) => (
+                speed.part_source_in(duration, from, length),
+                Some(speed.part(duration, from, length)).filter(|s| !s.is_normal()),
+            ),
+            None => (from, None),
+        };
+        if let ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } =
+            &mut self.content
+        {
+            *source_in = *source_in + moved;
+            self.speed = speed;
+        }
     }
 
     /// The value of an animatable property at `offset` from the clip's start: from its

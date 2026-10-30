@@ -616,7 +616,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
-    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"] {
+    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"] {
         manifest["format_version"] = older.into();
         store
             .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
@@ -626,7 +626,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.6.0");
+    assert_eq!(FORMAT_VERSION, "0.7.0");
 }
 
 #[test]
@@ -780,4 +780,137 @@ fn transitions_and_animations_round_trip_and_are_checked() {
         let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
         assert_eq!(codes, vec![code.to_string()], "{case}");
     }
+}
+
+#[test]
+fn speed_round_trips_and_is_checked() {
+    let mut project = round_one_project();
+    let clip = &mut first_clips(&mut project)[0];
+    clip.speed = Some(Speed {
+        curve: vec![
+            SpeedPoint { at: 0.0, rate: 0.5 },
+            SpeedPoint { at: 1.0, rate: 1.5 },
+        ],
+        pitch: Pitch::Shift,
+        ..Speed::default()
+    });
+    assert_eq!(clip.source_length(), clip.duration, "a mean rate of 1");
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let id = project.manifest.primary_timeline.clone();
+    let json = serde_json::to_value(&project.timelines[&id]).unwrap();
+    let saved = &json["tracks"][0]["clips"][0]["speed"];
+    assert_eq!(saved["pitch"], "shift");
+    assert!(
+        saved.get("rate").is_none() && saved.get("reverse").is_none(),
+        "{saved}"
+    );
+
+    type Breakage = fn(&mut Clip);
+    let cases: [(&str, &str, Breakage); 7] = [
+        ("too slow", "fosscut.model.speed", |c| {
+            c.speed = Some(Speed::constant(0.01));
+        }),
+        ("too fast", "fosscut.model.speed", |c| {
+            c.speed = Some(Speed::constant(101.0));
+        }),
+        ("rate and curve", "fosscut.model.speed", |c| {
+            c.speed.as_mut().unwrap().rate = 2.0;
+        }),
+        ("one point", "fosscut.model.speed", |c| {
+            c.speed.as_mut().unwrap().curve.truncate(1);
+        }),
+        ("out of order", "fosscut.model.speed", |c| {
+            c.speed.as_mut().unwrap().curve.reverse();
+        }),
+        ("on a text clip", "fosscut.model.speed", |c| {
+            c.content = ClipContent::Text(TextContent {
+                text: "Hi".into(),
+                style: TextStyle::default(),
+            });
+        }),
+        (
+            "more source than the media has",
+            "fosscut.model.source_range",
+            |c| {
+                c.speed = Some(Speed::constant(50.0));
+            },
+        ),
+    ];
+    for (case, code, breakage) in cases {
+        let mut broken = project.clone();
+        breakage(&mut first_clips(&mut broken)[0]);
+        let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
+        assert!(codes.contains(&code.to_string()), "{case}: {codes:?}");
+    }
+    // A freeze uses no source; reversing uses the same range.
+    let mut frozen = project.clone();
+    first_clips(&mut frozen)[0].speed = Some(Speed::constant(0.0));
+    assert!(validate(&frozen).is_empty());
+    assert_eq!(first_clips(&mut frozen)[0].source_length(), Flicks::ZERO);
+}
+
+#[test]
+fn clips_map_source_through_speed_and_split_into_parts() {
+    let mut clip = Clip::new(
+        Id::new(IdKind::Clip, 1),
+        Flicks::ZERO,
+        frames(60),
+        ClipContent::Video {
+            asset: Id::new(IdKind::Asset, 2),
+            source_in: frames(30),
+        },
+    );
+    assert_eq!(clip.source_at(frames(10)), Some(frames(40)));
+    assert_eq!(clip.offset_of_source(frames(40)), Some(frames(10)));
+    assert_eq!(
+        clip.offset_of_source(frames(10)),
+        None,
+        "before the clip's source"
+    );
+    clip.speed = Some(Speed::constant(2.0));
+    assert_eq!(clip.source_length(), frames(120));
+    assert_eq!(clip.source_at(frames(10)), Some(frames(50)));
+    assert_eq!(clip.offset_of_source(frames(50)), Some(frames(10)));
+    let mut right = clip.clone();
+    right.retime_part(frames(20), frames(40));
+    assert_eq!(right.content.source_in(), Some(frames(70)));
+    clip.speed.as_mut().unwrap().reverse = true;
+    assert_eq!(
+        clip.source_at(Flicks::ZERO),
+        Some(frames(150)),
+        "starts at the end"
+    );
+    let mut back = clip.clone();
+    back.retime_part(frames(20), frames(40));
+    assert_eq!(
+        back.content.source_in(),
+        Some(frames(30)),
+        "the start of the source"
+    );
+    let mut plain = Clip::new(
+        Id::new(IdKind::Clip, 3),
+        Flicks::ZERO,
+        frames(60),
+        ClipContent::Video {
+            asset: Id::new(IdKind::Asset, 2),
+            source_in: Flicks::ZERO,
+        },
+    );
+    plain.retime_part(frames(-5), frames(70));
+    assert_eq!(plain.content.source_in(), Some(frames(-5)));
+    assert!(plain.speed.is_none());
+    let mut text = Clip::new(
+        Id::new(IdKind::Clip, 4),
+        Flicks::ZERO,
+        frames(60),
+        ClipContent::Text(TextContent {
+            text: "Hi".into(),
+            style: TextStyle::default(),
+        }),
+    );
+    text.retime_part(frames(5), frames(10));
+    assert_eq!(text.source_at(Flicks::ZERO), None);
 }

@@ -799,3 +799,27 @@ fn caption_presets_and_placements() {
         TEXT_SIZE,
     );
 }
+
+/// Smooth slow motion: a moving test pattern half way between two of its frames, so both
+/// positions show at half strength.
+#[test]
+fn blended_slow_motion() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default();
+    frames.moving.insert(asset(1), (320, 180));
+    let frame = |n: i64| fosscut_render::plan::SourceRef {
+        asset: asset(1),
+        time: fosscut_time::Rate::FPS_30.frames_to_flicks(n),
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![Layer {
+            next_frame: Some((frame(4), 0.5)),
+            ..Layer::new(frame(1))
+        }],
+        skipped: Vec::new(),
+    };
+    check("blended-slow-motion", &mut renderer, &plan, &mut frames);
+}

@@ -25,6 +25,7 @@ mod id;
 mod mask;
 mod media;
 mod project;
+mod speed;
 mod store;
 mod timeline;
 mod transition;
@@ -51,6 +52,10 @@ pub use media::{
     Asset, AssetKind, AudioInfo, ContentIdentity, LutInfo, Media, MediaInfo, PathHints, VideoInfo,
 };
 pub use project::{Manifest, TimelineEntry};
+pub use speed::{
+    Interpolate, MAX_RATE, MIN_RATE, Pitch, SPEED_PRESETS, Speed, SpeedPoint, SpeedPreset,
+    speed_preset,
+};
 pub use store::{DirStore, MemoryStore, ProjectStore, StoreError};
 pub use timeline::{
     Align, BlendMode, ChannelMode, Clip, ClipAudio, ClipContent, Color, Crop, TextContent,
@@ -66,12 +71,13 @@ pub use validate::{Issue, validate};
 /// tracks and caption clips (ADR-0021); 0.3.0 added keyframes, crop, stretch, flips, blend
 /// modes, audio fades, pan and channels, and deactivated clips (ADR-0011); 0.4.0 added
 /// effects, adjustment clips and LUT assets (ADR-0011); 0.5.0 added masks and the color
-/// parameter kind (chroma key); 0.6.0 added transitions and clip animations.
-pub const FORMAT_VERSION: &str = "0.6.0";
+/// parameter kind (chroma key); 0.6.0 added transitions and clip animations; 0.7.0 added
+/// clip speed (ADR-0023).
+pub const FORMAT_VERSION: &str = "0.7.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
-pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"];
+pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.
 pub fn document_schemas() -> Vec<(&'static str, schemars::Schema)> {

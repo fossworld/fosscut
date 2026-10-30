@@ -218,6 +218,7 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         let motion = crate::commands::motion_capabilities(brief);
         result["transitions"] = motion["transitions"].clone();
         result["animations"] = motion["animations"].clone();
+        result["speed_presets"] = crate::commands::speed_capabilities(brief);
     }
     Ok(result)
 }
@@ -312,6 +313,16 @@ fn clip_view(
             view["asset"] = json!(asset);
             view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
             view["source_in"] = json!(TimeReport::new(*source_in, rate));
+            // Speed changes how much media the clip plays (ADR-0023 item 10).
+            if let Some(speed) = &clip.speed {
+                let mut shown = json!(speed);
+                if !speed.curve.is_empty() {
+                    shown["start_rate"] = json!(speed.rate_at(0.0));
+                    shown["end_rate"] = json!(speed.rate_at(1.0));
+                }
+                view["speed"] = shown;
+                view["source_used"] = json!(TimeReport::new(clip.source_length(), rate));
+            }
         }
         ClipContent::Image { asset } => {
             view["asset"] = json!(asset);

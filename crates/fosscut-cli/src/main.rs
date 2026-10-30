@@ -233,6 +233,76 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("end", some(end)),
             ]),
         ),
+        Command::Clip(ClipCommand::Speed {
+            clip,
+            rate,
+            curve,
+            preset,
+            reverse,
+            forward,
+            pitch,
+            blend,
+            nearest,
+            ripple,
+            reset,
+        }) => {
+            let curve = curve
+                .as_deref()
+                .map(|text| -> Result<Value, ApiError> {
+                    let points: Result<Vec<Value>, ApiError> = text
+                        .split(',')
+                        .map(|point| {
+                            let parsed = point.split_once(':').and_then(|(at, rate)| {
+                                Some((
+                                    at.trim().parse::<f64>().ok()?,
+                                    rate.trim().parse::<f64>().ok()?,
+                                ))
+                            });
+                            parsed
+                                .map(|(at, rate)| json!({ "at": at, "rate": rate }))
+                                .ok_or_else(|| {
+                                    ApiError::new(
+                                        codes::INVALID_ARGUMENTS,
+                                        format!(
+                                            "--curve: {point} is not AT:RATE, for example 0.5:2"
+                                        ),
+                                    )
+                                })
+                        })
+                        .collect();
+                    Ok(json!(points?))
+                })
+                .transpose()?;
+            let flag = |on: bool, off: bool| (on || off).then(|| json!(on));
+            write(
+                cli,
+                "clip.speed",
+                object(vec![
+                    ("clip", Some(json!(clip))),
+                    ("rate", some(rate)),
+                    ("curve", curve),
+                    ("preset", some(preset)),
+                    ("reverse", flag(*reverse, *forward)),
+                    ("pitch", some(pitch)),
+                    (
+                        "interpolate",
+                        (*blend || *nearest)
+                            .then(|| json!(if *blend { "blend" } else { "nearest" })),
+                    ),
+                    ("ripple", ripple.then(|| json!(true))),
+                    ("reset", reset.then(|| json!(true))),
+                ]),
+            )
+        }
+        Command::Clip(ClipCommand::Freeze { clip, at, duration }) => write(
+            cli,
+            "clip.freeze",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("at", Some(json!(at))),
+                ("duration", some(duration)),
+            ]),
+        ),
         Command::Clip(ClipCommand::Move { clip, start, track }) => write(
             cli,
             "clip.move",

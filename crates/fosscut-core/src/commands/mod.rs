@@ -7,6 +7,7 @@ mod keyframe;
 mod mask;
 mod media;
 mod motion;
+mod speed;
 mod text;
 mod timeline;
 mod track;
@@ -31,6 +32,8 @@ pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
 pub(crate) use motion::motion_capabilities;
 pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
+pub(crate) use speed::speed_capabilities;
+pub use speed::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
 pub use text::TextAdd;
 pub use timeline::{
     Fit, RangeInput, RangeReport, RangesRemoved, TimelineDuplicate, TimelineDuplicated,
@@ -48,6 +51,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ClipTrim>();
     registry.register::<ClipMove>();
     registry.register::<ClipRemove>();
+    registry.register::<ClipSpeed>();
+    registry.register::<ClipFreeze>();
     registry.register::<ClipSet>();
     registry.register::<KeyframeSet>();
     registry.register::<KeyframeRemove>();

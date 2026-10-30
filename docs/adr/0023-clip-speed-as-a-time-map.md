@@ -38,6 +38,15 @@ FossCut's clips so far play their source one to one: the source time is the clip
 - **Keeping duration fixed when speed changes (source range grows or shrinks):** simpler for overlaps, but it surprises people. A faster clip that keeps its length runs out of media, and editors commonly shorten it instead.
 - **Storing a precomputed frame list:** exact but large, and not editable as a curve.
 
+## Implementation notes
+
+- **Model** (format 0.7.0): `fosscut_model::Speed` holds `rate`, `curve`, `reverse`, `pitch` and `interpolate`, each omitted at its default. `Clip::source_position` evaluates the map exactly, `Clip::offset_of_source` inverts it (bisection for curves), and `Clip::retime_part` gives splits, trims and range cuts their part of the curve and their `source_in`. Validation reports `fosscut.model.speed`, and the source range check uses the source a clip plays.
+- **Commands:** `clip.speed` takes `rate`, `curve` or `preset`, and `reverse`, `pitch`, `interpolate`, `ripple` and `reset`; `clip.freeze` takes `at` and `duration` (two seconds by default). A frozen clip copies the clip's placement and effects with new ids, has no transition or animations, and is silent. `capabilities` lists `speed_presets` with their curves.
+- **Frames:** the planner asks for the frame at the exact source position. With `interpolate: "blend"` and a known source rate, a layer also carries the next source frame and the fraction towards it; the GPU converts both and mixes them in linear light with the dissolve pass before effects.
+- **Sound:** `pitch: "shift"` resamples linearly along the map. `pitch: "preserve"` uses WSOLA with 20 ms Hann windows at half overlap, a search of a quarter window, and a similarity normalized by the candidate's energy, so at rate 1 the windows add back to the source. Windows sit on a grid of the clip's own samples and the search restarts every 64 windows, so a stretch of sound comes out the same however the mix is cut. Reversed clips play their windows backwards.
+- **Limits:** reversed playback decodes backwards, which seeks for every frame; long reversed clips export slowly until a reverse cache exists. Resampling at high rates is not band-limited.
+- **Agents and the app:** `timeline.read` shows `speed` (with `start_rate` and `end_rate` for curves) and `source_used`. The desktop's Speed section sets the rate, a curve preset, reverse, pitch and smooth slow motion, and inserts a freeze frame at the playhead; the timeline labels clips with their speed.
+
 ## Validation
 
 - Exact tests of the map: constant, curved, reversed and frozen clips give the expected source time at chosen offsets, the integral matches a numeric reference, and splits keep both parts on the same curve.

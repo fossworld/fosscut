@@ -708,6 +708,17 @@
           "format": "double",
           "type": "number"
         },
+        "speed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Speed"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How a video or audio clip plays its source: faster, slower, along a curve,\nbackwards or frozen (ADR-0023). Absent, it plays one to one."
+        },
         "start": {
           "$ref": "#/$defs/Flicks",
           "description": "Timeline position of the first frame."
@@ -912,6 +923,21 @@
       "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
       "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
       "type": "string"
+    },
+    "Interpolate": {
+      "description": "How frames between source frames are made.",
+      "oneOf": [
+        {
+          "const": "nearest",
+          "description": "The source frame displayed at that time.",
+          "type": "string"
+        },
+        {
+          "const": "blend",
+          "description": "The two nearest source frames mixed by the position between them: smooth slow\nmotion.",
+          "type": "string"
+        }
+      ]
     },
     "Interpolation": {
       "description": "How a value travels from one keyframe to the next.",
@@ -1291,6 +1317,21 @@
       ],
       "type": "object"
     },
+    "Pitch": {
+      "description": "What happens to the pitch of sound played at another speed.",
+      "oneOf": [
+        {
+          "const": "preserve",
+          "description": "The sound keeps its pitch: it is time-stretched (WSOLA).",
+          "type": "string"
+        },
+        {
+          "const": "shift",
+          "description": "The sound is resampled, so its pitch follows the speed.",
+          "type": "string"
+        }
+      ]
+    },
     "Placement": {
       "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",
       "oneOf": [
@@ -1323,6 +1364,58 @@
           "type": "integer"
         }
       ]
+    },
+    "Speed": {
+      "additionalProperties": false,
+      "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
+      "properties": {
+        "curve": {
+          "description": "A speed curve: the rate changes linearly between points and holds before the first\nand after the last.",
+          "items": {
+            "$ref": "#/$defs/SpeedPoint"
+          },
+          "type": "array"
+        },
+        "interpolate": {
+          "$ref": "#/$defs/Interpolate",
+          "description": "Show the nearest source frame, or blend the two around each time."
+        },
+        "pitch": {
+          "$ref": "#/$defs/Pitch",
+          "description": "Keep the sound's pitch, or let it follow the speed."
+        },
+        "rate": {
+          "description": "A constant rate from 0.05 to 100, or 0 to hold the first frame (a freeze). Ignored\nwhen `curve` is given, and then 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "reverse": {
+          "description": "Play the same source range backwards.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "SpeedPoint": {
+      "additionalProperties": false,
+      "description": "A point of a speed curve.",
+      "properties": {
+        "at": {
+          "description": "Where on the clip, from 0 (its start) to 1 (its end).",
+          "format": "double",
+          "type": "number"
+        },
+        "rate": {
+          "description": "The rate there, from 0.05 to 100.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "at",
+        "rate"
+      ],
+      "type": "object"
     },
     "Stroke": {
       "additionalProperties": false,

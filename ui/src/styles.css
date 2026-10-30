@@ -456,6 +456,17 @@ body.browser .preview-hole::after {
   font: inherit;
 }
 
+.speed .hint {
+  color: var(--muted, #9aa0aa);
+  margin: 6px 0;
+}
+
+.speed .buttons {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+
 .motion .choice span {
   white-space: nowrap;
 }

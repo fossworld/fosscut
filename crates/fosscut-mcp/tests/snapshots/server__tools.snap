@@ -673,7 +673,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in. options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
+    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
     "input": {
       "$defs": {
         "Options": {
