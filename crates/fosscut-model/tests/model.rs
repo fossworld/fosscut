@@ -49,6 +49,7 @@ fn round_one_project() -> Project {
                 codec: Some("aac".into()),
             }),
             lut: None,
+            ..Default::default()
         },
     });
     let video_track = project.allocate_id(IdKind::Track);
@@ -99,10 +100,11 @@ fn round_one_project() -> Project {
             title,
             Flicks::ZERO,
             frames(90),
-            ClipContent::Text(TextContent {
+            ClipContent::Text(Box::new(TextContent {
                 text: "FossCut audit".into(),
                 style: TextStyle::default(),
-            }),
+                ..Default::default()
+            })),
         )],
     });
     project
@@ -319,10 +321,11 @@ fn each_validation_rule_reports_its_code() {
             "timeline_0000/track_0003/clip_0006",
             "fosscut.model.empty_text",
             |p| {
-                primary(p).tracks[1].clips[0].content = ClipContent::Text(TextContent {
+                primary(p).tracks[1].clips[0].content = ClipContent::Text(Box::new(TextContent {
                     text: "  ".into(),
                     style: TextStyle::default(),
-                });
+                    ..Default::default()
+                }));
             },
         ),
         (
@@ -467,7 +470,7 @@ proptest! {
             clips.push(Clip {
                 transform: Transform { position: [0.1, -0.2], scale: 1.5, rotation: 12.0, ..Transform::default() },
                 opacity: 0.5,
-                ..Clip::new(id, frames(position), frames(length), ClipContent::Text(TextContent { text: format!("clip {position}"), style: TextStyle::default() }))
+                ..Clip::new(id, frames(position), frames(length), ClipContent::Text(Box::new(TextContent { text: format!("clip {position}"), style: TextStyle::default() , ..Default::default() })))
             });
             position += length;
         }
@@ -545,6 +548,7 @@ fn captioned_project() -> Project {
                             }],
                         },
                     ],
+                    ..Default::default()
                 }),
             )],
         });
@@ -618,7 +622,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
     for older in [
-        "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0",
+        "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
     ] {
         manifest["format_version"] = older.into();
         store
@@ -629,7 +633,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.10.0");
+    assert_eq!(FORMAT_VERSION, "0.11.0");
 }
 
 #[test]
@@ -829,10 +833,11 @@ fn speed_round_trips_and_is_checked() {
             c.speed.as_mut().unwrap().curve.reverse();
         }),
         ("on a text clip", "fosscut.model.speed", |c| {
-            c.content = ClipContent::Text(TextContent {
+            c.content = ClipContent::Text(Box::new(TextContent {
                 text: "Hi".into(),
                 style: TextStyle::default(),
-            });
+                ..Default::default()
+            }));
         }),
         (
             "more source than the media has",
@@ -909,10 +914,11 @@ fn clips_map_source_through_speed_and_split_into_parts() {
         Id::new(IdKind::Clip, 4),
         Flicks::ZERO,
         frames(60),
-        ClipContent::Text(TextContent {
+        ClipContent::Text(Box::new(TextContent {
             text: "Hi".into(),
             style: TextStyle::default(),
-        }),
+            ..Default::default()
+        })),
     );
     text.retime_part(frames(5), frames(10));
     assert_eq!(text.source_at(Flicks::ZERO), None);
@@ -1191,4 +1197,200 @@ fn compound_clips_round_trip_and_nesting_is_checked() {
     gone.timelines.remove(&inner);
     gone.manifest.timelines.truncate(1);
     assert!(codes(&gone).contains(&"fosscut.model.nesting".to_string()));
+}
+
+#[test]
+fn styled_text_fonts_presets_and_sound_effects_are_checked() {
+    let mut project = round_one_project();
+    let font = project.allocate_id(IdKind::Asset);
+    project.media.assets.push(Asset {
+        folder: None,
+        id: font.clone(),
+        kind: AssetKind::Font,
+        name: "Fixture Sans.ttf".into(),
+        path: PathHints {
+            relative: Some("fonts/Fixture Sans.ttf".into()),
+            absolute: None,
+        },
+        identity: None,
+        info: MediaInfo {
+            font: Some(FontInfo {
+                families: vec!["Fixture Sans".into()],
+                faces: 1,
+            }),
+            ..Default::default()
+        },
+    });
+    assert_eq!(
+        project.media.font_families(),
+        vec!["Fixture Sans".to_string(), "Inter".into()]
+    );
+    {
+        let text = first_text(&mut project);
+        text.text = "Breaking news".into();
+        text.style.font = Some("Fixture Sans".into());
+        text.style.case = TextCase::Upper;
+        text.style.letter_spacing = 0.08;
+        text.style.stroke.enabled = true;
+        text.style.glow.enabled = true;
+        text.spans = vec![TextSpan {
+            start: 9,
+            end: 13,
+            color: Color::parse("#FFCC00").ok(),
+            bold: Some(true),
+            italic: None,
+            underline: Some(true),
+            font: None,
+            size: Some(0.1),
+        }];
+        text.reveal = Some(TextReveal {
+            unit: RevealUnit::Letter,
+            motion: RevealMotion::Appear,
+            duration: frames(30),
+            exit: true,
+        });
+    }
+    project.manifest.text_presets = vec![TextPreset {
+        name: "Lower third".into(),
+        style: TextStyle {
+            background: TextBox {
+                enabled: true,
+                ..TextBox::default()
+            },
+            ..TextStyle::default()
+        },
+    }];
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+
+    type Breakage = fn(&mut Project);
+    let cases: [(&str, &str, Breakage); 9] = [
+        ("an unknown font", "fosscut.model.unknown_font", |p| {
+            p.media.assets.pop();
+        }),
+        ("a span past the end", "fosscut.model.text_span", |p| {
+            first_text(p).spans[0].end = 40;
+        }),
+        ("an empty span", "fosscut.model.text_span", |p| {
+            first_text(p).spans[0].start = 13;
+        }),
+        ("wide spacing", "fosscut.model.text_style", |p| {
+            first_text(p).style.letter_spacing = 3.0;
+        }),
+        ("tight lines", "fosscut.model.text_style", |p| {
+            first_text(p).style.line_height = 0.1;
+        }),
+        ("a far shadow", "fosscut.model.text_style", |p| {
+            first_text(p).style.shadow.offset = [2.0, 0.0];
+        }),
+        ("an instant reveal", "fosscut.model.text_reveal", |p| {
+            first_text(p).reveal.as_mut().unwrap().duration = Flicks::ZERO;
+        }),
+        ("unsorted presets", "fosscut.model.text_preset", |p| {
+            let mut second = p.manifest.text_presets[0].clone();
+            second.name = "Alpha".into();
+            p.manifest.text_presets.push(second);
+        }),
+        (
+            "a sound effect on a title",
+            "fosscut.model.effect_target",
+            |p| {
+                let id = p.allocate_id(IdKind::Effect);
+                first_text_clip(p).effects.push(Effect {
+                    id,
+                    effect_type: "audio.denoise".into(),
+                    version: 1,
+                    enabled: true,
+                    params: Default::default(),
+                    keyframes: Default::default(),
+                });
+            },
+        ),
+    ];
+    for (case, code, breakage) in cases {
+        let mut broken = project.clone();
+        breakage(&mut broken);
+        let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
+        assert!(codes.contains(&code.to_string()), "{case}: {codes:?}");
+    }
+    // A picture effect on an audio-only clip is refused the same way.
+    let mut sound = project.clone();
+    let timeline = sound.manifest.primary_timeline.clone();
+    let audio = sound.allocate_id(IdKind::Asset);
+    let mut asset = sound.media.assets[0].clone();
+    asset.id = audio.clone();
+    asset.kind = AssetKind::Audio;
+    asset.info.video = None;
+    asset.info.audio = Some(AudioInfo {
+        sample_rate: 48_000,
+        channels: 2,
+        codec: Some("aac".into()),
+    });
+    sound.media.assets.push(asset);
+    let clip_id = sound.allocate_id(IdKind::Clip);
+    let effect_id = sound.allocate_id(IdKind::Effect);
+    let mut clip = Clip::new(
+        clip_id,
+        Flicks::ZERO,
+        frames(30),
+        ClipContent::Audio {
+            asset: audio,
+            source_in: Flicks::ZERO,
+        },
+    );
+    clip.effects.push(Effect {
+        id: effect_id,
+        effect_type: "color.adjust".into(),
+        version: 1,
+        enabled: true,
+        params: Default::default(),
+        keyframes: Default::default(),
+    });
+    let doc = sound.timelines.get_mut(&timeline).unwrap();
+    doc.tracks.push(Track {
+        id: Id::new(IdKind::Track, 900),
+        kind: TrackKind::Audio,
+        name: None,
+        muted: false,
+        hidden: false,
+        locked: false,
+        caption_style: None,
+        clips: vec![clip.clone()],
+    });
+    let codes: Vec<String> = validate(&sound).into_iter().map(|i| i.code).collect();
+    assert!(
+        codes.contains(&"fosscut.model.effect_target".to_string()),
+        "{codes:?}"
+    );
+    clip.effects[0].effect_type = "audio.vocals".into();
+    sound
+        .timelines
+        .get_mut(&timeline)
+        .unwrap()
+        .tracks
+        .last_mut()
+        .unwrap()
+        .clips = vec![clip];
+    assert!(validate(&sound).is_empty(), "{:?}", validate(&sound));
+}
+
+fn first_text_clip(p: &mut Project) -> &mut Clip {
+    let timeline = p.manifest.primary_timeline.clone();
+    p.timelines
+        .get_mut(&timeline)
+        .unwrap()
+        .tracks
+        .iter_mut()
+        .flat_map(|t| t.clips.iter_mut())
+        .find(|c| matches!(c.content, ClipContent::Text(_)))
+        .unwrap()
+}
+
+fn first_text(p: &mut Project) -> &mut TextContent {
+    match &mut first_text_clip(p).content {
+        ClipContent::Text(text) => text,
+        _ => unreachable!(),
+    }
 }

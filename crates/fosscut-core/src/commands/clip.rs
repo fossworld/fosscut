@@ -127,6 +127,15 @@ impl Command for ClipAdd {
                     ),
                 ));
             }
+            AssetKind::Font => {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!(
+                        "clip.add: {} is a font; name its family in a text style's font",
+                        asset.id
+                    ),
+                ));
+            }
             AssetKind::Image => {
                 if source_in != Flicks::ZERO {
                     return Err(ApiError::new(

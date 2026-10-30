@@ -54,7 +54,10 @@ pub(crate) use motion::motion_capabilities;
 pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub(crate) use speed::speed_capabilities;
 pub use speed::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
-pub use text::TextAdd;
+pub use text::{
+    RevealInput, TextAdd, TextChanged, TextPresetRemove, TextPresetSave, TextPresets, TextSet,
+    TextTemplate,
+};
 pub use timeline::{
     Fit, RangeInput, RangeReport, RangesRemoved, TimelineDuplicate, TimelineDuplicated,
     TimelineRemoveRanges,
@@ -113,6 +116,10 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TransitionRemove>();
     registry.register::<AnimationSet>();
     registry.register::<TextAdd>();
+    registry.register::<TextSet>();
+    registry.register::<TextPresetSave>();
+    registry.register::<TextPresetRemove>();
+    registry.register::<TextTemplate>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();
     registry.register::<CaptionsStyle>();

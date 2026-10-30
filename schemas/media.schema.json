@@ -72,6 +72,11 @@
           "const": "lut",
           "description": "A 3D color lookup table (`.cube`), used by the `color.lut` effect.",
           "type": "string"
+        },
+        {
+          "const": "font",
+          "description": "A font file (`.ttf`, `.otf`, `.ttc`) whose families text can use (ADR-0027).",
+          "type": "string"
         }
       ]
     },
@@ -129,6 +134,29 @@
       "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
       "type": "integer"
     },
+    "FontInfo": {
+      "description": "What a font file holds.",
+      "properties": {
+        "faces": {
+          "description": "Number of faces (a collection holds several).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "families": {
+          "description": "Family names, sorted, as text styles name them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "families",
+        "faces"
+      ],
+      "type": "object"
+    },
     "Id": {
       "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
       "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
@@ -180,6 +208,17 @@
             }
           ],
           "description": "Playable duration; absent for still images."
+        },
+        "font": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FontInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The families and faces in a font asset."
         },
         "lut": {
           "anyOf": [

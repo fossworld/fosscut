@@ -54,16 +54,23 @@ pub use commands::{
     ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,
     ClipSplitResult, ClipTrim, Easing, Fit, KeyframeRemove, KeyframeReport, KeyframeSet,
     KeyframesChanged, MediaAdd, MediaAdded, Paging, RangeInput, RangeReport, RangesRemoved,
-    TextAdd, TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded,
-    WordInput,
+    TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
 };
 pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
+pub use commands::{
+    RevealInput, TextAdd, TextChanged, TextPresetRemove, TextPresetSave, TextPresets, TextSet,
+    TextTemplate,
+};
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};
 pub use looks::{Look, LookEffect, look, looks};
-pub use presets::{CaptionPreset, caption_animators, caption_preset, caption_presets};
+pub use presets::{
+    CaptionPreset, LineLook, TemplateLine, TemplateReveal, TextStylePreset, TitleTemplate,
+    caption_animators, caption_preset, caption_presets, text_style_preset, text_style_presets,
+    text_template, text_templates,
+};
 pub use session::Session;
 
 /// Version of the command and query API reported by `capabilities`.

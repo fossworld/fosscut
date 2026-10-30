@@ -17,6 +17,7 @@ mod graph;
 pub mod lut;
 pub mod mask;
 pub mod plan;
+mod raster;
 pub mod text;
 pub mod transitions;
 

@@ -235,6 +235,8 @@ pub enum EffectCategory {
     Key,
     /// Movement over time: shakes, flashes, pulses.
     Motion,
+    /// Sound: applied by the mixer, never to pictures (ADR-0026).
+    Audio,
 }
 
 /// A built-in effect type and its parameters (ADR-0011, item 1).
@@ -256,6 +258,11 @@ pub struct EffectSpec {
 }
 
 impl EffectSpec {
+    /// True for a sound effect, which the mixer applies and the renderer ignores.
+    pub fn is_audio(&self) -> bool {
+        self.category == EffectCategory::Audio
+    }
+
     /// The parameter called `name`.
     pub fn param(&self, name: &str) -> Option<&ParamSpec> {
         self.params.iter().find(|p| p.name == name)
@@ -280,6 +287,15 @@ const fn number(
         choices: &[],
         animatable: true,
         meaning,
+    }
+}
+
+/// A strength from 0 (no change) to 1 for a sound effect, whose parameters do not take
+/// keyframes (ADR-0026, item 4).
+const fn strength(default: f64, meaning: &'static str) -> ParamSpec {
+    ParamSpec {
+        animatable: false,
+        ..number("amount", default, 0.0, 1.0, "", meaning)
     }
 }
 
@@ -775,6 +791,74 @@ pub fn effect_types() -> Vec<EffectSpec> {
                 ),
             ],
         },
+        EffectSpec {
+            name: "audio.denoise",
+            version: 1,
+            title: "Reduce noise",
+            category: EffectCategory::Audio,
+            summary: "Reduces steady background noise such as hiss, hum and room tone, tracking the noise as it changes.",
+            params: vec![strength(
+                0.7,
+                "how much noise is removed: 1 lowers it by up to 24 dB",
+            )],
+        },
+        EffectSpec {
+            name: "audio.enhance_voice",
+            version: 1,
+            title: "Enhance voice",
+            category: EffectCategory::Audio,
+            summary: "Makes speech clearer: cuts rumble and muddiness, lifts presence and evens out the level.",
+            params: vec![strength(0.6, "how strongly the voice is shaped")],
+        },
+        EffectSpec {
+            name: "audio.vocals",
+            version: 1,
+            title: "Isolate or remove voice",
+            category: EffectCategory::Audio,
+            summary: "Keeps or removes what is centred in a stereo mix, usually the lead voice (the classical centre-channel method: it needs stereo with the voice in the middle).",
+            params: vec![ParamSpec {
+                name: "mode",
+                kind: ParamKind::Choice,
+                default: ParamDefault::Name("isolate"),
+                min: None,
+                max: None,
+                unit: "",
+                choices: &["isolate", "remove"],
+                animatable: false,
+                meaning: "isolate keeps the centred voice; remove keeps everything else",
+            }],
+        },
+        EffectSpec {
+            name: "audio.limiter",
+            version: 1,
+            title: "Limiter",
+            category: EffectCategory::Audio,
+            summary: "Makes the sound louder by a gain and keeps its peaks under a ceiling, so loud moments never clip. Loudness normalization adds one when peaks leave too little room.",
+            params: vec![
+                ParamSpec {
+                    animatable: false,
+                    ..number(
+                        "gain",
+                        6.0,
+                        0.0,
+                        24.0,
+                        "dB",
+                        "how much louder before limiting",
+                    )
+                },
+                ParamSpec {
+                    animatable: false,
+                    ..number(
+                        "ceiling",
+                        -1.0,
+                        -12.0,
+                        0.0,
+                        "dBFS",
+                        "the highest sample peak let through",
+                    )
+                },
+            ],
+        },
     ]
 }
 
@@ -855,10 +939,11 @@ mod tests {
                 "{} params are unique",
                 spec.name
             );
+            // Picture numbers take keyframes; sound effects' parameters stay constant.
             for p in &spec.params {
                 assert_eq!(
                     p.animatable,
-                    matches!(p.kind, ParamKind::Number | ParamKind::Pair),
+                    matches!(p.kind, ParamKind::Number | ParamKind::Pair) && !spec.is_audio(),
                     "{}.{}",
                     spec.name,
                     p.name

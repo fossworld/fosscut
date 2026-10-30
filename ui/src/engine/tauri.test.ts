@@ -38,6 +38,8 @@ describe("the Tauri engine client", () => {
     await engine.clients();
     await engine.colorSuggest("clip_0003");
     await engine.colorSuggest("clip_0003", "clip_0007");
+    await engine.audioNormalize(["clip_0003", "clip_0008"]);
+    await engine.audioNormalize(["clip_0008"], -16);
     await engine.preview.viewport({ x: 1, y: 2, width: 3, height: 4 });
     await engine.preview.show(1234.6);
     await engine.preview.play();
@@ -67,6 +69,8 @@ describe("the Tauri engine client", () => {
       ["clients"],
       ["color_suggest", { clip: "clip_0003", reference: null }],
       ["color_suggest", { clip: "clip_0003", reference: "clip_0007" }],
+      ["audio_normalize", { clips: ["clip_0003", "clip_0008"], targetLufs: null }],
+      ["audio_normalize", { clips: ["clip_0008"], targetLufs: -16 }],
       ["preview_viewport", { x: 1, y: 2, width: 3, height: 4 }],
       ["preview_show", { flicks: 1235 }],
       ["preview_play"],

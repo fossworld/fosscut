@@ -294,7 +294,10 @@ pub(crate) fn lay_out(
         out.push(LaidOut {
             start,
             duration,
-            content: CaptionContent { lines },
+            content: CaptionContent {
+                lines,
+                ..Default::default()
+            },
         });
         previous_end = end;
     }
@@ -339,8 +342,14 @@ pub(crate) fn split_caption(
         }
     }
     (!left.is_empty() && !right.is_empty()).then_some((
-        CaptionContent { lines: left },
-        CaptionContent { lines: right },
+        CaptionContent {
+            lines: left,
+            ..Default::default()
+        },
+        CaptionContent {
+            lines: right,
+            ..Default::default()
+        },
     ))
 }
 
@@ -373,11 +382,14 @@ pub(crate) fn window_caption(
         })
         .filter(|line| !line.words.is_empty())
         .collect();
-    (!lines.is_empty()).then_some(CaptionContent { lines })
+    (!lines.is_empty()).then_some(CaptionContent {
+        lines,
+        ..Default::default()
+    })
 }
 
 /// Applies a JSON merge patch (RFC 7396) to `target`.
-fn merge(target: &mut Value, patch: &Value) {
+pub(crate) fn merge(target: &mut Value, patch: &Value) {
     match patch {
         Value::Object(fields) => {
             if !target.is_object() {
@@ -435,18 +447,23 @@ pub struct CaptionPage {
     pub end: TimeReport,
     /// The page's text; lines are separated by `\n`.
     pub text: String,
+    /// Its translation line, for bilingual captions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
 }
 
 impl CaptionPage {
     fn of(clip: &Clip, rate: Rate) -> CaptionPage {
+        let caption = match &clip.content {
+            ClipContent::Caption(caption) => Some(caption),
+            _ => None,
+        };
         CaptionPage {
             clip: clip.id.clone(),
             start: TimeReport::new(clip.start, rate),
             end: TimeReport::new(clip.end(), rate),
-            text: match &clip.content {
-                ClipContent::Caption(caption) => caption.text(),
-                _ => String::new(),
-            },
+            text: caption.map(CaptionContent::text).unwrap_or_default(),
+            translation: caption.and_then(|c| c.translation.clone()),
         }
     }
 }
@@ -629,11 +646,16 @@ pub struct CaptionsEdit {
     /// other word loses its emphasis.
     #[serde(default)]
     pub emphasis: Option<Vec<usize>>,
+    /// The page in a second language, shown under it for bilingual captions; `null` or
+    /// `""` removes it. FossCut never translates: you write the translation.
+    #[serde(default, deserialize_with = "super::text::present")]
+    #[schemars(with = "Option<String>")]
+    pub translation: Option<Option<String>>,
 }
 
 impl Command for CaptionsEdit {
     const NAME: &'static str = "captions.edit";
-    const SUMMARY: &'static str = "Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.";
+    const SUMMARY: &'static str = "Change one caption page: new timed words, new wording that keeps the page's timing, which words are emphasised, or its translation line (bilingual captions).";
     type Output = CaptionPage;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<CaptionPage, ApiError> {
@@ -643,10 +665,14 @@ impl Command for CaptionsEdit {
                 "captions.edit: give words or text, not both",
             ));
         }
-        if self.words.is_none() && self.text.is_none() && self.emphasis.is_none() {
+        if self.words.is_none()
+            && self.text.is_none()
+            && self.emphasis.is_none()
+            && self.translation.is_none()
+        {
             return Err(ApiError::new(
                 codes::INVALID_ARGUMENTS,
-                "captions.edit: give words, text or emphasis",
+                "captions.edit: give words, text, emphasis or translation",
             ));
         }
         let location = locate_clip(ctx.project, &self.clip)?;
@@ -709,6 +735,11 @@ impl Command for CaptionsEdit {
                     index += 1;
                 }
             }
+        }
+        if let Some(translation) = self.translation {
+            caption.translation = translation
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty());
         }
         Ok(CaptionPage::of(clip, rate))
     }
@@ -1008,6 +1039,7 @@ mod tests {
                     },
                 ],
             }],
+            ..Default::default()
         };
         let (left, right) = split_caption(&caption, ms(600)).unwrap();
         assert_eq!(left.text(), "left");

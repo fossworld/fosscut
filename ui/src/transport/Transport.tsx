@@ -16,6 +16,9 @@ const BACK = "M11 2.5v11L4 8z";
 const FORWARD = "M5 2.5v11l7-5.5z";
 const END = "M11 2.5h2v11h-2zM3 2.5v11L10 8z";
 
+/** The title picker's choice for plain text rather than a template. */
+const PLAIN = "*plain";
+
 /** Play, pause, frame steps and the playhead's timecode. */
 export function Transport({ editor, state }: { editor: Editor; state: EditorState }) {
   const timeline = state.timeline;
@@ -83,6 +86,31 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
         <input type="checkbox" checked={state.magnet} onChange={(e) => editor.setMagnet(e.target.checked)} />
         <span>Magnet</span>
       </label>
+      <select
+        className="titles"
+        value=""
+        aria-label="Add a title at the playhead"
+        title="Add a title at the playhead"
+        disabled={!timeline}
+        onChange={(event) => {
+          const choice = event.target.value;
+          if (choice) void editor.addTitle(choice === PLAIN ? "" : choice);
+        }}
+      >
+        <option value="">Title</option>
+        <option value={PLAIN} title="Plain white text, to style in the inspector">
+          Plain text
+        </option>
+        {(state.catalog?.text.templates ?? []).length > 0 && (
+          <optgroup label="Templates">
+            {state.catalog?.text.templates.map((t) => (
+              <option key={t.name} value={t.name} title={t.description}>
+                {t.name.replaceAll("-", " ")}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
       <button
         title="Add an adjustment layer at the playhead: effects on it change every picture below"
         onClick={() => void editor.addAdjustment()}

@@ -27,6 +27,7 @@ fn title(text: &str, edit: impl FnOnce(&mut TextStyle)) -> TextContent {
     TextContent {
         text: text.into(),
         style,
+        ..Default::default()
     }
 }
 

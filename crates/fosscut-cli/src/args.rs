@@ -100,9 +100,12 @@ pub enum Command {
     /// Correct a clip's color automatically, or match it to another clip.
     #[command(subcommand)]
     Color(ColorCommand),
-    /// Add titles.
+    /// Add and restyle titles, save text presets, and add title templates.
     #[command(subcommand)]
     Text(TextCommand),
+    /// Level clips' loudness.
+    #[command(subcommand)]
+    Audio(AudioCommand),
     /// Caption speech word by word, style captions, and read or write SRT subtitle files.
     #[command(subcommand)]
     Captions(CaptionsCommand),
@@ -682,8 +685,9 @@ pub enum EffectCommand {
         /// Clip id.
         #[arg(long)]
         clip: String,
-        /// Effect type: color.adjust, color.curves, color.hsl, color.wheels, color.lut,
-        /// color.vignette, blur.gaussian, detail.sharpen or stylize.grain.
+        /// Effect type: for pictures color.adjust, color.curves, color.hsl, color.wheels,
+        /// color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and
+        /// others; for sound audio.denoise, audio.enhance_voice or audio.vocals.
         #[arg(long = "type")]
         effect_type: String,
         /// A parameter as NAME=VALUE, VALUE in JSON (a bare word is a string). Repeatable.
@@ -974,6 +978,13 @@ pub enum CaptionsCommand {
         /// The pause length the media was transcribed with, if not 300.
         #[arg(long)]
         min_pause_ms: Option<u32>,
+        /// Leave out words the transcript marks as fillers ("um", "uh").
+        #[arg(long)]
+        skip_fillers: bool,
+        /// Caption a song's lyrics: the music track first, one sung line per page, the
+        /// karaoke look unless --preset says otherwise.
+        #[arg(long)]
+        lyrics: bool,
         /// Replace the track's captions; needs --allow-destructive.
         #[arg(long)]
         replace: bool,
@@ -1000,6 +1011,9 @@ pub enum CaptionsCommand {
     Export {
         /// The .srt file to write.
         file: PathBuf,
+        /// What the cues hold: original, translation, or both (bilingual).
+        #[arg(long, default_value = "original")]
+        subtitles: String,
         /// Caption track; the timeline's first caption track when omitted.
         #[arg(long)]
         track: Option<String>,
@@ -1033,7 +1047,27 @@ pub enum CaptionsCommand {
         /// Words to emphasise, counted from 0 over the page, for example 1,3.
         #[arg(long, value_delimiter = ',')]
         emphasis: Option<Vec<usize>>,
+        /// The page in a second language, shown under it; "" removes it.
+        #[arg(long)]
+        translation: Option<String>,
     },
+}
+
+/// How a text appears, as `text add` and `text set` take it.
+#[derive(Debug, Clone, clap::Args)]
+pub struct RevealArgs {
+    /// Reveal the text one unit at a time: letter, word or line.
+    #[arg(long)]
+    pub reveal: Option<String>,
+    /// How each unit appears: appear (at once), fade or rise.
+    #[arg(long, requires = "reveal")]
+    pub reveal_motion: Option<String>,
+    /// Time until the whole text shows; 1 second when omitted.
+    #[arg(long, value_parser = parse_time, requires = "reveal")]
+    pub reveal_duration: Option<TimeInput>,
+    /// Also leave the same way before the clip ends.
+    #[arg(long, requires = "reveal")]
+    pub reveal_exit: bool,
 }
 
 /// `fosscut text ...`
@@ -1058,12 +1092,113 @@ pub enum TextCommand {
         /// Font size as a fraction of the canvas height, for example 0.08.
         #[arg(long)]
         size: Option<f64>,
-        /// Font family.
+        /// Font family: Inter, or a family of an imported font file.
         #[arg(long)]
         font: Option<String>,
+        /// A text preset: one saved in the project or a built-in one (outline, shadow,
+        /// boxed, highlight, headline, spaced, neon, glow, retro, comic).
+        #[arg(long)]
+        preset: Option<String>,
+        /// Style changes as a JSON merge patch (text, @file or - for stdin), for example
+        /// '{"stroke": {"enabled": true}, "letter_spacing": 0.05}'.
+        #[arg(long)]
+        style: Option<String>,
+        /// Parts styled differently as JSON, for example
+        /// '[{"start": 0, "end": 4, "color": "#FFCC00"}]'.
+        #[arg(long)]
+        spans: Option<String>,
+        #[command(flatten)]
+        reveal: RevealArgs,
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+    /// Change a text clip's text, style, spans or reveal.
+    Set {
+        /// The text clip, for example clip_0004.
+        clip: String,
+        /// New text; use \n for line breaks.
+        #[arg(long)]
+        text: Option<String>,
+        /// A preset whose style replaces the current one before --style applies.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Style changes as a JSON merge patch; null resets a field.
+        #[arg(long)]
+        style: Option<String>,
+        /// New spans as JSON; [] removes them.
+        #[arg(long)]
+        spans: Option<String>,
+        #[command(flatten)]
+        reveal: RevealArgs,
+        /// Show the text at once, without a reveal.
+        #[arg(long, conflicts_with = "reveal")]
+        no_reveal: bool,
+    },
+    /// Save a text clip's style, or a given style, as a preset of the project.
+    SavePreset {
+        /// The preset's name.
+        name: String,
+        /// The text clip whose style to save.
+        #[arg(long, conflicts_with = "style")]
+        clip: Option<String>,
+        /// Or the style as a JSON merge patch over the default style.
+        #[arg(long)]
+        style: Option<String>,
+        /// Overwrite a saved preset of this name.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Remove a text preset saved in the project.
+    RemovePreset {
+        /// The preset's name.
+        name: String,
+    },
+    /// Add a title template (lower-third, headline, chapter, quote, callout, end-card).
+    Template {
+        /// The template.
+        template: String,
+        /// The text of each line, in order (repeat the option); placeholders fill the rest.
+        #[arg(long = "line")]
+        lines: Vec<String>,
+        /// Text track id; the first text track when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline position; appended when omitted.
+        #[arg(long, value_parser = parse_time)]
+        start: Option<TimeInput>,
+        /// Length; 4 seconds when omitted.
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+        /// Style changes as a JSON merge patch.
+        #[arg(long)]
+        style: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+}
+
+/// `fosscut audio ...`
+#[derive(Debug, Subcommand)]
+pub enum AudioCommand {
+    /// Measure clips' loudness as they play and set their volumes to reach a target
+    /// (ITU-R BS.1770), keeping peaks under a ceiling; where the peaks leave too little
+    /// room, an audio.limiter makes up the rest.
+    Normalize {
+        /// Clip ids (repeat the option).
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+        /// Target loudness in LUFS; -14 when omitted.
+        #[arg(long, allow_hyphen_values = true)]
+        target: Option<f64>,
+        /// Highest sample peak in dBFS, from -12 to 0; -1 when omitted.
+        #[arg(long, allow_hyphen_values = true)]
+        ceiling: Option<f64>,
+        /// Only change volumes, never add a limiter: clips with loud peaks may stay
+        /// quieter than the target.
+        #[arg(long)]
+        no_limit: bool,
     },
 }
 

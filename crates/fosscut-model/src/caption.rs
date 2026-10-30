@@ -9,10 +9,14 @@ use crate::is_default;
 use crate::timeline::{Align, Color};
 
 /// One caption page: what is on screen at once.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CaptionContent {
     /// Lines from top to bottom.
     pub lines: Vec<CaptionLine>,
+    /// The page in a second language, shown under it in the track's translation style
+    /// (bilingual captions); the agent or person writes it, FossCut never translates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
 }
 
 impl CaptionContent {
@@ -91,13 +95,64 @@ pub struct CaptionStyle {
     pub stroke: Stroke,
     /// Background box behind each line (off when omitted).
     #[serde(rename = "box", default, skip_serializing_if = "is_default")]
-    pub background: CaptionBox,
+    pub background: TextBox,
     /// Where the page sits inside the safe area (bottom when omitted).
     #[serde(default, skip_serializing_if = "is_default")]
     pub placement: Placement,
     /// Animation, evaluated per frame from word times.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub animators: Vec<Animator>,
+    /// How pages' translations look.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub translation: TranslationStyle,
+}
+
+/// How the translation line of bilingual captions looks: under the page, smaller, in the
+/// caption's font, with its outline and box.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TranslationStyle {
+    /// Size relative to the caption size, from 0.3 to 1 (0.7 when omitted).
+    #[serde(
+        default = "default_translation_size",
+        skip_serializing_if = "is_default_translation_size"
+    )]
+    pub size: f64,
+    /// Text colour (light yellow when omitted).
+    #[serde(
+        default = "translation_color",
+        skip_serializing_if = "is_translation_color"
+    )]
+    pub color: Color,
+    /// Italic style.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub italic: bool,
+}
+
+fn default_translation_size() -> f64 {
+    0.7
+}
+
+fn is_default_translation_size(value: &f64) -> bool {
+    *value == default_translation_size()
+}
+
+fn translation_color() -> Color {
+    Color::parse("#FFF3B0").unwrap_or_default()
+}
+
+fn is_translation_color(color: &Color) -> bool {
+    *color == translation_color()
+}
+
+impl Default for TranslationStyle {
+    fn default() -> TranslationStyle {
+        TranslationStyle {
+            size: default_translation_size(),
+            color: translation_color(),
+            italic: false,
+        }
+    }
 }
 
 fn bold() -> FontWeight {
@@ -127,9 +182,10 @@ impl Default for CaptionStyle {
             align: Align::default(),
             uppercase: false,
             stroke: Stroke::default(),
-            background: CaptionBox::default(),
+            background: TextBox::default(),
             placement: Placement::default(),
             animators: Vec::new(),
+            translation: TranslationStyle::default(),
         }
     }
 }
@@ -182,6 +238,21 @@ fn is_default_stroke_width(width: &f64) -> bool {
     *width == default_stroke_width()
 }
 
+impl Stroke {
+    /// No outline, with the default colour and width for when it is turned on.
+    pub fn off() -> Stroke {
+        Stroke {
+            enabled: false,
+            ..Stroke::default()
+        }
+    }
+
+    /// True for [`Stroke::off`].
+    pub fn is_off(&self) -> bool {
+        *self == Stroke::off()
+    }
+}
+
 impl Default for Stroke {
     fn default() -> Stroke {
         Stroke {
@@ -192,10 +263,10 @@ impl Default for Stroke {
     }
 }
 
-/// A box behind each line of text.
+/// A box behind each line of text, for captions and text clips.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct CaptionBox {
+pub struct TextBox {
     /// Whether it is drawn.
     pub enabled: bool,
     /// Its colour (black at 70% when omitted).
@@ -236,9 +307,12 @@ fn is_default_radius(value: &f64) -> bool {
     *value == default_radius()
 }
 
-impl Default for CaptionBox {
-    fn default() -> CaptionBox {
-        CaptionBox {
+/// The caption name of [`TextBox`].
+pub type CaptionBox = TextBox;
+
+impl Default for TextBox {
+    fn default() -> TextBox {
+        TextBox {
             enabled: false,
             color: shade(),
             padding: default_padding(),

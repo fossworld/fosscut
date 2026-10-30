@@ -152,10 +152,11 @@ fn the_planner_centres_transitions_on_the_cut_and_applies_animations() {
             Id::new(IdKind::Clip, id),
             frames_of(start),
             frames_of(30),
-            ClipContent::Text(fosscut_model::TextContent {
+            ClipContent::Text(Box::new(fosscut_model::TextContent {
                 text: text.into(),
                 style: fosscut_model::TextStyle::default(),
-            }),
+                ..Default::default()
+            })),
         )
     };
     let mut first = title(2, 0, "One");
@@ -200,8 +201,8 @@ fn the_planner_centres_transitions_on_the_cut_and_applies_animations() {
     };
     assert!((t.progress - 0.5).abs() < 1e-9, "centred on the cut");
     assert_eq!(t.kind, "slide");
-    assert!(matches!(&t.outgoing.source, LayerSource::Text(c) if c.text == "One"));
-    assert!(matches!(&t.incoming.source, LayerSource::Text(c) if c.text == "Two"));
+    assert!(matches!(&t.outgoing.source, LayerSource::Text(c) if c.content.text == "One"));
+    assert!(matches!(&t.incoming.source, LayerSource::Text(c) if c.content.text == "Two"));
     assert!(
         matches!(at(25).layers[0].source, LayerSource::Transition(_)),
         "from five frames before"

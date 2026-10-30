@@ -4,7 +4,7 @@ import { FakeEngine } from "../engine/fake";
 import type { EditRequest, Opened } from "../engine/types";
 import { entry, moment, timeline } from "../test/fixtures";
 import { FLICKS_PER_SECOND, framesToFlicks, parseRate } from "../transport/time";
-import { Editor } from "./editor";
+import { Editor, levelled } from "./editor";
 
 const fps30 = parseRate("30");
 
@@ -632,6 +632,121 @@ describe("editor", () => {
     expect(sets).toEqual([
       { clip: "clip_0003", set: { enabled: false } },
       { clip: "clip_0003", set: { enabled: true } },
+    ]);
+  });
+
+  it("levels the loudness of clips as one step and says what it did", async () => {
+    const { editor, fake } = await started();
+    await editor.normalizeLoudness([]);
+    expect(editor.getState().notice?.text).toContain("Select clips with sound");
+    expect(fake.callsOf("audioNormalize"), "nothing to measure").toHaveLength(0);
+
+    await editor.normalizeLoudness(["clip_0003", "clip_0008"]);
+    expect(fake.callsOf("audioNormalize")).toEqual([[["clip_0003", "clip_0008"], undefined]]);
+    const requests = fake.callsOf("execute").map(([request]) => request as EditRequest);
+    expect(requests, "one undoable step").toHaveLength(1);
+    expect(requests[0]).toEqual({
+      commands: [
+        { command: "clip.set", args: { clip: "clip_0003", set: { volume: 1.413 } } },
+        { command: "clip.set", args: { clip: "clip_0008", set: { volume: 1.413 } } },
+      ],
+      expected_revision: 4,
+      reason: "Normalize loudness",
+    });
+    expect(editor.getState().notice).toEqual({ kind: "info", text: "Levelled to -14 LUFS." });
+    await editor.normalizeLoudness(["clip_0003"], -16);
+    expect(fake.callsOf("audioNormalize")[1]).toEqual([["clip_0003"], -16]);
+    expect(editor.getState().notice?.text).toBe("Levelled to -16 LUFS.");
+  });
+
+  it("applies nothing when the clips are silent, and shows the engine's refusals", async () => {
+    const fake = engine();
+    fake.audioNormalize = async (clips) => ({
+      target_lufs: -14,
+      ceiling_dbfs: -1,
+      clips: clips.map((clip) => ({ clip, measured_lufs: null, peak_dbfs: null, gain_db: 0, volume: 1, limited: false })),
+      commands: [],
+    });
+    const { editor } = await started(fake);
+    await editor.normalizeLoudness(["clip_0003"]);
+    expect(editor.getState().notice?.text).toContain("Nothing to level");
+    fake.audioNormalize = async () => {
+      throw { code: "fosscut.request.invalid_arguments", message: "clip_0003 has volume keyframes" };
+    };
+    await editor.normalizeLoudness(["clip_0003"]);
+    expect(editor.getState().notice).toMatchObject({ kind: "error", text: "clip_0003 has volume keyframes" });
+    expect(fake.callsOf("execute")).toHaveLength(0);
+  });
+
+  it("describes clips held back by the ceiling and silent ones left alone", () => {
+    const clip = (id: string, measured: number | null, limited = false) => ({
+      clip: id,
+      measured_lufs: measured,
+      peak_dbfs: measured === null ? null : -3,
+      gain_db: 0,
+      volume: 1,
+      limited,
+    });
+    const result = (clips: ReturnType<typeof clip>[]) => levelled({ target_lufs: -14, ceiling_dbfs: -1, clips, commands: [] });
+    expect(result([clip("clip_0001", -20)])).toBe("Levelled to -14 LUFS.");
+    expect(result([clip("clip_0001", -20, true), clip("clip_0002", null)])).toBe(
+      "Levelled to -14 LUFS; one clip held back by the -1 dBFS peak ceiling; one silent clip left alone.",
+    );
+    expect(result([clip("clip_0001", -20, true), clip("clip_0002", -30, true), clip("clip_0003", null), clip("clip_0004", null)])).toBe(
+      "Levelled to -14 LUFS; 2 clips held back by the -1 dBFS peak ceiling; 2 silent clips left alone.",
+    );
+  });
+
+  it("edits text clips, saves their style as presets and adds titles at the playhead", async () => {
+    const fake = engine();
+    fake.answers["project.info"] = () => ({ ...fake.opened?.info, text_presets: ["brand"] });
+    fake.answers["capabilities"] = {
+      effects: [],
+      looks: [],
+      text: { templates: [{ name: "lower-third", description: "", lines: ["Alex Morgan", "Founder"] }] },
+    };
+    const asked: string[] = [];
+    let replace = false;
+    const { editor } = await started(fake, (question) => {
+      asked.push(question);
+      return replace;
+    });
+    expect(editor.getState().catalog?.text.templates[0]?.name).toBe("lower-third");
+    expect(editor.getState().catalog?.text.reveal.units, "defaults for what capabilities leaves out").toEqual([
+      "letter",
+      "word",
+      "line",
+    ]);
+    await editor.setText("clip_0005", null);
+    await editor.setText("clip_0005", {});
+    await editor.setText("clip_0005", { style: { bold: true } });
+    await editor.setText("clip_0005", { preset: "neon" });
+    expect(await editor.saveTextPreset("clip_0005", "  "), "a name is needed").toBe(false);
+    expect(await editor.saveTextPreset("clip_0005", " lower ")).toBe(true);
+    expect(editor.getState().notice?.text).toBe("Saved the style as lower.");
+    expect(await editor.saveTextPreset("clip_0005", "brand"), "declined replacing").toBe(false);
+    replace = true;
+    expect(await editor.saveTextPreset("clip_0005", "brand")).toBe(true);
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toContain("Replace it?");
+
+    fake.onExecute = (request) => {
+      fake.revision += 1;
+      const placed = request.commands[0]?.command.startsWith("text.") ? [{ clip: "clip_0040" }] : [];
+      return { committed: true, dry_run: false, replayed: false, revision: fake.revision, results: placed };
+    };
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.addTitle("lower-third");
+    expect(editor.getState().selection, "the new title is selected").toBe("clip_0040");
+    await editor.addTitle("");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "text.set", args: { clip: "clip_0005", style: { bold: true } } },
+      { command: "text.set", args: { clip: "clip_0005", preset: "neon" } },
+      { command: "text.preset_save", args: { name: "lower", clip: "clip_0005" } },
+      { command: "text.preset_save", args: { name: "brand", clip: "clip_0005", replace: true } },
+      { command: "text.template", args: { template: "lower-third", start: { flicks: FLICKS_PER_SECOND } } },
+      { command: "text.add", args: { text: "Title", start: { flicks: FLICKS_PER_SECOND } } },
     ]);
   });
 });

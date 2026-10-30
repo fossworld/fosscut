@@ -1,6 +1,6 @@
 ---
 name: viral-captions
-description: Add word-timed, animated captions to a video with FossCut, transcribed on this machine. Use when the user asks for captions or subtitles, word-by-word, highlighted or karaoke captions, captions for a short or a vertical video, or to import or export an SRT file.
+description: Add word-timed, animated captions to a video with FossCut, transcribed on this machine. Use when the user asks for captions or subtitles, word-by-word, highlighted or karaoke captions, lyrics for a song, bilingual captions in two languages, captions for a short or a vertical video, or to import or export an SRT file.
 ---
 
 # Viral captions
@@ -32,6 +32,7 @@ Follow the safe editing loop of the `fosscut-basics` skill (read, plan with a dr
    - It captions the clips of the first video or audio track with sound. For another track, pass `source_track`.
    - Pages hold up to 4 words and 2 lines by default. For fast punchy captions use `paging: {"max_words": 3, "max_lines": 1}`.
    - Generating again on a track that has captions fails with `fosscut.clip.overlap`. Replacing them needs `replace: true` and `allow_destructive`: ask first.
+   - To leave fillers such as "um" and "uh" out of the captions while keeping them in the sound, pass `skip_fillers: true`. To cut them from the video too, use the `talking-head-cleanup` skill first.
 5. **Polish.** `timeline_read` with `detail: "full"` shows every caption word with its timeline time.
    - Fix misheard words: `edit` with `captions.edit`, new `text` for the page, which keeps its timing.
    - Mark 1 to 3 keywords per sentence: `captions.edit` with `emphasis` word indexes. Presets style them through their `word.emphasis` animator.
@@ -39,6 +40,21 @@ Follow the safe editing loop of the `fosscut-basics` skill (read, plan with a dr
    - Low-confidence words in the transcript (probability under 0.5) are worth reading back to the user.
 6. **Check.** `frame_grab` in the middle of a few spoken words: the spoken word's highlight, the caption inside the frame, nothing important covered. A `contact_sheet` shows the pacing. Show the user.
 7. **Export.** `export` as usual. If they want a subtitle file too, `captions` with `action: "export"` and a `.srt` file; its reply shows the first cues so you can check the text. Overwriting needs `allow_destructive`.
+
+## Lyrics
+
+For a song, transcribe the music asset, then `captions` with `action: "generate"` and `lyrics: true`: it captions the music track first, one sung line per page, in the karaoke look unless you pass a preset. Sung words are harder to recognize than speech: read the result back to the user and fix lines with `captions.edit` and new `text`. A larger speech model helps.
+
+## Bilingual captions
+
+FossCut never translates. When the user wants a second language:
+
+1. Generate or import the captions as usual.
+2. Read every page with `timeline_read` and `detail: "full"`.
+3. Translate each page's text yourself, keeping it short enough to read in the page's time.
+4. In one `edit` request, send a `captions.edit` with `translation` for every page.
+
+The translation shows under the words in a smaller, light yellow line. Change it with `captions.style` and `{"translation": {"size": 0.8, "color": "#FFFFFF", "italic": true}}`. For a subtitle file in one language or both, `captions` with `action: "export"` takes `subtitles`: `original`, `translation` or `both`.
 
 ## Subtitle files
 

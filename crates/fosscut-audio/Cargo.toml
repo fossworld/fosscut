@@ -12,6 +12,7 @@ authors.workspace = true
 fosscut-media.workspace = true
 fosscut-model.workspace = true
 fosscut-time.workspace = true
+rustfft.workspace = true
 thiserror.workspace = true
 
 [lints]

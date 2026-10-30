@@ -9,6 +9,7 @@ import type {
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  Normalization,
   Opened,
   Playhead,
   ProjectSummary,
@@ -72,6 +73,11 @@ export interface EngineClient {
    * to apply with `execute` like any edit.
    */
   colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion>;
+  /**
+   * Measures the loudness of clips and works out the volumes that bring each to
+   * `targetLufs` (-14 LUFS when omitted), to apply with `execute` like any edit.
+   */
+  audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization>;
   media: {
     /** Shows an asset's file in the system's file manager. */
     reveal(asset: string): Promise<void>;

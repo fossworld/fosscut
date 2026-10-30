@@ -57,6 +57,13 @@ fn objects(project: &Project) -> BTreeMap<String, serde_json::Value> {
             "primary_timeline": project.manifest.primary_timeline,
         }),
     );
+    // Saved text presets, by name.
+    for preset in &project.manifest.text_presets {
+        map.insert(
+            format!("text_preset:{}", preset.name),
+            serde_json::to_value(&preset.style).unwrap_or_default(),
+        );
+    }
     // Media bin folders, by path.
     for folder in &project.media.folders {
         map.insert(format!("folder:{folder}"), serde_json::Value::Null);

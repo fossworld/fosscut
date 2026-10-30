@@ -409,7 +409,8 @@
           }
         }
       }
-    ]
+    ],
+    "translation": "Bilingual captions: captions.edit sets a page's translation (written by you; FossCut never translates), shown under its words in the track style's translation look; captions export writes original, translation or both."
   },
   "commands": [
     {
@@ -1270,6 +1271,13 @@
               "text": {
                 "description": "The page's text; lines are separated by `\\n`.",
                 "type": "string"
+              },
+              "translation": {
+                "description": "Its translation line, for bilingual captions.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -1501,6 +1509,14 @@
               "null"
             ]
           },
+          "translation": {
+            "default": null,
+            "description": "The page in a second language, shown under it for bilingual captions; `null` or\n`\"\"` removes it. FossCut never translates: you write the translation.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "words": {
             "description": "New timed words in timeline time, inside the clip; replaces the page's words.",
             "items": {
@@ -1578,6 +1594,13 @@
           "text": {
             "description": "The page's text; lines are separated by `\\n`.",
             "type": "string"
+          },
+          "translation": {
+            "description": "Its translation line, for bilingual captions.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1589,7 +1612,7 @@
         "title": "CaptionPage",
         "type": "object"
       },
-      "summary": "Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised."
+      "summary": "Change one caption page: new timed words, new wording that keeps the page's timing, which words are emphasised, or its translation line (bilingual captions)."
     },
     {
       "input_schema": {
@@ -1882,34 +1905,6 @@
               }
             ]
           },
-          "CaptionBox": {
-            "additionalProperties": false,
-            "description": "A box behind each line of text.",
-            "properties": {
-              "color": {
-                "$ref": "#/$defs/Color",
-                "description": "Its colour (black at 70% when omitted)."
-              },
-              "enabled": {
-                "description": "Whether it is drawn.",
-                "type": "boolean"
-              },
-              "padding": {
-                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
-                "format": "double",
-                "type": "number"
-              },
-              "radius": {
-                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
-                "format": "double",
-                "type": "number"
-              }
-            },
-            "required": [
-              "enabled"
-            ],
-            "type": "object"
-          },
           "CaptionStyle": {
             "additionalProperties": false,
             "description": "How a caption track's captions look and move; every field has a default.",
@@ -1926,7 +1921,7 @@
                 "type": "array"
               },
               "box": {
-                "$ref": "#/$defs/CaptionBox",
+                "$ref": "#/$defs/TextBox",
                 "description": "Background box behind each line (off when omitted)."
               },
               "color": {
@@ -1956,6 +1951,10 @@
               "stroke": {
                 "$ref": "#/$defs/Stroke",
                 "description": "Outline around the letters (black, on, when omitted)."
+              },
+              "translation": {
+                "$ref": "#/$defs/TranslationStyle",
+                "description": "How pages' translations look."
               },
               "uppercase": {
                 "description": "Show words in capitals.",
@@ -2085,6 +2084,54 @@
             "required": [
               "enabled"
             ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TranslationStyle": {
+            "additionalProperties": false,
+            "description": "How the translation line of bilingual captions looks: under the page, smaller, in the\ncaption's font, with its outline and box.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Text colour (light yellow when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "size": {
+                "description": "Size relative to the caption size, from 0.3 to 1 (0.7 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
             "type": "object"
           },
           "WordEmphasis": {
@@ -5281,6 +5328,13 @@
                   "$ref": "#/$defs/CaptionLine"
                 },
                 "type": "array"
+              },
+              "translation": {
+                "description": "The page in a second language, shown under it in the track's translation style\n(bilingual captions); the agent or person writes it, FossCut never translates.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -5422,16 +5476,42 @@
                 "type": "object"
               },
               {
-                "$ref": "#/$defs/TextContent",
                 "description": "A text title.",
                 "properties": {
                   "kind": {
                     "const": "text",
                     "type": "string"
+                  },
+                  "reveal": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/TextReveal"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "How the text appears at the clip's start (and leaves at its end)."
+                  },
+                  "spans": {
+                    "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+                    "items": {
+                      "$ref": "#/$defs/TextSpan"
+                    },
+                    "type": "array"
+                  },
+                  "style": {
+                    "$ref": "#/$defs/TextStyle",
+                    "description": "Appearance; defaults when omitted."
+                  },
+                  "text": {
+                    "description": "The text; `\\n` separates lines.",
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "kind"
+                  "kind",
+                  "text"
                 ],
                 "type": "object"
               },
@@ -5769,6 +5849,29 @@
           "Flicks": {
             "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
             "type": "integer"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
           },
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
@@ -6142,6 +6245,79 @@
               }
             ]
           },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
           "Speed": {
             "additionalProperties": false,
             "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
@@ -6194,25 +6370,182 @@
             ],
             "type": "object"
           },
-          "TextContent": {
-            "description": "Text content with a single style.",
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
             "properties": {
-              "style": {
-                "$ref": "#/$defs/TextStyle",
-                "description": "Appearance; defaults when omitted."
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
               },
-              "text": {
-                "description": "The text; `\\n` separates lines.",
-                "type": "string"
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
               }
             },
             "required": [
-              "text"
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextReveal": {
+            "additionalProperties": false,
+            "description": "How a text appears: its letters, words or lines one after another.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start until the whole text is shown."
+              },
+              "exit": {
+                "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
+                "type": "boolean"
+              },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "description": "How each one appears."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fill colour."
+              },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "font": {
+                "description": "Font family, as the style's `font`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end"
             ],
             "type": "object"
           },
           "TextStyle": {
-            "description": "Text appearance.",
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
             "properties": {
               "align": {
                 "$ref": "#/$defs/Align",
@@ -6222,27 +6555,61 @@
                 "description": "Bold weight.",
                 "type": "boolean"
               },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
               "color": {
                 "$ref": "#/$defs/Color",
                 "default": "#FFFFFF",
                 "description": "Fill colour."
               },
               "font": {
-                "description": "Font family; the default sans-serif font when omitted.",
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
                 "type": [
                   "string",
                   "null"
                 ]
               },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
               "italic": {
                 "description": "Italic style.",
                 "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
               },
               "size": {
                 "default": 0.08,
                 "description": "Font size as a fraction of the canvas height.",
                 "format": "double",
                 "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
               }
             },
             "type": "object"
@@ -6542,7 +6909,7 @@
         "properties": {
           "clip": {
             "$ref": "#/$defs/Id",
-            "description": "The clip: a video, image, text, caption or adjustment clip."
+            "description": "The clip: a video, image, text, caption, compound or adjustment clip for picture\neffects; an audio, video or compound clip with sound for sound effects."
           },
           "index": {
             "default": null,
@@ -6703,7 +7070,7 @@
         "title": "EffectsChanged",
         "type": "object"
       },
-      "summary": "Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it."
+      "summary": "Add an effect to a clip: to its picture (color.adjust for exposure, white balance, contrast, tone and saturation, color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and others) or to its sound (audio.denoise, audio.enhance_voice, audio.vocals to isolate or remove a centred voice). Effects apply in order; on an adjustment clip picture effects apply to everything below it. capabilities lists every type with its parameters."
     },
     {
       "input_schema": {
@@ -11058,6 +11425,11 @@
                 "const": "lut",
                 "description": "A 3D color lookup table (`.cube`), used by the `color.lut` effect.",
                 "type": "string"
+              },
+              {
+                "const": "font",
+                "description": "A font file (`.ttf`, `.otf`, `.ttc`) whose families text can use (ADR-0027).",
+                "type": "string"
               }
             ]
           },
@@ -11115,6 +11487,29 @@
             "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
             "type": "integer"
           },
+          "FontInfo": {
+            "description": "What a font file holds.",
+            "properties": {
+              "faces": {
+                "description": "Number of faces (a collection holds several).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "families": {
+                "description": "Family names, sorted, as text styles name them.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "families",
+              "faces"
+            ],
+            "type": "object"
+          },
           "LutInfo": {
             "description": "A LUT file's table.",
             "properties": {
@@ -11161,6 +11556,17 @@
                   }
                 ],
                 "description": "Playable duration; absent for still images."
+              },
+              "font": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FontInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The families and faces in a font asset."
               },
               "lut": {
                 "anyOf": [
@@ -11805,26 +12211,6 @@
     {
       "input_schema": {
         "$defs": {
-          "Align": {
-            "description": "Horizontal text alignment.",
-            "oneOf": [
-              {
-                "const": "left",
-                "description": "Left aligned.",
-                "type": "string"
-              },
-              {
-                "const": "center",
-                "description": "Centred.",
-                "type": "string"
-              },
-              {
-                "const": "right",
-                "description": "Right aligned.",
-                "type": "string"
-              }
-            ]
-          },
           "Color": {
             "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
@@ -11835,24 +12221,105 @@
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
             "type": "string"
           },
-          "TextStyle": {
-            "description": "Text appearance.",
+          "RevealInput": {
+            "additionalProperties": false,
+            "description": "How a text appears, as commands take it.",
             "properties": {
-              "align": {
-                "$ref": "#/$defs/Align",
-                "description": "Horizontal alignment of lines."
+              "duration": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "Time from the clip's start until the whole text shows, with units, such as\n`{\"seconds\": 1}`."
               },
-              "bold": {
-                "description": "Bold weight.",
+              "exit": {
+                "default": false,
+                "description": "Also leave the same way before the clip ends.",
                 "type": "boolean"
               },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "default": "appear",
+                "description": "How each one appears: `appear` (at once), `fade` or `rise`; `appear` when omitted."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time: `letter` (a typewriter with `appear`), `word` or `line`."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
               "color": {
-                "$ref": "#/$defs/Color",
-                "default": "#FFFFFF",
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
                 "description": "Fill colour."
               },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
               "font": {
-                "description": "Font family; the default sans-serif font when omitted.",
+                "description": "Font family, as the style's `font`.",
                 "type": [
                   "string",
                   "null"
@@ -11860,15 +12327,37 @@
               },
               "italic": {
                 "description": "Italic style.",
-                "type": "boolean"
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               },
               "size": {
-                "default": 0.08,
                 "description": "Font size as a fraction of the canvas height.",
                 "format": "double",
-                "type": "number"
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               }
             },
+            "required": [
+              "start",
+              "end"
+            ],
             "type": "object"
           },
           "TimeInput": {
@@ -11994,6 +12483,34 @@
             "default": null,
             "description": "Length; 3 seconds when omitted."
           },
+          "preset": {
+            "default": null,
+            "description": "A text preset to start from: one saved in the project or a built-in one\n(`capabilities` lists them under text.presets).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reveal": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RevealInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Show the text letter by letter, word by word or line by line."
+          },
+          "spans": {
+            "default": [],
+            "description": "Parts of the text styled differently, by character positions (`end` excluded).",
+            "items": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "type": "array"
+          },
           "start": {
             "anyOf": [
               {
@@ -12007,16 +12524,8 @@
             "description": "Timeline position; appended after the track's last clip when omitted."
           },
           "style": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/TextStyle"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "default": null,
-            "description": "Appearance; defaults when omitted."
+            "description": "The style, or changes to the preset's, as a JSON merge patch, for example\n`{\"size\": 0.1, \"stroke\": {\"enabled\": true}, \"letter_spacing\": 0.05}`."
           },
           "text": {
             "description": "The text; `\\n` separates lines.",
@@ -12148,7 +12657,1546 @@
         "title": "ClipPlacement",
         "type": "object"
       },
-      "summary": "Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+      "summary": "Add a text clip: a style or preset (outline, shadow, boxes, glow, spacing, case, underline, project fonts), spans that restyle parts, and a reveal (typewriter, word by word, line by line). Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+    },
+    {
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes a saved text preset. Clips styled with it keep their style.",
+        "properties": {
+          "name": {
+            "description": "The preset's name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TextPresetRemove",
+        "type": "object"
+      },
+      "name": "text.preset_remove",
+      "output_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextPreset": {
+            "description": "A named text style saved in the project for reuse (`text.preset_save`).",
+            "properties": {
+              "name": {
+                "description": "Its name, unique in the project.",
+                "type": "string"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "The style it applies."
+              }
+            },
+            "required": [
+              "name",
+              "style"
+            ],
+            "type": "object"
+          },
+          "TextStyle": {
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The project's saved text presets after a change.",
+        "properties": {
+          "presets": {
+            "description": "Every saved preset, sorted by name.",
+            "items": {
+              "$ref": "#/$defs/TextPreset"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "presets"
+        ],
+        "title": "TextPresets",
+        "type": "object"
+      },
+      "summary": "Remove a text preset saved in the project; clips styled with it keep their style."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Saves a text style in the project under a name, for `preset` in `text.add` and\n`text.set`.",
+        "properties": {
+          "clip": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The text clip whose style to save."
+          },
+          "name": {
+            "description": "The preset's name; a built-in preset of the same name is hidden by it.",
+            "type": "string"
+          },
+          "replace": {
+            "default": false,
+            "description": "Replace a saved preset of this name instead of failing.",
+            "type": "boolean"
+          },
+          "style": {
+            "default": null,
+            "description": "Or the style itself, as a merge patch over the default style."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TextPresetSave",
+        "type": "object"
+      },
+      "name": "text.preset_save",
+      "output_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextPreset": {
+            "description": "A named text style saved in the project for reuse (`text.preset_save`).",
+            "properties": {
+              "name": {
+                "description": "Its name, unique in the project.",
+                "type": "string"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "The style it applies."
+              }
+            },
+            "required": [
+              "name",
+              "style"
+            ],
+            "type": "object"
+          },
+          "TextStyle": {
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The project's saved text presets after a change.",
+        "properties": {
+          "presets": {
+            "description": "Every saved preset, sorted by name.",
+            "items": {
+              "$ref": "#/$defs/TextPreset"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "presets"
+        ],
+        "title": "TextPresets",
+        "type": "object"
+      },
+      "summary": "Save a text clip's style (or a given style) as a named preset of the project, to reuse with preset in text.add and text.set."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "RevealInput": {
+            "additionalProperties": false,
+            "description": "How a text appears, as commands take it.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "Time from the clip's start until the whole text shows, with units, such as\n`{\"seconds\": 1}`."
+              },
+              "exit": {
+                "default": false,
+                "description": "Also leave the same way before the clip ends.",
+                "type": "boolean"
+              },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "default": "appear",
+                "description": "How each one appears: `appear` (at once), `fade` or `rise`; `appear` when omitted."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time: `letter` (a typewriter with `appear`), `word` or `line`."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fill colour."
+              },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "font": {
+                "description": "Font family, as the style's `font`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes a text clip's text, style, spans or reveal.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The text clip."
+          },
+          "preset": {
+            "default": null,
+            "description": "A preset whose style replaces the current one before `style` applies.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reveal": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RevealInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A new reveal, or `null` to show the text at once."
+          },
+          "spans": {
+            "default": null,
+            "description": "Replaces the spans; `[]` removes them.",
+            "items": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "style": {
+            "default": null,
+            "description": "Changes to the style as a JSON merge patch; `null` resets a field to its default."
+          },
+          "text": {
+            "default": null,
+            "description": "New text; spans that no longer fit are dropped.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "TextSet",
+        "type": "object"
+      },
+      "name": "text.set",
+      "output_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextContent": {
+            "additionalProperties": false,
+            "description": "Text content: the text, its style, restyled parts and how it appears.",
+            "properties": {
+              "reveal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextReveal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How the text appears at the clip's start (and leaves at its end)."
+              },
+              "spans": {
+                "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+                "items": {
+                  "$ref": "#/$defs/TextSpan"
+                },
+                "type": "array"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "Appearance; defaults when omitted."
+              },
+              "text": {
+                "description": "The text; `\\n` separates lines.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "TextReveal": {
+            "additionalProperties": false,
+            "description": "How a text appears: its letters, words or lines one after another.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start until the whole text is shown."
+              },
+              "exit": {
+                "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
+                "type": "boolean"
+              },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "description": "How each one appears."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fill colour."
+              },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "font": {
+                "description": "Font family, as the style's `font`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TextStyle": {
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A text clip's content after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "content": {
+            "$ref": "#/$defs/TextContent",
+            "description": "Its text, style, spans and reveal now; defaults are omitted."
+          }
+        },
+        "required": [
+          "clip",
+          "content"
+        ],
+        "title": "TextChanged",
+        "type": "object"
+      },
+      "summary": "Change a text clip: its text, a preset, a style patch (font, size, colour, bold, italic, underline, case, alignment, letter and line spacing, outline, box, shadow, glow), its spans or its reveal."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a built-in title template as one text clip: its lines styled and placed as the\ntemplate says, with the given texts.",
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Length; 4 seconds when omitted."
+          },
+          "lines": {
+            "default": [],
+            "description": "The text of each line, in order; lines left out show the template's placeholder,\nand empty strings drop a line.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position; appended after the track's last clip when omitted."
+          },
+          "style": {
+            "default": null,
+            "description": "Changes to the template's style as a JSON merge patch."
+          },
+          "template": {
+            "description": "The template (`capabilities` lists them under text.templates).",
+            "type": "string"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target text track; the first text track (created on top if needed) when omitted."
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "title": "TextTemplate",
+        "type": "object"
+      },
+      "name": "text.template",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "linked": {
+            "description": "The other clips of its group that the edit changed too (ADR-0024).",
+            "items": {
+              "$ref": "#"
+            },
+            "type": "array"
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Add a title template (lower-third, headline, chapter, quote, callout, end-card) as a styled, animated text clip with your lines."
     },
     {
       "input_schema": {
@@ -14790,6 +16838,91 @@
       "title": "Film grain",
       "type": "stylize.grain",
       "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.7,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much noise is removed: 1 lowers it by up to 24 dB",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Reduces steady background noise such as hiss, hum and room tone, tracking the noise as it changes.",
+      "title": "Reduce noise",
+      "type": "audio.denoise",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how strongly the voice is shaped",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Makes speech clearer: cuts rumble and muddiness, lifts presence and evens out the level.",
+      "title": "Enhance voice",
+      "type": "audio.enhance_voice",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "isolate",
+            "remove"
+          ],
+          "default": "isolate",
+          "kind": "choice",
+          "meaning": "isolate keeps the centred voice; remove keeps everything else",
+          "name": "mode"
+        }
+      ],
+      "summary": "Keeps or removes what is centred in a stereo mix, usually the lead voice (the classical centre-channel method: it needs stereo with the voice in the middle).",
+      "title": "Isolate or remove voice",
+      "type": "audio.vocals",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 6.0,
+          "kind": "number",
+          "max": 24.0,
+          "meaning": "how much louder before limiting",
+          "min": 0.0,
+          "name": "gain",
+          "unit": "dB"
+        },
+        {
+          "animatable": false,
+          "default": -1.0,
+          "kind": "number",
+          "max": 0.0,
+          "meaning": "the highest sample peak let through",
+          "min": -12.0,
+          "name": "ceiling",
+          "unit": "dBFS"
+        }
+      ],
+      "summary": "Makes the sound louder by a gain and keeps its peaks under a ceiling, so loud moments never clip. Loudness normalization adds one when peaks leave too little room.",
+      "title": "Limiter",
+      "type": "audio.limiter",
+      "version": 1
     }
   ],
   "errors": [
@@ -14919,6 +17052,11 @@
       "meaning": "The clip has no effect with this id."
     },
     {
+      "code": "fosscut.effect.wrong_target",
+      "hint": "Put audio.* effects on audio clips, video clips with sound or compound clips, and picture effects on clips with a picture.",
+      "meaning": "The effect does not fit the clip: sound effects need sound, picture effects a picture."
+    },
+    {
       "code": "fosscut.transition.unknown_type",
       "hint": "List the transitions with capabilities (under transitions).",
       "meaning": "No transition type has this name."
@@ -14972,6 +17110,36 @@
       "code": "fosscut.text.empty",
       "hint": "Provide non-empty text.",
       "meaning": "Text is empty."
+    },
+    {
+      "code": "fosscut.text.invalid",
+      "hint": "Read the message and the details; capabilities lists the text style fields and their ranges under text.",
+      "meaning": "A text style, span or reveal is out of range."
+    },
+    {
+      "code": "fosscut.text.unknown_font",
+      "hint": "Use Inter, or import a .ttf or .otf file with media import and name one of its families.",
+      "meaning": "The font family is neither bundled nor in a font asset."
+    },
+    {
+      "code": "fosscut.text.not_text",
+      "hint": "Find text clips with timeline.read; captions change through captions.edit and captions.style.",
+      "meaning": "The clip is not a text clip."
+    },
+    {
+      "code": "fosscut.text.unknown_preset",
+      "hint": "capabilities lists the built-in presets under text.presets; project.info lists the saved ones.",
+      "meaning": "No text preset has this name."
+    },
+    {
+      "code": "fosscut.text.preset_exists",
+      "hint": "Pass replace: true to overwrite it, or choose another name.",
+      "meaning": "The project already has a text preset of this name."
+    },
+    {
+      "code": "fosscut.text.unknown_template",
+      "hint": "capabilities lists the templates under text.templates.",
+      "meaning": "No title template has this name."
     },
     {
       "code": "fosscut.captions.invalid_words",
@@ -15059,7 +17227,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.10.0",
+  "format_version": "0.11.0",
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",
@@ -15511,7 +17679,7 @@
           },
           "names": {
             "default": [],
-            "description": "Only these commands and queries, each with its JSON Schemas, for example\n`[\"clip.add\", \"text.add\"]`: far smaller than every schema at once.",
+            "description": "Only these commands, queries and effect types, each with its JSON Schemas or\nparameters, for example `[\"clip.add\", \"text.add\", \"audio.denoise\"]`: far smaller than\nevery schema at once.",
             "items": {
               "type": "string"
             },
@@ -15890,6 +18058,465 @@
       "preset": "flash_out"
     }
   ],
+  "text": {
+    "cases": [
+      "as_written",
+      "upper",
+      "lower",
+      "title"
+    ],
+    "fonts": [
+      "Inter"
+    ],
+    "fonts_note": "Import .ttf, .otf or .ttc files with media import to use their families; project.info lists the families a project can use.",
+    "presets": [
+      {
+        "description": "Bold white letters with a black outline: readable on any footage.",
+        "name": "outline",
+        "style": {
+          "bold": true,
+          "color": "#FFFFFF",
+          "size": 0.08,
+          "stroke": {
+            "enabled": true,
+            "width": 0.09
+          }
+        }
+      },
+      {
+        "description": "Bold white letters with a soft drop shadow.",
+        "name": "shadow",
+        "style": {
+          "bold": true,
+          "color": "#FFFFFF",
+          "shadow": {
+            "blur": 0.12,
+            "enabled": true,
+            "offset": [
+              0.04,
+              0.06
+            ]
+          },
+          "size": 0.08
+        }
+      },
+      {
+        "description": "White letters on a rounded dark box behind each line.",
+        "name": "boxed",
+        "style": {
+          "bold": true,
+          "box": {
+            "enabled": true,
+            "padding": 0.3,
+            "radius": 0.25
+          },
+          "color": "#FFFFFF",
+          "size": 0.08
+        }
+      },
+      {
+        "description": "Black letters on a bright yellow box, like a marker pen.",
+        "name": "highlight",
+        "style": {
+          "bold": true,
+          "box": {
+            "color": "#FFE14D",
+            "enabled": true,
+            "radius": 0.12
+          },
+          "color": "#111111",
+          "size": 0.08
+        }
+      },
+      {
+        "description": "Heavy capitals with wide spacing and a soft shadow, for titles.",
+        "name": "headline",
+        "style": {
+          "bold": true,
+          "case": "upper",
+          "color": "#FFFFFF",
+          "letter_spacing": 0.05,
+          "shadow": {
+            "blur": 0.15,
+            "enabled": true
+          },
+          "size": 0.08
+        }
+      },
+      {
+        "description": "Small capitals spread wide: a calm label or kicker.",
+        "name": "spaced",
+        "style": {
+          "case": "upper",
+          "color": "#FFFFFF",
+          "letter_spacing": 0.3,
+          "size": 0.04
+        }
+      },
+      {
+        "description": "Pale pink letters glowing magenta, like a neon sign.",
+        "name": "neon",
+        "style": {
+          "bold": true,
+          "color": "#FFE6FB",
+          "glow": {
+            "color": "#FF2FD6",
+            "enabled": true,
+            "radius": 0.35
+          },
+          "size": 0.08
+        }
+      },
+      {
+        "description": "White letters with a soft white glow.",
+        "name": "glow",
+        "style": {
+          "bold": true,
+          "color": "#FFFFFF",
+          "glow": {
+            "color": "#FFFFFFCC",
+            "enabled": true,
+            "radius": 0.4
+          },
+          "size": 0.08
+        }
+      },
+      {
+        "description": "Warm yellow letters with a hard orange offset shadow.",
+        "name": "retro",
+        "style": {
+          "bold": true,
+          "color": "#FFD23F",
+          "shadow": {
+            "blur": 0.0,
+            "color": "#E4572E",
+            "enabled": true,
+            "offset": [
+              0.07,
+              0.07
+            ]
+          },
+          "size": 0.08
+        }
+      },
+      {
+        "description": "White capitals with a thick black outline and a hard shadow, for punchy hooks.",
+        "name": "comic",
+        "style": {
+          "bold": true,
+          "case": "upper",
+          "color": "#FFFFFF",
+          "shadow": {
+            "blur": 0.0,
+            "color": "#000000",
+            "enabled": true,
+            "offset": [
+              0.06,
+              0.08
+            ]
+          },
+          "size": 0.08,
+          "stroke": {
+            "enabled": true,
+            "width": 0.14
+          }
+        }
+      }
+    ],
+    "reveal": {
+      "motions": [
+        "appear",
+        "fade",
+        "rise"
+      ],
+      "units": [
+        "letter",
+        "word",
+        "line"
+      ]
+    },
+    "style_schema": {
+      "$defs": {
+        "Align": {
+          "description": "Horizontal text alignment.",
+          "oneOf": [
+            {
+              "const": "left",
+              "description": "Left aligned.",
+              "type": "string"
+            },
+            {
+              "const": "center",
+              "description": "Centred.",
+              "type": "string"
+            },
+            {
+              "const": "right",
+              "description": "Right aligned.",
+              "type": "string"
+            }
+          ]
+        },
+        "Color": {
+          "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+          "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+          "type": "string"
+        },
+        "Glow": {
+          "additionalProperties": false,
+          "description": "Soft light around the letters.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "description": "Its colour; its alpha sets the strength (white when omitted)."
+            },
+            "enabled": {
+              "description": "Whether it is drawn.",
+              "type": "boolean"
+            },
+            "radius": {
+              "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "Shadow": {
+          "additionalProperties": false,
+          "description": "A shadow cast by the letters (and their outline).",
+          "properties": {
+            "blur": {
+              "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "color": {
+              "$ref": "#/$defs/Color",
+              "description": "Its colour (black at 70% when omitted)."
+            },
+            "enabled": {
+              "description": "Whether it is drawn.",
+              "type": "boolean"
+            },
+            "offset": {
+              "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "Stroke": {
+          "additionalProperties": false,
+          "description": "An outline around the letters.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "description": "Its colour (black when omitted)."
+            },
+            "enabled": {
+              "description": "Whether it is drawn.",
+              "type": "boolean"
+            },
+            "width": {
+              "description": "Its width as a fraction of the font size (0.12 when omitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "TextBox": {
+          "additionalProperties": false,
+          "description": "A box behind each line of text, for captions and text clips.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "description": "Its colour (black at 70% when omitted)."
+            },
+            "enabled": {
+              "description": "Whether it is drawn.",
+              "type": "boolean"
+            },
+            "padding": {
+              "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "radius": {
+              "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "type": "object"
+        },
+        "TextCase": {
+          "description": "Letter case shown.",
+          "oneOf": [
+            {
+              "const": "as_written",
+              "description": "As written.",
+              "type": "string"
+            },
+            {
+              "const": "upper",
+              "description": "ALL CAPITALS.",
+              "type": "string"
+            },
+            {
+              "const": "lower",
+              "description": "all lower case.",
+              "type": "string"
+            },
+            {
+              "const": "title",
+              "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Align",
+          "description": "Horizontal alignment of lines."
+        },
+        "bold": {
+          "description": "Bold weight.",
+          "type": "boolean"
+        },
+        "box": {
+          "$ref": "#/$defs/TextBox",
+          "description": "Box behind each line (off when omitted)."
+        },
+        "case": {
+          "$ref": "#/$defs/TextCase",
+          "description": "Letter case shown; the text itself is kept as written."
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFFFFF",
+          "description": "Fill colour."
+        },
+        "font": {
+          "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "glow": {
+          "$ref": "#/$defs/Glow",
+          "description": "Soft light around the letters (off when omitted)."
+        },
+        "italic": {
+          "description": "Italic style.",
+          "type": "boolean"
+        },
+        "letter_spacing": {
+          "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "line_height": {
+          "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "shadow": {
+          "$ref": "#/$defs/Shadow",
+          "description": "Shadow under the letters (off when omitted)."
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Font size as a fraction of the canvas height.",
+          "format": "double",
+          "type": "number"
+        },
+        "stroke": {
+          "$ref": "#/$defs/Stroke",
+          "description": "Outline around the letters (off when omitted)."
+        },
+        "underline": {
+          "description": "Underlined.",
+          "type": "boolean"
+        }
+      },
+      "title": "TextStyle",
+      "type": "object"
+    },
+    "templates": [
+      {
+        "description": "A name and a role at the lower left, each on a dark box, appearing word by word.",
+        "lines": [
+          "Alex Morgan",
+          "Founder"
+        ],
+        "name": "lower-third"
+      },
+      {
+        "description": "A big centred title in capitals rising in word by word, with a smaller line under it.",
+        "lines": [
+          "Big news",
+          "What changed this week"
+        ],
+        "name": "headline"
+      },
+      {
+        "description": "A spaced kicker such as a chapter number over a large title, fading in line by line.",
+        "lines": [
+          "Chapter one",
+          "The beginning"
+        ],
+        "name": "chapter"
+      },
+      {
+        "description": "A quotation typed out letter by letter, with its author under it.",
+        "lines": [
+          "Simple things done well.",
+          "Someone wise"
+        ],
+        "name": "quote"
+      },
+      {
+        "description": "A short note on a yellow marker box at the upper left, popping in word by word.",
+        "lines": [
+          "Watch this"
+        ],
+        "name": "callout"
+      },
+      {
+        "description": "A closing message with a call to action under it, fading in line by line.",
+        "lines": [
+          "Thanks for watching",
+          "Follow for more"
+        ],
+        "name": "end-card"
+      }
+    ]
+  },
   "time_input_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",

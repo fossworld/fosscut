@@ -190,6 +190,15 @@ impl Media {
                     self.decoders.insert_lut(asset.clone(), lut);
                 }
             }
+            if let LayerSource::Text(text) = &layer.source {
+                for family in text.content.fonts() {
+                    if !self.decoders.has_font(family)
+                        && let Some((families, data)) = load_font(project, bundle, family)?
+                    {
+                        self.decoders.insert_font(&families, data);
+                    }
+                }
+            }
             if let LayerSource::Frame(source) = &layer.source
                 && !self.opened.contains(&source.asset)
             {
@@ -207,6 +216,37 @@ impl Media {
     pub(crate) fn frames(&mut self) -> &mut DecoderFrames {
         &mut self.decoders
     }
+}
+
+/// A font file's families and its data.
+pub(crate) type FontFile = (Vec<String>, std::sync::Arc<[u8]>);
+
+/// The families and data of the font asset that has `family`; `None` for the bundled font
+/// or a family no font asset has (validation refuses those before they get here).
+pub(crate) fn load_font(
+    project: &Project,
+    bundle: &Path,
+    family: &str,
+) -> Result<Option<FontFile>, EngineError> {
+    let Some(asset) = project.media.assets.iter().find(|a| {
+        a.info
+            .font
+            .as_ref()
+            .is_some_and(|f| f.families.iter().any(|name| name == family))
+    }) else {
+        return Ok(None);
+    };
+    let path = resolve(project, bundle, &asset.id)?;
+    let data = std::fs::read(&path).map_err(|e| EngineError::InvalidArguments {
+        message: format!("cannot read the font {}: {e}", path.display()),
+    })?;
+    let families = asset
+        .info
+        .font
+        .as_ref()
+        .map(|f| f.families.clone())
+        .unwrap_or_default();
+    Ok(Some((families, data.into())))
 }
 
 /// Reads and parses the `.cube` file of LUT asset `asset`.

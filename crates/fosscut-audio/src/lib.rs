@@ -10,10 +10,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod effects;
 mod stretch;
 
 use fosscut_media::AudioBuffer;
-use fosscut_model::{AssetKind, ChannelMode, Clip, ClipContent, Id, Project, TrackKind};
+use fosscut_model::{
+    AssetKind, ChannelMode, Clip, ClipContent, Id, ParamValue, Project, TrackKind,
+};
 use fosscut_time::{FLICKS_PER_SECOND, Flicks};
 use thiserror::Error;
 
@@ -145,36 +148,56 @@ pub fn mix(
             let count =
                 (samples_in(to, sample_rate) - samples_in(read_from, sample_rate)).max(0) as usize;
             let clip_first = samples_in(read_from - clip.start, sample_rate);
-            let audio = match &clip.speed {
-                Some(_) => AudioBuffer {
-                    sample_rate,
-                    channels,
-                    samples: stretch::clip_audio(
-                        reader,
-                        asset,
-                        clip,
-                        clip_first,
-                        count,
-                        sample_rate,
-                        channels,
-                    )?,
-                },
-                None => reader.read(
+            let chain = sound_effects(clip);
+            let audio = if chain.is_empty() {
+                clip_samples(
+                    reader,
                     asset,
-                    source_in + (read_from - clip.start),
-                    to - read_from,
+                    clip,
+                    source_in,
+                    clip_first,
+                    count,
                     sample_rate,
                     channels,
-                )?,
+                )?
+            } else {
+                // Effects keep state: start them up to WARM_UP_SECONDS earlier (never
+                // before the clip's start, where their state is fresh) and give them their
+                // look-ahead, silence past the clip's end, so every part of the clip sounds
+                // the same however the mix is cut into blocks (ADR-0026, item 5).
+                let warm = (effects::WARM_UP_SECONDS * f64::from(sample_rate)).ceil() as i64;
+                let from = if clip_first <= 0 {
+                    clip_first
+                } else {
+                    (clip_first - warm).max(0)
+                };
+                let last = samples_in(clip.duration + tail, sample_rate);
+                let ahead = effects::lookahead_frames(&chain, sample_rate) as i64;
+                let until =
+                    (clip_first + count as i64 + ahead).min(last.max(clip_first + count as i64));
+                let read = (until - from).max(0) as usize;
+                let input = clip_samples(
+                    reader,
+                    asset,
+                    clip,
+                    source_in,
+                    from,
+                    read,
+                    sample_rate,
+                    channels,
+                )?;
+                let processed = effects::process_at(&chain, &input, channels, sample_rate, from);
+                let skip = (clip_first - from) as usize * channels_n;
+                processed[skip..skip + count * channels_n].to_vec()
             };
             let shaped = Shaping::of(clip);
             let mut frame = vec![0.0f32; channels_n];
-            for i in 0..count.min(audio.frames()) {
+            for i in 0..count.min(audio.len() / channels_n.max(1)) {
                 let target = offset + i;
                 if target >= frames {
                     break;
                 }
-                frame.copy_from_slice(&audio.samples[i * channels_n..(i + 1) * channels_n]);
+                frame.copy_from_slice(&audio[i * channels_n..(i + 1) * channels_n]);
                 let at = sample_time(clip_first + i as i64, sample_rate);
                 shaped.apply(clip, at, &mut frame);
                 let cross = crossfade(clip, at, lead, tail);
@@ -188,6 +211,61 @@ pub fn mix(
         *sample = sample.clamp(-1.0, 1.0);
     }
     Ok(out)
+}
+
+/// Exactly `count` sample frames of a clip's sound from clip sample `first` (which may be
+/// negative within a transition's lead), through its speed when it has one.
+#[allow(clippy::too_many_arguments)]
+fn clip_samples(
+    reader: &mut dyn AudioSource,
+    asset: &Id,
+    clip: &Clip,
+    source_in: Flicks,
+    first: i64,
+    count: usize,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<Vec<f32>, AudioError> {
+    if clip.speed.is_some() {
+        return stretch::clip_audio(reader, asset, clip, first, count, sample_rate, channels);
+    }
+    let from = sample_time(first, sample_rate);
+    let to = sample_time(first + count as i64, sample_rate);
+    let mut samples = reader
+        .read(asset, source_in + from, to - from, sample_rate, channels)?
+        .samples;
+    samples.resize(count * usize::from(channels), 0.0);
+    Ok(samples)
+}
+
+/// A clip's enabled sound effects, in order, with their parameters (ADR-0026).
+fn sound_effects(clip: &Clip) -> Vec<effects::AudioEffect> {
+    clip.effects
+        .iter()
+        .filter(|e| e.enabled)
+        .filter_map(|e| {
+            let values = e.values_at(Flicks::ZERO)?;
+            let number = |name: &str| values.get(name).and_then(ParamValue::number).unwrap_or(0.0);
+            let amount = number("amount") as f32;
+            match e.effect_type.as_str() {
+                "audio.denoise" => Some(effects::AudioEffect::Denoise { amount }),
+                "audio.enhance_voice" => Some(effects::AudioEffect::EnhanceVoice { amount }),
+                "audio.limiter" => Some(effects::AudioEffect::Limiter {
+                    gain_db: number("gain") as f32,
+                    ceiling_db: number("ceiling") as f32,
+                }),
+                "audio.vocals" => Some(effects::AudioEffect::Vocals {
+                    mode: match values.get("mode") {
+                        Some(ParamValue::Name(mode)) if mode == "remove" => {
+                            effects::VocalMode::Remove
+                        }
+                        _ => effects::VocalMode::Isolate,
+                    },
+                }),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// A compound clip's sound: the mix of the timeline it shows, read like an asset's.
@@ -398,6 +476,7 @@ mod tests {
                     codec: None,
                 }),
                 lut: None,
+                ..Default::default()
             },
         });
         id
@@ -1164,5 +1243,126 @@ mod tests {
             let joined: Vec<f32> = a.samples.iter().chain(&b.samples).copied().collect();
             assert_eq!(joined, whole.samples, "{pitch:?}");
         }
+    }
+
+    /// A project with one audio clip of a centred 1 kHz tone carrying `effects`.
+    fn effect_project(effects: &[(&str, &[(&str, ParamValue)])]) -> (Project, Id) {
+        let format = TimelineFormat {
+            width: 1920,
+            height: 1080,
+            rate: Rate::FPS_30,
+            sample_rate: RATE,
+        };
+        let mut project = Project::new(Id::new(IdKind::Project, 1), "Sound", format);
+        let tone = asset(&mut project, AssetKind::Audio, true);
+        let mut clip = clip(
+            &mut project,
+            ClipContent::Audio {
+                asset: tone,
+                source_in: Flicks::ZERO,
+            },
+            0,
+            120,
+            1.0,
+        );
+        for (kind, params) in effects {
+            let id = project.allocate_id(IdKind::Effect);
+            clip.effects.push(fosscut_model::Effect {
+                id,
+                effect_type: (*kind).into(),
+                version: 1,
+                enabled: true,
+                params: params
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), value.clone()))
+                    .collect(),
+                keyframes: Default::default(),
+            });
+        }
+        track(&mut project, TrackKind::Audio, false, vec![clip]);
+        let timeline = project.manifest.primary_timeline.clone();
+        (project, timeline)
+    }
+
+    fn peak(samples: &[f32]) -> f32 {
+        samples.iter().fold(0.0, |m, v| m.max(v.abs()))
+    }
+
+    #[test]
+    fn sound_effects_shape_the_clip_and_blocks_do_not_matter() {
+        let tone = || Tone {
+            hz: 1000.0,
+            seconds: 10.0,
+        };
+        let mix_all = |project: &Project, timeline: &Id, from: i64, to: i64| {
+            mix(
+                project,
+                timeline,
+                Flicks::from_millis(from),
+                Flicks::from_millis(to - from),
+                RATE,
+                2,
+                &mut tone(),
+            )
+            .unwrap()
+            .samples
+        };
+        let (plain, timeline) = effect_project(&[]);
+        let reference = mix_all(&plain, &timeline, 1000, 2000);
+        assert!(peak(&reference) > 0.45);
+
+        // A centred tone is the "voice": removing it leaves silence, isolating keeps it.
+        let remove: &[(&str, ParamValue)] = &[("mode", ParamValue::Name("remove".into()))];
+        let (removed, _) = effect_project(&[("audio.vocals", remove)]);
+        assert!(peak(&mix_all(&removed, &timeline, 1000, 2000)) < 1e-4);
+        let (isolated, _) = effect_project(&[("audio.vocals", &[])]);
+        let kept = peak(&mix_all(&isolated, &timeline, 1000, 2000));
+        assert!((kept / peak(&reference) - 1.0).abs() < 0.12, "{kept}");
+        // Disabled effects do nothing.
+        let (mut disabled, _) = effect_project(&[("audio.vocals", remove)]);
+        let doc = disabled.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[0].clips[0].effects[0].enabled = false;
+        assert_eq!(mix_all(&disabled, &timeline, 1000, 2000), reference);
+
+        // Stateful effects sound the same whether the mix is cut into blocks or not.
+        let (shaped, _) = effect_project(&[
+            (
+                "audio.enhance_voice",
+                &[("amount", ParamValue::Number(1.0))],
+            ),
+            ("audio.denoise", &[("amount", ParamValue::Number(0.8))]),
+        ]);
+        let whole = mix_all(&shaped, &timeline, 0, 4000);
+        let mut blocks = Vec::new();
+        for (from, to) in [(0, 1300), (1300, 2700), (2700, 4000)] {
+            blocks.extend(mix_all(&shaped, &timeline, from, to));
+        }
+        assert_eq!(blocks.len(), whole.len());
+        let worst = whole
+            .iter()
+            .zip(&blocks)
+            .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(worst < 1e-3, "blocks differ by {worst}");
+        assert_ne!(
+            whole[..48_000 * 2],
+            plain_mix(&plain, &timeline)[..48_000 * 2]
+        );
+    }
+
+    fn plain_mix(project: &Project, timeline: &Id) -> Vec<f32> {
+        mix(
+            project,
+            timeline,
+            Flicks::ZERO,
+            Flicks::from_seconds(4).unwrap(),
+            RATE,
+            2,
+            &mut Tone {
+                hz: 1000.0,
+                seconds: 10.0,
+            },
+        )
+        .unwrap()
+        .samples
     }
 }

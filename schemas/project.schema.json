@@ -1,9 +1,255 @@
 {
   "$defs": {
+    "Align": {
+      "description": "Horizontal text alignment.",
+      "oneOf": [
+        {
+          "const": "left",
+          "description": "Left aligned.",
+          "type": "string"
+        },
+        {
+          "const": "center",
+          "description": "Centred.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "Right aligned.",
+          "type": "string"
+        }
+      ]
+    },
+    "Color": {
+      "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+      "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+      "type": "string"
+    },
+    "Glow": {
+      "additionalProperties": false,
+      "description": "Soft light around the letters.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour; its alpha sets the strength (white when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "radius": {
+          "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "Id": {
       "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
       "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
       "type": "string"
+    },
+    "Shadow": {
+      "additionalProperties": false,
+      "description": "A shadow cast by the letters (and their outline).",
+      "properties": {
+        "blur": {
+          "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black at 70% when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "offset": {
+          "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "Stroke": {
+      "additionalProperties": false,
+      "description": "An outline around the letters.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "width": {
+          "description": "Its width as a fraction of the font size (0.12 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TextBox": {
+      "additionalProperties": false,
+      "description": "A box behind each line of text, for captions and text clips.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black at 70% when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "padding": {
+          "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "radius": {
+          "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TextCase": {
+      "description": "Letter case shown.",
+      "oneOf": [
+        {
+          "const": "as_written",
+          "description": "As written.",
+          "type": "string"
+        },
+        {
+          "const": "upper",
+          "description": "ALL CAPITALS.",
+          "type": "string"
+        },
+        {
+          "const": "lower",
+          "description": "all lower case.",
+          "type": "string"
+        },
+        {
+          "const": "title",
+          "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+          "type": "string"
+        }
+      ]
+    },
+    "TextPreset": {
+      "description": "A named text style saved in the project for reuse (`text.preset_save`).",
+      "properties": {
+        "name": {
+          "description": "Its name, unique in the project.",
+          "type": "string"
+        },
+        "style": {
+          "$ref": "#/$defs/TextStyle",
+          "description": "The style it applies."
+        }
+      },
+      "required": [
+        "name",
+        "style"
+      ],
+      "type": "object"
+    },
+    "TextStyle": {
+      "additionalProperties": false,
+      "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Align",
+          "description": "Horizontal alignment of lines."
+        },
+        "bold": {
+          "description": "Bold weight.",
+          "type": "boolean"
+        },
+        "box": {
+          "$ref": "#/$defs/TextBox",
+          "description": "Box behind each line (off when omitted)."
+        },
+        "case": {
+          "$ref": "#/$defs/TextCase",
+          "description": "Letter case shown; the text itself is kept as written."
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFFFFF",
+          "description": "Fill colour."
+        },
+        "font": {
+          "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "glow": {
+          "$ref": "#/$defs/Glow",
+          "description": "Soft light around the letters (off when omitted)."
+        },
+        "italic": {
+          "description": "Italic style.",
+          "type": "boolean"
+        },
+        "letter_spacing": {
+          "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "line_height": {
+          "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "shadow": {
+          "$ref": "#/$defs/Shadow",
+          "description": "Shadow under the letters (off when omitted)."
+        },
+        "size": {
+          "default": 0.08,
+          "description": "Font size as a fraction of the canvas height.",
+          "format": "double",
+          "type": "number"
+        },
+        "stroke": {
+          "$ref": "#/$defs/Stroke",
+          "description": "Outline around the letters (off when omitted)."
+        },
+        "underline": {
+          "description": "Underlined.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     },
     "TimelineEntry": {
       "description": "A timeline listed in the manifest.",
@@ -73,6 +319,13 @@
       "format": "uint64",
       "minimum": 0,
       "type": "integer"
+    },
+    "text_presets": {
+      "description": "Text styles saved for reuse, sorted by name (ADR-0027).",
+      "items": {
+        "$ref": "#/$defs/TextPreset"
+      },
+      "type": "array"
     },
     "timelines": {
       "description": "Timelines in the project, in display order.",

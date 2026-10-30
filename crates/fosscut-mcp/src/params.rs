@@ -301,6 +301,16 @@ pub struct CaptionsArgs {
     /// `min_pause_ms`), if not the defaults.
     #[serde(default)]
     pub transcript: fosscut_engine::analysis::TranscriptOptions,
+    /// generate: leave out the words the transcript marks as fillers ("um", "uh").
+    #[serde(default)]
+    pub skip_fillers: bool,
+    /// generate: caption a song's lyrics: the music track first, one sung line per page,
+    /// the karaoke look unless a preset is given.
+    #[serde(default)]
+    pub lyrics: bool,
+    /// export: `original` (the default), `translation` (each page's translation line) or
+    /// `both` (bilingual: the words, then the translation).
+    pub subtitles: Option<String>,
     /// Replace the caption track's existing captions; also needs allow_destructive.
     #[serde(default)]
     pub replace: bool,
@@ -314,6 +324,31 @@ pub struct CaptionsArgs {
     /// Allow replacing captions or overwriting an existing file. Ask the user first.
     #[serde(default)]
     pub allow_destructive: bool,
+    /// Why, recorded in the project's history.
+    pub reason: Option<String>,
+}
+
+/// Arguments of the `audio_normalize` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct NormalizeArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// The clips with sound to level (audio, video or compound clips).
+    pub clips: Vec<String>,
+    /// Target loudness in LUFS; -14 (short-form platforms) when omitted; podcasts use -16.
+    pub target_lufs: Option<f64>,
+    /// Highest sample peak in dBFS, from -12 to 0; -1 when omitted.
+    pub ceiling_dbfs: Option<f64>,
+    /// Add or adjust an `audio.limiter` where the peaks leave too little room for the
+    /// volume alone (the default); false only changes volumes.
+    pub limit: Option<bool>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+    /// Report what would change without committing it.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Retry key.
+    pub request_id: Option<String>,
     /// Why, recorded in the project's history.
     pub reason: Option<String>,
 }

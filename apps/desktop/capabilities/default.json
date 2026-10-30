@@ -16,6 +16,7 @@
     "allow-execute",
     "allow-clients",
     "allow-color-suggest",
+    "allow-audio-normalize",
     "allow-preview-viewport",
     "allow-preview-show",
     "allow-preview-play",

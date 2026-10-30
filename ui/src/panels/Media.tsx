@@ -10,6 +10,7 @@ const KINDS: [MediaFilter["kind"], string][] = [
   ["audio", "Audio"],
   ["image", "Images"],
   ["lut", "LUTs"],
+  ["font", "Fonts"],
 ];
 
 const SORTS: [SortKey, string][] = [
@@ -55,14 +56,17 @@ function Row({
           }}
         />
       )}
-      <span className="muted">{asset.missing ? "missing" : (asset.duration?.timecode ?? asset.kind)}</span>
+      <span className="muted">
+        {asset.missing ? "missing" : (asset.duration?.timecode ?? (asset.families?.join(", ") || asset.kind))}
+      </span>
       <span className="actions">
         {asset.missing ? (
           <button title="Find where the file is now" onClick={() => void editor.relinkAsset(asset.id)}>
             Relink
           </button>
         ) : (
-          asset.kind !== "lut" && (
+          asset.kind !== "lut" &&
+          asset.kind !== "font" && (
             <button title="Add at the playhead" onClick={() => void editor.addToTimeline(asset.id)}>
               Add
             </button>

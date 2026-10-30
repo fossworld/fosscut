@@ -2,11 +2,14 @@ import { useState } from "react";
 
 import { EASINGS, type EasingName, easingName, keyAt, keyTimes } from "../app/animation";
 import type { Editor } from "../app/editor";
-import type { Catalog, ClipView } from "../engine/types";
+import type { AssetView, Catalog, ClipView } from "../engine/types";
+import { findClip } from "../timeline/geometry";
 import { Effects } from "./Effects";
+import { targetsOf } from "./effectFields";
 import { Masks } from "./Masks";
 import { Motion } from "./Motion";
 import { Speed } from "./Speed";
+import { Text } from "./Text";
 import {
   type Field,
   type Viewing,
@@ -16,6 +19,7 @@ import {
   hasSound,
   isPlaced,
   keyedPaths,
+  playsSound,
   stretched,
   toggleKey,
 } from "./fields";
@@ -181,6 +185,7 @@ export function Inspector({
   catalog = null,
   luts = [],
   others = [],
+  media = [],
 }: {
   editor: Editor;
   clip: ClipView;
@@ -188,12 +193,22 @@ export function Inspector({
   catalog?: Catalog | null;
   luts?: { id: string; name: string }[];
   others?: ClipView[];
+  /** The media bin, to tell which video clips have sound. */
+  media?: AssetView[];
 }) {
   const [separate, setSeparate] = useState(false);
   const viewing: Viewing = { playhead, separate };
   const set = (properties: Record<string, unknown>) => void editor.setProperties(clip.id, properties);
   const t = clip.transform ?? {};
   const enabled = clip.enabled !== false;
+  const targets = targetsOf(clip, media);
+  const timeline = editor.getState().timeline;
+  // Every selected clip with sound levels together.
+  const sounding = editor
+    .selected()
+    .map((id) => (timeline ? findClip(timeline, id) : null))
+    .filter((c): c is ClipView => c !== null && playsSound(c, media))
+    .map((c) => c.id);
   return (
     <section className={`inspector${enabled ? "" : " disabled"}`}>
       <h2>{KINDS[clip.kind] ?? clip.kind}</h2>
@@ -304,6 +319,18 @@ export function Inspector({
           )}
         </div>
       )}
+      {targets.sound && (
+        <div className="options">
+          <div className="buttons">
+            <button
+              title="Measure the selected clips with sound and set their volumes to -14 LUFS, with peaks under -1 dBFS, as one undo step"
+              onClick={() => void editor.normalizeLoudness(sounding)}
+            >
+              {sounding.length > 1 ? `Normalize loudness (${sounding.length} clips)` : "Normalize loudness"}
+            </button>
+          </div>
+        </div>
+      )}
       {clip.kind === "timeline" && clip.timeline && (
         <div className="options">
           <div className="buttons">
@@ -327,8 +354,17 @@ export function Inspector({
           </div>
         </div>
       )}
-      {hasPicture(clip) && (
-        <Effects editor={editor} clip={clip} playhead={playhead} catalog={catalog} luts={luts} others={others} />
+      {clip.kind === "text" && <Text key={`text:${clip.id}`} editor={editor} clip={clip} catalog={catalog} />}
+      {(targets.picture || targets.sound) && (
+        <Effects
+          editor={editor}
+          clip={clip}
+          playhead={playhead}
+          catalog={catalog}
+          luts={luts}
+          others={others}
+          targets={targets}
+        />
       )}
       {hasPicture(clip) && <Masks editor={editor} clip={clip} playhead={playhead} tool={editor.getState().maskTool} />}
       {(clip.kind === "video" || clip.kind === "audio") && <Speed editor={editor} clip={clip} catalog={catalog} />}

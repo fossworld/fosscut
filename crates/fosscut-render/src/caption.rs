@@ -6,10 +6,14 @@
 use cosmic_text::{
     Attrs, Buffer, Color as GlyphColor, Family, Metrics, Shaping, Style as FontStyle, Weight,
 };
-use fosscut_model::{Animator, CaptionContent, CaptionStyle, FontWeight, Placement, safe_margins};
+use fosscut_model::{
+    Animator, CaptionContent, CaptionStyle, FontWeight, Placement, TextContent, TextStyle,
+    safe_margins,
+};
 use fosscut_time::Flicks;
 
-use crate::text::{DEFAULT_FAMILY, LINE_HEIGHT, TextEngine, linear_color};
+use crate::raster::{outline, over, rounded_rect};
+use crate::text::{DEFAULT_FAMILY, LINE_HEIGHT, TextEngine, TextLayer, TextRaster, linear_color};
 
 /// A caption page at one moment: what the plan hands the renderer.
 #[derive(Clone, Debug, PartialEq)]
@@ -471,7 +475,14 @@ impl TextEngine {
             }
             let pad = word_stroke.ceil() as i32 + 2;
             let ink = self.word_ink(text, word_size, style, pad);
-            let outline = (word_stroke > 0.0).then(|| outline(&ink, word_stroke));
+            let outline = (word_stroke > 0.0).then(|| {
+                outline(
+                    &ink.coverage,
+                    ink.width as usize,
+                    ink.height as usize,
+                    word_stroke,
+                )
+            });
             // Place the word's advance box centre on its rest centre.
             let left = center.0 - (ink.pad as f32 + ink.advance / 2.0);
             let top = center.1 - (ink.pad as f32 + word_size * LINE_HEIGHT / 2.0);
@@ -508,118 +519,114 @@ impl TextEngine {
                 }
             }
         }
-        CaptionRaster {
+        let page = CaptionRaster {
             width,
             height,
             pixels,
             lines_height: lines_height / scale.max(f32::EPSILON),
+        };
+        match layer.content.translation.as_deref().map(str::trim) {
+            Some(translation) if !translation.is_empty() => {
+                let shown = look.words.iter().map(|w| w.alpha).fold(0.0, f32::max);
+                let line = self.translation(style, translation, canvas, scale);
+                stack(page, margin, &line, size * 0.15, shown, scale)
+            }
+            _ => page,
         }
     }
-}
 
-/// Paints `color` (linear, straight alpha) over a premultiplied pixel with `coverage`.
-fn over(pixel: &mut [f32; 4], color: [f32; 4], coverage: f32) {
-    let alpha = (color[3] * coverage).clamp(0.0, 1.0);
-    if alpha <= 0.0 {
-        return;
-    }
-    for channel in 0..3 {
-        pixel[channel] = color[channel] * alpha + pixel[channel] * (1.0 - alpha);
-    }
-    pixel[3] = alpha + pixel[3] * (1.0 - alpha);
-}
-
-/// Adds an anti-aliased rounded rectangle (`x0, y0, x1, y1`) to a coverage mask.
-fn rounded_rect(mask: &mut [f32], width: u32, height: u32, rect: [f32; 4], radius: f32) {
-    let [x0, y0, x1, y1] = rect;
-    let radius = radius.min((x1 - x0) / 2.0).min((y1 - y0) / 2.0).max(0.0);
-    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    let (hx, hy) = ((x1 - x0) / 2.0 - radius, (y1 - y0) / 2.0 - radius);
-    let rows = (y0.floor().max(0.0) as u32)..(y1.ceil().min(height as f32) as u32);
-    for y in rows {
-        for x in (x0.floor().max(0.0) as u32)..(x1.ceil().min(width as f32) as u32) {
-            // Signed distance to the rounded rectangle, sampled at the pixel centre.
-            let (px, py) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
-            let (qx, qy) = (px.abs() - hx, py.abs() - hy);
-            let outside = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
-            let distance = outside + qx.max(qy).min(0.0) - radius;
-            let coverage = (0.5 - distance).clamp(0.0, 1.0);
-            let cell = &mut mask[(y * width + x) as usize];
-            *cell = cell.max(coverage);
-        }
+    /// The translation line of a bilingual page, composed as text in the caption's font,
+    /// outline and box.
+    fn translation(
+        &mut self,
+        style: &CaptionStyle,
+        translation: &str,
+        canvas: (u32, u32),
+        scale: f32,
+    ) -> TextRaster {
+        let look = &style.translation;
+        let text = TextStyle {
+            font: style.font.clone(),
+            size: style.size * look.size,
+            color: look.color.clone(),
+            bold: style.weight != FontWeight::Regular,
+            italic: look.italic,
+            align: style.align,
+            stroke: style.stroke.clone(),
+            background: style.background.clone(),
+            ..TextStyle::default()
+        };
+        self.rasterize(
+            &TextLayer::still(TextContent::styled(translation, text)),
+            canvas,
+            scale,
+        )
     }
 }
 
-/// Coverage of an outline `radius` pixels wide around a word's ink, from the exact
-/// Euclidean distance to the nearest inked pixel (Felzenszwalb and Huttenlocher, "Distance
-/// Transforms of Sampled Functions", 2004).
-fn outline(ink: &Ink, radius: f32) -> Vec<f32> {
-    let (w, h) = (ink.width as usize, ink.height as usize);
-    let mut distance: Vec<f32> = ink
-        .coverage
-        .iter()
-        .map(|&c| if c >= 0.5 { 0.0 } else { FAR })
-        .collect();
-    let mut column = vec![0.0f32; h.max(w)];
-    let mut out = vec![0.0f32; h.max(w)];
-    for x in 0..w {
+/// A page with its translation under it, `gap` pixels apart, the translation at opacity
+/// `shown`. The result is padded so the words and translation together sit in its middle,
+/// as placement expects.
+fn stack(
+    page: CaptionRaster,
+    page_margin: f32,
+    line: &TextRaster,
+    gap: f32,
+    shown: f32,
+    scale: f32,
+) -> CaptionRaster {
+    if line.is_empty() || shown <= 0.0 {
+        return page;
+    }
+    let page_top = page_margin.ceil() as u32;
+    let page_lines = (page.lines_height * scale).round() as u32;
+    let [_, line_top, _, line_lines] = line.layout_box;
+    let (line_top, line_lines) = (line_top.round() as u32, line_lines.round() as u32);
+    let line_bottom = line.height.saturating_sub(line_top + line_lines);
+    let gap = gap.round() as u32;
+    // Rows: top margin, page lines, gap, translation lines, bottom margin; equal margins.
+    let margin = page_top.max(line_top).max(line_bottom);
+    let content = page_lines + gap + line_lines;
+    let width = page.width.max(line.width);
+    let height = 2 * margin + content;
+    let mut pixels = vec![[0.0f32; 4]; (width * height) as usize];
+    let mut paste = |source: &[[f32; 4]], w: u32, h: u32, top: i64, alpha: f32| {
+        let left = (width - w) / 2;
         for y in 0..h {
-            column[y] = distance[y * w + x];
-        }
-        squared_distances(&column[..h], &mut out[..h]);
-        for y in 0..h {
-            distance[y * w + x] = out[y];
-        }
-    }
-    for y in 0..h {
-        column[..w].copy_from_slice(&distance[y * w..(y + 1) * w]);
-        squared_distances(&column[..w], &mut out[..w]);
-        distance[y * w..(y + 1) * w].copy_from_slice(&out[..w]);
-    }
-    distance
-        .iter()
-        .zip(&ink.coverage)
-        .map(|(&d2, &c)| (radius + 0.5 - d2.sqrt()).clamp(0.0, 1.0).max(c))
-        .collect()
-}
-
-/// Squared distance of pixels without ink, beyond any outline.
-const FAR: f32 = 1e20;
-
-/// One-dimensional squared distance transform of `f` into `d`: the lower envelope of the
-/// parabolas rooted at the finite samples of `f`.
-fn squared_distances(f: &[f32], d: &mut [f32]) {
-    let lift = |q: usize| f64::from(f[q]) + (q * q) as f64;
-    // Parabola roots and the left edge of the range where each is lowest.
-    let mut roots: Vec<usize> = Vec::new();
-    let mut edges: Vec<f64> = Vec::new();
-    for q in (0..f.len()).filter(|&q| f[q] < FAR) {
-        let mut edge = f64::NEG_INFINITY;
-        while let Some(&p) = roots.last() {
-            edge = (lift(q) - lift(p)) / (2.0 * (q as f64 - p as f64));
-            if edge <= edges.last().copied().unwrap_or(f64::NEG_INFINITY) {
-                roots.pop();
-                edges.pop();
-                edge = f64::NEG_INFINITY;
-            } else {
-                break;
+            let row = top + i64::from(y);
+            if row < 0 || row >= i64::from(height) {
+                continue;
+            }
+            for x in 0..w {
+                let p = source[(y * w + x) as usize];
+                let target = &mut pixels[(row as u32 * width + left + x) as usize];
+                let a = p[3] * alpha;
+                for c in 0..3 {
+                    target[c] = p[c] * alpha + target[c] * (1.0 - a);
+                }
+                target[3] = a + target[3] * (1.0 - a);
             }
         }
-        roots.push(q);
-        edges.push(edge);
-    }
-    if roots.is_empty() {
-        d.fill(FAR);
-        return;
-    }
-    let mut k = 0;
-    for (q, out) in d.iter_mut().enumerate() {
-        while k + 1 < roots.len() && edges[k + 1] < q as f64 {
-            k += 1;
-        }
-        let p = roots[k];
-        let dq = q as f64 - p as f64;
-        *out = (dq * dq + f64::from(f[p])) as f32;
+    };
+    paste(
+        &page.pixels,
+        page.width,
+        page.height,
+        i64::from(margin) - i64::from(page_top),
+        1.0,
+    );
+    paste(
+        &line.pixels,
+        line.width,
+        line.height,
+        i64::from(margin + page_lines + gap) - i64::from(line_top),
+        shown,
+    );
+    CaptionRaster {
+        width,
+        height,
+        pixels,
+        lines_height: content as f32 / scale.max(f32::EPSILON),
     }
 }
 
@@ -666,6 +673,7 @@ mod tests {
                     words: vec![word("today", 900, 1400, false)],
                 },
             ],
+            ..Default::default()
         }
     }
 
@@ -707,6 +715,7 @@ mod tests {
                     },
                 ],
             }],
+            ..Default::default()
         };
         assert_eq!(spoken_word(&long_gap, ms(500)), None, "a 0.7 s pause");
         assert_eq!(
@@ -824,43 +833,6 @@ mod tests {
         assert_eq!(zero.words[1].scale, 1.0, "no pop");
     }
 
-    #[test]
-    fn the_distance_transform_matches_brute_force() {
-        let (w, h) = (23usize, 17usize);
-        let inked = |x: usize, y: usize| (x * 7 + y * 3).is_multiple_of(11) || (x == 12 && y > 4);
-        let ink = Ink {
-            width: w as i32,
-            height: h as i32,
-            coverage: (0..w * h)
-                .map(|i| if inked(i % w, i / w) { 1.0 } else { 0.0 })
-                .collect(),
-            pad: 0,
-            advance: w as f32,
-        };
-        let outline = outline(&ink, 2.0);
-        for y in 0..h {
-            for x in 0..w {
-                let nearest = (0..w * h)
-                    .filter(|&i| inked(i % w, i / w))
-                    .map(|i| {
-                        let (dx, dy) = ((i % w) as f32 - x as f32, (i / w) as f32 - y as f32);
-                        (dx * dx + dy * dy).sqrt()
-                    })
-                    .fold(f32::INFINITY, f32::min);
-                let expected = (2.5 - nearest).clamp(0.0, 1.0);
-                assert!(
-                    (outline[y * w + x] - expected).abs() < 1e-4,
-                    "({x}, {y}): {} vs {expected}",
-                    outline[y * w + x]
-                );
-            }
-        }
-        let mut empty = [0.0f32; 4];
-        squared_distances(&[FAR; 4], &mut empty);
-        assert_eq!(empty, [FAR; 4]);
-        squared_distances(&[], &mut []);
-    }
-
     fn raster(style: CaptionStyle, look_time: i64, canvas: (u32, u32)) -> CaptionRaster {
         let layer = CaptionLayer {
             style,
@@ -950,6 +922,33 @@ mod tests {
     }
 
     #[test]
+    fn bilingual_pages_show_the_translation_under_the_words() {
+        let canvas = (1920, 1080);
+        let plain = raster(CaptionStyle::default(), 500, canvas);
+        let mut layer = CaptionLayer {
+            content: CaptionContent {
+                translation: Some("Esto lo cambia todo.".into()),
+                ..content()
+            },
+            ..layer(Vec::new(), 500)
+        };
+        let look = evaluate(&layer);
+        let both = TextEngine::new().caption(&layer, &look, canvas, 0.5);
+        assert!(both.height > plain.height && both.lines_height > plain.lines_height * 1.3);
+        // The translation is light yellow (less blue than red), in the lower part.
+        let yellowish = |p: [f32; 4]| p[3] > 0.9 && p[0] / p[3] > 0.9 && p[2] / p[3] < 0.6;
+        let rows: Vec<u32> = (0..both.height)
+            .filter(|&y| (0..both.width).any(|x| yellowish(both.at(x, y))))
+            .collect();
+        assert!(!rows.is_empty(), "translation pixels");
+        assert!(rows.iter().all(|&y| y > both.height / 2), "under the words");
+        // Hidden pages hide it too, and an empty translation changes nothing.
+        layer.content.translation = Some("  ".into());
+        let look = evaluate(&layer);
+        assert_eq!(TextEngine::new().caption(&layer, &look, canvas, 0.5), plain);
+    }
+
+    #[test]
     fn a_growing_word_does_not_move_the_others() {
         let canvas = (1920, 1080);
         let pop = |t| {
@@ -989,6 +988,7 @@ mod tests {
                     })
                     .collect(),
             }],
+            ..Default::default()
         };
         let layer = CaptionLayer {
             content: long,

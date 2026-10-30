@@ -79,9 +79,14 @@ impl Command for TimelineAdd {
             let asset = ctx.project.media.get(id).cloned().ok_or_else(|| {
                 ApiError::new(codes::ASSET_NOT_FOUND, format!("asset {id} does not exist"))
             })?;
-            if asset.kind == AssetKind::Lut {
+            if matches!(asset.kind, AssetKind::Lut | AssetKind::Font) {
                 return Err(invalid(format!(
-                    "timeline.add: {id} is a LUT, not media to place"
+                    "timeline.add: {id} is a {}, not media to place",
+                    if asset.kind == AssetKind::Lut {
+                        "LUT"
+                    } else {
+                        "font"
+                    }
                 )));
             }
             assets.push(asset);

@@ -19,10 +19,11 @@ fn title() -> Clip {
         Id::new(IdKind::Clip, 2),
         Flicks::ZERO,
         frames(90),
-        ClipContent::Text(TextContent {
+        ClipContent::Text(Box::new(TextContent {
             text: "Hello".into(),
             style: TextStyle::default(),
-        }),
+            ..Default::default()
+        })),
     )
 }
 
@@ -360,10 +361,11 @@ fn each_effect_rule_reports_its_code() {
         Id::new(IdKind::Clip, 3),
         Flicks::ZERO,
         frames(10),
-        ClipContent::Text(TextContent {
+        ClipContent::Text(Box::new(TextContent {
             text: "x".into(),
             style: TextStyle::default(),
-        }),
+            ..Default::default()
+        })),
     );
     sound.effects.push(effect("color.adjust", vec![]));
     sound.effects.push(effect("color.adjust", vec![]));

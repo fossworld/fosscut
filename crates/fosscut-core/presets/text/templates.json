@@ -1,0 +1,67 @@
+[
+  {
+    "name": "lower-third",
+    "description": "A name and a role at the lower left, each on a dark box, appearing word by word.",
+    "lines": [
+      { "placeholder": "Alex Morgan", "span": { "bold": true } },
+      { "placeholder": "Founder", "span": { "size": 0.04, "color": "#DDDDDD" } }
+    ],
+    "style": { "size": 0.055, "align": "left", "box": { "enabled": true, "padding": 0.3, "radius": 0.15 } },
+    "position": [-0.25, 0.3],
+    "reveal": { "unit": "word", "motion": "fade", "duration_ms": 600, "exit": true }
+  },
+  {
+    "name": "headline",
+    "description": "A big centred title in capitals rising in word by word, with a smaller line under it.",
+    "lines": [
+      { "placeholder": "Big news", "span": {} },
+      { "placeholder": "What changed this week", "span": { "size": 0.045, "bold": false } }
+    ],
+    "style": { "size": 0.1, "bold": true, "case": "upper", "letter_spacing": 0.03, "shadow": { "enabled": true, "blur": 0.15 } },
+    "position": [0.0, 0.0],
+    "reveal": { "unit": "word", "motion": "rise", "duration_ms": 900, "exit": true }
+  },
+  {
+    "name": "chapter",
+    "description": "A spaced kicker such as a chapter number over a large title, fading in line by line.",
+    "lines": [
+      { "placeholder": "Chapter one", "span": { "size": 0.035, "color": "#CCCCCC" } },
+      { "placeholder": "The beginning", "span": { "bold": true } }
+    ],
+    "style": { "size": 0.08, "case": "upper", "letter_spacing": 0.12, "line_height": 1.4 },
+    "position": [0.0, 0.0],
+    "reveal": { "unit": "line", "motion": "fade", "duration_ms": 1000, "exit": true }
+  },
+  {
+    "name": "quote",
+    "description": "A quotation typed out letter by letter, with its author under it.",
+    "lines": [
+      { "placeholder": "Simple things done well.", "span": { "italic": true } },
+      { "placeholder": "Someone wise", "span": { "size": 0.04, "color": "#BBBBBB", "italic": false } }
+    ],
+    "style": { "size": 0.065, "line_height": 1.5, "shadow": { "enabled": true } },
+    "position": [0.0, 0.0],
+    "reveal": { "unit": "letter", "motion": "appear", "duration_ms": 1500, "exit": false }
+  },
+  {
+    "name": "callout",
+    "description": "A short note on a yellow marker box at the upper left, popping in word by word.",
+    "lines": [
+      { "placeholder": "Watch this", "span": {} }
+    ],
+    "style": { "size": 0.06, "bold": true, "color": "#111111", "box": { "enabled": true, "color": "#FFE14D", "padding": 0.25, "radius": 0.12 } },
+    "position": [-0.28, -0.32],
+    "reveal": { "unit": "word", "motion": "rise", "duration_ms": 400, "exit": true }
+  },
+  {
+    "name": "end-card",
+    "description": "A closing message with a call to action under it, fading in line by line.",
+    "lines": [
+      { "placeholder": "Thanks for watching", "span": { "bold": true } },
+      { "placeholder": "Follow for more", "span": { "size": 0.045, "color": "#FFE14D" } }
+    ],
+    "style": { "size": 0.085, "glow": { "enabled": true, "color": "#FFFFFF66", "radius": 0.3 } },
+    "position": [0.0, 0.0],
+    "reveal": { "unit": "line", "motion": "fade", "duration_ms": 800, "exit": false }
+  }
+]

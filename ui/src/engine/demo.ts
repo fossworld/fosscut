@@ -35,7 +35,9 @@ export function demoEngine(): FakeEngine {
           clips: 8,
         },
       ],
-      assets: 5,
+      assets: 6,
+      fonts: ["Inter", "Lora"],
+      text_presets: ["brand title"],
     },
   };
   engine.recent = ["/demo/Launch.fosscut"];
@@ -53,12 +55,14 @@ export function demoEngine(): FakeEngine {
     tracks: [
       track("track_0002", "video", 0, [
         clip("clip_0003", "video", 0, 8, {
+          asset: "asset_0001",
           asset_name: "interview.mp4",
           group: "group_0022",
           transition: { type: "dissolve", duration: moment(1) },
           animations: { in: { preset: "fade", duration: 352_800_000 } },
         }),
         clip("clip_0006", "video", 8, 15, {
+          asset: "asset_0002",
           asset_name: "b-roll.mp4",
           picture: [1920, 1080],
           masks: [{ id: "mask_0016", shape: "ellipse", size: [0.7, 0.8], feather: 0.3 }],
@@ -76,6 +80,7 @@ export function demoEngine(): FakeEngine {
           },
         }),
         clip("clip_0007", "video", 15, 24, {
+          asset: "asset_0001",
           asset_name: "interview.mp4",
           speed: { rate: 1.5, interpolate: "blend" },
           source_used: moment(13.5),
@@ -83,13 +88,19 @@ export function demoEngine(): FakeEngine {
       ]),
       track("track_0004", "audio", 1, [
         clip("clip_0008", "audio", 0, 24, {
+          asset: "asset_0003",
           asset_name: "music.m4a",
           volume: 0.6,
           audio: { fade_in: 705_600_000, fade_out: 2 * 705_600_000 },
         }),
       ]),
       track("track_0005", "text", 2, [
-        clip("clip_0009", "text", 0.5, 3.5, { text: "Meet FossCut", group: "group_0022" }),
+        clip("clip_0009", "text", 0.5, 3.5, {
+          text: "Meet FossCut",
+          group: "group_0022",
+          style: { size: 0.1, color: "#FFFFFF", bold: true, case: "upper", shadow: { enabled: true, blur: 0.15 } },
+          reveal: { unit: "word", motion: "rise", duration: moment(1) },
+        }),
       ]),
       track("track_0010", "caption", 3, [
         clip("clip_0011", "caption", 1, 2.2, { text: "Edit by talking" }),
@@ -141,6 +152,31 @@ export function demoEngine(): FakeEngine {
         summary: "Darker edges.",
         params: [amount("amount", "edge darkness")],
       },
+      {
+        type: "audio.denoise",
+        version: 1,
+        title: "Reduce noise",
+        category: "audio",
+        summary: "Reduces steady background noise.",
+        params: [{ ...amount("amount", "how much noise is removed"), min: 0, max: 1, default: 0.7, animatable: false }],
+      },
+      {
+        type: "audio.vocals",
+        version: 1,
+        title: "Isolate or remove voice",
+        category: "audio",
+        summary: "Keeps or removes the centred voice of a stereo mix.",
+        params: [
+          {
+            name: "mode",
+            kind: "choice",
+            default: "isolate",
+            choices: ["isolate", "remove"],
+            animatable: false,
+            meaning: "isolate keeps the voice; remove keeps the rest",
+          },
+        ],
+      },
     ],
     looks: [
       { name: "warm", title: "Warm", description: "A gentle warm cast." },
@@ -165,14 +201,30 @@ export function demoEngine(): FakeEngine {
       { preset: "pop", applies: "in or out", meaning: "springs to size" },
       { preset: "pulse", applies: "combo", meaning: "beats larger and back" },
     ],
+    text: {
+      fonts: ["Inter"],
+      presets: [
+        { name: "outline", description: "Bold white letters with a black outline." },
+        { name: "neon", description: "Pale pink letters glowing magenta." },
+        { name: "highlight", description: "Black letters on a bright yellow box." },
+      ],
+      templates: [
+        { name: "lower-third", description: "A name and a role at the lower left.", lines: ["Alex Morgan", "Founder"] },
+        { name: "headline", description: "A big centred title rising in word by word.", lines: ["Big news", "What changed"] },
+        { name: "end-card", description: "A closing message with a call to action.", lines: ["Thanks for watching", "Follow for more"] },
+      ],
+      reveal: { units: ["letter", "word", "line"], motions: ["appear", "fade", "rise"] },
+      cases: ["as_written", "upper", "lower", "title"],
+    },
   };
   engine.answers["media.list"] = {
     assets: [
-      { id: "asset_0001", name: "interview.mp4", kind: "video", duration: moment(16), used_by: ["clip_0003"], folder: "Footage" },
-      { id: "asset_0002", name: "b-roll.mp4", kind: "video", duration: moment(7), used_by: ["clip_0006"], folder: "Footage/B-roll" },
+      { id: "asset_0001", name: "interview.mp4", kind: "video", duration: moment(16), used_by: ["clip_0003"], folder: "Footage", audio: { channels: 2 } },
+      { id: "asset_0002", name: "b-roll.mp4", kind: "video", duration: moment(7), used_by: ["clip_0006"], folder: "Footage/B-roll", audio: null },
       { id: "asset_0003", name: "music.m4a", kind: "audio", duration: moment(24), used_by: ["clip_0008"] },
       { id: "asset_0004", name: "old take.mp4", kind: "video", duration: moment(12), used_by: [], missing: true },
       { id: "asset_0015", name: "film.cube", kind: "lut", used_by: [] },
+      { id: "asset_0017", name: "Lora.ttf", kind: "font", used_by: [], families: ["Lora"] },
     ],
     folders: ["Footage", "Footage/B-roll"],
   };

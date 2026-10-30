@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use fosscut_model::{
     Align, Animated, Animator, BlendMode, CaptionBox, CaptionContent, CaptionLine, CaptionStyle,
-    CaptionWord, Color, FontWeight, PageFade, Placement, TextContent, TextStyle, Transform,
-    WordReveal,
+    CaptionWord, Color, FontWeight, Glow, PageFade, Placement, Shadow, Stroke, TextBox,
+    TextContent, TextSpan, TextStyle, Transform, WordReveal,
 };
 use fosscut_render::caption::CaptionLayer;
 use fosscut_render::color::TransferFunction;
@@ -569,6 +569,7 @@ fn text(text: &str, edit: impl FnOnce(&mut TextStyle)) -> TextContent {
     TextContent {
         text: text.into(),
         style,
+        ..Default::default()
     }
 }
 
@@ -643,6 +644,122 @@ fn text_styles() {
     check_at("text-styles", &mut renderer, &plan, &mut frames, TEXT_SIZE);
 }
 
+/// Outlines, glows, shadows, boxes, spans and underlines (ADR-0027).
+#[test]
+fn styled_text() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let at = |position: [f64; 2], content: TextContent| Layer {
+        transform: Transform {
+            position,
+            ..Transform::default()
+        },
+        ..Layer::text(content)
+    };
+    let outline = text("Outline", |s| {
+        s.size = 0.1;
+        s.bold = true;
+        s.stroke = Stroke {
+            enabled: true,
+            width: 0.12,
+            ..Stroke::default()
+        };
+    });
+    let neon = text("Neon glow", |s| {
+        s.size = 0.09;
+        s.bold = true;
+        s.color = Color::parse("#FFE6FB").unwrap();
+        s.glow = Glow {
+            enabled: true,
+            color: Color::parse("#FF2FD6").unwrap(),
+            radius: 0.4,
+        };
+    });
+    let retro = text("RETRO", |s| {
+        s.size = 0.11;
+        s.bold = true;
+        s.letter_spacing = 0.08;
+        s.color = Color::parse("#FFD23F").unwrap();
+        s.shadow = Shadow {
+            enabled: true,
+            color: Color::parse("#E4572E").unwrap(),
+            offset: [0.08, 0.08],
+            blur: 0.0,
+        };
+    });
+    let mut boxed = text("Boxed and\nunderlined", |s| {
+        s.size = 0.07;
+        s.align = Align::Left;
+        s.background = TextBox {
+            enabled: true,
+            ..TextBox::default()
+        };
+        s.shadow = Shadow {
+            enabled: true,
+            ..Shadow::default()
+        };
+    });
+    boxed.spans = vec![
+        TextSpan {
+            start: 0,
+            end: 5,
+            color: Color::parse("#FFE14D").ok(),
+            bold: Some(true),
+            italic: None,
+            underline: None,
+            font: None,
+            size: None,
+        },
+        TextSpan {
+            start: 10,
+            end: 20,
+            color: None,
+            bold: None,
+            italic: Some(true),
+            underline: Some(true),
+            font: None,
+            size: None,
+        },
+    ];
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![
+            Layer::new(source(1)),
+            at([-0.24, -0.25], outline),
+            at([0.24, -0.25], neon),
+            at([-0.24, 0.22], retro),
+            at([0.24, 0.22], boxed),
+        ],
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, solid(64, 36, [30, 70, 90]));
+    check_at("styled-text", &mut renderer, &plan, &mut frames, TEXT_SIZE);
+}
+
+/// A bilingual caption page: the translation under the words.
+#[test]
+fn bilingual_caption() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut content = page(&[&[
+        ("Every", 0, 400, false),
+        ("word", 400, 800, true),
+        ("counts.", 800, 1300, false),
+    ]]);
+    content.translation = Some("Cada palabra cuenta.".into());
+    let plan = caption_scene((1920, 1080), preset("highlight"), content, 600);
+    let mut frames = Frames::default().with(1, pattern(640, 360, 0));
+    check_at(
+        "bilingual-caption",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+}
+
 /// A caption page of timed words, from (text, start ms, end ms, emphasis) per line.
 fn page(lines: &[&[(&str, i64, i64, bool)]]) -> CaptionContent {
     CaptionContent {
@@ -660,6 +777,7 @@ fn page(lines: &[&[(&str, i64, i64, bool)]]) -> CaptionContent {
                     .collect(),
             })
             .collect(),
+        ..Default::default()
     }
 }
 

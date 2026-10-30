@@ -109,6 +109,7 @@ impl Project {
                     id: timeline_id.clone(),
                     name: timeline_name,
                 }],
+                text_presets: Vec::new(),
             },
             media: Media::default(),
             timelines: BTreeMap::from([(timeline_id, timeline)]),

@@ -14,6 +14,7 @@ fn main() {
         "execute",
         "clients",
         "color_suggest",
+        "audio_normalize",
         "preview_viewport",
         "preview_show",
         "preview_play",

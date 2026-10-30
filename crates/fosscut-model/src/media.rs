@@ -21,6 +21,21 @@ impl Media {
     pub fn get(&self, id: &Id) -> Option<&Asset> {
         self.assets.iter().find(|a| &a.id == id)
     }
+
+    /// Every font family text can use: the bundled one and those of the font assets, sorted.
+    pub fn font_families(&self) -> Vec<String> {
+        let mut families: Vec<String> = std::iter::once(crate::BUNDLED_FONT.to_string())
+            .chain(
+                self.assets
+                    .iter()
+                    .filter_map(|a| a.info.font.as_ref())
+                    .flat_map(|f| f.families.iter().cloned()),
+            )
+            .collect();
+        families.sort();
+        families.dedup();
+        families
+    }
 }
 
 /// What kind of media an asset is.
@@ -35,6 +50,8 @@ pub enum AssetKind {
     Image,
     /// A 3D color lookup table (`.cube`), used by the `color.lut` effect.
     Lut,
+    /// A font file (`.ttf`, `.otf`, `.ttc`) whose families text can use (ADR-0027).
+    Font,
 }
 
 /// A source media file referenced by clips. Splitting a clip never copies an asset.
@@ -119,6 +136,18 @@ pub struct MediaInfo {
     /// Size of a LUT asset's table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lut: Option<LutInfo>,
+    /// The families and faces in a font asset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<FontInfo>,
+}
+
+/// What a font file holds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FontInfo {
+    /// Family names, sorted, as text styles name them.
+    pub families: Vec<String>,
+    /// Number of faces (a collection holds several).
+    pub faces: u32,
 }
 
 /// A LUT file's table.

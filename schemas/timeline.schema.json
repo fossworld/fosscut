@@ -373,34 +373,6 @@
       ],
       "type": "object"
     },
-    "CaptionBox": {
-      "additionalProperties": false,
-      "description": "A box behind each line of text.",
-      "properties": {
-        "color": {
-          "$ref": "#/$defs/Color",
-          "description": "Its colour (black at 70% when omitted)."
-        },
-        "enabled": {
-          "description": "Whether it is drawn.",
-          "type": "boolean"
-        },
-        "padding": {
-          "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
-          "format": "double",
-          "type": "number"
-        },
-        "radius": {
-          "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
-          "format": "double",
-          "type": "number"
-        }
-      },
-      "required": [
-        "enabled"
-      ],
-      "type": "object"
-    },
     "CaptionContent": {
       "description": "One caption page: what is on screen at once.",
       "properties": {
@@ -410,6 +382,13 @@
             "$ref": "#/$defs/CaptionLine"
           },
           "type": "array"
+        },
+        "translation": {
+          "description": "The page in a second language, shown under it in the track's translation style\n(bilingual captions); the agent or person writes it, FossCut never translates.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -449,7 +428,7 @@
           "type": "array"
         },
         "box": {
-          "$ref": "#/$defs/CaptionBox",
+          "$ref": "#/$defs/TextBox",
           "description": "Background box behind each line (off when omitted)."
         },
         "color": {
@@ -479,6 +458,10 @@
         "stroke": {
           "$ref": "#/$defs/Stroke",
           "description": "Outline around the letters (black, on, when omitted)."
+        },
+        "translation": {
+          "$ref": "#/$defs/TranslationStyle",
+          "description": "How pages' translations look."
         },
         "uppercase": {
           "description": "Show words in capitals.",
@@ -609,16 +592,42 @@
           "type": "object"
         },
         {
-          "$ref": "#/$defs/TextContent",
           "description": "A text title.",
           "properties": {
             "kind": {
               "const": "text",
               "type": "string"
+            },
+            "reveal": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TextReveal"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How the text appears at the clip's start (and leaves at its end)."
+            },
+            "spans": {
+              "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+              "items": {
+                "$ref": "#/$defs/TextSpan"
+              },
+              "type": "array"
+            },
+            "style": {
+              "$ref": "#/$defs/TextStyle",
+              "description": "Appearance; defaults when omitted."
+            },
+            "text": {
+              "description": "The text; `\\n` separates lines.",
+              "type": "string"
             }
           },
           "required": [
-            "kind"
+            "kind",
+            "text"
           ],
           "type": "object"
         },
@@ -955,6 +964,29 @@
           "type": "string"
         }
       ]
+    },
+    "Glow": {
+      "additionalProperties": false,
+      "description": "Soft light around the letters.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour; its alpha sets the strength (white when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "radius": {
+          "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
     },
     "Id": {
       "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
@@ -1439,6 +1471,79 @@
         }
       ]
     },
+    "RevealMotion": {
+      "description": "How each unit of a reveal appears.",
+      "oneOf": [
+        {
+          "const": "appear",
+          "description": "At once (a typewriter for letters).",
+          "type": "string"
+        },
+        {
+          "const": "fade",
+          "description": "Fading in.",
+          "type": "string"
+        },
+        {
+          "const": "rise",
+          "description": "Fading in while rising into place.",
+          "type": "string"
+        }
+      ]
+    },
+    "RevealUnit": {
+      "description": "What a reveal shows at a time.",
+      "oneOf": [
+        {
+          "const": "letter",
+          "description": "One letter after another, as typed.",
+          "type": "string"
+        },
+        {
+          "const": "word",
+          "description": "One word after another.",
+          "type": "string"
+        },
+        {
+          "const": "line",
+          "description": "One line after another.",
+          "type": "string"
+        }
+      ]
+    },
+    "Shadow": {
+      "additionalProperties": false,
+      "description": "A shadow cast by the letters (and their outline).",
+      "properties": {
+        "blur": {
+          "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black at 70% when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "offset": {
+          "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "Speed": {
       "additionalProperties": false,
       "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
@@ -1514,25 +1619,159 @@
       ],
       "type": "object"
     },
-    "TextContent": {
-      "description": "Text content with a single style.",
+    "TextBox": {
+      "additionalProperties": false,
+      "description": "A box behind each line of text, for captions and text clips.",
       "properties": {
-        "style": {
-          "$ref": "#/$defs/TextStyle",
-          "description": "Appearance; defaults when omitted."
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black at 70% when omitted)."
         },
-        "text": {
-          "description": "The text; `\\n` separates lines.",
-          "type": "string"
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "padding": {
+          "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "radius": {
+          "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+          "format": "double",
+          "type": "number"
         }
       },
       "required": [
-        "text"
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "TextCase": {
+      "description": "Letter case shown.",
+      "oneOf": [
+        {
+          "const": "as_written",
+          "description": "As written.",
+          "type": "string"
+        },
+        {
+          "const": "upper",
+          "description": "ALL CAPITALS.",
+          "type": "string"
+        },
+        {
+          "const": "lower",
+          "description": "all lower case.",
+          "type": "string"
+        },
+        {
+          "const": "title",
+          "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+          "type": "string"
+        }
+      ]
+    },
+    "TextReveal": {
+      "additionalProperties": false,
+      "description": "How a text appears: its letters, words or lines one after another.",
+      "properties": {
+        "duration": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Time from the clip's start until the whole text is shown."
+        },
+        "exit": {
+          "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
+          "type": "boolean"
+        },
+        "motion": {
+          "$ref": "#/$defs/RevealMotion",
+          "description": "How each one appears."
+        },
+        "unit": {
+          "$ref": "#/$defs/RevealUnit",
+          "description": "What appears at a time."
+        }
+      },
+      "required": [
+        "unit",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "TextSpan": {
+      "additionalProperties": false,
+      "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+      "properties": {
+        "bold": {
+          "description": "Bold weight.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Color"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Fill colour."
+        },
+        "end": {
+          "description": "The character after the last one.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "font": {
+          "description": "Font family, as the style's `font`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "italic": {
+          "description": "Italic style.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "size": {
+          "description": "Font size as a fraction of the canvas height.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "start": {
+          "description": "First character.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "underline": {
+          "description": "Underlined.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end"
       ],
       "type": "object"
     },
     "TextStyle": {
-      "description": "Text appearance.",
+      "additionalProperties": false,
+      "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
       "properties": {
         "align": {
           "$ref": "#/$defs/Align",
@@ -1542,27 +1781,61 @@
           "description": "Bold weight.",
           "type": "boolean"
         },
+        "box": {
+          "$ref": "#/$defs/TextBox",
+          "description": "Box behind each line (off when omitted)."
+        },
+        "case": {
+          "$ref": "#/$defs/TextCase",
+          "description": "Letter case shown; the text itself is kept as written."
+        },
         "color": {
           "$ref": "#/$defs/Color",
           "default": "#FFFFFF",
           "description": "Fill colour."
         },
         "font": {
-          "description": "Font family; the default sans-serif font when omitted.",
+          "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
           "type": [
             "string",
             "null"
           ]
         },
+        "glow": {
+          "$ref": "#/$defs/Glow",
+          "description": "Soft light around the letters (off when omitted)."
+        },
         "italic": {
           "description": "Italic style.",
           "type": "boolean"
+        },
+        "letter_spacing": {
+          "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "line_height": {
+          "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "shadow": {
+          "$ref": "#/$defs/Shadow",
+          "description": "Shadow under the letters (off when omitted)."
         },
         "size": {
           "default": 0.08,
           "description": "Font size as a fraction of the canvas height.",
           "format": "double",
           "type": "number"
+        },
+        "stroke": {
+          "$ref": "#/$defs/Stroke",
+          "description": "Outline around the letters (off when omitted)."
+        },
+        "underline": {
+          "description": "Underlined.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -1747,6 +2020,26 @@
         "type",
         "duration"
       ],
+      "type": "object"
+    },
+    "TranslationStyle": {
+      "additionalProperties": false,
+      "description": "How the translation line of bilingual captions looks: under the page, smaller, in the\ncaption's font, with its outline and box.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Text colour (light yellow when omitted)."
+        },
+        "italic": {
+          "description": "Italic style.",
+          "type": "boolean"
+        },
+        "size": {
+          "description": "Size relative to the caption size, from 0.3 to 1 (0.7 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
       "type": "object"
     },
     "WordEmphasis": {

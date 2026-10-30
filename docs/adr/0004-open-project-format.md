@@ -74,6 +74,11 @@ Illustrative clip (not normative; the generated schema is):
 - **Media bin** (format 0.9.0): an asset's `folder` and the media document's sorted `folders` organize the bin; `name`, `folder` and the path hints are organization, while the content identity and the probed information never change (item 3). `media.rename`, `media.move` and `media.folder` organize; `media.relink` records a moved file's new place only when its identity matches; `media.replace` points every clip at another asset; `media.remove` refuses an asset in use unless told to remove its clips. Front ends mark assets whose files are missing (`fosscut_engine::import::mark_missing`).
 - **Timelines:** `timeline.add` creates one, empty or from chosen media placed one after another with the first video's canvas and rate; `timeline.rename`, `timeline.set_primary` and `timeline.remove` (a project keeps at least one) complete the set. A removed timeline's document is deleted from the bundle (`ProjectStore::remove`).
 
+- **Text, fonts and sound** (format 0.11.0):
+  - **Text clips:** a text clip's style gains underline, case, letter and line spacing, an outline, a box, a shadow and a glow; clips gain spans and a reveal, as decided in [ADR-0027](0027-styled-text-with-project-fonts.md).
+  - **Project additions:** `project.json` holds the project's saved `text_presets`, and fonts import as `font` assets with their families.
+  - **Sound and captions:** sound effects share the clips' `effects` list ([ADR-0026](0026-sound-effects-in-the-effect-registry.md)), and caption pages gain a `translation`.
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.
