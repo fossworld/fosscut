@@ -1,6 +1,6 @@
 {
   "skill": "viral-captions",
-  "about": "The caption flow of SKILL.md on 11 s of read speech under a tall test pattern, scripted through fosscut mcp: transcribe, generate highlighted captions after a dry run, mark a keyword, restyle, check a frame at a spoken word, write an SRT file and export a verified video.",
+  "about": "The caption flow of SKILL.md on 11 s of read speech under a tall test pattern, scripted through fosscut mcp: transcribe, generate highlighted captions after a dry run, mark a keyword, restyle, check a frame at a spoken word, write an SRT file and export a verified 9:16 video.",
   "needs": ["speech"],
   "fixtures": [
     {
@@ -21,9 +21,9 @@
   ],
   "steps": [
     {
-      "about": "A tall project for a short.",
+      "about": "A tall 9:16 project for a short, small so the export stays quick on software encoders.",
       "tool": "project_new",
-      "args": { "path": "Captions.fosscut", "width": 1080, "height": 1920 },
+      "args": { "path": "Captions.fosscut", "width": 360, "height": 640 },
       "expect": { "revision": 0 }
     },
     {
@@ -157,8 +157,8 @@
       "repeat_while": { "state": "running" },
       "expect": {
         "state": "succeeded",
-        "report.verified.video.width": 1080,
-        "report.verified.video.height": 1920,
+        "report.verified.video.width": 360,
+        "report.verified.video.height": 640,
         "report.verified.audio.codec": "aac"
       }
     }
