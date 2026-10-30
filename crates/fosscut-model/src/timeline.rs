@@ -294,8 +294,9 @@ impl Clip {
             ),
             None => (from, None),
         };
-        if let ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } =
-            &mut self.content
+        if let ClipContent::Video { source_in, .. }
+        | ClipContent::Audio { source_in, .. }
+        | ClipContent::Timeline { source_in, .. } = &mut self.content
         {
             *source_in = *source_in + moved;
             self.speed = speed;
@@ -441,6 +442,15 @@ pub enum ClipContent {
     Caption(CaptionContent),
     /// An adjustment layer: its effects apply to everything below it while it lasts.
     Adjustment,
+    /// A compound clip: another timeline of the project, shown from `source_in`
+    /// (ADR-0025).
+    Timeline {
+        /// The timeline it shows (`timeline_…`).
+        timeline: Id,
+        /// Where in that timeline the clip starts.
+        #[serde(default, skip_serializing_if = "is_default")]
+        source_in: Flicks,
+    },
 }
 
 impl ClipContent {
@@ -450,16 +460,27 @@ impl ClipContent {
             ClipContent::Video { asset, .. }
             | ClipContent::Audio { asset, .. }
             | ClipContent::Image { asset } => Some(asset),
-            ClipContent::Text(_) | ClipContent::Caption(_) | ClipContent::Adjustment => None,
+            ClipContent::Text(_)
+            | ClipContent::Caption(_)
+            | ClipContent::Adjustment
+            | ClipContent::Timeline { .. } => None,
         }
     }
 
-    /// Source in-point for time-based media.
+    /// The timeline a compound clip shows.
+    pub fn nested(&self) -> Option<&Id> {
+        match self {
+            ClipContent::Timeline { timeline, .. } => Some(timeline),
+            _ => None,
+        }
+    }
+
+    /// Source in-point for time-based media and compound clips.
     pub fn source_in(&self) -> Option<Flicks> {
         match self {
-            ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
-                Some(*source_in)
-            }
+            ClipContent::Video { source_in, .. }
+            | ClipContent::Audio { source_in, .. }
+            | ClipContent::Timeline { source_in, .. } => Some(*source_in),
             _ => None,
         }
     }
@@ -473,6 +494,7 @@ impl ClipContent {
             ClipContent::Text(_) => "text",
             ClipContent::Caption(_) => "caption",
             ClipContent::Adjustment => "adjustment",
+            ClipContent::Timeline { .. } => "timeline",
         }
     }
 }

@@ -92,6 +92,9 @@ pub struct MediaImportArgs {
     pub project: Option<String>,
     /// Media files to import: video, audio or images. All are added in one revision.
     pub files: Vec<String>,
+    /// Instead of adding it, the one file given is the new place of this moved asset.
+    #[serde(default)]
+    pub relink: Option<String>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would be added without changing the project.

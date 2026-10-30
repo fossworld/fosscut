@@ -38,6 +38,7 @@ describe("keyboard", () => {
     expect(actionFor(key("ç", { metaKey: true, altKey: true }), true), "Option+C on macOS").toBe("copy-attributes");
     expect(actionFor(key("v", { ctrlKey: true, altKey: true }), false)).toBe("paste-attributes");
     expect(actionFor(key("c", { altKey: true }), true), "Alt alone does nothing").toBeNull();
+    expect(actionFor(key("©", { metaKey: true, altKey: true }), true), "Option+G on macOS").toBe("compound");
     expect(actionFor(key("B", { metaKey: true, shiftKey: true }), true)).toBe("split-all");
     expect(actionFor(key("g", { metaKey: true }), true)).toBe("group");
     expect(actionFor(key("G", { metaKey: true, shiftKey: true }), true)).toBe("ungroup");

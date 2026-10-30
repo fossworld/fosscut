@@ -243,11 +243,12 @@ fn project_info(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         .manifest
         .timelines
         .iter()
-        .filter_map(|entry| project.timelines.get(&entry.id))
-        .map(|t| {
+        .filter_map(|entry| project.timelines.get(&entry.id).map(|t| (entry, t)))
+        .map(|(entry, t)| {
             json!({
                 "id": t.id,
                 "name": t.name,
+                "role": entry.role,
                 "format": t.format,
                 "duration": TimeReport::new(t.duration(), t.format.rate),
                 "tracks": t.tracks.len(),
@@ -293,10 +294,11 @@ fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
                 "video": asset.info.video,
                 "audio": asset.info.audio,
                 "used_by": used_by,
+                "folder": asset.folder,
             })
         })
         .collect();
-    Ok(json!({ "assets": assets }))
+    Ok(json!({ "assets": assets, "folders": project.media.folders }))
 }
 
 fn clip_view(
@@ -314,10 +316,22 @@ fn clip_view(
         "duration": TimeReport::new(clip.duration, rate),
     });
     match &clip.content {
-        ClipContent::Video { asset, source_in } | ClipContent::Audio { asset, source_in } => {
-            view["asset"] = json!(asset);
-            view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
-            view["source_in"] = json!(TimeReport::new(*source_in, rate));
+        ClipContent::Video { .. } | ClipContent::Audio { .. } | ClipContent::Timeline { .. } => {
+            match &clip.content {
+                ClipContent::Timeline { timeline, .. } => {
+                    // A compound clip: the timeline it shows (ADR-0025).
+                    view["timeline"] = json!(timeline);
+                    view["timeline_name"] =
+                        json!(project.timelines.get(timeline).map(|t| t.name.clone()));
+                }
+                ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
+                    view["asset"] = json!(asset);
+                    view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
+                }
+                _ => {}
+            }
+            let source_in = clip.content.source_in().unwrap_or_default();
+            view["source_in"] = json!(TimeReport::new(source_in, rate));
             // Speed changes how much media the clip plays (ADR-0023 item 10).
             if let Some(speed) = &clip.speed {
                 let mut shown = json!(speed);

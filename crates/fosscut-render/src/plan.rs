@@ -38,6 +38,24 @@ pub enum LayerSource {
     Adjustment,
     /// Two clips over the cut between them, mixed by a transition.
     Transition(Box<TransitionLayer>),
+    /// A compound clip (ADR-0025): another timeline's frame, planned at its own canvas.
+    Nested(Box<RenderPlan>),
+}
+
+impl Layer {
+    /// This layer and every layer inside its transitions and compound clips, at any depth:
+    /// what a frame source must be able to show.
+    pub fn flattened(&self) -> Vec<&Layer> {
+        match &self.source {
+            LayerSource::Transition(t) => {
+                let mut all = t.outgoing.flattened();
+                all.extend(t.incoming.flattened());
+                all
+            }
+            LayerSource::Nested(plan) => plan.layers.iter().flat_map(Layer::flattened).collect(),
+            _ => vec![self],
+        }
+    }
 }
 
 /// A transition in progress: the clip it leaves and the one it enters, each as its own
@@ -273,6 +291,18 @@ fn layer_for(
         (ClipContent::Adjustment, TrackKind::Video) => {
             return (!effects.is_empty()).then(|| placed(LayerSource::Adjustment, 0));
         }
+        (ClipContent::Timeline { timeline, .. }, TrackKind::Video) => {
+            // The nested timeline's frame at the source time, held within it.
+            let inner = project.timelines.get(timeline)?;
+            let last = (inner.duration() - format.rate.frame_duration()).max(Flicks::ZERO);
+            let at = clip
+                .source_at(offset)
+                .unwrap_or(Flicks::ZERO)
+                .max(Flicks::ZERO)
+                .min(last);
+            let nested = plan_frame(project, timeline, at).ok()?;
+            return Some(placed(LayerSource::Nested(Box::new(nested)), 0));
+        }
         (ClipContent::Caption(caption), _) => {
             let layer = CaptionLayer {
                 style: track.caption_style.clone().unwrap_or_default(),
@@ -434,6 +464,7 @@ mod tests {
         let mut project = Project::new(Id::new(fosscut_model::IdKind::Project, 1), "Plan", format);
         let asset = project.allocate_id(fosscut_model::IdKind::Asset);
         project.media.assets.push(Asset {
+            folder: None,
             id: asset.clone(),
             kind: AssetKind::Video,
             name: "clip.mp4".into(),
@@ -786,5 +817,47 @@ mod tests {
             Some(frames(30)),
             "frozen"
         );
+    }
+
+    #[test]
+    fn compound_clips_plan_their_timeline_at_the_source_time() {
+        let (mut project, timeline) = project();
+        // The video track's clips move into a compound timeline shown from frame 10.
+        let inner_id = project.allocate_id(fosscut_model::IdKind::Timeline);
+        let mut inner = project.timelines[&timeline].clone();
+        inner.id = inner_id.clone();
+        inner.tracks.truncate(1);
+        project
+            .manifest
+            .timelines
+            .push(fosscut_model::TimelineEntry {
+                id: inner_id.clone(),
+                name: "Inside".into(),
+                role: fosscut_model::TimelineRole::Compound,
+            });
+        project.timelines.insert(inner_id.clone(), inner);
+        let compound = clip(
+            &mut project,
+            0,
+            50,
+            ClipContent::Timeline {
+                timeline: inner_id,
+                source_in: frames(10),
+            },
+        );
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks.truncate(1);
+        doc.tracks[0].clips = vec![compound];
+        let plan = plan_frame(&project, &timeline, frames(5)).unwrap();
+        let LayerSource::Nested(nested) = &plan.layers[0].source else {
+            panic!("a nested plan");
+        };
+        assert_eq!(nested.canvas, (1920, 1080));
+        assert_eq!(
+            time(&nested.layers[0]),
+            Some(frames(45)),
+            "frame 15 inside, 30 frames into its media"
+        );
+        assert_eq!(plan.layers[0].flattened().len(), 1, "the inner layer");
     }
 }

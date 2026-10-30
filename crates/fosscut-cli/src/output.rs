@@ -234,8 +234,17 @@ fn print_media(v: &Value) {
         } else {
             String::new()
         };
+        let folder = a["folder"]
+            .as_str()
+            .map(|f| format!("  [{f}]"))
+            .unwrap_or_default();
+        let missing = if a["missing"] == true {
+            "  (missing)"
+        } else {
+            ""
+        };
         println!(
-            "{} {:<5} {}{size}  {}",
+            "{} {:<5} {}{size}  {}{folder}{missing}",
             s(&a["id"]),
             s(&a["kind"]),
             duration,

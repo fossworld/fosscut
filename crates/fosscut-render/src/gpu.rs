@@ -95,8 +95,13 @@ enum Slot {
     Text(usize),
     /// The two canvases that blend passes alternate between.
     Canvas(u8),
-    /// A layer with a blend mode, drawn on its own before it is blended.
-    Placed,
+    /// A layer with a blend mode, drawn on its own before it is blended, per nesting depth.
+    Placed(usize),
+    /// The rendered frame of a compound clip's timeline, by depth and layer.
+    Nested {
+        depth: usize,
+        layer: usize,
+    },
     /// The two textures a layer's effects alternate between.
     Effect {
         layer: usize,
@@ -117,7 +122,8 @@ enum Slot {
     },
     /// Two source frames of a layer mixed for smooth slow motion.
     Between(usize),
-    CanvasSamples,
+    /// The multisampled composite target, per nesting depth.
+    CanvasSamples(usize),
     Readback,
 }
 
@@ -166,6 +172,9 @@ pub struct Renderer {
     text: TextEngine,
     text_cache: HashMap<String, Arc<TextRaster>>,
     caption_cache: HashMap<String, Arc<CaptionRaster>>,
+    /// How deep inside compound clips the plan being recorded is (ADR-0025): each level
+    /// uses scratch slots of its own.
+    nesting: usize,
     mask_cache: HashMap<String, Arc<Coverage>>,
 }
 
@@ -401,6 +410,7 @@ impl Renderer {
             text: TextEngine::new(),
             text_cache: HashMap::new(),
             caption_cache: HashMap::new(),
+            nesting: 0,
             mask_cache: HashMap::new(),
         }
     }
@@ -549,6 +559,8 @@ impl Renderer {
         transfer: TransferFunction,
     ) -> Result<(), RenderError> {
         let mut steps = Vec::with_capacity(plan.layers.len());
+        // Plans inside compound clips use scratch slots of their own (ADR-0025).
+        let ns = self.nesting * NESTED_SLOTS;
         for (index, layer) in plan.layers.iter().enumerate() {
             match &layer.source {
                 LayerSource::Adjustment => steps.push(Step::Adjust {
@@ -557,7 +569,7 @@ impl Renderer {
                 }),
                 LayerSource::Transition(transition) => {
                     // The two clips get slots of their own, after every plain layer's.
-                    let base = plan.layers.len() + 2 * index;
+                    let base = ns + plan.layers.len() + 2 * index;
                     let outgoing =
                         self.prepare(plan, &transition.outgoing, base, size, encoder, frames)?;
                     let incoming =
@@ -566,11 +578,13 @@ impl Renderer {
                         outgoing,
                         incoming,
                         params: crate::transitions::pack(transition),
-                        index,
+                        index: ns + index,
                     })));
                 }
                 _ => {
-                    if let Some(draw) = self.prepare(plan, layer, index, size, encoder, frames)? {
+                    if let Some(draw) =
+                        self.prepare(plan, layer, ns + index, size, encoder, frames)?
+                    {
                         steps.push(Step::Layer(draw));
                     }
                 }
@@ -595,7 +609,7 @@ impl Renderer {
                 .position(|step| !normal(step))
                 .map_or(steps.len(), |p| index + p);
             if run_end > index || current.is_none() {
-                let target = self.canvas_texture(Slot::Canvas(flip), size);
+                let target = self.canvas_texture(Slot::Canvas(flip + 2 * self.nesting as u8), size);
                 let target_view = target.create_view(&Default::default());
                 flip ^= 1;
                 let copy = current
@@ -608,7 +622,12 @@ impl Renderer {
                         depth_slice: None,
                         resolve_target: Some(&target_view),
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            // A compound clip's empty areas show what is under it.
+                            load: wgpu::LoadOp::Clear(if self.nesting > 0 {
+                                wgpu::Color::TRANSPARENT
+                            } else {
+                                wgpu::Color::BLACK
+                            }),
                             store: wgpu::StoreOp::Discard,
                         },
                     })],
@@ -636,7 +655,7 @@ impl Renderer {
                 break;
             };
             let below_view = below.create_view(&Default::default());
-            let target = self.canvas_texture(Slot::Canvas(flip), size);
+            let target = self.canvas_texture(Slot::Canvas(flip + 2 * self.nesting as u8), size);
             let target_view = target.create_view(&Default::default());
             flip ^= 1;
             match step {
@@ -691,7 +710,7 @@ impl Renderer {
                         self.generate_mips(encoder, &texture, mips);
                         sides.push(texture.create_view(&Default::default()));
                     }
-                    let mixed = self.canvas(Slot::Placed, size);
+                    let mixed = self.canvas(Slot::Placed(self.nesting), size);
                     self.effect_pass(
                         encoder,
                         "fs_transition",
@@ -717,9 +736,10 @@ impl Renderer {
                 Step::Adjust { layer, opacity } => {
                     // Effects on everything so far, mixed back in by the layer's opacity.
                     let effects = &plan.layers[*layer].effects;
-                    let adjusted = self.apply_effects(encoder, *layer, &below, effects, frames)?;
+                    let adjusted =
+                        self.apply_effects(encoder, ns + *layer, &below, effects, frames)?;
                     let masks = &plan.layers[*layer].masks;
-                    let coverage = self.mask_view(*layer, masks, size);
+                    let coverage = self.mask_view(ns + *layer, masks, size);
                     let mut p = [[0.0f32; 4]; SLOTS];
                     p[0][0] = *opacity;
                     p[0][1] = if coverage.is_some() { 1.0 } else { 0.0 };
@@ -735,7 +755,7 @@ impl Renderer {
                     );
                 }
                 Step::Layer(draw) => {
-                    let placed = self.canvas(Slot::Placed, size);
+                    let placed = self.canvas(Slot::Placed(self.nesting), size);
                     {
                         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("blended layer"),
@@ -780,11 +800,11 @@ impl Renderer {
         }
         let canvas_view = match current {
             Some(texture) => texture.create_view(&Default::default()),
-            None => self.canvas(Slot::Canvas(flip), size),
+            None => self.canvas(Slot::Canvas(flip + 2 * self.nesting as u8), size),
         };
 
         let pipeline = self.encoder_pipeline(format);
-        let output = self.uniform(&[transfer as u32, 0, 0, 0]);
+        let output = self.uniform(&[transfer as u32, u32::from(self.nesting > 0), 0, 0]);
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("encode"),
             layout: &pipeline.get_bind_group_layout(0),
@@ -913,6 +933,13 @@ impl Renderer {
                     texture,
                     placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
                 )
+            }
+            LayerSource::Nested(nested) => {
+                let texture =
+                    self.render_nested(encoder, nested, size, plan.canvas, index, frames)?;
+                let vertices =
+                    layer_quad(plan.canvas, nested.canvas, 0, &layer.transform, layer.crop);
+                (texture, vertices)
             }
             LayerSource::Adjustment | LayerSource::Transition(_) => return Ok(None),
         };
@@ -1443,6 +1470,69 @@ impl Renderer {
         Ok(layer)
     }
 
+    /// Renders a compound clip's plan into a mipmapped linear texture of its canvas at the
+    /// output's scale, with a transparent background. It is submitted before the plan that
+    /// shows it, after what that plan recorded so far, and records into its own slots.
+    fn render_nested(
+        &mut self,
+        outer: &mut wgpu::CommandEncoder,
+        nested: &RenderPlan,
+        output: (u32, u32),
+        canvas: (u32, u32),
+        index: usize,
+        frames: &mut dyn FrameProvider,
+    ) -> Result<wgpu::Texture, RenderError> {
+        let scale = f64::from(output.1) / f64::from(canvas.1.max(1));
+        let side = |v: u32| (f64::from(v) * scale).round().clamp(1.0, 4096.0) as u32;
+        let size = (side(nested.canvas.0), side(nested.canvas.1));
+        let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
+        let result = self.texture(
+            Slot::Nested {
+                depth: self.nesting,
+                layer: index,
+            },
+            size,
+            CANVAS_FORMAT,
+            mips,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let target = result.create_view(&wgpu::TextureViewDescriptor {
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        // What the outer plan recorded so far goes first, so this frame's uploads and
+        // passes never run ahead of it.
+        let recorded = std::mem::replace(
+            outer,
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("frame, after a compound clip"),
+                }),
+        );
+        self.queue.submit([recorded.finish()]);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("compound clip"),
+            });
+        self.nesting += 1;
+        let recorded = self.record(
+            nested,
+            frames,
+            &mut encoder,
+            &target,
+            CANVAS_FORMAT,
+            size,
+            TransferFunction::Linear,
+        );
+        self.nesting -= 1;
+        recorded?;
+        self.generate_mips(&mut encoder, &result, mips);
+        self.queue.submit([encoder.finish()]);
+        Ok(result)
+    }
+
     /// `first` and `second` mixed in linear light, `amount` of the second, mipmapped like a
     /// layer texture: the in-between frame of smooth slow motion.
     fn mix_frames(
@@ -1681,14 +1771,14 @@ impl Renderer {
     /// The multisampled composite target, resolved into the canvas after each frame.
     fn multisampled_canvas(&mut self, size: (u32, u32)) -> wgpu::Texture {
         let key = TextureKey {
-            slot: Slot::CanvasSamples,
+            slot: Slot::CanvasSamples(self.nesting),
             width: size.0,
             height: size.1,
             format: CANVAS_FORMAT,
             mips: 1,
         };
         self.textures
-            .retain(|existing, _| existing.slot != Slot::CanvasSamples || *existing == key);
+            .retain(|existing, _| existing.slot != key.slot || *existing == key);
         self.textures
             .entry(key)
             .or_insert_with(|| {
@@ -1765,6 +1855,9 @@ impl Renderer {
             .clone()
     }
 }
+
+/// Slot numbers of each level of compound clips start this far above the level outside.
+const NESTED_SLOTS: usize = 1 << 20;
 
 /// Slot numbers for a layer's second source frame start this far above its own.
 const NEXT_FRAME_SLOTS: usize = 1 << 24;

@@ -87,6 +87,7 @@ impl Command for MediaAdd {
         }
         let id = ctx.project.allocate_id(IdKind::Asset);
         ctx.project.media.assets.push(Asset {
+            folder: None,
             id: id.clone(),
             kind: self.kind,
             name: self.name,

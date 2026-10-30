@@ -35,7 +35,7 @@ Process rules are in [ADR-0001](../../../docs/adr/0001-record-architecture-decis
    npx markdownlint-cli2 docs/adr/*.md
    ```
 
-8. **Open a PR** titled `docs(adr): NNNN short title`, containing only the ADR and index changes. Implementation follows in later PRs.
+8. **Ship it with its implementation.** The ADR and the index change go in the pull request that first implements the decision, so a decision costs no CI run of its own; the PR description says that it adds an ADR. Open an ADR-only PR (`docs(adr): NNNN short title`) only when a maintainer asks to settle the decision before any code.
 
 ## Quality bar
 

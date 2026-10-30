@@ -844,7 +844,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset.",
+    "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files).",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -883,6 +883,14 @@ expression: listing
             "null"
           ]
         },
+        "relink": {
+          "default": null,
+          "description": "Instead of adding it, the one file given is the new place of this moved asset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "request_id": {
           "description": "Retry key: repeating it with the same files returns the first result.",
           "type": [
@@ -900,7 +908,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "List the project's media: asset ids, names, kinds, durations and stream details.",
+    "description": "List the project's media: asset ids, names, kinds, durations, stream details, bin folders, the clips that use each asset, and missing: true for files that cannot be found (relink them with media_import).",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {

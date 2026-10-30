@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::AppState;
+use crate::library::{ProjectSummary, TrashEntry};
 use crate::preview::Job;
 use crate::workspace::{NewProject, Opened, Workspace};
 
@@ -148,7 +149,92 @@ pub fn project_close(app: AppHandle, state: State<'_, AppState>) {
 #[tauri::command]
 pub async fn query(state: State<'_, AppState>, name: String, args: Option<Value>) -> Answer<Value> {
     let workspace: Arc<Workspace> = Arc::clone(&state.workspace);
-    blocking(move || workspace.query(&name, args.unwrap_or(Value::Null))).await
+    blocking(move || {
+        let mut value = workspace.query(&name, args.unwrap_or(Value::Null))?;
+        // The window offers to relink media whose files are gone.
+        if name == "media.list"
+            && let Some((bundle, _, _)) = workspace.snapshot()
+        {
+            fosscut_engine::import::mark_missing(&mut value, &bundle);
+        }
+        Ok(value)
+    })
+    .await
+}
+
+/// Shows an asset's file in the system's file manager.
+#[tauri::command]
+pub async fn media_reveal(state: State<'_, AppState>, asset: String) -> Answer<()> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let (bundle, project, _) = workspace
+            .snapshot()
+            .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+        let asset = asset
+            .parse()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{asset}: {e}")))?;
+        let file = fosscut_engine::import::asset_file(&project, &bundle, &asset)?;
+        reveal(&file).map_err(|e| {
+            ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                format!("cannot show {}: {e}", file.display()),
+            )
+        })
+    })
+    .await
+}
+
+/// Opens the file manager at `file`, selected where the system allows.
+fn reveal(file: &std::path::Path) -> std::io::Result<()> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut open = std::process::Command::new("open");
+        open.arg("-R").arg(file);
+        open
+    } else if cfg!(windows) {
+        let mut explorer = std::process::Command::new("explorer");
+        explorer.arg(format!("/select,{}", file.display()));
+        explorer
+    } else {
+        let mut open = std::process::Command::new("xdg-open");
+        open.arg(file.parent().unwrap_or(file));
+        open
+    };
+    command.spawn().map(|_| ())
+}
+
+/// Asks where an asset's file is now and relinks it; `None` when the user cancels.
+#[tauri::command]
+pub async fn media_relink(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    asset: String,
+) -> Answer<Option<Response>> {
+    let dialog = app.clone();
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let (bundle, _, _) = workspace
+            .snapshot()
+            .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+        let Some(file) = dialog
+            .dialog()
+            .file()
+            .set_title("Find the media file")
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        let path = file
+            .into_path()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, e.to_string()))?;
+        let id = asset
+            .parse()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{asset}: {e}")))?;
+        let args = fosscut_engine::import::media_relink_args(&id, &path, &bundle)?;
+        workspace
+            .execute(Request::single("media.relink", args))
+            .map(Some)
+    })
+    .await
 }
 
 /// Applies the user's edit as one undoable step.
@@ -253,4 +339,62 @@ pub fn window_fullscreen(app: AppHandle, on: bool) {
     if let Some(window) = tauri::Manager::get_webview_window(&app, "main") {
         let _ = window.set_fullscreen(on);
     }
+}
+
+/// Summaries of the recent projects for the browser, with thumbnails when `thumbnails`.
+#[tauri::command]
+pub async fn project_summaries(
+    state: State<'_, AppState>,
+    thumbnails: bool,
+) -> Answer<Vec<ProjectSummary>> {
+    let workspace = Arc::clone(&state.workspace);
+    let library = Arc::clone(&state.library);
+    blocking(move || {
+        Ok(workspace
+            .recent()
+            .iter()
+            .filter_map(|path| library.summary(path, thumbnails).ok())
+            .collect())
+    })
+    .await
+}
+
+/// Moves a project to the trash; never the open one.
+#[tauri::command]
+pub async fn project_trash(state: State<'_, AppState>, path: PathBuf) -> Answer<TrashEntry> {
+    let workspace = Arc::clone(&state.workspace);
+    let library = Arc::clone(&state.library);
+    blocking(move || {
+        if workspace
+            .snapshot()
+            .is_some_and(|(bundle, _, _)| bundle == path)
+        {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "close the project before moving it to the trash",
+            ));
+        }
+        library.trash(&path)
+    })
+    .await
+}
+
+/// The projects in the trash, newest first.
+#[tauri::command]
+pub fn trash_list(state: State<'_, AppState>) -> Vec<TrashEntry> {
+    state.library.trashed()
+}
+
+/// Moves a project back from the trash and returns where it is.
+#[tauri::command]
+pub async fn trash_restore(state: State<'_, AppState>, id: String) -> Answer<PathBuf> {
+    let library = Arc::clone(&state.library);
+    blocking(move || library.restore(&id)).await
+}
+
+/// Deletes a project in the trash for good.
+#[tauri::command]
+pub async fn trash_delete(state: State<'_, AppState>, id: String) -> Answer<()> {
+    let library = Arc::clone(&state.library);
+    blocking(move || library.delete(&id)).await
 }

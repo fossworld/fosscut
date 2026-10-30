@@ -90,9 +90,10 @@ pub(crate) fn ensure_unlocked(track: &Track) -> Result<(), ApiError> {
 /// The track kind a clip content needs.
 pub(crate) fn track_kind_for(content: &ClipContent) -> TrackKind {
     match content {
-        ClipContent::Video { .. } | ClipContent::Image { .. } | ClipContent::Adjustment => {
-            TrackKind::Video
-        }
+        ClipContent::Video { .. }
+        | ClipContent::Image { .. }
+        | ClipContent::Adjustment
+        | ClipContent::Timeline { .. } => TrackKind::Video,
         ClipContent::Audio { .. } => TrackKind::Audio,
         ClipContent::Text(_) => TrackKind::Text,
         ClipContent::Caption(_) => TrackKind::Caption,

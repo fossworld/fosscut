@@ -2,7 +2,16 @@
 // sends events when the test says so.
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
-import type { AppInfo, Client, ColorSuggestion, EditRequest, EditResponse, Opened } from "./types";
+import type {
+  AppInfo,
+  Client,
+  ColorSuggestion,
+  EditRequest,
+  EditResponse,
+  Opened,
+  ProjectSummary,
+  TrashEntry,
+} from "./types";
 
 export interface Call {
   method: string;
@@ -43,6 +52,35 @@ export class FakeEngine implements EngineClient {
   async appInfo(): Promise<AppInfo> {
     return { name: "FossCut", version: "test", runtime_dir: "/tmp/run" };
   }
+
+  summaries: ProjectSummary[] = [];
+  trashed: TrashEntry[] = [];
+
+  async projectSummaries(thumbnails: boolean): Promise<ProjectSummary[]> {
+    this.record("projectSummaries", thumbnails);
+    return this.summaries;
+  }
+
+  trash = {
+    add: async (path: string): Promise<TrashEntry> => {
+      this.record("trash.add", path);
+      const entry = { id: `t-${this.trashed.length}`, name: path, original: path, trashed_ms: 1 };
+      this.trashed.unshift(entry);
+      this.summaries = this.summaries.filter((s) => s.path !== path);
+      return entry;
+    },
+    list: async (): Promise<TrashEntry[]> => this.trashed,
+    restore: async (id: string): Promise<string> => {
+      this.record("trash.restore", id);
+      const entry = this.trashed.find((t) => t.id === id);
+      this.trashed = this.trashed.filter((t) => t.id !== id);
+      return entry?.original ?? "";
+    },
+    remove: async (id: string): Promise<void> => {
+      this.record("trash.remove", id);
+      this.trashed = this.trashed.filter((t) => t.id !== id);
+    },
+  };
 
   async recentProjects(): Promise<string[]> {
     return this.recent;
@@ -94,6 +132,17 @@ export class FakeEngine implements EngineClient {
     const params = reference ? { saturation: -0.1 } : { temperature: 0.2 };
     return { effect_add: { clip, type: "color.adjust", params, index: 0 } };
   }
+
+  /** What relinking answers: true for a file chosen, false for a cancel. */
+  relinkChooses = true;
+
+  media = {
+    reveal: async (asset: string): Promise<void> => this.record("media.reveal", asset),
+    relink: async (asset: string): Promise<boolean> => {
+      this.record("media.relink", asset);
+      return this.relinkChooses;
+    },
+  };
 
   preview = {
     viewport: async (rect: Rect): Promise<void> => this.record("preview.viewport", rect),

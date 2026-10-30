@@ -11,6 +11,8 @@ import type {
   EditResponse,
   Opened,
   Playhead,
+  ProjectSummary,
+  TrashEntry,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -44,6 +46,17 @@ export interface NewProjectFormat {
 export interface EngineClient {
   appInfo(): Promise<AppInfo>;
   recentProjects(): Promise<string[]>;
+  /** The recent projects for the browser, with thumbnails when `thumbnails`. */
+  projectSummaries(thumbnails: boolean): Promise<ProjectSummary[]>;
+  trash: {
+    /** Moves a project to the trash (never the open one). */
+    add(path: string): Promise<TrashEntry>;
+    list(): Promise<TrashEntry[]>;
+    /** Moves a project back; returns where it is now. */
+    restore(id: string): Promise<string>;
+    /** Deletes a trashed project for good. */
+    remove(id: string): Promise<void>;
+  };
   currentProject(): Promise<Opened | null>;
   openProject(path: string): Promise<Opened>;
   /** Asks the user for a project folder; null when they cancel. */
@@ -59,6 +72,12 @@ export interface EngineClient {
    * to apply with `execute` like any edit.
    */
   colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion>;
+  media: {
+    /** Shows an asset's file in the system's file manager. */
+    reveal(asset: string): Promise<void>;
+    /** Asks where an asset's file is now and relinks it; false when the user cancels. */
+    relink(asset: string): Promise<boolean>;
+  };
   preview: {
     viewport(rect: Rect): Promise<void>;
     show(flicks: number): Promise<void>;

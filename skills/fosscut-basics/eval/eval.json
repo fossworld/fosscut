@@ -31,7 +31,8 @@
       "args": { "names": ["clip.add", "clip.split", "text.add"] },
       "expect": {
         "commands": { "$len": 3 },
-        "commands.0.input_schema.required": ["asset"],
+        "commands.0.input_schema.properties.asset.description": "The asset to place.",
+        "commands.0.input_schema.properties.compound.description": "A compound timeline to place instead of an asset (ADR-0025).",
         "commands.2.input_schema.required": ["text"]
       }
     },

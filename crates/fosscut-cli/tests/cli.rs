@@ -2654,3 +2654,193 @@ fn timeline_editing_from_the_command_line() {
     let bad = fails(&dir, &["clips", "paste", "--at", "1s", "--from", "{}"]);
     assert_eq!(bad["code"], "fosscut.request.invalid_arguments", "{bad}");
 }
+
+/// The media bin and timelines: renaming and filing assets, a moved file showing as missing
+/// until it is relinked, and a new timeline made from media becoming the primary one.
+#[test]
+fn media_bin_and_timelines_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("media-bin");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=25:d=2",
+        ])
+        .args(["-c:v", "mpeg4", "shot.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(&dir, &["project", "new", "Bin.fosscut"]);
+    ok(&dir, &["media", "import", "shot.mp4"]);
+    ok(&dir, &["media", "rename", "asset_0001", "Wide shot"]);
+    ok(
+        &dir,
+        &["media", "move", "asset_0001", "--folder", "Footage/Day 1"],
+    );
+    let listed = ok(&dir, &["media", "list"]);
+    let asset = &listed["assets"][0];
+    assert_eq!(asset["name"], "Wide shot", "{listed}");
+    assert_eq!(asset["folder"], "Footage/Day 1");
+    assert!(asset.get("missing").is_none());
+    assert_eq!(listed["folders"], json!(["Footage", "Footage/Day 1"]));
+    // Moved on disk: missing until relinked.
+    std::fs::create_dir_all(dir.join("moved")).unwrap();
+    std::fs::rename(dir.join("shot.mp4"), dir.join("moved/shot.mp4")).unwrap();
+    let listed = ok(&dir, &["media", "list"]);
+    assert_eq!(listed["assets"][0]["missing"], true);
+    let human = fosscut(&dir, &["media", "list"]);
+    assert!(String::from_utf8_lossy(&human.stdout).contains("(missing)"));
+    ok(&dir, &["media", "relink", "asset_0001", "moved/shot.mp4"]);
+    let listed = ok(&dir, &["media", "list"]);
+    assert!(listed["assets"][0].get("missing").is_none());
+    // Another file is not the same media.
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=25:d=1",
+        ])
+        .args(["-c:v", "mpeg4", "other.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let wrong = fails(&dir, &["media", "relink", "asset_0001", "other.mp4"]);
+    assert_eq!(wrong["code"], "fosscut.asset.identity_mismatch", "{wrong}");
+    // A timeline from the media, made primary.
+    let added = ok(
+        &dir,
+        &[
+            "timeline",
+            "add",
+            "--name",
+            "Cut 1",
+            "--asset",
+            "asset_0001",
+            "--primary",
+        ],
+    );
+    let timeline = added["results"][0]["timeline"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(added["results"][0]["duration"]["seconds"], "2");
+    let read = ok(&dir, &["timeline", "read"]);
+    assert_eq!(read["format"]["width"], 320, "the media's canvas");
+    assert_eq!(read["format"]["rate"], "25");
+    ok(
+        &dir,
+        &["timeline", "rename", "Cut A", "--timeline", &timeline],
+    );
+    let info = ok(&dir, &["project", "info"]);
+    let first = info["timelines"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(info["primary_timeline"], timeline);
+    ok(&dir, &["timeline", "primary", &first]);
+    ok(
+        &dir,
+        &["timeline", "remove", &timeline, "--allow-destructive"],
+    );
+    let info = ok(&dir, &["project", "info"]);
+    assert_eq!(info["timelines"].as_array().unwrap().len(), 1);
+    // No clip shows the asset any more, so it can leave the bin.
+    let removed = ok(&dir, &["media", "remove", "asset_0001"]);
+    assert_eq!(removed["results"][0]["asset"], "asset_0001");
+}
+
+/// ADR-0025: clips turned into a compound clip export the same picture, can be shown
+/// twice, and come back apart.
+#[test]
+fn compound_clips_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("compound");
+    for (name, source) in [
+        ("red.mp4", "color=c=0xff0000:s=160x90:r=30:d=2"),
+        ("blue.mp4", "color=c=0x0000ff:s=160x90:r=30:d=2"),
+    ] {
+        let status = Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args(["-v", "error", "-f", "lavfi", "-i", source])
+            .args(["-c:v", "mpeg4", "-q:v", "2", name])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let new = [
+        "project",
+        "new",
+        "Nest.fosscut",
+        "--width",
+        "160",
+        "--height",
+        "90",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "red.mp4"]);
+    ok(&dir, &["media", "import", "blue.mp4"]);
+    let red = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let red = red["results"][0]["clip"].as_str().unwrap().to_string();
+    let blue = ok(&dir, &["clip", "add", "--asset", "asset_0002"]);
+    let blue = blue["results"][0]["clip"].as_str().unwrap().to_string();
+    let channel = |time: &str, out: &str, c: usize| {
+        ok(&dir, &["frame", time, "--out", out, "--width", "80"]);
+        mean_channel(&dir.join(out), c)
+    };
+    let made = ok(
+        &dir,
+        &[
+            "clip", "compound", "--clip", &red, "--clip", &blue, "--name", "Colors",
+        ],
+    );
+    let nested = made["results"][0]["timeline"].as_str().unwrap().to_string();
+    let compound = made["results"][0]["compound"]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        channel("1s", "red.png", 0) > 200.0,
+        "red inside the compound clip"
+    );
+    assert!(channel("3s", "blue.png", 2) > 200.0, "then blue");
+    // Shown a second time, from the middle.
+    ok(
+        &dir,
+        &[
+            "clip",
+            "add",
+            "--compound",
+            &nested,
+            "--start",
+            "4s",
+            "--source-in",
+            "2s",
+            "--duration",
+            "2s",
+        ],
+    );
+    assert!(channel("5s", "again.png", 2) > 200.0, "the blue half again");
+    let exported = ok_with_progress(&dir, &["export", "Nest.mp4"]);
+    assert_eq!(exported["frames"], json!(180), "{exported}");
+    let busy = fails(
+        &dir,
+        &["timeline", "remove", &nested, "--allow-destructive"],
+    );
+    assert_eq!(busy["code"], "fosscut.timeline.in_use", "{busy}");
+    let apart = ok(&dir, &["clip", "decompose", "--clip", &compound]);
+    assert_eq!(apart["results"][0]["clips"].as_array().unwrap().len(), 2);
+    assert!(
+        channel("1s", "apart.png", 0) > 200.0,
+        "red again, now as its own clip"
+    );
+}

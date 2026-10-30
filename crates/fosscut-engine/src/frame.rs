@@ -179,11 +179,8 @@ impl Media {
         bundle: &Path,
         plan: &RenderPlan,
     ) -> Result<(), EngineError> {
-        // A transition holds two layers of its own.
-        let layers = plan.layers.iter().flat_map(|layer| match &layer.source {
-            LayerSource::Transition(t) => vec![&t.outgoing, &t.incoming],
-            _ => vec![layer],
-        });
+        // Transitions and compound clips hold layers of their own.
+        let layers = plan.layers.iter().flat_map(|layer| layer.flattened());
         for layer in layers {
             for effect in &layer.effects {
                 if let Some(asset) = effect.asset("lut")

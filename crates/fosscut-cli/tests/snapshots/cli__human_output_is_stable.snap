@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.8.0
+Demo (project_<random>)  revision 0  format 0.10.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,21 +93,23 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.8.0
+Demo (project_<random>)  revision 8  format 0.10.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.8.0
+API 0.1.0  project format 0.10.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
-  clip.add       Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  clip.add       Place a media asset (or, with compound, a compound timeline) on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   clip.align     Align a clip on the canvas: put the visible part of its picture against the left, right, top or bottom edge, or centre it, taking its scale, crop, flips and rotation into account. Text and captions can only be centred.
+  clip.compound  Make a compound clip: move chosen clips into a new compound timeline (keeping their tracks and timing) and put one clip showing it in their place, on the lowest of their video tracks. Trim, speed, effects and transitions then apply to it as a whole.
   clip.copy_attributes Paste attributes: copy one clip's placement, crop, opacity, blend mode, volume and sound settings, effects, masks or animations (with their keyframes) to other clips, keeping their media. Effects and masks skip audio clips.
+  clip.decompose Break a compound clip apart: put the part of its timeline it shows back in its place, clip by clip, on tracks of the same kinds. The compound timeline goes when nothing else shows it. The compound clip must have no speed, effects, masks, keyframes or placement of its own.
   clip.extract_audio Extract a video clip's sound into an audio clip of its own, on the first audio track free over its span (or a new one), grouped with the video so they stay in sync. The video clip is no longer heard; clip.restore_audio undoes it.
   clip.freeze    Insert a freeze frame: hold the frame of a video clip at a time for a duration (two seconds by default), splitting the clip there and moving what follows on its track later. The held frame is silent.
   clip.group     Group two or more clips of a timeline so clip.move, clip.split, clip.trim and clip.remove edit them together (pass linked: false to edit one). They leave any group they were in.
@@ -116,7 +118,7 @@ commands:
   clip.replace   Replace a clip's media with another asset, keeping its place, length, speed, effects, masks, keyframes and animations. The new media must be long enough (fosscut.clip.source_range).
   clip.restore_audio Put a video clip's extracted sound back: remove the audio clips of its group that play the same media, and hear the video clip again.
   clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
-  clip.speed     Change a video or audio clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
+  clip.speed     Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source. Clips of its group spanning the time split too unless linked: false.
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.
   clip.ungroup   Take clips out of their groups, so each edits on its own again.
@@ -138,9 +140,19 @@ commands:
   mask.remove    Remove a mask and its keyframes from a clip.
   mask.set       Change a mask: shape, placement (center, size, rotation), feather, expansion, roundness, invert, mode, path points, text or brush strokes, or turn it off (enabled: false). Animated values are set with keyframe.set as masks.<id>.<property>.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
+  media.folder   Add, rename (or move) or remove a media bin folder. Removing one moves its assets and subfolders up to its parent; assets are never removed.
+  media.move     Put assets in a media bin folder such as B-roll/Day 1 (created when missing), or back at the top level.
+  media.relink   Point an asset at its file's new location (front ends measure the file; the CLI's media relink and the MCP media_import with relink do both). The content must be the same file (fosscut.asset.identity_mismatch); for other media use media.replace.
+  media.remove   Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too.
+  media.rename   Rename an asset in the media bin. Only the display name changes, not the file.
+  media.replace  Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin.
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  timeline.add   Add a timeline to the project: empty, or a new timeline from chosen media placed one after another, with the canvas and rate of the first video unless given. primary makes it the one commands and exports use by default.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
+  timeline.remove Remove a timeline (allow_destructive when it has clips). A project keeps at least one timeline; removing the primary one makes the next primary.
   timeline.remove_ranges Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.
+  timeline.rename Rename a timeline.
+  timeline.set_primary Make a timeline the primary one: the timeline the app shows and commands, frames and exports use when given no timeline.
   timeline.split Split all: cut every clip under a time on every unlocked track (or the tracks named) in one step. Grouped clips' right parts form new groups.
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
   transition.remove Remove the transition from a clip into the next one: a plain cut again.

@@ -304,6 +304,19 @@ export function Inspector({
           )}
         </div>
       )}
+      {clip.kind === "timeline" && clip.timeline && (
+        <div className="options">
+          <div className="buttons">
+            <span className="muted">Compound clip</span>
+            <button title="Edit the timeline inside it" onClick={() => void editor.showTimeline(clip.timeline!)}>
+              Open
+            </button>
+            <button title="Put its clips back in its place" onClick={() => void editor.decompose(clip.id)}>
+              Decompose
+            </button>
+          </div>
+        </div>
+      )}
       {clip.group && (
         <div className="options">
           <div className="buttons">

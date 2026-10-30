@@ -137,6 +137,8 @@ pub mod codes {
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The clip has no mask with this id.
     pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
+    /// Compound clips show the timeline.
+    pub const TIMELINE_IN_USE: &str = "fosscut.timeline.in_use";
     /// No timeline has a marker with this id.
     pub const MARKER_NOT_FOUND: &str = "fosscut.marker.not_found";
     /// No transition type has this name.
@@ -145,6 +147,10 @@ pub mod codes {
     pub const TRANSITION_NO_NEIGHBOR: &str = "fosscut.transition.no_neighbor";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
+    /// Clips show the asset, so it cannot be removed alone.
+    pub const ASSET_IN_USE: &str = "fosscut.asset.in_use";
+    /// The file is not the asset's media.
+    pub const ASSET_IDENTITY_MISMATCH: &str = "fosscut.asset.identity_mismatch";
     /// Media information is missing or inconsistent with the asset kind.
     pub const MEDIA_INCOMPLETE: &str = "fosscut.media.incomplete_info";
     /// Text is empty.
@@ -326,6 +332,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
         ),
         entry(
+            TIMELINE_IN_USE,
+            "Compound clips show the timeline, so it cannot be removed.",
+            "Remove or decompose the compound clips in the error's details first.",
+        ),
+        entry(
             MARKER_NOT_FOUND,
             "No timeline has a marker with this id.",
             "Read the markers with timeline.read; marker ids look like marker_0007.",
@@ -339,6 +350,16 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             ASSET_NOT_FOUND,
             "The asset does not exist.",
             "List assets with media.list.",
+        ),
+        entry(
+            ASSET_IN_USE,
+            "Clips show the asset, so it cannot be removed alone.",
+            "Remove the clips in the error's details first, or pass remove_clips: true with allow_destructive.",
+        ),
+        entry(
+            ASSET_IDENTITY_MISMATCH,
+            "The file is not the asset's media: its size or content differs.",
+            "Find the original file, or import the new one and swap it in with media.replace.",
         ),
         entry(
             MEDIA_INCOMPLETE,

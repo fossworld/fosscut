@@ -40,7 +40,8 @@ export type Action =
   | "zoom-out"
   | "zoom-fit"
   | "fullscreen"
-  | "rulers";
+  | "rulers"
+  | "compound";
 
 export interface Keystroke {
   key: string;
@@ -63,6 +64,7 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
     if (!mod || stroke.shiftKey) return null;
     if (key === "c" || key === "ç") return "copy-attributes";
     if (key === "v" || key === "√") return "paste-attributes";
+    if (key === "g" || key === "©") return "compound";
     return null;
   }
   if (mod) {

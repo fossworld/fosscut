@@ -34,6 +34,8 @@ pub trait ProjectStore {
     fn append(&mut self, path: &str, data: &[u8]) -> Result<(), StoreError>;
     /// True when the document exists.
     fn exists(&self, path: &str) -> bool;
+    /// Removes a document; removing a missing one does nothing.
+    fn remove(&mut self, path: &str) -> Result<(), StoreError>;
 }
 
 /// An in-memory store for tests and non-file environments.
@@ -77,6 +79,11 @@ impl ProjectStore for MemoryStore {
 
     fn exists(&self, path: &str) -> bool {
         self.files.contains_key(path)
+    }
+
+    fn remove(&mut self, path: &str) -> Result<(), StoreError> {
+        self.files.remove(path);
+        Ok(())
     }
 }
 
@@ -156,5 +163,12 @@ impl ProjectStore for DirStore {
 
     fn exists(&self, path: &str) -> bool {
         self.full_path(path).exists()
+    }
+
+    fn remove(&mut self, path: &str) -> Result<(), StoreError> {
+        match std::fs::remove_file(self.full_path(path)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(Self::io_error(path, e)),
+            _ => Ok(()),
+        }
     }
 }

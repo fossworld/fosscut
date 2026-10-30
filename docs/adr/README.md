@@ -30,11 +30,12 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0022](0022-live-sessions-over-a-local-socket.md) | Host live sessions over a local socket with per-session keys | Proposed |
 | [0023](0023-clip-speed-as-a-time-map.md) | Change clip speed with a time map from timeline time to source time | Proposed |
 | [0024](0024-link-clips-in-groups-that-edit-together.md) | Link clips in groups that edit together | Proposed |
+| [0025](0025-nest-timelines-in-clips-for-compound-clips.md) | Nest timelines in clips for compound clips | Proposed |
 
 ## Reading order
 
 - **Product shape:** 0002, 0006, 0007, 0013, 0022.
-- **Data:** 0004, 0005, 0011, 0021, 0023, 0024.
+- **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025.
 - **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 

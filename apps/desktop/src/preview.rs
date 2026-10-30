@@ -558,6 +558,7 @@ mod thread_tests {
         let mut project = scene.project.clone();
         let asset = Id::new(IdKind::Asset, 90);
         project.media.assets.push(Asset {
+            folder: None,
             id: asset.clone(),
             kind: AssetKind::Video,
             name: "gone.mp4".into(),

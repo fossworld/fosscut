@@ -4,7 +4,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
-import type { AppInfo, Client, ColorSuggestion, EditRequest, EditResponse, Opened } from "./types";
+import type {
+  AppInfo,
+  Client,
+  ColorSuggestion,
+  EditRequest,
+  EditResponse,
+  Opened,
+  ProjectSummary,
+  TrashEntry,
+} from "./types";
 
 /** True inside the desktop app. */
 export function inDesktopApp(): boolean {
@@ -15,6 +24,17 @@ export class TauriEngine implements EngineClient {
   appInfo(): Promise<AppInfo> {
     return invoke("app_info");
   }
+
+  projectSummaries(thumbnails: boolean): Promise<ProjectSummary[]> {
+    return invoke("project_summaries", { thumbnails });
+  }
+
+  trash = {
+    add: (path: string): Promise<TrashEntry> => invoke("project_trash", { path }),
+    list: (): Promise<TrashEntry[]> => invoke("trash_list"),
+    restore: (id: string): Promise<string> => invoke("trash_restore", { id }),
+    remove: (id: string): Promise<void> => invoke("trash_delete", { id }),
+  };
 
   recentProjects(): Promise<string[]> {
     return invoke("recent_projects");
@@ -55,6 +75,11 @@ export class TauriEngine implements EngineClient {
   colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion> {
     return invoke("color_suggest", { clip, reference: reference ?? null });
   }
+
+  media = {
+    reveal: (asset: string): Promise<void> => invoke("media_reveal", { asset }),
+    relink: async (asset: string): Promise<boolean> => (await invoke("media_relink", { asset })) !== null,
+  };
 
   preview = {
     viewport: (rect: Rect): Promise<void> => invoke("preview_viewport", { ...rect }),

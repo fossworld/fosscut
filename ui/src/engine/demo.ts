@@ -17,8 +17,25 @@ export function demoEngine(): FakeEngine {
       can_undo: true,
       can_redo: false,
       primary_timeline: "timeline_0000",
-      timelines: [],
-      assets: 3,
+      timelines: [
+        {
+          id: "timeline_0000",
+          name: "Launch video",
+          format: { width: 1920, height: 1080, rate: "30" },
+          duration: moment(24),
+          tracks: 4,
+          clips: 8,
+        },
+        {
+          id: "timeline_0030",
+          name: "Vertical cut",
+          format: { width: 1080, height: 1920, rate: "30" },
+          duration: moment(24),
+          tracks: 4,
+          clips: 8,
+        },
+      ],
+      assets: 5,
     },
   };
   engine.recent = ["/demo/Launch.fosscut"];
@@ -151,9 +168,13 @@ export function demoEngine(): FakeEngine {
   };
   engine.answers["media.list"] = {
     assets: [
-      { id: "asset_0001", name: "interview.mp4", kind: "video" },
-      { id: "asset_0015", name: "film.cube", kind: "lut" },
+      { id: "asset_0001", name: "interview.mp4", kind: "video", duration: moment(16), used_by: ["clip_0003"], folder: "Footage" },
+      { id: "asset_0002", name: "b-roll.mp4", kind: "video", duration: moment(7), used_by: ["clip_0006"], folder: "Footage/B-roll" },
+      { id: "asset_0003", name: "music.m4a", kind: "audio", duration: moment(24), used_by: ["clip_0008"] },
+      { id: "asset_0004", name: "old take.mp4", kind: "video", duration: moment(12), used_by: [], missing: true },
+      { id: "asset_0015", name: "film.cube", kind: "lut", used_by: [] },
     ],
+    folders: ["Footage", "Footage/B-roll"],
   };
   engine.answers["history.list"] = {
     entries: [

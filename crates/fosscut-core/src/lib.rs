@@ -45,6 +45,11 @@ pub use commands::{
 };
 pub use commands::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub use commands::{
+    AssetChanged, FolderAction, Folders, MediaFolder, MediaMove, MediaMoved, MediaRelink,
+    MediaRemove, MediaRemoved, MediaRename, MediaReplace, MediaReplaced, TimelineAdd,
+    TimelineRemove, TimelineRemoved, TimelineRename, TimelineReport, TimelineSetPrimary,
+};
+pub use commands::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
     ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,
     ClipSplitResult, ClipTrim, Easing, Fit, KeyframeRemove, KeyframeReport, KeyframeSet,
@@ -52,6 +57,7 @@ pub use commands::{
     TextAdd, TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded,
     WordInput,
 };
+pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
