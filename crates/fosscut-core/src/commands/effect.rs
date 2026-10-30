@@ -80,6 +80,15 @@ pub(crate) fn param_value(
             .as_bool()
             .map(ParamValue::Flag)
             .ok_or_else(|| invalid(format!("{command}: {name} must be true or false"))),
+        ParamKind::Color => value
+            .as_str()
+            .and_then(|text| fosscut_model::Color::parse(text).ok())
+            .map(|color| ParamValue::Name(color.as_str().to_string()))
+            .ok_or_else(|| {
+                invalid(format!(
+                    "{command}: {name} must be a color #RRGGBB, not {value}"
+                ))
+            }),
         ParamKind::Choice => value
             .as_str()
             .filter(|n| param.choices.contains(n))

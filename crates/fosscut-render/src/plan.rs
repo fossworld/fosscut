@@ -84,6 +84,9 @@ pub struct Layer {
     /// Effects applied to the layer's picture in order before placement (ADR-0011); on an
     /// adjustment layer, to the canvas below it.
     pub effects: Vec<PlannedEffect>,
+    /// The clip's enabled masks at the frame's time, combined in order; on an adjustment
+    /// layer they limit where its effects apply.
+    pub masks: Vec<fosscut_model::Mask>,
 }
 
 impl Layer {
@@ -114,6 +117,7 @@ impl Layer {
             mask: None,
             lut: None,
             effects: Vec::new(),
+            masks: Vec::new(),
         }
     }
 }
@@ -199,6 +203,12 @@ pub fn plan_frame(
                 })
             })
             .collect();
+        let masks: Vec<fosscut_model::Mask> = clip
+            .masks
+            .iter()
+            .filter(|m| m.enabled)
+            .map(|m| m.at(offset))
+            .collect();
         let placed = |source: LayerSource, rotation: u16| Layer {
             clip: Some(clip.id.clone()),
             source,
@@ -210,6 +220,7 @@ pub fn plan_frame(
             mask: None,
             lut: None,
             effects: effects.clone(),
+            masks: masks.clone(),
         };
         let source = match (&clip.content, track.kind) {
             (ClipContent::Video { asset, source_in }, TrackKind::Video) => SourceRef {

@@ -323,6 +323,38 @@
         }
       ]
     },
+    "BrushStroke": {
+      "description": "One painted stroke of a brush mask.",
+      "properties": {
+        "erase": {
+          "description": "Erases instead of painting.",
+          "type": "boolean"
+        },
+        "points": {
+          "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "radius": {
+          "description": "The brush's radius as a fraction of the picture's height.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "points",
+        "radius"
+      ],
+      "type": "object"
+    },
     "CaptionBox": {
       "additionalProperties": false,
       "description": "A box behind each line of text.",
@@ -642,6 +674,13 @@
           "description": "Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted\nby time with at most one keyframe per time. A property with keyframes takes its\nvalue from them, not from its field.",
           "type": "object"
         },
+        "masks": {
+          "description": "Masks that decide which parts of the picture show, combined in order; on an\nadjustment clip, where its effects apply.",
+          "items": {
+            "$ref": "#/$defs/Mask"
+          },
+          "type": "array"
+        },
         "opacity": {
           "description": "Opacity from 0 to 1.",
           "format": "double",
@@ -878,6 +917,177 @@
       ],
       "type": "object"
     },
+    "Mask": {
+      "description": "A mask on a clip.",
+      "properties": {
+        "center": {
+          "description": "The middle of the mask in the picture, 0 to 1 from the top-left corner (the middle\nwhen omitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "enabled": {
+          "description": "False ignores the mask without removing it.",
+          "type": "boolean"
+        },
+        "expansion": {
+          "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1, as a fraction of its\nsmaller half size.",
+          "format": "double",
+          "type": "number"
+        },
+        "feather": {
+          "description": "Softness of the edge, 0 (sharp) to 1, as a fraction of the mask's smaller half size.",
+          "format": "double",
+          "type": "number"
+        },
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Mask id (`mask_…`)."
+        },
+        "invert": {
+          "description": "Keeps the outside instead of the inside.",
+          "type": "boolean"
+        },
+        "keyframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Keyframe"
+            },
+            "type": "array"
+          },
+          "description": "Keyframes by property (`center`, `size`, `rotation`, `feather`, `expansion`,\n`roundness`), times from the clip's start.",
+          "type": "object"
+        },
+        "mode": {
+          "$ref": "#/$defs/MaskMode",
+          "description": "How it combines with the masks before it."
+        },
+        "points": {
+          "description": "Points of a path mask.",
+          "items": {
+            "$ref": "#/$defs/PathPoint"
+          },
+          "type": "array"
+        },
+        "rotation": {
+          "description": "Clockwise rotation in degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "roundness": {
+          "description": "Rounds a rectangle's corners, 0 (square) to 1 (fully round).",
+          "format": "double",
+          "type": "number"
+        },
+        "shape": {
+          "$ref": "#/$defs/MaskShape",
+          "default": "rectangle",
+          "description": "Its shape."
+        },
+        "size": {
+          "description": "Width and height as fractions of the picture's (half of each when omitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "strokes": {
+          "description": "Strokes of a brush mask.",
+          "items": {
+            "$ref": "#/$defs/BrushStroke"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "Text of a text mask.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "MaskMode": {
+      "description": "How a mask combines with the masks before it.",
+      "oneOf": [
+        {
+          "const": "add",
+          "description": "Shows what this mask covers as well.",
+          "type": "string"
+        },
+        {
+          "const": "subtract",
+          "description": "Hides what this mask covers.",
+          "type": "string"
+        },
+        {
+          "const": "intersect",
+          "description": "Shows only what this mask and the ones before cover.",
+          "type": "string"
+        }
+      ]
+    },
+    "MaskShape": {
+      "description": "The shape of a mask.",
+      "oneOf": [
+        {
+          "const": "rectangle",
+          "description": "A rectangle, with corners rounded by `roundness`.",
+          "type": "string"
+        },
+        {
+          "const": "ellipse",
+          "description": "An ellipse filling the mask's box.",
+          "type": "string"
+        },
+        {
+          "const": "linear",
+          "description": "Everything on one side of a line through the centre (above it, before rotation).",
+          "type": "string"
+        },
+        {
+          "const": "mirror",
+          "description": "A band through the centre, `size` high: the mirror shape.",
+          "type": "string"
+        },
+        {
+          "const": "star",
+          "description": "A five-pointed star.",
+          "type": "string"
+        },
+        {
+          "const": "heart",
+          "description": "A heart.",
+          "type": "string"
+        },
+        {
+          "const": "path",
+          "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+          "type": "string"
+        },
+        {
+          "const": "text",
+          "description": "The letters of `text`, filling the mask's box.",
+          "type": "string"
+        },
+        {
+          "const": "brush",
+          "description": "Painted `strokes`.",
+          "type": "string"
+        }
+      ]
+    },
     "PageFade": {
       "additionalProperties": false,
       "description": "Parameters of `page.fade`.",
@@ -963,6 +1173,51 @@
         }
       ],
       "description": "A parameter value."
+    },
+    "PathPoint": {
+      "description": "A point of a path mask, with optional Bezier handles relative to it.",
+      "properties": {
+        "at": {
+          "description": "The point in the mask's box, -1 to 1.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "in": {
+          "description": "The handle towards the previous point; a corner when omitted.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "out": {
+          "description": "The handle towards the next point; a corner when omitted.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "type": "object"
     },
     "Placement": {
       "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",

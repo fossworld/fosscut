@@ -22,6 +22,7 @@ mod caption;
 mod effect;
 mod error;
 mod id;
+mod mask;
 mod media;
 mod project;
 mod store;
@@ -44,6 +45,7 @@ pub use effect::{
 };
 pub use error::ModelError;
 pub use id::{Id, IdKind};
+pub use mask::{BrushStroke, MASK_PROPERTIES, Mask, MaskMode, MaskShape, PathPoint, mask_path};
 pub use media::{
     Asset, AssetKind, AudioInfo, ContentIdentity, LutInfo, Media, MediaInfo, PathHints, VideoInfo,
 };
@@ -58,12 +60,13 @@ pub use validate::{Issue, validate};
 /// Current project format version (semantic version, ADR-0004). 0.2.0 added caption
 /// tracks and caption clips (ADR-0021); 0.3.0 added keyframes, crop, stretch, flips, blend
 /// modes, audio fades, pan and channels, and deactivated clips (ADR-0011); 0.4.0 added
-/// effects, adjustment clips and LUT assets (ADR-0011).
-pub const FORMAT_VERSION: &str = "0.4.0";
+/// effects, adjustment clips and LUT assets (ADR-0011); 0.5.0 added masks and the color
+/// parameter kind (chroma key).
+pub const FORMAT_VERSION: &str = "0.5.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
-pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0"];
+pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0"];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.
 pub fn document_schemas() -> Vec<(&'static str, schemars::Schema)> {

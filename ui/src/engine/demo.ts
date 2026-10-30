@@ -34,6 +34,8 @@ export function demoEngine(): FakeEngine {
         clip("clip_0003", "video", 0, 8, { asset_name: "interview.mp4" }),
         clip("clip_0006", "video", 8, 15, {
           asset_name: "b-roll.mp4",
+          picture: [1920, 1080],
+          masks: [{ id: "mask_0016", shape: "ellipse", size: [0.7, 0.8], feather: 0.3 }],
           effects: [
             { id: "effect_0013", type: "color.adjust", params: { temperature: 0.3, contrast: 0.2 } },
             { id: "effect_0014", type: "color.curves", params: { master: [[0, 0], [0.3, 0.22], [0.7, 0.78], [1, 1]] } },

@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.4.0
+Demo (project_<random>)  revision 0  format 0.5.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.4.0
+Demo (project_<random>)  revision 8  format 0.5.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.4.0
+API 0.1.0  project format 0.5.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
@@ -118,8 +118,11 @@ commands:
   history.redo   Redo the most recently undone transaction. Must be the only command in its request.
   history.undo   Undo the most recent committed transaction. Must be the only command in its request.
   keyframe.remove Remove a keyframe of a clip property at a time, or all of its keyframes (all: true), which stops the animation; with all and a time, the property keeps the value it had then.
-  keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>.
+  keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, numeric effect parameters as effects.<id>.<param>, and mask placement as masks.<id>.<property>.
   look.apply     Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards.
+  mask.add       Add a mask to a clip's picture: rectangle (round corners), ellipse, linear, mirror (a band), star, heart, path (pen, with Bezier handles), text or brush (painted strokes), placed by center and size as fractions of the picture, with rotation, feather, expansion and invert. Several masks combine in order (add, subtract, intersect); on an adjustment clip they limit where its effects apply.
+  mask.remove    Remove a mask and its keyframes from a clip.
+  mask.set       Change a mask: shape, placement (center, size, rotation), feather, expansion, roundness, invert, mode, path points, text or brush strokes, or turn it off (enabled: false). Animated values are set with keyframe.set as masks.<id>.<property>.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.

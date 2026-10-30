@@ -107,6 +107,45 @@ export interface ClipView {
   keyframes?: Record<string, KeyframeView[]>;
   /** Effects on the picture, in the order they apply. */
   effects?: EffectView[];
+  /** Masks on the picture, in the order they combine. */
+  masks?: MaskView[];
+  /** Width and height of the picture as displayed (video and image clips). */
+  picture?: [number, number];
+}
+
+export type MaskShape = "rectangle" | "ellipse" | "linear" | "mirror" | "star" | "heart" | "path" | "text" | "brush";
+
+/** A path point in the mask's box, -1 to 1, with optional Bezier handles. */
+export interface PathPointView {
+  at: [number, number];
+  in?: [number, number];
+  out?: [number, number];
+}
+
+/** A painted stroke, in the picture from 0 to 1. */
+export interface BrushStrokeView {
+  points: [number, number][];
+  radius: number;
+  erase?: boolean;
+}
+
+/** A mask as `timeline.read` (detail full) reports it; omitted fields are defaults. */
+export interface MaskView {
+  id: string;
+  shape?: MaskShape;
+  enabled?: boolean;
+  center?: [number, number];
+  size?: [number, number];
+  rotation?: number;
+  feather?: number;
+  expansion?: number;
+  roundness?: number;
+  invert?: boolean;
+  mode?: "add" | "subtract" | "intersect";
+  points?: PathPointView[];
+  text?: string;
+  strokes?: BrushStrokeView[];
+  keyframes?: Record<string, KeyframeView[]>;
 }
 
 /** An effect as `timeline.read` (detail full) reports it. */

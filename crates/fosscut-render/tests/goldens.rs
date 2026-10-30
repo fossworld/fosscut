@@ -307,6 +307,110 @@ fn effects_on_tiles() {
     );
 }
 
+/// The test pattern in a 5x2 grid, each tile with one mask: a rounded rectangle, a
+/// feathered ellipse, a rotated linear mask, a mirror band, a star, a heart, a curved pen
+/// path, text, brush strokes with an erased dot, and an ellipse with a star subtracted.
+#[test]
+fn mask_shapes() {
+    use fosscut_model::{BrushStroke, Id, IdKind, Mask, MaskMode, MaskShape, PathPoint};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mask = |shape| Mask {
+        size: [0.8, 0.8],
+        ..Mask::new(Id::new(IdKind::Mask, 1), shape)
+    };
+    let point = |x: f64, y: f64| PathPoint {
+        at: [x, y],
+        in_handle: None,
+        out_handle: None,
+    };
+    let tiles: Vec<Vec<Mask>> = vec![
+        vec![Mask {
+            roundness: 0.6,
+            ..mask(MaskShape::Rectangle)
+        }],
+        vec![Mask {
+            feather: 0.8,
+            ..mask(MaskShape::Ellipse)
+        }],
+        vec![Mask {
+            rotation: 30.0,
+            feather: 0.3,
+            ..mask(MaskShape::Linear)
+        }],
+        vec![Mask {
+            size: [1.0, 0.35],
+            ..mask(MaskShape::Mirror)
+        }],
+        vec![mask(MaskShape::Star)],
+        vec![mask(MaskShape::Heart)],
+        vec![Mask {
+            points: vec![
+                point(-0.9, -0.6),
+                PathPoint {
+                    out_handle: Some([0.6, 0.8]),
+                    ..point(0.9, -0.6)
+                },
+                PathPoint {
+                    in_handle: Some([0.4, 0.0]),
+                    ..point(0.0, 0.9)
+                },
+            ],
+            ..mask(MaskShape::Path)
+        }],
+        vec![Mask {
+            text: Some("FOSS".into()),
+            size: [0.95, 0.6],
+            ..mask(MaskShape::Text)
+        }],
+        vec![Mask {
+            size: [1.0, 1.0],
+            strokes: vec![
+                BrushStroke {
+                    points: vec![[0.1, 0.3], [0.5, 0.7], [0.9, 0.3]],
+                    radius: 0.12,
+                    erase: false,
+                },
+                BrushStroke {
+                    points: vec![[0.5, 0.7]],
+                    radius: 0.08,
+                    erase: true,
+                },
+            ],
+            ..mask(MaskShape::Brush)
+        }],
+        vec![
+            mask(MaskShape::Ellipse),
+            Mask {
+                size: [0.5, 0.5],
+                mode: MaskMode::Subtract,
+                ..mask(MaskShape::Star)
+            },
+        ],
+    ];
+    let mut layers = Vec::new();
+    for (index, masks) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 5) as f64, (index / 5) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.4 + column * 0.2, -0.25 + row * 0.5],
+                scale: 0.19,
+                ..Transform::default()
+            },
+            masks,
+            ..Layer::new(source(1))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, pattern(320, 180, 0));
+    check_at("mask-shapes", &mut renderer, &plan, &mut frames, (640, 360));
+}
+
 #[test]
 fn portrait_source_on_a_vertical_canvas() {
     let Some(mut renderer) = renderer() else {

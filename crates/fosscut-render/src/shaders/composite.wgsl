@@ -7,7 +7,8 @@ struct Layer {
     params: vec4f,
     // xy: mask centre; zw: mask size, as fractions of the layer.
     mask: vec4f,
-    // x: LUT entries per axis, 0 for no LUT.
+    // x: LUT entries per axis, 0 for no LUT; y: 1 when the mask texture holds the clip's
+    // masks (their coverage, multiplied into alpha).
     lut: vec4f,
 }
 
@@ -22,6 +23,7 @@ struct VertexOut {
 @group(0) @binding(2) var lut_texture: texture_3d<f32>;
 @group(0) @binding(3) var lut_sampler: sampler;
 @group(0) @binding(4) var<uniform> layer: Layer;
+@group(0) @binding(5) var mask_texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(
@@ -68,6 +70,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4f {
         let coord = signal * ((entries - 1.0) / entries) + vec3f(0.5 / entries);
         color = decode_transfer(textureSampleLevel(lut_texture, lut_sampler, coord, 0.0).rgb, 0u);
     }
-    let alpha = texel.a * clamp(layer.params.x, 0.0, 1.0) * mask_alpha(in.local);
+    var coverage = 1.0;
+    if layer.lut.y > 0.5 {
+        coverage = textureSampleLevel(mask_texture, layer_sampler, in.local, 0.0).r;
+    }
+    let alpha = texel.a * clamp(layer.params.x, 0.0, 1.0) * mask_alpha(in.local) * coverage;
     return vec4f(color * alpha, alpha);
 }

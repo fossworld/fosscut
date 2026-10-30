@@ -4686,7 +4686,7 @@
             "description": "Position from the clip's start, instead of `at`."
           },
           "property": {
-            "description": "An animatable property: `transform.position`, `transform.scale`,\n`transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,\n`crop.bottom`, `opacity`, `volume` or `audio.pan`, or a numeric effect parameter as\n`effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`).",
+            "description": "An animatable property: `transform.position`, `transform.scale`,\n`transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,\n`crop.bottom`, `opacity`, `volume` or `audio.pan`; a numeric effect parameter as\n`effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`); or a mask's\n`center`, `size`, `rotation`, `feather`, `expansion` or `roundness` as\n`masks.<mask id>.<property>`.",
             "type": "string"
           },
           "value": {
@@ -5090,7 +5090,7 @@
         "title": "KeyframesChanged",
         "type": "object"
       },
-      "summary": "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>."
+      "summary": "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, numeric effect parameters as effects.<id>.<param>, and mask placement as masks.<id>.<property>."
     },
     {
       "input_schema": {
@@ -5258,6 +5258,1761 @@
         "type": "object"
       },
       "summary": "Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "BrushStroke": {
+            "description": "One painted stroke of a brush mask.",
+            "properties": {
+              "erase": {
+                "description": "Erases instead of painting.",
+                "type": "boolean"
+              },
+              "points": {
+                "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "radius": {
+                "description": "The brush's radius as a fraction of the picture's height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "points",
+              "radius"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "MaskMode": {
+            "description": "How a mask combines with the masks before it.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Shows what this mask covers as well.",
+                "type": "string"
+              },
+              {
+                "const": "subtract",
+                "description": "Hides what this mask covers.",
+                "type": "string"
+              },
+              {
+                "const": "intersect",
+                "description": "Shows only what this mask and the ones before cover.",
+                "type": "string"
+              }
+            ]
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a mask to a clip.",
+        "properties": {
+          "center": {
+            "default": null,
+            "description": "The middle of the mask in the picture, `[x, y]` from 0 to 1.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip: a video, image, text, caption or adjustment clip."
+          },
+          "expansion": {
+            "default": null,
+            "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "feather": {
+            "default": null,
+            "description": "Edge softness, 0 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "index": {
+            "default": null,
+            "description": "Position among the clip's masks (0 combines first); last when omitted.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "invert": {
+            "default": null,
+            "description": "Keep the outside instead of the inside.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MaskMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`add` (default), `subtract` or `intersect` with the masks before it."
+          },
+          "points": {
+            "default": null,
+            "description": "Points of a path (pen) mask in the mask's box, -1 to 1, with optional Bezier\nhandles: `[{\"at\": [x, y], \"in\": [dx, dy], \"out\": [dx, dy]}]`.",
+            "items": {
+              "$ref": "#/$defs/PathPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "rotation": {
+            "default": null,
+            "description": "Clockwise rotation in degrees.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "roundness": {
+            "default": null,
+            "description": "Rounds a rectangle's corners, 0 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "shape": {
+            "$ref": "#/$defs/MaskShape",
+            "description": "`rectangle`, `ellipse`, `linear`, `mirror`, `star`, `heart`, `path` (pen, needs\npoints), `text` (needs text) or `brush` (needs strokes)."
+          },
+          "size": {
+            "default": null,
+            "description": "Width and height as fractions of the picture's.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "strokes": {
+            "default": null,
+            "description": "Strokes of a brush mask in the picture, 0 to 1: `[{\"points\": [[x, y], ...],\n\"radius\": 0.03, \"erase\": false}]`.",
+            "items": {
+              "$ref": "#/$defs/BrushStroke"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "text": {
+            "default": null,
+            "description": "Text of a text mask.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clip",
+          "shape"
+        ],
+        "title": "MaskAdd",
+        "type": "object"
+      },
+      "name": "mask.add",
+      "output_schema": {
+        "$defs": {
+          "BrushStroke": {
+            "description": "One painted stroke of a brush mask.",
+            "properties": {
+              "erase": {
+                "description": "Erases instead of painting.",
+                "type": "boolean"
+              },
+              "points": {
+                "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "radius": {
+                "description": "The brush's radius as a fraction of the picture's height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "points",
+              "radius"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "Keyframe": {
+            "description": "A property's value at one time.",
+            "properties": {
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves from this keyframe to the next (linear when omitted)."
+              },
+              "time": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start; it may lie outside the clip after a trim."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value at that time."
+              }
+            },
+            "required": [
+              "time",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Mask": {
+            "description": "A mask on a clip.",
+            "properties": {
+              "center": {
+                "description": "The middle of the mask in the picture, 0 to 1 from the top-left corner (the middle\nwhen omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "enabled": {
+                "description": "False ignores the mask without removing it.",
+                "type": "boolean"
+              },
+              "expansion": {
+                "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1, as a fraction of its\nsmaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "feather": {
+                "description": "Softness of the edge, 0 (sharp) to 1, as a fraction of the mask's smaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "id": {
+                "$ref": "#/$defs/Id",
+                "description": "Mask id (`mask_…`)."
+              },
+              "invert": {
+                "description": "Keeps the outside instead of the inside.",
+                "type": "boolean"
+              },
+              "keyframes": {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/$defs/Keyframe"
+                  },
+                  "type": "array"
+                },
+                "description": "Keyframes by property (`center`, `size`, `rotation`, `feather`, `expansion`,\n`roundness`), times from the clip's start.",
+                "type": "object"
+              },
+              "mode": {
+                "$ref": "#/$defs/MaskMode",
+                "description": "How it combines with the masks before it."
+              },
+              "points": {
+                "description": "Points of a path mask.",
+                "items": {
+                  "$ref": "#/$defs/PathPoint"
+                },
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "roundness": {
+                "description": "Rounds a rectangle's corners, 0 (square) to 1 (fully round).",
+                "format": "double",
+                "type": "number"
+              },
+              "shape": {
+                "$ref": "#/$defs/MaskShape",
+                "default": "rectangle",
+                "description": "Its shape."
+              },
+              "size": {
+                "description": "Width and height as fractions of the picture's (half of each when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "strokes": {
+                "description": "Strokes of a brush mask.",
+                "items": {
+                  "$ref": "#/$defs/BrushStroke"
+                },
+                "type": "array"
+              },
+              "text": {
+                "description": "Text of a text mask.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "MaskMode": {
+            "description": "How a mask combines with the masks before it.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Shows what this mask covers as well.",
+                "type": "string"
+              },
+              {
+                "const": "subtract",
+                "description": "Hides what this mask covers.",
+                "type": "string"
+              },
+              {
+                "const": "intersect",
+                "description": "Shows only what this mask and the ones before cover.",
+                "type": "string"
+              }
+            ]
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's masks after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mask the command added or changed."
+          },
+          "masks": {
+            "description": "Every mask of the clip, in the order they combine.",
+            "items": {
+              "$ref": "#/$defs/Mask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "masks"
+        ],
+        "title": "MasksChanged",
+        "type": "object"
+      },
+      "summary": "Add a mask to a clip's picture: rectangle (round corners), ellipse, linear, mirror (a band), star, heart, path (pen, with Bezier handles), text or brush (painted strokes), placed by center and size as fractions of the picture, with rotation, feather, expansion and invert. Several masks combine in order (add, subtract, intersect); on an adjustment clip they limit where its effects apply."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes a mask.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "mask": {
+            "$ref": "#/$defs/Id",
+            "description": "The mask."
+          }
+        },
+        "required": [
+          "clip",
+          "mask"
+        ],
+        "title": "MaskRemove",
+        "type": "object"
+      },
+      "name": "mask.remove",
+      "output_schema": {
+        "$defs": {
+          "BrushStroke": {
+            "description": "One painted stroke of a brush mask.",
+            "properties": {
+              "erase": {
+                "description": "Erases instead of painting.",
+                "type": "boolean"
+              },
+              "points": {
+                "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "radius": {
+                "description": "The brush's radius as a fraction of the picture's height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "points",
+              "radius"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "Keyframe": {
+            "description": "A property's value at one time.",
+            "properties": {
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves from this keyframe to the next (linear when omitted)."
+              },
+              "time": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start; it may lie outside the clip after a trim."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value at that time."
+              }
+            },
+            "required": [
+              "time",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Mask": {
+            "description": "A mask on a clip.",
+            "properties": {
+              "center": {
+                "description": "The middle of the mask in the picture, 0 to 1 from the top-left corner (the middle\nwhen omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "enabled": {
+                "description": "False ignores the mask without removing it.",
+                "type": "boolean"
+              },
+              "expansion": {
+                "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1, as a fraction of its\nsmaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "feather": {
+                "description": "Softness of the edge, 0 (sharp) to 1, as a fraction of the mask's smaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "id": {
+                "$ref": "#/$defs/Id",
+                "description": "Mask id (`mask_…`)."
+              },
+              "invert": {
+                "description": "Keeps the outside instead of the inside.",
+                "type": "boolean"
+              },
+              "keyframes": {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/$defs/Keyframe"
+                  },
+                  "type": "array"
+                },
+                "description": "Keyframes by property (`center`, `size`, `rotation`, `feather`, `expansion`,\n`roundness`), times from the clip's start.",
+                "type": "object"
+              },
+              "mode": {
+                "$ref": "#/$defs/MaskMode",
+                "description": "How it combines with the masks before it."
+              },
+              "points": {
+                "description": "Points of a path mask.",
+                "items": {
+                  "$ref": "#/$defs/PathPoint"
+                },
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "roundness": {
+                "description": "Rounds a rectangle's corners, 0 (square) to 1 (fully round).",
+                "format": "double",
+                "type": "number"
+              },
+              "shape": {
+                "$ref": "#/$defs/MaskShape",
+                "default": "rectangle",
+                "description": "Its shape."
+              },
+              "size": {
+                "description": "Width and height as fractions of the picture's (half of each when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "strokes": {
+                "description": "Strokes of a brush mask.",
+                "items": {
+                  "$ref": "#/$defs/BrushStroke"
+                },
+                "type": "array"
+              },
+              "text": {
+                "description": "Text of a text mask.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "MaskMode": {
+            "description": "How a mask combines with the masks before it.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Shows what this mask covers as well.",
+                "type": "string"
+              },
+              {
+                "const": "subtract",
+                "description": "Hides what this mask covers.",
+                "type": "string"
+              },
+              {
+                "const": "intersect",
+                "description": "Shows only what this mask and the ones before cover.",
+                "type": "string"
+              }
+            ]
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's masks after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mask the command added or changed."
+          },
+          "masks": {
+            "description": "Every mask of the clip, in the order they combine.",
+            "items": {
+              "$ref": "#/$defs/Mask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "masks"
+        ],
+        "title": "MasksChanged",
+        "type": "object"
+      },
+      "summary": "Remove a mask and its keyframes from a clip."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "BrushStroke": {
+            "description": "One painted stroke of a brush mask.",
+            "properties": {
+              "erase": {
+                "description": "Erases instead of painting.",
+                "type": "boolean"
+              },
+              "points": {
+                "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "radius": {
+                "description": "The brush's radius as a fraction of the picture's height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "points",
+              "radius"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "MaskMode": {
+            "description": "How a mask combines with the masks before it.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Shows what this mask covers as well.",
+                "type": "string"
+              },
+              {
+                "const": "subtract",
+                "description": "Hides what this mask covers.",
+                "type": "string"
+              },
+              {
+                "const": "intersect",
+                "description": "Shows only what this mask and the ones before cover.",
+                "type": "string"
+              }
+            ]
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes a mask.",
+        "properties": {
+          "center": {
+            "default": null,
+            "description": "The middle of the mask in the picture, `[x, y]` from 0 to 1.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "enabled": {
+            "default": null,
+            "description": "false ignores the mask; true uses it again.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "expansion": {
+            "default": null,
+            "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "feather": {
+            "default": null,
+            "description": "Edge softness, 0 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "invert": {
+            "default": null,
+            "description": "Keep the outside instead of the inside.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "mask": {
+            "$ref": "#/$defs/Id",
+            "description": "The mask (`mask_…`)."
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MaskMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`add` (default), `subtract` or `intersect` with the masks before it."
+          },
+          "points": {
+            "default": null,
+            "description": "Points of a path (pen) mask in the mask's box, -1 to 1, with optional Bezier\nhandles: `[{\"at\": [x, y], \"in\": [dx, dy], \"out\": [dx, dy]}]`.",
+            "items": {
+              "$ref": "#/$defs/PathPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "rotation": {
+            "default": null,
+            "description": "Clockwise rotation in degrees.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "roundness": {
+            "default": null,
+            "description": "Rounds a rectangle's corners, 0 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MaskShape"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A new shape."
+          },
+          "size": {
+            "default": null,
+            "description": "Width and height as fractions of the picture's.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "strokes": {
+            "default": null,
+            "description": "Strokes of a brush mask in the picture, 0 to 1: `[{\"points\": [[x, y], ...],\n\"radius\": 0.03, \"erase\": false}]`.",
+            "items": {
+              "$ref": "#/$defs/BrushStroke"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "text": {
+            "default": null,
+            "description": "Text of a text mask.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clip",
+          "mask"
+        ],
+        "title": "MaskSet",
+        "type": "object"
+      },
+      "name": "mask.set",
+      "output_schema": {
+        "$defs": {
+          "BrushStroke": {
+            "description": "One painted stroke of a brush mask.",
+            "properties": {
+              "erase": {
+                "description": "Erases instead of painting.",
+                "type": "boolean"
+              },
+              "points": {
+                "description": "The stroke's path in the picture, 0 to 1 from its top-left corner.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "radius": {
+                "description": "The brush's radius as a fraction of the picture's height.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "points",
+              "radius"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "Keyframe": {
+            "description": "A property's value at one time.",
+            "properties": {
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves from this keyframe to the next (linear when omitted)."
+              },
+              "time": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start; it may lie outside the clip after a trim."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value at that time."
+              }
+            },
+            "required": [
+              "time",
+              "value"
+            ],
+            "type": "object"
+          },
+          "Mask": {
+            "description": "A mask on a clip.",
+            "properties": {
+              "center": {
+                "description": "The middle of the mask in the picture, 0 to 1 from the top-left corner (the middle\nwhen omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "enabled": {
+                "description": "False ignores the mask without removing it.",
+                "type": "boolean"
+              },
+              "expansion": {
+                "description": "Grows (positive) or shrinks (negative) the shape, -1 to 1, as a fraction of its\nsmaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "feather": {
+                "description": "Softness of the edge, 0 (sharp) to 1, as a fraction of the mask's smaller half size.",
+                "format": "double",
+                "type": "number"
+              },
+              "id": {
+                "$ref": "#/$defs/Id",
+                "description": "Mask id (`mask_…`)."
+              },
+              "invert": {
+                "description": "Keeps the outside instead of the inside.",
+                "type": "boolean"
+              },
+              "keyframes": {
+                "additionalProperties": {
+                  "items": {
+                    "$ref": "#/$defs/Keyframe"
+                  },
+                  "type": "array"
+                },
+                "description": "Keyframes by property (`center`, `size`, `rotation`, `feather`, `expansion`,\n`roundness`), times from the clip's start.",
+                "type": "object"
+              },
+              "mode": {
+                "$ref": "#/$defs/MaskMode",
+                "description": "How it combines with the masks before it."
+              },
+              "points": {
+                "description": "Points of a path mask.",
+                "items": {
+                  "$ref": "#/$defs/PathPoint"
+                },
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "roundness": {
+                "description": "Rounds a rectangle's corners, 0 (square) to 1 (fully round).",
+                "format": "double",
+                "type": "number"
+              },
+              "shape": {
+                "$ref": "#/$defs/MaskShape",
+                "default": "rectangle",
+                "description": "Its shape."
+              },
+              "size": {
+                "description": "Width and height as fractions of the picture's (half of each when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "strokes": {
+                "description": "Strokes of a brush mask.",
+                "items": {
+                  "$ref": "#/$defs/BrushStroke"
+                },
+                "type": "array"
+              },
+              "text": {
+                "description": "Text of a text mask.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "MaskMode": {
+            "description": "How a mask combines with the masks before it.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Shows what this mask covers as well.",
+                "type": "string"
+              },
+              {
+                "const": "subtract",
+                "description": "Hides what this mask covers.",
+                "type": "string"
+              },
+              {
+                "const": "intersect",
+                "description": "Shows only what this mask and the ones before cover.",
+                "type": "string"
+              }
+            ]
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's masks after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "mask": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The mask the command added or changed."
+          },
+          "masks": {
+            "description": "Every mask of the clip, in the order they combine.",
+            "items": {
+              "$ref": "#/$defs/Mask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "masks"
+        ],
+        "title": "MasksChanged",
+        "type": "object"
+      },
+      "summary": "Change a mask: shape, placement (center, size, rotation), feather, expansion, roundness, invert, mode, path points, text or brush strokes, or turn it off (enabled: false). Animated values are set with keyframe.set as masks.<id>.<property>."
     },
     {
       "input_schema": {
@@ -7014,6 +8769,49 @@
       "version": 1
     },
     {
+      "category": "key",
+      "params": [
+        {
+          "animatable": false,
+          "default": "#00FF00",
+          "kind": "color",
+          "meaning": "the color to remove, #RRGGBB",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.35,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how close a color must be to the key to vanish",
+          "min": 0.0,
+          "name": "similarity"
+        },
+        {
+          "animatable": true,
+          "default": 0.1,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how gradually colors near the key fade",
+          "min": 0.0,
+          "name": "smoothness"
+        },
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the key's color is removed from what stays",
+          "min": 0.0,
+          "name": "spill"
+        }
+      ],
+      "summary": "Makes one color transparent, such as a green or blue screen, with soft edges and spill removal.",
+      "title": "Chroma key",
+      "type": "key.chroma",
+      "version": 1
+    },
+    {
       "category": "detail",
       "params": [
         {
@@ -7215,6 +9013,11 @@
       "meaning": "The clip has no effect with this id."
     },
     {
+      "code": "fosscut.mask.not_found",
+      "hint": "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
+      "meaning": "The clip has no mask with this id."
+    },
+    {
       "code": "fosscut.look.unknown",
       "hint": "List the looks with capabilities (under looks).",
       "meaning": "No built-in look has this name."
@@ -7320,7 +9123,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.4.0",
+  "format_version": "0.5.0",
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",

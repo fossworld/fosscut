@@ -19,6 +19,7 @@ use crate::effects::{
 };
 use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
+use crate::mask::{Coverage, rasterize as rasterize_masks};
 use crate::plan::{LayerSource, MaskShape, RenderPlan, SourceRef};
 use crate::text::{TextEngine, TextRaster, linear_color};
 use crate::{FrameProvider, RenderError};
@@ -107,6 +108,8 @@ enum Slot {
     Blurred(usize),
     /// A curves table.
     Curves(usize),
+    /// A layer's mask coverage.
+    Mask(usize),
     CanvasSamples,
     Readback,
 }
@@ -156,6 +159,7 @@ pub struct Renderer {
     text: TextEngine,
     text_cache: HashMap<String, Arc<TextRaster>>,
     caption_cache: HashMap<String, Arc<CaptionRaster>>,
+    mask_cache: HashMap<String, Arc<Coverage>>,
 }
 
 /// Rasterized text kept between frames; titles usually stay the same for many frames.
@@ -260,6 +264,7 @@ impl Renderer {
                 },
                 texture_entry(2, wgpu::TextureViewDimension::D2),
                 texture_entry(3, wgpu::TextureViewDimension::D3),
+                texture_entry(5, wgpu::TextureViewDimension::D2),
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -389,6 +394,7 @@ impl Renderer {
             text: TextEngine::new(),
             text_cache: HashMap::new(),
             caption_cache: HashMap::new(),
+            mask_cache: HashMap::new(),
         }
     }
 
@@ -623,6 +629,13 @@ impl Renderer {
             } else {
                 self.apply_effects(encoder, index, &texture, &layer.effects, frames)?
             };
+            // Masks follow the picture as displayed: a quarter-turned source swaps sides.
+            let shown = if layer.rotation == 90 || layer.rotation == 270 {
+                (texture.height(), texture.width())
+            } else {
+                (texture.width(), texture.height())
+            };
+            let coverage = self.mask_view(index, &layer.masks, shown);
             let (mask_kind, mask) = match &layer.mask {
                 Some(mask) => (
                     match mask.shape {
@@ -645,11 +658,12 @@ impl Renderer {
                 }),
                 lut: [
                     layer.lut.as_ref().map_or(0.0, |l| l.size as f32),
-                    0.0,
+                    if coverage.is_some() { 1.0 } else { 0.0 },
                     0.0,
                     0.0,
                 ],
             };
+            let blank = self.blank.create_view(&Default::default());
             let lut_view = match &layer.lut {
                 Some(lut) => self.lut_view(lut),
                 None => self.no_lut.create_view(&Default::default()),
@@ -663,6 +677,10 @@ impl Renderer {
                     entry(2, wgpu::BindingResource::TextureView(&lut_view)),
                     entry(3, wgpu::BindingResource::Sampler(&self.linear)),
                     entry(4, self.uniform(&uniform).as_entire_binding()),
+                    entry(
+                        5,
+                        wgpu::BindingResource::TextureView(coverage.as_ref().unwrap_or(&blank)),
+                    ),
                 ],
             });
             let vertex_buffer = self
@@ -746,14 +764,18 @@ impl Renderer {
                     // Effects on everything so far, mixed back in by the layer's opacity.
                     let effects = &plan.layers[*layer].effects;
                     let adjusted = self.apply_effects(encoder, *layer, &below, effects, frames)?;
+                    let masks = &plan.layers[*layer].masks;
+                    let coverage = self.mask_view(*layer, masks, size);
                     let mut p = [[0.0f32; 4]; SLOTS];
                     p[0][0] = *opacity;
+                    p[0][1] = if coverage.is_some() { 1.0 } else { 0.0 };
                     self.effect_pass(
                         encoder,
                         "fs_mix",
                         &adjusted,
                         Some(&below_view),
                         None,
+                        coverage.as_ref(),
                         &p,
                         &target_view,
                     );
@@ -845,6 +867,67 @@ impl Renderer {
             .create_view(&Default::default())
     }
 
+    /// The coverage of `masks` over a picture `size` pixels large as a texture, or `None`
+    /// without enabled masks. Coverage is cached by the masks and the size, so unchanged
+    /// masks are rasterized once.
+    fn mask_view(
+        &mut self,
+        layer: usize,
+        masks: &[fosscut_model::Mask],
+        size: (u32, u32),
+    ) -> Option<wgpu::TextureView> {
+        if masks.iter().all(|m| !m.enabled) {
+            return None;
+        }
+        let key = format!("{masks:?}|{}x{}", size.0, size.1);
+        let coverage = match self.mask_cache.get(&key) {
+            Some(coverage) => coverage.clone(),
+            None => {
+                let text = &mut self.text;
+                let coverage = rasterize_masks(masks, size, &mut |words| {
+                    let content = fosscut_model::TextContent {
+                        text: words.to_string(),
+                        style: fosscut_model::TextStyle {
+                            bold: true,
+                            size: 0.6,
+                            ..fosscut_model::TextStyle::default()
+                        },
+                    };
+                    let raster = text.rasterize(&content, (1536, 384), 1.0);
+                    (!raster.is_empty()).then(|| Coverage {
+                        width: raster.width,
+                        height: raster.height,
+                        data: raster.coverage.clone(),
+                    })
+                })?;
+                if self.mask_cache.len() >= TEXT_CACHE_LIMIT {
+                    self.mask_cache.clear();
+                }
+                let coverage = Arc::new(coverage);
+                self.mask_cache.insert(key, coverage.clone());
+                coverage
+            }
+        };
+        let texture = self.texture(
+            Slot::Mask(layer),
+            (coverage.width, coverage.height),
+            wgpu::TextureFormat::R8Unorm,
+            1,
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        );
+        self.queue.write_texture(
+            texture.as_image_copy(),
+            &coverage.data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(coverage.width),
+                rows_per_image: Some(coverage.height),
+            },
+            texture.size(),
+        );
+        Some(texture.create_view(&Default::default()))
+    }
+
     /// Runs one effect entry point from `input` into `target`, a single mip level.
     #[allow(clippy::too_many_arguments)]
     fn effect_pass(
@@ -854,6 +937,7 @@ impl Renderer {
         input: &wgpu::TextureView,
         aux: Option<&wgpu::TextureView>,
         lut: Option<&wgpu::TextureView>,
+        mask: Option<&wgpu::TextureView>,
         params: &[[f32; 4]; SLOTS],
         target: &wgpu::TextureView,
     ) {
@@ -874,6 +958,10 @@ impl Renderer {
                     wgpu::BindingResource::TextureView(lut.unwrap_or(&no_lut)),
                 ),
                 entry(4, self.uniform(params).as_entire_binding()),
+                entry(
+                    5,
+                    wgpu::BindingResource::TextureView(mask.unwrap_or(&blank)),
+                ),
             ],
         });
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -913,12 +1001,22 @@ impl Renderer {
             &input_view,
             None,
             None,
+            None,
             &p,
             &middle_view,
         );
         p[0] = [0.0, 1.0, scaled, 0.0];
         p[1] = [taps as f32, size.0 as f32, size.1 as f32, 0.0];
-        self.effect_pass(encoder, "fs_blur", &middle_view, None, None, &p, target);
+        self.effect_pass(
+            encoder,
+            "fs_blur",
+            &middle_view,
+            None,
+            None,
+            None,
+            &p,
+            target,
+        );
     }
 
     /// Applies `effects` in order to `input` (a layer's picture, or the canvas under an
@@ -966,6 +1064,7 @@ impl Renderer {
                         encoder,
                         "fs_copy",
                         &view,
+                        None,
                         None,
                         None,
                         &params,
@@ -1027,6 +1126,7 @@ impl Renderer {
                         &input_view,
                         curves.as_ref(),
                         lut_view.as_ref(),
+                        None,
                         &params,
                         &target,
                     );
@@ -1046,6 +1146,7 @@ impl Renderer {
                         "fs_sharpen",
                         &level_zero(&current),
                         Some(&blurred_view),
+                        None,
                         None,
                         &params,
                         &target,
@@ -1069,6 +1170,7 @@ impl Renderer {
             lut: [0.0; 4],
         };
         let no_lut = self.no_lut.create_view(&Default::default());
+        let blank = self.blank.create_view(&Default::default());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("canvas copy"),
             layout: &self.composite.get_bind_group_layout(0),
@@ -1078,6 +1180,7 @@ impl Renderer {
                 entry(2, wgpu::BindingResource::TextureView(&no_lut)),
                 entry(3, wgpu::BindingResource::Sampler(&self.linear)),
                 entry(4, self.uniform(&uniform).as_entire_binding()),
+                entry(5, wgpu::BindingResource::TextureView(&blank)),
             ],
         });
         let corner = |x: f32, y: f32| Vertex {

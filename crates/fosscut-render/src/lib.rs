@@ -15,6 +15,7 @@ pub mod geometry;
 mod gpu;
 mod graph;
 pub mod lut;
+pub mod mask;
 pub mod plan;
 pub mod text;
 

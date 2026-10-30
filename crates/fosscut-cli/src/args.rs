@@ -85,6 +85,9 @@ pub enum Command {
     /// Add adjustment layers: effects over everything below them.
     #[command(subcommand)]
     Adjustment(AdjustmentCommand),
+    /// Mask clips: shapes, pen paths, text and brush strokes.
+    #[command(subcommand)]
+    Mask(MaskCommand),
     /// Apply built-in looks (filters) as effects.
     #[command(subcommand)]
     Look(LookCommand),
@@ -535,6 +538,45 @@ pub enum EffectCommand {
         /// Add after the receivers' effects instead of replacing them.
         #[arg(long)]
         append: bool,
+    },
+}
+
+/// `fosscut mask ...`
+#[derive(Debug, Subcommand)]
+pub enum MaskCommand {
+    /// Add a mask to a clip.
+    Add {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// rectangle, ellipse, linear, mirror, star, heart, path, text or brush.
+        #[arg(long)]
+        shape: String,
+        /// Any setting as NAME=VALUE, VALUE in JSON, for example center=[0.3,0.5],
+        /// feather=0.4, invert=true, text=\"SALE\" or points=[...]. Repeatable.
+        #[arg(long = "set", value_name = "NAME=VALUE")]
+        settings: Vec<String>,
+    },
+    /// Change a mask.
+    Set {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Mask id.
+        #[arg(long)]
+        mask: String,
+        /// A setting as NAME=VALUE, VALUE in JSON. Repeatable.
+        #[arg(long = "set", value_name = "NAME=VALUE")]
+        settings: Vec<String>,
+    },
+    /// Remove a mask.
+    Remove {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Mask id.
+        #[arg(long)]
+        mask: String,
     },
 }
 

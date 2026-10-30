@@ -135,6 +135,8 @@ pub mod codes {
     pub const EFFECT_NOT_FOUND: &str = "fosscut.effect.not_found";
     /// No built-in look has this name.
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
+    /// The clip has no mask with this id.
+    pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
     /// Media information is missing or inconsistent with the asset kind.
@@ -301,6 +303,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             EFFECT_NOT_FOUND,
             "The clip has no effect with this id.",
             "Read the clip's effects with timeline.read; effect ids look like effect_0007.",
+        ),
+        entry(
+            MASK_NOT_FOUND,
+            "The clip has no mask with this id.",
+            "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
         ),
         entry(
             LOOK_UNKNOWN,

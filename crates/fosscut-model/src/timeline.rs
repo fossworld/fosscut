@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
+use crate::mask::Mask;
 use crate::{Id, is_default};
 
 /// A timeline document (`timelines/<id>.json`).
@@ -163,6 +164,10 @@ pub struct Clip {
     /// clip they apply to everything below it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<Effect>,
+    /// Masks that decide which parts of the picture show, combined in order; on an
+    /// adjustment clip, where its effects apply.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub masks: Vec<Mask>,
     /// Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted
     /// by time with at most one keyframe per time. A property with keyframes takes its
     /// value from them, not from its field.
@@ -186,6 +191,7 @@ impl Clip {
             audio: ClipAudio::default(),
             enabled: true,
             effects: Vec::new(),
+            masks: Vec::new(),
             keyframes: BTreeMap::new(),
         }
     }
@@ -285,6 +291,9 @@ impl Clip {
         }
         for effect in &mut self.effects {
             effect.shift_keyframes(delta);
+        }
+        for mask in &mut self.masks {
+            mask.shift_keyframes(delta);
         }
     }
 }
