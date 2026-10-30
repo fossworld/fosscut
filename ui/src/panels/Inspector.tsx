@@ -8,6 +8,7 @@ import { Effects } from "./Effects";
 import { targetsOf } from "./effectFields";
 import { Masks } from "./Masks";
 import { Motion } from "./Motion";
+import { Shape } from "./Shape";
 import { Speed } from "./Speed";
 import { Text } from "./Text";
 import {
@@ -31,6 +32,7 @@ const KINDS: Record<string, string> = {
   text: "Title",
   caption: "Caption page",
   adjustment: "Adjustment layer",
+  shape: "Shape",
 };
 
 const BLENDS = [
@@ -355,6 +357,7 @@ export function Inspector({
         </div>
       )}
       {clip.kind === "text" && <Text key={`text:${clip.id}`} editor={editor} clip={clip} catalog={catalog} />}
+      {clip.kind === "shape" && <Shape key={`shape:${clip.id}`} editor={editor} clip={clip} />}
       {(targets.picture || targets.sound) && (
         <Effects
           editor={editor}

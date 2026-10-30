@@ -28,6 +28,13 @@ fn main() {
         "trash_list",
         "trash_restore",
         "trash_delete",
+        "library_list",
+        "library_add",
+        "export_presets",
+        "export_pick",
+        "export_start",
+        "export_status",
+        "export_cancel",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

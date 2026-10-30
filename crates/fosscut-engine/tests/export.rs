@@ -27,6 +27,7 @@ fn request(project: &Project, preset: Preset, name: &str) -> ExportRequest {
         expected_revision: None,
         request_id: None,
         cache: workspace().join("cache"),
+        options: Default::default(),
     }
 }
 
@@ -73,7 +74,7 @@ fn every_available_preset_exports_and_verifies() {
         let what = preset.name();
         assert!(!report.replayed);
         assert_eq!(report.duration, Flicks::from_seconds(1).unwrap(), "{what}");
-        if preset == Preset::M4aAac {
+        if report.settings.video.is_none() {
             assert_eq!(report.frames, 0);
             assert!(report.verified.video.is_none(), "{what}: audio only");
         } else {
@@ -90,9 +91,10 @@ fn every_available_preset_exports_and_verifies() {
                 "{what}: progress"
             );
         }
-        assert!(
+        assert_eq!(
             report.verified.audio.is_some(),
-            "{what}: audio from the clip"
+            report.settings.audio.is_some(),
+            "{what}: audio from the clip, except in GIFs"
         );
         assert!(workspace().join(&name).exists());
         assert!(
@@ -104,7 +106,8 @@ fn every_available_preset_exports_and_verifies() {
     assert_eq!(listed.len(), Preset::ALL.len());
     assert!(listed.iter().any(|p| p.name == "mp4-h264"));
     assert_eq!(Preset::parse("mov-prores"), Some(Preset::MovProRes));
-    assert_eq!(Preset::parse("gif"), None);
+    assert_eq!(Preset::parse("gif"), Some(Preset::Gif));
+    assert_eq!(Preset::parse("avi"), None);
 }
 
 #[test]
@@ -441,4 +444,213 @@ fn comparison_names_every_difference() {
             .iter()
             .any(|m| m.starts_with("container"))
     );
+}
+
+#[test]
+fn gif_timing_is_compared_to_the_centisecond() {
+    let format = TimelineFormat {
+        width: 160,
+        height: 90,
+        rate: Rate::FPS_30,
+        sample_rate: 48_000,
+    };
+    let settings = Preset::Gif.settings(&format);
+    // 31 frames at 30 fps are stored as 103 centiseconds.
+    let stored = Flicks::from_millis(1_030);
+    let report = OutputReport {
+        container: "gif".into(),
+        brand: None,
+        size_bytes: 1,
+        duration: Some(stored),
+        video: Some(fosscut_media::VideoReport {
+            codec: "gif".into(),
+            profile: None,
+            width: 160,
+            height: 90,
+            rate: Rate::new(3_100, 103).ok(),
+            frame_count: 31,
+            duration: Some(stored),
+            pixel_format: "bgra".into(),
+            color: fosscut_media::ColorInfo::default(),
+        }),
+        audio: None,
+    };
+    assert!(compare(&settings, 31, frames(31), &report).is_empty());
+    let mut late = report.clone();
+    if let Some(video) = &mut late.video {
+        video.duration = Some(Flicks::from_millis(1_100));
+        video.frame_count = 30;
+    }
+    let mismatches = compare(&settings, 31, frames(31), &late);
+    assert!(mismatches.iter().any(|m| m.starts_with("video duration")));
+    assert!(mismatches.iter().any(|m| m.starts_with("frames")));
+    let wav = Preset::Wav.settings(&format);
+    let mut sound = report.clone();
+    sound.container = "wav".into();
+    sound.video = None;
+    sound.audio = Some(AudioReport {
+        codec: "pcm_s16le".into(),
+        sample_rate: 48_000,
+        channels: 2,
+        duration: None,
+    });
+    assert!(compare(&wav, 0, frames(31), &sound).is_empty());
+    sound.container = "flac".into();
+    assert!(
+        compare(&wav, 0, frames(31), &sound)
+            .iter()
+            .any(|m| m.starts_with("container"))
+    );
+}
+
+#[test]
+fn export_choices_parse_and_shape_the_settings() {
+    use fosscut_engine::{SettingsChoice, bit_rate, frame_rate, resolution, settings_for};
+    assert_eq!(resolution("4K").unwrap(), 2160);
+    assert_eq!(resolution("720p").unwrap(), 720);
+    assert_eq!(resolution("540").unwrap(), 540);
+    assert!(resolution("huge").is_err() && resolution("2").is_err());
+    assert_eq!(
+        frame_rate("29.97").unwrap(),
+        Rate::new(30_000, 1001).unwrap()
+    );
+    assert_eq!(frame_rate("25").unwrap(), Rate::new(25, 1).unwrap());
+    assert!(frame_rate("fast").is_err());
+    assert_eq!(bit_rate("8M").unwrap(), 8_000_000);
+    assert_eq!(bit_rate("192k").unwrap(), 192_000);
+    assert!(bit_rate("0").is_err() && bit_rate("lots").is_err());
+    let tall = TimelineFormat {
+        width: 1080,
+        height: 1920,
+        rate: Rate::FPS_30,
+        sample_rate: 48_000,
+    };
+    let choice = SettingsChoice {
+        resolution: Some(720),
+        rate: Some(Rate::new(24, 1).unwrap()),
+        video_bit_rate: Some(4_000_000),
+        audio_bit_rate: Some(128_000),
+    };
+    let settings = settings_for(Preset::Mp4H264, &tall, &choice);
+    let video = settings.video.unwrap();
+    assert_eq!(
+        (video.width, video.height),
+        (720, 1280),
+        "the shorter side is 720"
+    );
+    assert_eq!(video.rate, Rate::new(24, 1).unwrap());
+    assert_eq!(video.bit_rate, Some(4_000_000));
+    assert_eq!(settings.audio.unwrap().bit_rate, 128_000);
+    // GIFs are small by default, and never grow past the canvas.
+    let gif = settings_for(Preset::Gif, &tall, &SettingsChoice::default())
+        .video
+        .unwrap();
+    assert_eq!(
+        (gif.width, gif.height, gif.rate),
+        (480, 854, Rate::new(15, 1).unwrap())
+    );
+}
+
+#[test]
+fn exports_take_a_range_a_size_a_cover_and_subtitles() {
+    use fosscut_engine::{ExportOptions, SettingsChoice, SubtitleFormat, settings_for};
+    use fosscut_model::{
+        CaptionContent, CaptionLine, CaptionWord, Clip, ClipContent, Track, TrackKind,
+    };
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut project = project("../clip.mp4");
+    let timeline = project.manifest.primary_timeline.clone();
+    let word = |text: &str, from: i64, to: i64| CaptionWord {
+        text: text.into(),
+        start: Flicks::from_millis(from),
+        end: Flicks::from_millis(to),
+        emphasis: false,
+    };
+    // A caption page from 0.2 s to 0.8 s of the timeline.
+    let page = Clip::new(
+        Id::new(IdKind::Clip, 30),
+        frames(6),
+        frames(18),
+        ClipContent::Caption(CaptionContent {
+            lines: vec![CaptionLine {
+                words: vec![word("Hello", 0, 300), word("there", 300, 600)],
+            }],
+            translation: None,
+        }),
+    );
+    project
+        .timelines
+        .get_mut(&timeline)
+        .unwrap()
+        .tracks
+        .push(Track {
+            id: Id::new(IdKind::Track, 31),
+            kind: TrackKind::Caption,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: vec![page],
+        });
+    assert!(fosscut_model::validate(&project).is_empty());
+    let format = project.timelines[&timeline].format.clone();
+    let mut request = request(&project, Preset::Mp4H264, "part.mp4");
+    request.settings = settings_for(
+        Preset::Mp4H264,
+        &format,
+        &SettingsChoice {
+            resolution: Some(90),
+            rate: Some(Rate::new(15, 1).unwrap()),
+            ..SettingsChoice::default()
+        },
+    );
+    request.options = ExportOptions {
+        range: Some((frames(9), frames(27))),
+        cover: Some(frames(3)),
+        subtitles: Some(SubtitleFormat::Vtt),
+    };
+    let report = run(&project, &request, &mut renderer).unwrap();
+    // 0.6 s at 15 fps, 160x90.
+    assert_eq!(report.frames, 9);
+    assert_eq!(report.duration, Flicks::from_millis(600));
+    let video = report.verified.video.as_ref().unwrap();
+    assert_eq!((video.width, video.height), (160, 90));
+    let cover = std::path::PathBuf::from(report.cover.clone().unwrap());
+    assert_eq!(cover, workspace().join("part.cover.png"));
+    assert!(std::fs::read(&cover).unwrap().starts_with(b"\x89PNG"));
+    let subtitles = std::fs::read_to_string(report.subtitles.clone().unwrap()).unwrap();
+    assert!(subtitles.starts_with("WEBVTT"), "{subtitles}");
+    // The page shows from 0.2 s; the export starts at 0.3 s, so it runs from 0 to 0.5 s.
+    assert!(
+        subtitles.contains("00:00:00.000 --> 00:00:00.500\nHello there"),
+        "{subtitles}"
+    );
+    assert_eq!(report.rights.len(), 1);
+    assert_eq!(report.rights[0].origin, "yours");
+    // Ranges and covers outside the export are refused before anything renders.
+    for options in [
+        ExportOptions {
+            range: Some((frames(40), frames(50))),
+            ..ExportOptions::default()
+        },
+        ExportOptions {
+            range: Some((frames(10), frames(5))),
+            ..ExportOptions::default()
+        },
+        ExportOptions {
+            cover: Some(frames(40)),
+            ..ExportOptions::default()
+        },
+    ] {
+        let mut bad = self::request(&project, Preset::Mp4H264, "bad.mp4");
+        bad.options = options;
+        assert!(matches!(
+            fosscut_engine::plan(&project, &bad),
+            Err(EngineError::InvalidSettings { .. })
+        ));
+    }
+    assert!(SubtitleFormat::named("ass").is_err());
 }

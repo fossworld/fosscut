@@ -1,8 +1,9 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { type Action, actionFor, isTyping } from "../keyboard";
 import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
+import { Library } from "../panels/Library";
 import { Media } from "../panels/Media";
 import { who } from "../panels/runs";
 import { Guides } from "../preview/Guides";
@@ -13,6 +14,7 @@ import { Timeline } from "../timeline/Timeline";
 import { TimelineTabs } from "../timeline/TimelineTabs";
 import { Transport } from "../transport/Transport";
 import type { Editor } from "./editor";
+import { Export } from "./Export";
 import { Start } from "./Start";
 
 /** How often the list of connected agents is read, in milliseconds. */
@@ -66,9 +68,13 @@ function run(editor: Editor, action: Action): void {
   void actions[action]();
 }
 
+/** What the sidebar's bin shows: the project's media, or FossCut's own library. */
+type Bin = "media" | "library";
+
 export function App({ editor }: { editor: Editor }) {
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
   const open = state.opened !== null;
+  const [bin, setBin] = useState<Bin>("media");
 
   useEffect(() => {
     void editor.start();
@@ -78,12 +84,21 @@ export function App({ editor }: { editor: Editor }) {
   useEffect(() => {
     if (!open) return;
     void editor.refreshClients();
-    const timer = window.setInterval(() => void editor.refreshClients(), CLIENTS_POLL);
+    const timer = window.setInterval(() => {
+      void editor.refreshClients();
+      // The export dialog reads a running export faster while it shows.
+      if (!editor.getState().exporting.open) void editor.pollExport();
+    }, CLIENTS_POLL);
     return () => window.clearInterval(timer);
   }, [editor, open]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // The export dialog is modal: Escape closes it, and editing keys wait.
+      if (editor.getState().exporting.open) {
+        if (event.key === "Escape") editor.closeExport();
+        return;
+      }
       const action = actionFor(
         {
           key: event.key,
@@ -139,6 +154,18 @@ export function App({ editor }: { editor: Editor }) {
             <button onClick={() => void editor.toggleFullscreen()} title="Full screen (Mod+Shift+F; Escape leaves)">
               Full screen
             </button>
+            <button
+              className="primary"
+              onClick={() => void editor.openExport()}
+              disabled={!state.timeline}
+              title={
+                state.exporting.job?.state === "running"
+                  ? "An export is running: show its progress"
+                  : "Export the timeline to a video or audio file"
+              }
+            >
+              {state.exporting.job?.state === "running" ? "Exporting" : "Export"}
+            </button>
             <button onClick={() => void editor.close()}>Close</button>
           </header>
           <main>
@@ -160,7 +187,23 @@ export function App({ editor }: { editor: Editor }) {
                     .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}
                 />
               )}
-              <Media editor={editor} state={state} />
+              <section className="bin">
+                <div className="bin-tabs" role="tablist" aria-label="Media and library">
+                  {(["media", "library"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      role="tab"
+                      aria-selected={bin === tab}
+                      className={bin === tab ? "active" : ""}
+                      onClick={() => setBin(tab)}
+                      title={tab === "media" ? "The project's media" : "Shapes, stickers, titles, looks, sounds and music made by FossCut"}
+                    >
+                      {tab === "media" ? "Media" : "Library"}
+                    </button>
+                  ))}
+                </div>
+                {bin === "media" ? <Media editor={editor} state={state} /> : <Library editor={editor} state={state} />}
+              </section>
               <Activity editor={editor} state={state} />
             </aside>
           </main>
@@ -169,6 +212,7 @@ export function App({ editor }: { editor: Editor }) {
             <TimelineTabs editor={editor} state={state} />
             <Timeline editor={editor} state={state} />
           </div>
+          {state.exporting.open && <Export editor={editor} state={state} />}
         </>
       )}
     </div>

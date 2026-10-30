@@ -25,6 +25,7 @@ mod id;
 mod mask;
 mod media;
 mod project;
+mod shape;
 mod speed;
 mod store;
 mod text;
@@ -54,6 +55,7 @@ pub use media::{
     VideoInfo, folder_and_parents, valid_folder,
 };
 pub use project::{Manifest, TimelineEntry, TimelineRole};
+pub use shape::{Gradient, Paint, ShapeContent, ShapeOutline};
 pub use speed::{
     Interpolate, MAX_RATE, MIN_RATE, Pitch, SPEED_PRESETS, Speed, SpeedPoint, SpeedPreset,
     speed_preset,
@@ -71,7 +73,7 @@ pub use transition::{
     ANIMATION_PRESETS, Animation, AnimationDelta, ClipAnimations, Transition, TransitionSpec,
     animate, transition_type, transition_types,
 };
-pub use validate::{Issue, text_issues, text_style_issues, validate};
+pub use validate::{Issue, shape_issues, text_issues, text_style_issues, validate};
 
 /// Current project format version (semantic version, ADR-0004). 0.2.0 added caption
 /// tracks and caption clips (ADR-0021); 0.3.0 added keyframes, crop, stretch, flips, blend
@@ -81,13 +83,15 @@ pub use validate::{Issue, text_issues, text_style_issues, validate};
 /// clip speed (ADR-0023); 0.8.0 added markers, clip groups and detached audio (ADR-0024);
 /// 0.9.0 added media folders; 0.10.0 added compound clips (ADR-0025); 0.11.0 added text
 /// spans, reveals, spacing, outlines, boxes, shadows and glows, text presets and font assets
-/// (ADR-0027), audio effects (ADR-0026) and caption translations.
-pub const FORMAT_VERSION: &str = "0.11.0";
+/// (ADR-0027), audio effects (ADR-0026) and caption translations; 0.12.0 added shape clips
+/// (ADR-0028).
+pub const FORMAT_VERSION: &str = "0.12.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
 pub const READABLE_VERSIONS: &[&str] = &[
     "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
+    "0.11.0",
 ];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.

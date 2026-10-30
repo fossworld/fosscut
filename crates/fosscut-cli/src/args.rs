@@ -106,6 +106,10 @@ pub enum Command {
     /// Level clips' loudness.
     #[command(subcommand)]
     Audio(AudioCommand),
+    /// FossCut's own library: shapes, stickers, backgrounds, templates, text and caption
+    /// styles, looks, sound effects and music, free to use, also commercially.
+    #[command(subcommand)]
+    Library(LibraryCommand),
     /// Caption speech word by word, style captions, and read or write SRT subtitle files.
     #[command(subcommand)]
     Captions(CaptionsCommand),
@@ -143,10 +147,11 @@ pub enum Command {
     /// Render a timeline to a video file and verify the file against the request.
     Export {
         /// Output file, for example `Promo.mp4`. Without --preset, the extension decides:
-        /// .mov is ProRes, .webm is VP9, .m4a is audio only, anything else is the most
-        /// compatible video preset this machine can encode.
+        /// .mov is ProRes, .webm is VP9, .gif a GIF, .m4a, .wav, .flac and .mp3 audio only,
+        /// anything else the most compatible video preset this machine can encode.
         output: Option<PathBuf>,
-        /// Preset: mp4-h264, mp4-hevc, mp4-av1, mov-prores, webm-vp9 or m4a-aac.
+        /// Preset, for example mp4-h264, mp4-hevc, mov-prores-hq, gif, wav or mp3 (see
+        /// --presets).
         #[arg(long)]
         preset: Option<String>,
         /// Timeline id; the primary timeline when omitted.
@@ -155,6 +160,27 @@ pub enum Command {
         /// List the presets and whether this machine can encode them, instead of exporting.
         #[arg(long)]
         presets: bool,
+        /// The shorter side: 480p, 720p, 1080p, 2k, 4k, 8k or a number of pixels.
+        #[arg(long)]
+        resolution: Option<String>,
+        /// Frame rate, such as 24, 25, 29.97, 30, 50, 59.94, 60 or 120.
+        #[arg(long)]
+        fps: Option<String>,
+        /// Video bit rate, such as 8M.
+        #[arg(long)]
+        bitrate: Option<String>,
+        /// Audio bit rate, such as 192k.
+        #[arg(long)]
+        audio_bitrate: Option<String>,
+        /// Only this part, START..END, for example 2s..10s.
+        #[arg(long)]
+        range: Option<String>,
+        /// Write a cover image (PNG) of the frame at this time of the export beside the file.
+        #[arg(long, value_parser = parse_time)]
+        cover: Option<TimeInput>,
+        /// Write the captions beside the file as srt or vtt subtitles.
+        #[arg(long)]
+        subtitles: Option<String>,
     },
     /// Install FossCut's editing skills for AI agents, or list them.
     #[command(subcommand)]
@@ -1176,6 +1202,48 @@ pub enum TextCommand {
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+}
+
+/// `fosscut library ...`
+#[derive(Debug, Subcommand)]
+pub enum LibraryCommand {
+    /// List the library, or search it.
+    List {
+        /// Only one kind: shape, sticker, background, template, title, text_style,
+        /// caption_style, look, sound or music.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Words to find in names, descriptions and tags.
+        #[arg(long)]
+        search: Option<String>,
+    },
+    /// Add an item to the project: a sound or music loop is imported and placed, a shape,
+    /// sticker or background drawn, a title or template added, a style or look applied.
+    Add {
+        /// The item's name.
+        name: String,
+        /// Its kind, when the name is used by several.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Where it starts.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// How long it lasts.
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+        /// The track to put it on.
+        #[arg(long)]
+        track: Option<String>,
+        /// The clip a look applies to.
+        #[arg(long)]
+        clip: Option<String>,
+        /// Lines for titles and templates (repeat the option).
+        #[arg(long = "line")]
+        lines: Vec<String>,
+        /// Assets for a template's slots (repeat the option).
+        #[arg(long = "media")]
+        media: Vec<String>,
     },
 }
 

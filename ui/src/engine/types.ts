@@ -188,6 +188,173 @@ export interface ClipView {
     out?: { preset: string; duration: number };
     combo?: { preset: string; duration: number };
   };
+  /** A shape clip's outline (ADR-0028); its label's words are in `text`. */
+  shape?: ShapeKind;
+  /** A shape clip's whole shape (detail full). */
+  content?: ShapeContentView;
+}
+
+/** The outlines a shape clip can have. */
+export type ShapeKind = "rectangle" | "ellipse" | "star" | "heart" | "path";
+
+/**
+ * A shape clip's shape as the engine stores it: sparse, so omitted fields are at their
+ * defaults. Sizes are fractions of the canvas; colours are `#RRGGBB` or `#RRGGBBAA`.
+ */
+export interface ShapeContentView {
+  shape: ShapeKind;
+  size: [number, number];
+  /** Corner rounding of a rectangle, 0 to 1. */
+  roundness?: number;
+  points?: PathPointView[];
+  fill?: {
+    color?: string;
+    /** A gradient to a second colour; `angle` in degrees, 0 left to right, 90 top to bottom. */
+    gradient?: { to: string; angle?: number; radial?: boolean };
+  };
+  /** An outline inside the edge; `width` is a fraction of the shorter side. */
+  outline?: { enabled: boolean; color?: string; width?: number };
+  /** Text on it, styled as a text clip's. */
+  label?: { text: string; style?: TextStyleView; spans?: TextSpanView[] };
+  /** Where the label's centre sits in the shape's box, -1 to 1 on each axis. */
+  label_at?: [number, number];
+}
+
+/** What the built-in library holds (ADR-0028). */
+export type LibraryKind =
+  | "shape"
+  | "sticker"
+  | "background"
+  | "template"
+  | "title"
+  | "text_style"
+  | "caption_style"
+  | "look"
+  | "sound"
+  | "music";
+
+/** One item of the built-in library, made by FossCut. */
+export interface LibraryItem {
+  /** Stable name, unique within its kind. */
+  name: string;
+  kind: LibraryKind;
+  title: string;
+  description: string;
+  tags: string[];
+  /** A sound's length in seconds. */
+  seconds?: number;
+  /** A music loop's tempo. */
+  bpm?: number;
+  /** Free to use in commercial work: true for everything FossCut makes. */
+  commercial: boolean;
+}
+
+/** What to add from the library, and where (`library_add`). */
+export interface LibraryAddRequest {
+  name: string;
+  /** For names that repeat across kinds. */
+  kind?: LibraryKind;
+  /** Where it starts on the timeline. */
+  start_flicks?: number;
+  track?: string;
+  /** The clip a look applies to. */
+  clip?: string;
+  /** Lines for titles and templates; a text style's text. */
+  lines?: string[];
+  /** Video or image assets for a template's slots, in order. */
+  media?: string[];
+  expected_revision?: number;
+}
+
+/** An export preset and whether this machine can encode it. */
+export interface ExportPreset {
+  name: string;
+  description: string;
+  /** The usual file extension, without the dot. */
+  extension: string;
+  available: boolean;
+}
+
+/** `export_presets`: the presets, and the resolutions export offers by name. */
+export interface ExportPresets {
+  presets: ExportPreset[];
+  /** Named resolutions as shorter sides in pixels, such as 720p: 720. */
+  resolutions: { name: string; pixels: number }[];
+}
+
+/** How to export the primary timeline (`export_start`); texts as the CLI takes them. */
+export interface ExportChoice {
+  /** The file to write, as a whole path. */
+  output: string;
+  preset?: string;
+  /** `720p`, `4k` or a number of pixels for the shorter side; the timeline's when omitted. */
+  resolution?: string;
+  /** `30`, `29.97`; the timeline's when omitted. */
+  fps?: string;
+  /** `8M`; the encoder's choice when omitted. */
+  bitrate?: string;
+  /** Only this part of the timeline, start and end in flicks. */
+  range_flicks?: [number, number];
+  /** A cover image of the frame this long after the export's start, in flicks. */
+  cover_flicks?: number;
+  subtitles?: "srt" | "vtt";
+  /** Replace the output if it exists. */
+  overwrite?: boolean;
+}
+
+/** Where a background job stands. */
+export type JobState = "running" | "succeeded" | "failed" | "cancelled";
+
+/** Where a file the export uses comes from, and what that means for publishing it. */
+export interface RightsNote {
+  asset: string;
+  name: string;
+  /** `library` (made by FossCut, free to use) or `yours`. */
+  origin: string;
+  note: string;
+}
+
+/** A verified export. Durations are in flicks. */
+export interface ExportReport {
+  output: string;
+  settings: {
+    container: string;
+    video?: { codec: string; width: number; height: number; rate: string; bit_rate?: number | null } | null;
+    audio?: { codec: string; sample_rate: number; channels: number; bit_rate: number } | null;
+  };
+  frames: number;
+  duration: number;
+  encoders: { video?: string | null; audio?: string | null };
+  /** What the file contains, as probed after writing. */
+  verified: {
+    container: string;
+    size_bytes: number;
+    duration?: number | null;
+    video?: { codec: string; width: number; height: number; rate?: string | null } | null;
+    audio?: { codec: string; sample_rate?: number; channels?: number } | null;
+  };
+  elapsed_ms: number;
+  replayed?: boolean;
+  /** The cover image written beside the file. */
+  cover?: string;
+  /** The subtitle file written beside it. */
+  subtitles?: string;
+  rights?: RightsNote[];
+}
+
+/** An export job's state, progress and outcome. */
+export interface JobStatus {
+  job: string;
+  kind: string;
+  state: JobState;
+  /** Frames (or seconds of sound) done and in total; zero until rendering starts. */
+  progress: { done: number; total: number };
+  elapsed_ms: number;
+  output?: string;
+  /** The verified export, once it succeeded. */
+  report?: ExportReport;
+  /** The typed error, once it failed or was cancelled. */
+  error?: ApiError;
 }
 
 export type MaskShape = "rectangle" | "ellipse" | "linear" | "mirror" | "star" | "heart" | "path" | "text" | "brush";

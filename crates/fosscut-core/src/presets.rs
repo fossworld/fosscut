@@ -20,6 +20,145 @@ const SOURCES: [&str; 4] = [
 ];
 
 const TEXT_STYLES: &str = include_str!("../presets/text/styles.json");
+const VISUALS: &str = include_str!("../presets/library/visuals.json");
+const PROJECT_TEMPLATES: &str = include_str!("../presets/library/templates.json");
+
+/// What a visual library item is (ADR-0028).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualKind {
+    /// A plain shape to colour and size.
+    Shape,
+    /// A ready-made graphic: a badge, button, arrow or bubble.
+    Sticker,
+    /// A solid or gradient background covering the canvas.
+    Background,
+}
+
+/// A built-in shape, sticker or background, drawn by FossCut and free to use anywhere.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryVisual {
+    /// Stable name, for example `badge-new`.
+    pub name: String,
+    /// What it is.
+    pub kind: VisualKind,
+    /// Display title.
+    pub title: String,
+    /// What it looks like and what it suits.
+    pub description: String,
+    /// Search words.
+    pub tags: Vec<String>,
+    /// Its shape, sized for a 16:9 canvas.
+    pub content: fosscut_model::ShapeContent,
+    /// Where it usually sits, as a clip's `transform.position`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[f64; 2]>,
+}
+
+/// A project template: a canvas, media slots and the titles and graphics around them.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectTemplate {
+    /// Stable name, for example `vertical-promo`.
+    pub name: String,
+    /// What it makes.
+    pub description: String,
+    /// The new timeline's size.
+    pub canvas: TemplateCanvas,
+    /// Slot lengths in milliseconds, in order on the main video track.
+    pub slots: Vec<i64>,
+    /// The transition between slots.
+    #[serde(default)]
+    pub transition: Option<String>,
+    /// Titles, backgrounds and stickers.
+    pub elements: Vec<TemplateElement>,
+}
+
+/// A template's canvas.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateCanvas {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
+/// One title, background or sticker of a project template.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateElement {
+    /// A title template to add.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Its placeholder lines.
+    #[serde(default)]
+    pub lines: Vec<String>,
+    /// A library background to add.
+    #[serde(default)]
+    pub background: Option<String>,
+    /// A library sticker to add.
+    #[serde(default)]
+    pub sticker: Option<String>,
+    /// When it starts, in milliseconds.
+    #[serde(default)]
+    pub at: i64,
+    /// Start after the slots instead of at `at`.
+    #[serde(default)]
+    pub after_slots: bool,
+    /// How long it lasts, in milliseconds.
+    pub length: i64,
+    /// Where it sits.
+    #[serde(default)]
+    pub position: Option<[f64; 2]>,
+}
+
+/// Every built-in shape, sticker and background.
+pub fn visuals() -> Vec<LibraryVisual> {
+    serde_json::from_str(VISUALS).unwrap_or_default()
+}
+
+/// The library item called `name`.
+pub fn visual(name: &str) -> Result<LibraryVisual, ApiError> {
+    let all = visuals();
+    all.iter().find(|v| v.name == name).cloned().ok_or_else(|| {
+        ApiError::new(
+            codes::LIBRARY_UNKNOWN_ITEM,
+            format!("there is no shape, sticker or background {name}"),
+        )
+        .with_hint(format!(
+            "Items: {}.",
+            all.iter()
+                .map(|v| v.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })
+}
+
+/// Every built-in project template.
+pub fn project_templates() -> Vec<ProjectTemplate> {
+    serde_json::from_str(PROJECT_TEMPLATES).unwrap_or_default()
+}
+
+/// The project template called `name`.
+pub fn project_template(name: &str) -> Result<ProjectTemplate, ApiError> {
+    let all = project_templates();
+    all.iter().find(|t| t.name == name).cloned().ok_or_else(|| {
+        ApiError::new(
+            codes::TEMPLATE_UNKNOWN,
+            format!("there is no project template {name}"),
+        )
+        .with_hint(format!(
+            "Templates: {}.",
+            all.iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ))
+    })
+}
 const TITLE_TEMPLATES: &str = include_str!("../presets/text/templates.json");
 
 /// A built-in text style.

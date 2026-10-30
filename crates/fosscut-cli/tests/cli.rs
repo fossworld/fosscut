@@ -753,7 +753,7 @@ fn export_needs_an_output_and_a_known_preset() {
     let missing = fails(&dir, &["export"]);
     assert_eq!(missing["code"], json!("fosscut.request.invalid_arguments"));
     assert!(missing["hint"].as_str().unwrap().contains("--presets"));
-    let unknown = fails(&dir, &["export", "x.mp4", "--preset", "gif"]);
+    let unknown = fails(&dir, &["export", "x.mp4", "--preset", "avi"]);
     assert!(unknown["hint"].as_str().unwrap().contains("mp4-h264"));
     let timeline = fails(&dir, &["export", "x.mp4", "--timeline", "timeline_0099"]);
     assert_eq!(timeline["code"], json!("fosscut.timeline.not_found"));
@@ -3053,4 +3053,134 @@ fn text_styles_templates_fonts_and_sound_from_the_command_line() {
     run(&["captions", "export", "es.srt", "--subtitles", "translation"]);
     let es = std::fs::read_to_string(dir.join("es.srt")).unwrap();
     assert!(es.contains("Hola") && !es.contains("Hello"), "{es}");
+}
+
+#[test]
+fn library_items_and_export_choices_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("library");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=30:d=3",
+        ])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=330:sample_rate=48000:duration=3",
+        ])
+        .args(["-c:v", "mpeg4", "-c:a", "aac", "-shortest", "shot.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Lib.fosscut",
+            "--width",
+            "320",
+            "--height",
+            "180",
+        ],
+    );
+    let p = ["-p", "Lib.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    let listed = run(&["library", "list"]);
+    let items = listed["items"].as_array().unwrap();
+    for kind in ["sound", "music", "sticker", "background", "template"] {
+        assert!(items.iter().any(|i| i["kind"] == kind), "{kind}");
+    }
+    let sounds = run(&["library", "list", "--kind", "sound", "--search", "whoosh"]);
+    assert_eq!(sounds["items"][0]["name"], "whoosh", "{sounds}");
+    run(&["media", "import", "shot.mp4"]);
+    run(&["clip", "add", "--asset", "asset_0001"]);
+    // A sound is written into the bundle, imported and placed.
+    let placed = run(&["library", "add", "whoosh", "--at", "0.5s"]);
+    let sound = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    assert!(dir.join("Lib.fosscut/library/whoosh.wav").is_file());
+    let again = run(&["library", "add", "whoosh", "--at", "2s"]);
+    assert_ne!(again["results"][0]["clip"].as_str().unwrap(), sound);
+    let media = run(&["media", "list"]);
+    assert_eq!(
+        media["assets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|a| a["name"] == "whoosh.wav")
+            .count(),
+        1,
+        "imported once: {media}"
+    );
+    run(&[
+        "library",
+        "add",
+        "badge-new",
+        "--at",
+        "0s",
+        "--duration",
+        "2s",
+    ]);
+    run(&["library", "add", "sunset", "--at", "0s", "--duration", "1s"]);
+    let unknown = fails(&dir, &[&p[..], &["library", "add", "unicorn"]].concat());
+    assert_eq!(
+        unknown["code"], "fosscut.request.invalid_arguments",
+        "{unknown}"
+    );
+    let template = run(&[
+        "library",
+        "add",
+        "photo-montage",
+        "--media",
+        "asset_0001",
+        "--line",
+        "Our trip",
+    ]);
+    assert!(template["results"][0]["timeline"].is_string(), "{template}");
+    ok(
+        &dir,
+        &[&p[..], &["frame", "1s", "--out", "badge.png"]].concat(),
+    );
+
+    // Export choices: a part, smaller and slower, with a cover; a GIF and a WAV.
+    let report = run(&[
+        "export",
+        "part.mp4",
+        "--range",
+        "0.5s..2s",
+        "--resolution",
+        "90",
+        "--fps",
+        "15",
+        "--cover",
+        "0.2s",
+    ]);
+    assert_eq!(report["frames"], 23, "{report}");
+    assert_eq!(report["verified"]["video"]["width"], 160);
+    assert!(dir.join("part.cover.png").is_file());
+    let rights = report["rights"].as_array().unwrap();
+    assert!(
+        rights
+            .iter()
+            .any(|r| r["origin"] == "library" && r["name"] == "whoosh.wav")
+    );
+    assert!(rights.iter().any(|r| r["origin"] == "yours"));
+    let gif = run(&["export", "clip.gif", "--range", "0s..1s"]);
+    assert_eq!(gif["verified"]["container"], "gif", "{gif}");
+    let wav = run(&["export", "sound.wav"]);
+    assert!(wav["verified"]["video"].is_null(), "{wav}");
+    let bad = fails(
+        &dir,
+        &[&p[..], &["export", "bad.mp4", "--fps", "fast"]].concat(),
+    );
+    assert_eq!(bad["code"], "fosscut.export.invalid_settings", "{bad}");
 }

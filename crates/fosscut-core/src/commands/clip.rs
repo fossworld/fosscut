@@ -7,8 +7,8 @@ use serde_json::json;
 use super::caption::split_caption;
 use super::util::{
     ensure_free, ensure_kind, ensure_unlocked, ensure_valid_range, find_or_create_track,
-    group_members, insert_sorted, locate_clip, resolve, tidy_groups, timeline_id, timeline_mut,
-    track_index, track_kind_for,
+    free_track, group_members, insert_sorted, locate_clip, resolve, tidy_groups, timeline_id,
+    timeline_mut, track_index, track_kind_for,
 };
 use crate::{ApiError, Command, Context, codes};
 
@@ -72,6 +72,10 @@ pub struct ClipAdd {
     /// Length; the rest of the asset (images: 5 seconds) when omitted.
     #[serde(default)]
     pub duration: Option<TimeInput>,
+    /// Without `track`: use the first track of the right kind that is free over the clip's
+    /// range (`start` is needed), adding one when none is, instead of the first track.
+    #[serde(default)]
+    pub free_track: bool,
 }
 
 impl Command for ClipAdd {
@@ -189,9 +193,26 @@ fn place(
                 "duration": TimeReport::new(duration, rate),
             })));
         }
-        let track = match &args.track {
-            Some(track) => track.clone(),
-            None => find_or_create_track(ctx.project, timeline, track_kind_for(&content))?,
+        let track = match (&args.track, args.free_track, &args.start) {
+            (Some(track), _, _) => track.clone(),
+            (None, true, Some(start)) => {
+                let start = resolve(start, rate)?;
+                free_track(
+                    ctx.project,
+                    timeline,
+                    track_kind_for(&content),
+                    (start, start + duration),
+                )?
+            }
+            (None, true, None) => {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    "clip.add: free_track needs start",
+                ));
+            }
+            (None, false, _) => {
+                find_or_create_track(ctx.project, timeline, track_kind_for(&content))?
+            }
         };
         let id = ctx.project.allocate_id(IdKind::Clip);
         let timeline_doc = timeline_mut(ctx.project, timeline)?;
@@ -617,7 +638,10 @@ impl ClipTrim {
                     .with_hint("Keep at least one word inside the clip, or remove the caption clip instead.")
                 })?;
             }
-            ClipContent::Image { .. } | ClipContent::Text(_) | ClipContent::Adjustment => {}
+            ClipContent::Image { .. }
+            | ClipContent::Text(_)
+            | ClipContent::Shape(_)
+            | ClipContent::Adjustment => {}
         }
         if self.ripple {
             // The clip stays at its start; what follows moves by the change in length.

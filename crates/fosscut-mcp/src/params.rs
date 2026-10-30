@@ -221,9 +221,10 @@ pub struct ExportArgs {
     pub project: Option<String>,
     /// File to write, for example `Promo.mp4`.
     pub output: String,
-    /// `mp4-h264`, `mp4-hevc`, `mp4-av1`, `mov-prores`, `webm-vp9` or `m4a-aac`. When
-    /// omitted the extension decides: `.mov` ProRes, `.webm` VP9, `.m4a` audio only, and
-    /// anything else the most compatible video preset this machine can encode.
+    /// A preset from `capabilities` (`export_presets`), for example `mp4-h264`,
+    /// `mov-prores-hq`, `gif`, `wav` or `mp3`. When omitted the extension decides (`.mov`
+    /// ProRes, `.webm` VP9, `.gif`, `.m4a`, `.wav`, `.flac` and `.mp3` audio), and anything
+    /// else the most compatible video preset this machine can encode.
     pub preset: Option<String>,
     /// Timeline id; the primary timeline when omitted.
     pub timeline: Option<String>,
@@ -238,6 +239,31 @@ pub struct ExportArgs {
     /// Replace the output if it exists. Ask the user first.
     #[serde(default)]
     pub allow_destructive: bool,
+    /// The shorter side: `480p`, `720p`, `1080p`, `2k`, `4k`, `8k` or a number of pixels;
+    /// the canvas's when omitted.
+    pub resolution: Option<String>,
+    /// Frame rate such as `24`, `25`, `29.97`, `30`, `50`, `59.94`, `60` or `120`; the
+    /// timeline's when omitted.
+    pub fps: Option<String>,
+    /// Video bit rate such as `8M`; the encoder's choice for the size when omitted.
+    pub bitrate: Option<String>,
+    /// Audio bit rate such as `192k`.
+    pub audio_bitrate: Option<String>,
+    /// Only this part of the timeline: `{"start": {"seconds": "2"}, "end": {"seconds": "10"}}`.
+    pub range: Option<RangeArgs>,
+    /// Write a cover image (PNG) of the frame at this time of the export beside the file.
+    pub cover: Option<fosscut_time::TimeInput>,
+    /// Write the captions beside the file as `srt` or `vtt` subtitles.
+    pub subtitles: Option<String>,
+}
+
+/// A part of a timeline.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RangeArgs {
+    /// Where it starts.
+    pub start: fosscut_time::TimeInput,
+    /// Where it ends.
+    pub end: fosscut_time::TimeInput,
 }
 
 /// Arguments of `job_status` and `job_cancel`.
@@ -324,6 +350,55 @@ pub struct CaptionsArgs {
     /// Allow replacing captions or overwriting an existing file. Ask the user first.
     #[serde(default)]
     pub allow_destructive: bool,
+    /// Why, recorded in the project's history.
+    pub reason: Option<String>,
+}
+
+/// What the `library` tool does.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryAction {
+    /// List or search the library.
+    List,
+    /// Add an item to the project.
+    Add,
+}
+
+/// Arguments of the `library` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct LibraryArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// `list` (with `kind` and `search`) or `add` (with `name`).
+    pub action: LibraryAction,
+    /// add: the item's name.
+    pub name: Option<String>,
+    /// Only, or the item's, kind: shape, sticker, background, template, title,
+    /// text_style, caption_style, look, sound or music.
+    pub kind: Option<String>,
+    /// list: words to find in names, descriptions and tags.
+    pub search: Option<String>,
+    /// add: where it starts.
+    pub start: Option<fosscut_time::TimeInput>,
+    /// add: how long it lasts.
+    pub duration: Option<fosscut_time::TimeInput>,
+    /// add: the track.
+    pub track: Option<String>,
+    /// add: the clip a look applies to.
+    pub clip: Option<String>,
+    /// add: lines for titles and templates; the text of a text style's clip.
+    #[serde(default)]
+    pub lines: Vec<String>,
+    /// add: assets for a template's slots.
+    #[serde(default)]
+    pub media: Vec<String>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+    /// Report what would change without committing it.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Retry key.
+    pub request_id: Option<String>,
     /// Why, recorded in the project's history.
     pub reason: Option<String>,
 }

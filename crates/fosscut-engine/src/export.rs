@@ -45,6 +45,215 @@ pub struct ExportRequest {
     ///
     /// [`cache_dir`]: crate::cache_dir
     pub cache: PathBuf,
+    /// A part of the timeline, a cover image and subtitles written beside the file.
+    pub options: ExportOptions,
+}
+
+/// What an export covers and writes besides the media file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExportOptions {
+    /// Only this part of the timeline, start to end; the whole timeline when `None`.
+    pub range: Option<(Flicks, Flicks)>,
+    /// Write a PNG cover image of the frame at this time of the export (from its start)
+    /// beside the file, as `<name>.cover.png`.
+    pub cover: Option<Flicks>,
+    /// Write the first caption track as subtitles beside the file.
+    pub subtitles: Option<SubtitleFormat>,
+}
+
+/// A subtitle file format.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtitleFormat {
+    /// SubRip (`.srt`).
+    Srt,
+    /// WebVTT (`.vtt`), for the web.
+    Vtt,
+}
+
+impl SubtitleFormat {
+    /// The format named `srt` or `vtt`.
+    pub fn named(name: &str) -> Result<SubtitleFormat, EngineError> {
+        match name {
+            "srt" => Ok(SubtitleFormat::Srt),
+            "vtt" => Ok(SubtitleFormat::Vtt),
+            other => Err(EngineError::InvalidSettings {
+                message: format!("subtitles are srt or vtt, not {other:?}"),
+            }),
+        }
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            SubtitleFormat::Srt => "srt",
+            SubtitleFormat::Vtt => "vtt",
+        }
+    }
+}
+
+/// Changes to a preset's settings: size, frame rate and bit rates (CC-163 to CC-166).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SettingsChoice {
+    /// The shorter side in pixels (720 for 720p, 2160 for 4K); the canvas's when `None`.
+    /// The other side follows the canvas's shape, rounded to an even number.
+    pub resolution: Option<u32>,
+    /// The frame rate; the timeline's when `None`.
+    pub rate: Option<fosscut_time::Rate>,
+    /// Video bit rate in bits per second; the encoder's choice for the size when `None`.
+    pub video_bit_rate: Option<u64>,
+    /// Audio bit rate in bits per second; the preset's when `None`.
+    pub audio_bit_rate: Option<u64>,
+}
+
+/// The resolutions export offers by name, as shorter sides in pixels.
+pub const RESOLUTIONS: [(&str, u32); 6] = [
+    ("480p", 480),
+    ("720p", 720),
+    ("1080p", 1080),
+    ("2k", 1440),
+    ("4k", 2160),
+    ("8k", 4320),
+];
+
+/// A resolution by name (`720p`, `4k`) or as a number of pixels for the shorter side.
+pub fn resolution(name: &str) -> Result<u32, EngineError> {
+    let lower = name.trim().to_lowercase();
+    if let Some((_, pixels)) = RESOLUTIONS.iter().find(|(n, _)| *n == lower) {
+        return Ok(*pixels);
+    }
+    lower
+        .trim_end_matches('p')
+        .parse::<u32>()
+        .ok()
+        .filter(|p| (16..=8640).contains(p))
+        .ok_or_else(|| EngineError::InvalidSettings {
+            message: format!(
+                "{name} is not a resolution: use 480p, 720p, 1080p, 2k, 4k, 8k or a number of pixels"
+            ),
+        })
+}
+
+/// A frame rate by its usual name: whole numbers, or 23.976, 29.97 and 59.94 for the NTSC
+/// rates, or an exact fraction such as 30000/1001.
+pub fn frame_rate(name: &str) -> Result<fosscut_time::Rate, EngineError> {
+    let exact = match name.trim() {
+        "23.976" | "23.98" => "24000/1001",
+        "29.97" => "30000/1001",
+        "59.94" => "60000/1001",
+        other => other,
+    };
+    exact
+        .parse::<fosscut_time::Rate>()
+        .map_err(|e| EngineError::InvalidSettings {
+            message: format!("{name} is not a frame rate: {e}"),
+        })
+}
+
+/// `preset`'s settings for a timeline of `format`, changed by `choice`. GIFs default to a
+/// 480-pixel shorter side at 15 frames per second, which keeps them small.
+pub fn settings_for(
+    preset: crate::Preset,
+    format: &fosscut_model::TimelineFormat,
+    choice: &SettingsChoice,
+) -> OutputSettings {
+    let mut settings = preset.settings(format);
+    let gif = settings.container.extension() == "gif";
+    if let Some(video) = &mut settings.video {
+        // A GIF never grows past the canvas; a chosen resolution may scale up.
+        let current = video.width.min(video.height);
+        let shorter = choice.resolution.or(gif.then_some(480.min(current)));
+        if let Some(target) = shorter {
+            let (w, h) = (
+                f64::from(format.width.max(1)),
+                f64::from(format.height.max(1)),
+            );
+            let factor = f64::from(target) / w.min(h);
+            let even = |v: f64| (((v * factor) / 2.0).round() as u32 * 2).max(2);
+            video.width = even(w);
+            video.height = even(h);
+        }
+        let gif_rate = fosscut_time::Rate::new(15, 1).unwrap_or(video.rate);
+        if let Some(rate) = choice.rate.or(gif.then_some(gif_rate)) {
+            video.rate = rate;
+        }
+        if choice.video_bit_rate.is_some() {
+            video.bit_rate = choice.video_bit_rate;
+        }
+    }
+    if let (Some(audio), Some(bits)) = (&mut settings.audio, choice.audio_bit_rate) {
+        audio.bit_rate = bits;
+    }
+    settings
+}
+
+/// A bit rate such as `8M`, `192k` or `2500000`, in bits per second.
+pub fn bit_rate(text: &str) -> Result<u64, EngineError> {
+    let lower = text.trim().to_lowercase();
+    let (number, factor) = match lower.chars().last() {
+        Some('k') => (&lower[..lower.len() - 1], 1_000.0),
+        Some('m') => (&lower[..lower.len() - 1], 1_000_000.0),
+        _ => (lower.as_str(), 1.0),
+    };
+    number
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .map(|v| (v * factor).round() as u64)
+        .filter(|&b| (8_000..=2_000_000_000).contains(&b))
+        .ok_or_else(|| EngineError::InvalidSettings {
+            message: format!("{text} is not a bit rate: use for example 8M or 192k"),
+        })
+}
+
+/// Where an asset an export uses comes from, and what that means for publishing it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RightsNote {
+    /// The asset.
+    pub asset: String,
+    /// Its name.
+    pub name: String,
+    /// `library` (made by FossCut, free to use) or `yours` (brought into the project).
+    pub origin: String,
+    /// What to check before publishing.
+    pub note: String,
+}
+
+/// Rights notes for the media `assets` of `project` (CC-172 is a check against a rights
+/// database; FossCut has none and sends nothing anywhere, so it says what it knows).
+fn rights(project: &Project, assets: &[Id]) -> Vec<RightsNote> {
+    let mut notes: Vec<RightsNote> = Vec::new();
+    for asset in assets.iter().filter_map(|id| project.media.get(id)) {
+        let library = asset
+            .path
+            .relative
+            .as_deref()
+            .is_some_and(|p| p.starts_with(crate::library::FOLDER));
+        notes.push(RightsNote {
+            asset: asset.id.to_string(),
+            name: asset.name.clone(),
+            origin: if library { "library" } else { "yours" }.to_string(),
+            note: if library {
+                "Made by FossCut: free to use, also commercially.".to_string()
+            } else {
+                "Brought in by you: make sure you may publish it (music and footage you did not make often need a licence).".to_string()
+            },
+        });
+    }
+    for asset in project
+        .media
+        .assets
+        .iter()
+        .filter(|a| a.kind == fosscut_model::AssetKind::Font)
+    {
+        notes.push(RightsNote {
+            asset: asset.id.to_string(),
+            name: asset.name.clone(),
+            origin: "yours".to_string(),
+            note: "A font you imported: check that its licence allows using it in videos."
+                .to_string(),
+        });
+    }
+    notes
 }
 
 /// How far an export has come.
@@ -68,6 +277,9 @@ pub struct Encoders {
 /// What an export would write, as checked by [`plan`] without writing anything.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExportPlan {
+    /// Where the media the export uses comes from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rights: Vec<RightsNote>,
     /// The file that would be written.
     pub output: String,
     /// The settings it would be written with.
@@ -100,6 +312,15 @@ pub struct ExportReport {
     /// True when this result was returned for a repeated request id.
     #[serde(default)]
     pub replayed: bool,
+    /// The cover image written, if one was asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    /// The subtitle file written, if one was asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitles: Option<String>,
+    /// Where the media the export uses comes from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rights: Vec<RightsNote>,
 }
 
 /// Exports `request.timeline` of `project`, calling `progress` after every frame; return
@@ -203,15 +424,26 @@ pub fn export(
             report: Box::new(verified),
         });
     }
+    let cover = match request.options.cover {
+        Some(at) => Some(write_cover(project, request, checked.start + at, renderer)?),
+        None => None,
+    };
+    let subtitles = match request.options.subtitles {
+        Some(format) => write_subtitles(project, request, &checked, format)?,
+        None => None,
+    };
     let report = ExportReport {
         output: request.output.display().to_string(),
         settings: request.settings.clone(),
         frames: frame_count,
         duration: expected_duration,
-        encoders: checked.plan.encoders,
+        encoders: checked.plan.encoders.clone(),
         verified,
         elapsed_ms: started.elapsed().as_millis() as u64,
         replayed: false,
+        cover,
+        subtitles,
+        rights: checked.plan.rights.clone(),
     };
     if let Some(path) = record {
         write_record(&path, &report);
@@ -227,11 +459,65 @@ pub fn plan(project: &Project, request: &ExportRequest) -> Result<ExportPlan, En
     check(project, request).map(|checked| checked.plan)
 }
 
-/// A checked export: its plan, the timeline's own duration and each asset's media file.
+/// A checked export: its plan, the part of the timeline it covers and each asset's media
+/// file.
 struct Checked {
     plan: ExportPlan,
+    /// Where the export starts on the timeline.
+    start: Flicks,
+    /// How much of the timeline it covers.
     timeline_duration: Flicks,
     media: Vec<(Id, PathBuf)>,
+}
+
+/// A file beside `output`: its name with `suffix` instead of its extension.
+fn beside(output: &Path, suffix: &str) -> PathBuf {
+    let stem = output
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "export".into());
+    output_dir(output).join(format!("{stem}.{suffix}"))
+}
+
+/// Renders the frame at `time` as the cover image beside the output.
+fn write_cover(
+    project: &Project,
+    request: &ExportRequest,
+    time: Flicks,
+    renderer: &mut Renderer,
+) -> Result<String, EngineError> {
+    let width = request.settings.video.as_ref().map(|v| v.width);
+    let still = crate::frame::frame(
+        project,
+        &request.bundle,
+        &request.timeline,
+        time,
+        width,
+        renderer,
+    )?;
+    let path = beside(&request.output, "cover.png");
+    let bytes = crate::frame::png(&still.image)?;
+    std::fs::write(&path, bytes).map_err(|e| failed_io(&path, &e))?;
+    Ok(path.display().to_string())
+}
+
+/// Writes the first caption track of the exported part as subtitles beside the output, or
+/// nothing when the timeline has no captions.
+fn write_subtitles(
+    project: &Project,
+    request: &ExportRequest,
+    checked: &Checked,
+    format: SubtitleFormat,
+) -> Result<Option<String>, EngineError> {
+    let range = (checked.start, checked.start + checked.timeline_duration);
+    let text = match crate::captions::subtitles(project, Some(&request.timeline), range, format) {
+        Ok(text) => text,
+        Err(EngineError::NoCaptions { .. }) => return Ok(None),
+        Err(other) => return Err(other),
+    };
+    let path = beside(&request.output, format.extension());
+    std::fs::write(&path, text).map_err(|e| failed_io(&path, &e))?;
+    Ok(Some(path.display().to_string()))
 }
 
 fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineError> {
@@ -248,9 +534,28 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
             .ok_or_else(|| EngineError::TimelineNotFound {
                 timeline: request.timeline.to_string(),
             })?;
-    let duration = doc.duration();
-    if !duration.is_positive() {
+    let whole = doc.duration();
+    if !whole.is_positive() {
         return Err(EngineError::EmptyTimeline);
+    }
+    let (start, duration) = match request.options.range {
+        Some((from, to)) => {
+            if from.is_negative() || to <= from || from >= whole {
+                return Err(EngineError::InvalidSettings {
+                    message: "the range must start inside the timeline and end after it starts"
+                        .to_string(),
+                });
+            }
+            (from, to.min(whole) - from)
+        }
+        None => (Flicks::ZERO, whole),
+    };
+    if let Some(cover) = request.options.cover
+        && (cover.is_negative() || cover >= duration)
+    {
+        return Err(EngineError::InvalidSettings {
+            message: "the cover's time must be inside the export".to_string(),
+        });
     }
     validate(&request.settings)?;
     if request.output.is_dir() {
@@ -269,7 +574,9 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
             message: format!("{} is not a directory", parent.display()),
         });
     }
-    let media = assets_in(project, &request.timeline)
+    let used = assets_in(project, &request.timeline);
+    let notes = rights(project, &used);
+    let media = used
         .into_iter()
         .map(|asset| {
             let path = resolve(project, &request.bundle, &asset)?;
@@ -291,6 +598,7 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
     };
     Ok(Checked {
         plan: ExportPlan {
+            rights: notes,
             output: request.output.display().to_string(),
             settings: settings.clone(),
             frames,
@@ -308,6 +616,7 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
                     .map(|e| e.encoder.clone()),
             },
         },
+        start,
         timeline_duration: duration,
         media,
     })
@@ -335,6 +644,7 @@ fn write(
 ) -> Result<u64, EngineError> {
     let settings = &request.settings;
     let duration = checked.timeline_duration;
+    let start = checked.start;
     let mut writer = FfmpegWriter::create(path, settings)?;
     let audio_format = settings.audio.as_ref().map(|a| (a.sample_rate, a.channels));
     let mut push_audio =
@@ -343,7 +653,7 @@ fn write(
                 let buffer = mix(
                     project,
                     &request.timeline,
-                    from,
+                    start + from,
                     to - from,
                     rate,
                     channels,
@@ -376,7 +686,7 @@ fn write(
     let total = checked.plan.frames as i64;
     for n in 0..total {
         let time = video.rate.frames_to_flicks(n);
-        let plan = plan_frame(project, &request.timeline, time)?;
+        let plan = plan_frame(project, &request.timeline, start + time)?;
         let image = renderer.render_image(
             &plan,
             frames,
@@ -420,6 +730,18 @@ fn validate(settings: &OutputSettings) -> Result<(), EngineError> {
             ),
         });
     }
+    if let Some(a) = settings.audio.as_ref()
+        && audio_encoder(a.codec).is_none()
+    {
+        return Err(EngineError::CodecUnavailable {
+            codec: a.codec.probe_name().to_string(),
+            available: encoder_capabilities()
+                .audio
+                .iter()
+                .map(|(c, _)| c.probe_name().to_string())
+                .collect(),
+        });
+    }
     if let Some(v) = video
         && video_encoder(v.codec).is_none()
     {
@@ -448,14 +770,16 @@ pub fn compare(
             mismatches.push(what);
         }
     };
-    let family_ok = match settings.container {
-        Container::Mp4 => {
-            report.container.contains("mp4") && report.brand.as_deref() != Some("qt  ")
-        }
-        Container::Mov => {
-            report.container.contains("mov") && report.brand.as_deref() == Some("qt  ")
-        }
-        Container::Webm => report.container.contains("webm"),
+    let family_ok = settings
+        .container
+        .matches_probe(&report.container, report.brand.as_deref());
+    // GIF frame delays are whole centiseconds, so a GIF's rate and length are close, not
+    // exact.
+    let gif = settings.container == Container::Gif;
+    let slack = if gif {
+        Flicks::from_millis(20)
+    } else {
+        Flicks::ZERO
     };
     expect(
         family_ok,
@@ -484,7 +808,7 @@ pub fn compare(
                 ),
             );
             expect(
-                got.rate == Some(want.rate),
+                gif || got.rate == Some(want.rate),
                 format!(
                     "frame rate: requested {}, file has {:?}",
                     want.rate,
@@ -497,7 +821,7 @@ pub fn compare(
             );
             if let Some(file_duration) = got.duration {
                 expect(
-                    file_duration == duration,
+                    (file_duration - duration).get().abs() <= slack.get(),
                     format!(
                         "video duration: expected {} flicks, file has {}",
                         duration.get(),

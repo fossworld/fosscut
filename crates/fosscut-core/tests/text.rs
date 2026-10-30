@@ -282,15 +282,25 @@ fn title_templates_become_one_styled_animated_clip() {
     let placed = clip(&session, &id);
     let text = content(&session, &id);
     assert_eq!(
-        text["text"], "Sam Lee\nFounder",
-        "the second line keeps its placeholder"
+        text["text"], "Sam Lee",
+        "a line left out is dropped, not shown as a placeholder"
     );
     assert_eq!(text["style"]["align"], "left");
     assert_eq!(
         text["spans"][0],
         json!({ "start": 0, "end": 7, "bold": true })
     );
-    assert_eq!(text["spans"][1]["start"], 8);
+    let placeholders = run(
+        &mut session,
+        "text.template",
+        json!({ "template": "lower-third", "start": "2s" }),
+    );
+    let shown = content(&session, &placeholders.results[0]["clip"]);
+    assert_eq!(
+        shown["text"], "Alex Morgan\nFounder",
+        "no lines: the placeholders"
+    );
+    assert_eq!(shown["spans"][1]["start"], 12);
     assert_eq!(placed["transform"]["position"], json!([-0.25, 0.3]));
     // The reveal never takes more than half the clip.
     assert_eq!(text["reveal"]["duration"]["flicks"], SECOND / 2);

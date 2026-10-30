@@ -293,6 +293,37 @@ pub fn rasterize(
     })
 }
 
+/// Coverage of one mask over a picture exactly `size` pixels large, without the size cap
+/// of [`rasterize`]: shape clips draw at the output resolution. Text masks cover nothing
+/// here.
+pub fn coverage_exact(mask: &Mask, size: (u32, u32)) -> Coverage {
+    let (width, height) = (size.0.max(1), size.1.max(1));
+    let aspect = f64::from(width) / f64::from(height);
+    let pixel = 1.0 / f64::from(height);
+    let prepared = match mask.shape {
+        MaskShape::Star => Prepared::Outline(star()),
+        MaskShape::Heart => Prepared::Outline(heart()),
+        MaskShape::Path => Prepared::Outline(path_outline(mask)),
+        _ => Prepared::None,
+    };
+    let mut data = Vec::with_capacity((width * height) as usize);
+    for row in 0..height {
+        for column in 0..width {
+            let p = [
+                (f64::from(column) + 0.5) / f64::from(width),
+                (f64::from(row) + 0.5) / f64::from(height),
+            ];
+            let c = mask_at(mask, &prepared, p, aspect, pixel);
+            data.push((c.clamp(0.0, 1.0) * 255.0).round() as u8);
+        }
+    }
+    Coverage {
+        width,
+        height,
+        data,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

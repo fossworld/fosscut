@@ -74,18 +74,19 @@ fn tone(seconds: f64) -> AudioBuffer {
     }
 }
 
-/// The container and audio codec each video codec is tested in.
-fn layout(codec: VideoCodec) -> (Container, AudioCodec) {
+/// The container and audio codec each video codec is tested in (GIF has no sound).
+fn layout(codec: VideoCodec) -> (Container, Option<AudioCodec>) {
     match codec {
-        VideoCodec::ProRes422 => (Container::Mov, AudioCodec::Aac),
-        VideoCodec::Vp9 => (Container::Webm, AudioCodec::Opus),
-        _ => (Container::Mp4, AudioCodec::Aac),
+        VideoCodec::Vp9 => (Container::Webm, Some(AudioCodec::Opus)),
+        VideoCodec::Gif => (Container::Gif, None),
+        codec if codec.probe_name() == "prores" => (Container::Mov, Some(AudioCodec::Aac)),
+        _ => (Container::Mp4, Some(AudioCodec::Aac)),
     }
 }
 
 fn settings(codec: VideoCodec, rate: Rate) -> OutputSettings {
     let (container, audio) = layout(codec);
-    let audio_available = encoder_capabilities().audio(audio).is_some();
+    let audio = audio.filter(|a| encoder_capabilities().audio(*a).is_some());
     OutputSettings {
         container,
         video: Some(VideoSettings {
@@ -95,7 +96,7 @@ fn settings(codec: VideoCodec, rate: Rate) -> OutputSettings {
             rate,
             bit_rate: None,
         }),
-        audio: audio_available.then(|| AudioSettings::stereo(audio)),
+        audio: audio.map(AudioSettings::stereo),
     }
 }
 
@@ -136,7 +137,12 @@ fn capabilities_list_only_usable_permissive_encoders() {
 #[test]
 fn every_available_codec_writes_exact_frames_tags_and_audio() {
     let capabilities = encoder_capabilities();
-    for (codec, info) in &capabilities.video {
+    // GIF stores centisecond delays and no color tags; tests/formats.rs covers it.
+    for (codec, info) in capabilities
+        .video
+        .iter()
+        .filter(|(c, _)| *c != VideoCodec::Gif)
+    {
         let settings = settings(*codec, Rate::FPS_30);
         let path = dir().join(format!(
             "all-{}.{}",
@@ -148,6 +154,9 @@ fn every_available_codec_writes_exact_frames_tags_and_audio() {
         let video = report.video.as_ref().unwrap();
         let what = format!("{} with {}", codec.probe_name(), info.encoder);
         assert_eq!(video.codec, codec.probe_name(), "{what}: codec");
+        if let Some(profile) = codec.profile_name() {
+            assert_eq!(video.profile.as_deref(), Some(profile), "{what}: profile");
+        }
         assert_eq!((video.width, video.height), SIZE, "{what}: size");
         assert_eq!(video.rate, Some(Rate::FPS_30), "{what}: rate");
         assert_eq!(video.frame_count, FRAMES as u64, "{what}: frame count");
@@ -169,8 +178,8 @@ fn every_available_codec_writes_exact_frames_tags_and_audio() {
         if settings.audio.is_some() {
             let audio = report.audio.as_ref().unwrap();
             assert_eq!(
-                audio.codec,
-                layout(*codec).1.probe_name(),
+                Some(audio.codec.as_str()),
+                layout(*codec).1.map(AudioCodec::probe_name),
                 "{what}: audio codec"
             );
             assert_eq!(
@@ -313,7 +322,7 @@ fn impossible_requests_are_typed_errors() {
         if let Some(video) = &mut request.video {
             video.codec = missing;
         }
-        request.container = Container::Mov;
+        request.container = layout(missing).0;
         request.audio = None;
         let error = FfmpegWriter::create(&dir().join("missing.mov"), &request)
             .err()

@@ -1,0 +1,1703 @@
+[
+ {
+  "name": "rectangle",
+  "kind": "shape",
+  "title": "Rectangle",
+  "description": "A plain rectangle.",
+  "tags": [
+   "box",
+   "bar",
+   "frame"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.3,
+    0.2
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   }
+  }
+ },
+ {
+  "name": "rounded-rectangle",
+  "kind": "shape",
+  "title": "Rounded rectangle",
+  "description": "A rectangle with soft corners.",
+  "tags": [
+   "box",
+   "card",
+   "button"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.3,
+    0.2
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "roundness": 0.35
+  }
+ },
+ {
+  "name": "circle",
+  "kind": "shape",
+  "title": "Circle",
+  "description": "A circle.",
+  "tags": [
+   "dot",
+   "round"
+  ],
+  "content": {
+   "shape": "ellipse",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   }
+  }
+ },
+ {
+  "name": "star",
+  "kind": "shape",
+  "title": "Star",
+  "description": "A five-pointed star.",
+  "tags": [
+   "rating",
+   "favourite"
+  ],
+  "content": {
+   "shape": "star",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFD23F"
+   }
+  }
+ },
+ {
+  "name": "heart",
+  "kind": "shape",
+  "title": "Heart",
+  "description": "A heart.",
+  "tags": [
+   "love",
+   "like"
+  ],
+  "content": {
+   "shape": "heart",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FF3B5C"
+   }
+  }
+ },
+ {
+  "name": "triangle",
+  "kind": "shape",
+  "title": "Triangle",
+  "description": "A triangle pointing up.",
+  "tags": [
+   "play",
+   "warning"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "points": [
+    {
+     "at": [
+      0,
+      -1
+     ]
+    },
+    {
+     "at": [
+      1,
+      1
+     ]
+    },
+    {
+     "at": [
+      -1,
+      1
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "diamond",
+  "kind": "shape",
+  "title": "Diamond",
+  "description": "A diamond.",
+  "tags": [
+   "rhombus"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.16,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "points": [
+    {
+     "at": [
+      0,
+      -1
+     ]
+    },
+    {
+     "at": [
+      1,
+      0
+     ]
+    },
+    {
+     "at": [
+      0,
+      1
+     ]
+    },
+    {
+     "at": [
+      -1,
+      0
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "hexagon",
+  "kind": "shape",
+  "title": "Hexagon",
+  "description": "A regular hexagon.",
+  "tags": [
+   "honeycomb",
+   "badge"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "points": [
+    {
+     "at": [
+      0.0,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      1.0
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      -0.5
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "arrow",
+  "kind": "shape",
+  "title": "Arrow",
+  "description": "A bold arrow pointing right.",
+  "tags": [
+   "pointer",
+   "direction",
+   "next"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.25,
+    0.18
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "points": [
+    {
+     "at": [
+      -1,
+      -0.35
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      -0.35
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      -0.9
+     ]
+    },
+    {
+     "at": [
+      1,
+      0
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      0.9
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      0.35
+     ]
+    },
+    {
+     "at": [
+      -1,
+      0.35
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "bar",
+  "kind": "shape",
+  "title": "Bar",
+  "description": "A thin bar to underline or divide.",
+  "tags": [
+   "line",
+   "divider",
+   "underline"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.4,
+    0.012
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "roundness": 1.0
+  }
+ },
+ {
+  "name": "burst",
+  "kind": "shape",
+  "title": "Burst",
+  "description": "A twelve-pointed burst.",
+  "tags": [
+   "explosion",
+   "sale",
+   "comic"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.25,
+    0.4444
+   ],
+   "fill": {
+    "color": "#FFD23F"
+   },
+   "points": [
+    {
+     "at": [
+      0.0,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      0.1863,
+      -0.6955
+     ]
+    },
+    {
+     "at": [
+      0.5,
+      -0.866
+     ]
+    },
+    {
+     "at": [
+      0.5091,
+      -0.5091
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      0.6955,
+      -0.1863
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.6955,
+      0.1863
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      0.5091,
+      0.5091
+     ]
+    },
+    {
+     "at": [
+      0.5,
+      0.866
+     ]
+    },
+    {
+     "at": [
+      0.1863,
+      0.6955
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      1.0
+     ]
+    },
+    {
+     "at": [
+      -0.1863,
+      0.6955
+     ]
+    },
+    {
+     "at": [
+      -0.5,
+      0.866
+     ]
+    },
+    {
+     "at": [
+      -0.5091,
+      0.5091
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      -0.6955,
+      0.1863
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.6955,
+      -0.1863
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      -0.5091,
+      -0.5091
+     ]
+    },
+    {
+     "at": [
+      -0.5,
+      -0.866
+     ]
+    },
+    {
+     "at": [
+      -0.1863,
+      -0.6955
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "badge-new",
+  "kind": "sticker",
+  "title": "New badge",
+  "description": "A red pill with NEW in white capitals.",
+  "tags": [
+   "new",
+   "label",
+   "badge"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.16,
+    0.08
+   ],
+   "fill": {
+    "color": "#E5484D"
+   },
+   "roundness": 1.0,
+   "label": {
+    "text": "NEW",
+    "style": {
+     "size": 0.045,
+     "color": "#FFFFFF",
+     "bold": true,
+     "letter_spacing": 0.08
+    }
+   }
+  }
+ },
+ {
+  "name": "badge-sale",
+  "kind": "sticker",
+  "title": "Sale badge",
+  "description": "A yellow burst with SALE in black capitals.",
+  "tags": [
+   "sale",
+   "discount",
+   "offer"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.2,
+    0.3556
+   ],
+   "fill": {
+    "color": "#FFD23F"
+   },
+   "points": [
+    {
+     "at": [
+      0.0,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      0.2019,
+      -0.7534
+     ]
+    },
+    {
+     "at": [
+      0.5,
+      -0.866
+     ]
+    },
+    {
+     "at": [
+      0.5515,
+      -0.5515
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      0.7534,
+      -0.2019
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.7534,
+      0.2019
+     ]
+    },
+    {
+     "at": [
+      0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      0.5515,
+      0.5515
+     ]
+    },
+    {
+     "at": [
+      0.5,
+      0.866
+     ]
+    },
+    {
+     "at": [
+      0.2019,
+      0.7534
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      1.0
+     ]
+    },
+    {
+     "at": [
+      -0.2019,
+      0.7534
+     ]
+    },
+    {
+     "at": [
+      -0.5,
+      0.866
+     ]
+    },
+    {
+     "at": [
+      -0.5515,
+      0.5515
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      0.5
+     ]
+    },
+    {
+     "at": [
+      -0.7534,
+      0.2019
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.7534,
+      -0.2019
+     ]
+    },
+    {
+     "at": [
+      -0.866,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      -0.5515,
+      -0.5515
+     ]
+    },
+    {
+     "at": [
+      -0.5,
+      -0.866
+     ]
+    },
+    {
+     "at": [
+      -0.2019,
+      -0.7534
+     ]
+    }
+   ],
+   "outline": {
+    "enabled": true,
+    "width": 0.02
+   },
+   "label": {
+    "text": "SALE",
+    "style": {
+     "size": 0.055,
+     "color": "#111111",
+     "bold": true,
+     "letter_spacing": 0.04
+    }
+   }
+  }
+ },
+ {
+  "name": "badge-live",
+  "kind": "sticker",
+  "title": "Live badge",
+  "description": "A red rounded tag reading LIVE.",
+  "tags": [
+   "live",
+   "stream",
+   "broadcast"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.11,
+    0.065
+   ],
+   "fill": {
+    "color": "#FF2D2D"
+   },
+   "roundness": 0.35,
+   "label": {
+    "text": "LIVE",
+    "style": {
+     "size": 0.04,
+     "color": "#FFFFFF",
+     "bold": true,
+     "letter_spacing": 0.12
+    }
+   }
+  }
+ },
+ {
+  "name": "subscribe",
+  "kind": "sticker",
+  "title": "Subscribe button",
+  "description": "A red button reading SUBSCRIBE, for calls to action.",
+  "tags": [
+   "subscribe",
+   "follow",
+   "button",
+   "cta"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.26,
+    0.09
+   ],
+   "fill": {
+    "color": "#FF0033"
+   },
+   "roundness": 0.3,
+   "label": {
+    "text": "SUBSCRIBE",
+    "style": {
+     "size": 0.045,
+     "color": "#FFFFFF",
+     "bold": true,
+     "letter_spacing": 0.04
+    }
+   }
+  }
+ },
+ {
+  "name": "follow",
+  "kind": "sticker",
+  "title": "Follow button",
+  "description": "A white pill reading Follow for more.",
+  "tags": [
+   "follow",
+   "cta",
+   "button"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.3,
+    0.085
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "roundness": 1.0,
+   "label": {
+    "text": "Follow for more",
+    "style": {
+     "size": 0.042,
+     "color": "#111111",
+     "bold": true
+    }
+   }
+  }
+ },
+ {
+  "name": "speech-bubble",
+  "kind": "sticker",
+  "title": "Speech bubble",
+  "description": "A white speech bubble with a short line in it.",
+  "tags": [
+   "talk",
+   "quote",
+   "comic",
+   "chat"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.3,
+    0.3
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "points": [
+    {
+     "at": [
+      -1,
+      -1
+     ]
+    },
+    {
+     "at": [
+      1,
+      -1
+     ]
+    },
+    {
+     "at": [
+      1,
+      0.45
+     ]
+    },
+    {
+     "at": [
+      -0.25,
+      0.45
+     ]
+    },
+    {
+     "at": [
+      -0.65,
+      1
+     ]
+    },
+    {
+     "at": [
+      -0.6,
+      0.45
+     ]
+    },
+    {
+     "at": [
+      -1,
+      0.45
+     ]
+    }
+   ],
+   "outline": {
+    "enabled": true,
+    "width": 0.03
+   },
+   "label": {
+    "text": "Hello!",
+    "style": {
+     "size": 0.05,
+     "color": "#111111",
+     "bold": true
+    }
+   },
+   "label_at": [
+    0.0,
+    -0.27
+   ]
+  }
+ },
+ {
+  "name": "pointer",
+  "kind": "sticker",
+  "title": "Pointer arrow",
+  "description": "A yellow arrow with a black outline, to point at something.",
+  "tags": [
+   "arrow",
+   "point",
+   "look"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.22,
+    0.16
+   ],
+   "fill": {
+    "color": "#FFE14D"
+   },
+   "points": [
+    {
+     "at": [
+      -1,
+      -0.35
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      -0.35
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      -0.9
+     ]
+    },
+    {
+     "at": [
+      1,
+      0
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      0.9
+     ]
+    },
+    {
+     "at": [
+      0.2,
+      0.35
+     ]
+    },
+    {
+     "at": [
+      -1,
+      0.35
+     ]
+    }
+   ],
+   "outline": {
+    "enabled": true,
+    "width": 0.08
+   }
+  }
+ },
+ {
+  "name": "check",
+  "kind": "sticker",
+  "title": "Check mark",
+  "description": "A green check mark.",
+  "tags": [
+   "yes",
+   "done",
+   "correct",
+   "tick"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.14,
+    0.2
+   ],
+   "fill": {
+    "color": "#30A46C"
+   },
+   "points": [
+    {
+     "at": [
+      -1,
+      0.05
+     ]
+    },
+    {
+     "at": [
+      -0.62,
+      -0.33
+     ]
+    },
+    {
+     "at": [
+      -0.22,
+      0.07
+     ]
+    },
+    {
+     "at": [
+      0.62,
+      -0.77
+     ]
+    },
+    {
+     "at": [
+      1,
+      -0.39
+     ]
+    },
+    {
+     "at": [
+      -0.22,
+      0.83
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "cross",
+  "kind": "sticker",
+  "title": "Cross",
+  "description": "A red cross.",
+  "tags": [
+   "no",
+   "wrong",
+   "close"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.12,
+    0.2133
+   ],
+   "fill": {
+    "color": "#E5484D"
+   },
+   "points": [
+    {
+     "at": [
+      -0.75,
+      -1
+     ]
+    },
+    {
+     "at": [
+      0,
+      -0.25
+     ]
+    },
+    {
+     "at": [
+      0.75,
+      -1
+     ]
+    },
+    {
+     "at": [
+      1,
+      -0.75
+     ]
+    },
+    {
+     "at": [
+      0.25,
+      0
+     ]
+    },
+    {
+     "at": [
+      1,
+      0.75
+     ]
+    },
+    {
+     "at": [
+      0.75,
+      1
+     ]
+    },
+    {
+     "at": [
+      0,
+      0.25
+     ]
+    },
+    {
+     "at": [
+      -0.75,
+      1
+     ]
+    },
+    {
+     "at": [
+      -1,
+      0.75
+     ]
+    },
+    {
+     "at": [
+      -0.25,
+      0
+     ]
+    },
+    {
+     "at": [
+      -1,
+      -0.75
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "name": "gold-star",
+  "kind": "sticker",
+  "title": "Gold star",
+  "description": "A gold star with a dark outline.",
+  "tags": [
+   "rating",
+   "best",
+   "award"
+  ],
+  "content": {
+   "shape": "star",
+   "size": [
+    0.18,
+    0.32
+   ],
+   "fill": {
+    "color": "#FFC53D",
+    "gradient": {
+     "to": "#F76B15",
+     "angle": 90
+    }
+   },
+   "outline": {
+    "enabled": true,
+    "width": 0.04,
+    "color": "#5C3D00"
+   }
+  }
+ },
+ {
+  "name": "price-tag",
+  "kind": "sticker",
+  "title": "Price tag",
+  "description": "A dark rounded tag with a price.",
+  "tags": [
+   "price",
+   "shop",
+   "cost"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.18,
+    0.08
+   ],
+   "fill": {
+    "color": "#111111"
+   },
+   "roundness": 0.3,
+   "outline": {
+    "enabled": true,
+    "width": 0.04,
+    "color": "#FFE14D"
+   },
+   "label": {
+    "text": "$9.99",
+    "style": {
+     "size": 0.045,
+     "color": "#FFE14D",
+     "bold": true
+    }
+   }
+  }
+ },
+ {
+  "name": "wow",
+  "kind": "sticker",
+  "title": "WOW burst",
+  "description": "A comic burst shouting WOW.",
+  "tags": [
+   "wow",
+   "comic",
+   "surprise"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.24,
+    0.4267
+   ],
+   "fill": {
+    "color": "#FF3B5C",
+    "gradient": {
+     "to": "#FFD23F",
+     "radial": true
+    }
+   },
+   "points": [
+    {
+     "at": [
+      0.0,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      0.1558,
+      -0.6824
+     ]
+    },
+    {
+     "at": [
+      0.4339,
+      -0.901
+     ]
+    },
+    {
+     "at": [
+      0.4364,
+      -0.5473
+     ]
+    },
+    {
+     "at": [
+      0.7818,
+      -0.6235
+     ]
+    },
+    {
+     "at": [
+      0.6307,
+      -0.3037
+     ]
+    },
+    {
+     "at": [
+      0.9749,
+      -0.2225
+     ]
+    },
+    {
+     "at": [
+      0.7,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.9749,
+      0.2225
+     ]
+    },
+    {
+     "at": [
+      0.6307,
+      0.3037
+     ]
+    },
+    {
+     "at": [
+      0.7818,
+      0.6235
+     ]
+    },
+    {
+     "at": [
+      0.4364,
+      0.5473
+     ]
+    },
+    {
+     "at": [
+      0.4339,
+      0.901
+     ]
+    },
+    {
+     "at": [
+      0.1558,
+      0.6824
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      1.0
+     ]
+    },
+    {
+     "at": [
+      -0.1558,
+      0.6824
+     ]
+    },
+    {
+     "at": [
+      -0.4339,
+      0.901
+     ]
+    },
+    {
+     "at": [
+      -0.4364,
+      0.5473
+     ]
+    },
+    {
+     "at": [
+      -0.7818,
+      0.6235
+     ]
+    },
+    {
+     "at": [
+      -0.6307,
+      0.3037
+     ]
+    },
+    {
+     "at": [
+      -0.9749,
+      0.2225
+     ]
+    },
+    {
+     "at": [
+      -0.7,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.9749,
+      -0.2225
+     ]
+    },
+    {
+     "at": [
+      -0.6307,
+      -0.3037
+     ]
+    },
+    {
+     "at": [
+      -0.7818,
+      -0.6235
+     ]
+    },
+    {
+     "at": [
+      -0.4364,
+      -0.5473
+     ]
+    },
+    {
+     "at": [
+      -0.4339,
+      -0.901
+     ]
+    },
+    {
+     "at": [
+      -0.1558,
+      -0.6824
+     ]
+    }
+   ],
+   "outline": {
+    "enabled": true,
+    "width": 0.025,
+    "color": "#111111"
+   },
+   "label": {
+    "text": "WOW!",
+    "style": {
+     "size": 0.06,
+     "color": "#FFFFFF",
+     "bold": true,
+     "stroke": {
+      "enabled": true,
+      "width": 0.12
+     }
+    }
+   }
+  }
+ },
+ {
+  "name": "heart-like",
+  "kind": "sticker",
+  "title": "Like heart",
+  "description": "A glossy red heart.",
+  "tags": [
+   "like",
+   "love",
+   "favourite"
+  ],
+  "content": {
+   "shape": "heart",
+   "size": [
+    0.16,
+    0.2844
+   ],
+   "fill": {
+    "color": "#FF5C7A",
+    "gradient": {
+     "to": "#C2002F",
+     "angle": 90
+    }
+   }
+  }
+ },
+ {
+  "name": "black",
+  "kind": "background",
+  "title": "Black",
+  "description": "Plain black.",
+  "tags": [
+   "solid",
+   "dark"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#000000"
+   }
+  }
+ },
+ {
+  "name": "white",
+  "kind": "background",
+  "title": "White",
+  "description": "Plain white.",
+  "tags": [
+   "solid",
+   "light"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#FFFFFF"
+   }
+  }
+ },
+ {
+  "name": "sunset",
+  "kind": "background",
+  "title": "Sunset",
+  "description": "Warm orange fading to pink from top to bottom.",
+  "tags": [
+   "warm",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#FF8A3D",
+    "gradient": {
+     "to": "#E93D82",
+     "angle": 90
+    }
+   }
+  }
+ },
+ {
+  "name": "ocean",
+  "kind": "background",
+  "title": "Ocean",
+  "description": "Teal deepening to navy.",
+  "tags": [
+   "blue",
+   "cool",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#12A594",
+    "gradient": {
+     "to": "#0B1E4F",
+     "angle": 90
+    }
+   }
+  }
+ },
+ {
+  "name": "night",
+  "kind": "background",
+  "title": "Night",
+  "description": "A purple glow fading to black at the edges.",
+  "tags": [
+   "dark",
+   "purple",
+   "radial"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#6E3FD8",
+    "gradient": {
+     "to": "#0A0618",
+     "radial": true
+    }
+   }
+  }
+ },
+ {
+  "name": "mint",
+  "kind": "background",
+  "title": "Mint",
+  "description": "Fresh mint to teal across.",
+  "tags": [
+   "green",
+   "fresh",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#B8F2D0",
+    "gradient": {
+     "to": "#12A594",
+     "angle": 45
+    }
+   }
+  }
+ },
+ {
+  "name": "peach",
+  "kind": "background",
+  "title": "Peach",
+  "description": "Soft peach to cream.",
+  "tags": [
+   "soft",
+   "warm",
+   "pastel"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#FFC9A8",
+    "gradient": {
+     "to": "#FFF4E6",
+     "angle": 135
+    }
+   }
+  }
+ },
+ {
+  "name": "studio",
+  "kind": "background",
+  "title": "Studio",
+  "description": "A grey spotlight fading to near black, like a studio backdrop.",
+  "tags": [
+   "grey",
+   "neutral",
+   "radial"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#5A5A5A",
+    "gradient": {
+     "to": "#111111",
+     "radial": true
+    }
+   }
+  }
+ },
+ {
+  "name": "fire",
+  "kind": "background",
+  "title": "Fire",
+  "description": "Red rising into yellow.",
+  "tags": [
+   "hot",
+   "red",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#D8001D",
+    "gradient": {
+     "to": "#FFC53D",
+     "angle": -90
+    }
+   }
+  }
+ },
+ {
+  "name": "forest",
+  "kind": "background",
+  "title": "Forest",
+  "description": "Leaf green to dark pine.",
+  "tags": [
+   "green",
+   "nature",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#46A758",
+    "gradient": {
+     "to": "#0E2A16",
+     "angle": 90
+    }
+   }
+  }
+ },
+ {
+  "name": "candy",
+  "kind": "background",
+  "title": "Candy",
+  "description": "Pink to purple on the diagonal.",
+  "tags": [
+   "pink",
+   "purple",
+   "fun"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#FF8DC7",
+    "gradient": {
+     "to": "#8E4EC6",
+     "angle": 45
+    }
+   }
+  }
+ },
+ {
+  "name": "slate",
+  "kind": "background",
+  "title": "Slate",
+  "description": "Cool slate blue to charcoal.",
+  "tags": [
+   "neutral",
+   "corporate",
+   "gradient"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#4F6A8F",
+    "gradient": {
+     "to": "#1C2333",
+     "angle": 90
+    }
+   }
+  }
+ }
+]

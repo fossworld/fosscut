@@ -737,6 +737,40 @@ fn styled_text() {
     check_at("styled-text", &mut renderer, &plan, &mut frames, TEXT_SIZE);
 }
 
+/// Stickers from the library on a gradient background (ADR-0028).
+#[test]
+fn stickers() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let item = |name: &str, position: [f64; 2]| {
+        let visual = fosscut_core::visual(name).unwrap();
+        Layer {
+            transform: Transform {
+                position,
+                ..Transform::default()
+            },
+            ..Layer::shape(visual.content)
+        }
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![
+            item("ocean", [0.0, 0.0]),
+            item("badge-new", [-0.3, -0.3]),
+            item("subscribe", [0.25, -0.3]),
+            item("speech-bubble", [-0.28, 0.12]),
+            item("gold-star", [0.05, 0.1]),
+            item("wow", [0.3, 0.15]),
+            item("pointer", [-0.1, 0.35]),
+            item("check", [0.15, 0.38]),
+        ],
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default();
+    check_at("stickers", &mut renderer, &plan, &mut frames, TEXT_SIZE);
+}
+
 /// A bilingual caption page: the translation under the words.
 #[test]
 fn bilingual_caption() {

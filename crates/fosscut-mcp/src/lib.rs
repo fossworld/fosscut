@@ -45,9 +45,9 @@ use serde_json::{Value, json};
 
 use params::{
     CapabilitiesArgs, CaptionsAction, CaptionsArgs, ColorAction, ColorArgs, Detail, EditArgs,
-    ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs, MediaAnalyzeArgs,
-    MediaImportArgs, ModelsArgs, NormalizeArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs,
-    QueryArgs, SheetArgs, TimelineReadArgs,
+    ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs, LibraryAction, LibraryArgs,
+    MediaAnalyzeArgs, MediaImportArgs, ModelsArgs, NormalizeArgs, ProjectArgs, ProjectNewArgs,
+    ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -814,6 +814,104 @@ impl FosscutServer {
         )
     }
 
+    /// Lists and adds library items.
+    #[tool(
+        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project: sounds and music are imported and placed at start, shapes, stickers and backgrounds drawn, titles and templates added with lines and media, styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (sounds are imported in a step of their own first)."
+    )]
+    async fn library(
+        &self,
+        params: Parameters<LibraryArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        // Listing needs no project.
+        if args.action == LibraryAction::List {
+            let items =
+                fosscut_engine::library::search(args.kind.as_deref(), args.search.as_deref());
+            return reply(Ok(json!({ "items": items })));
+        }
+        let bundle = match self.bundle(args.project.clone()) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let actor = actor(&context);
+        let state = Arc::clone(&self.state);
+        reply(
+            blocking(move || {
+                use fosscut_engine::library;
+                let name = args.name.clone().ok_or_else(|| {
+                    ApiError::new(codes::INVALID_ARGUMENTS, "library add needs name")
+                })?;
+                let item = library::find(&name, args.kind.as_deref())?;
+                let envelope = |mut request: Request, expected: Option<u64>| {
+                    request.expected_revision = expected;
+                    request.dry_run = args.dry_run;
+                    request.request_id = args.request_id.clone();
+                    request.reason = args.reason.clone();
+                    request.actor = actor.clone();
+                    request.at_ms = project::now_ms();
+                    request
+                };
+                let mut expected = args.expected_revision;
+                let (command, call_args) = if matches!(item.kind, "sound" | "music") {
+                    // The import is the first write and takes the revision check; placing
+                    // follows on the revision it made.
+                    let media_add = library::sound_media(&bundle, &item.name)?;
+                    let mut import = Request::single("media.add", media_add);
+                    import.expected_revision = args.expected_revision;
+                    import.dry_run = args.dry_run;
+                    import.actor = actor.clone();
+                    import.at_ms = project::now_ms();
+                    import.reason = args.reason.clone();
+                    let imported = state.projects.execute(&bundle, import)?;
+                    if args.dry_run {
+                        let mut value = as_value(&imported);
+                        value["item"] = json!(item);
+                        value["note"] = json!("dry run: the sound would be imported, then placed");
+                        return Ok(value);
+                    }
+                    expected = Some(imported.revision);
+                    let mut placed = json!({ "asset": imported.results[0]["asset"] });
+                    if let Some(start) = &args.start {
+                        placed["start"] = json!(start);
+                        if args.track.is_none() {
+                            placed["free_track"] = json!(true);
+                        }
+                    }
+                    if let Some(duration) = &args.duration {
+                        placed["duration"] = json!(duration);
+                    }
+                    if let Some(track) = &args.track {
+                        placed["track"] = json!(track);
+                    }
+                    ("clip.add".to_string(), placed)
+                } else {
+                    let call = library::command_for(
+                        &item,
+                        &library::Placement {
+                            start: args.start.as_ref().map(|t| json!(t)),
+                            duration: args.duration.as_ref().map(|t| json!(t)),
+                            track: args.track.clone(),
+                            clip: args.clip.clone(),
+                            lines: args.lines.clone(),
+                            media: args.media.clone(),
+                        },
+                    )?;
+                    (
+                        call["command"].as_str().unwrap_or_default().to_string(),
+                        call["args"].clone(),
+                    )
+                };
+                let request = envelope(Request::single(&command, call_args), expected);
+                let response = state.projects.execute(&bundle, request)?;
+                let mut value = as_value(&response);
+                value["item"] = json!(item);
+                Ok(value)
+            })
+            .await,
+        )
+    }
+
     /// Levels clips' loudness.
     #[tool(
         description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
@@ -1068,15 +1166,57 @@ impl FosscutServer {
                     )
                 })?,
             };
+            let format = project.timelines[&timeline].format.clone();
+            let rate = format.rate;
+            let choice = fosscut_engine::SettingsChoice {
+                resolution: args
+                    .resolution
+                    .as_deref()
+                    .map(fosscut_engine::resolution)
+                    .transpose()?,
+                rate: args
+                    .fps
+                    .as_deref()
+                    .map(fosscut_engine::frame_rate)
+                    .transpose()?,
+                video_bit_rate: args
+                    .bitrate
+                    .as_deref()
+                    .map(fosscut_engine::bit_rate)
+                    .transpose()?,
+                audio_bit_rate: args
+                    .audio_bitrate
+                    .as_deref()
+                    .map(fosscut_engine::bit_rate)
+                    .transpose()?,
+            };
+            let time = |input: &fosscut_time::TimeInput| {
+                input
+                    .resolve(rate)
+                    .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("time: {e}")))
+            };
+            let options = fosscut_engine::ExportOptions {
+                range: match &args.range {
+                    Some(range) => Some((time(&range.start)?, time(&range.end)?)),
+                    None => None,
+                },
+                cover: args.cover.as_ref().map(time).transpose()?,
+                subtitles: args
+                    .subtitles
+                    .as_deref()
+                    .map(fosscut_engine::SubtitleFormat::named)
+                    .transpose()?,
+            };
             let request = ExportRequest {
                 bundle: bundle.clone(),
-                settings: preset.settings(&project.timelines[&timeline].format),
+                settings: fosscut_engine::settings_for(preset, &format, &choice),
                 timeline,
                 output,
                 allow_overwrite: args.allow_destructive,
                 expected_revision: args.expected_revision,
                 request_id: args.request_id,
                 cache: state.cache.clone(),
+                options,
             };
             if args.dry_run {
                 let plan = fosscut_engine::plan(&project, &request)?;

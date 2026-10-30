@@ -28,6 +28,7 @@ fn request(project: &Project, name: &str) -> ExportRequest {
         expected_revision: None,
         request_id: None,
         cache: workspace().join("cache"),
+        options: Default::default(),
     }
 }
 

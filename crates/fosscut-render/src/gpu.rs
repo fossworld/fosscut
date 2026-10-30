@@ -908,6 +908,37 @@ impl Renderer {
                     placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
                 )
             }
+            LayerSource::Shape(shape) => {
+                if let Some(label) = &shape.label {
+                    self.load_fonts(label, frames)?;
+                }
+                let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
+                let raster = self.shape_raster(shape, plan.canvas, scale);
+                if raster.is_empty() {
+                    return Ok(None);
+                }
+                let texture = self.upload_rgba(
+                    encoder,
+                    index,
+                    (raster.width, raster.height),
+                    &raster.pixels,
+                );
+                let scale = f64::from(scale);
+                let natural = (
+                    f64::from(raster.width) / scale,
+                    f64::from(raster.height) / scale,
+                );
+                (
+                    texture,
+                    placed_quad(
+                        plan.canvas,
+                        natural,
+                        (0.0, 0.0),
+                        &layer.transform,
+                        layer.crop,
+                    ),
+                )
+            }
             LayerSource::Caption(caption) => {
                 let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
                 let look = evaluate(caption);
@@ -1663,6 +1694,35 @@ impl Renderer {
             self.text_cache.clear();
         }
         let raster = Arc::new(self.text.rasterize(layer, canvas, scale));
+        self.text_cache.insert(key, raster.clone());
+        raster
+    }
+
+    /// A composed shape, cached by the shape and output size.
+    fn shape_raster(
+        &mut self,
+        shape: &fosscut_model::ShapeContent,
+        canvas: (u32, u32),
+        scale: f32,
+    ) -> Arc<TextRaster> {
+        let key = format!(
+            "shape|{shape:?}|{}x{}|{}",
+            canvas.0,
+            canvas.1,
+            scale.to_bits()
+        );
+        if let Some(raster) = self.text_cache.get(&key) {
+            return raster.clone();
+        }
+        if self.text_cache.len() >= TEXT_CACHE_LIMIT {
+            self.text_cache.clear();
+        }
+        let raster = Arc::new(crate::shape::rasterize_shape(
+            &mut self.text,
+            shape,
+            canvas,
+            scale,
+        ));
         self.text_cache.insert(key, raster.clone());
         raster
     }

@@ -1022,3 +1022,60 @@ async fn agents_grade_with_effects_luts_and_automatic_color() {
     let undone = ok(&client, "undo", json!({})).await;
     assert!(undone["revision"].as_u64().is_some());
 }
+
+#[tokio::test]
+async fn the_library_lists_without_a_project_and_places_sounds_on_free_tracks() {
+    let client = connect(None).await;
+    let listed = ok(
+        &client,
+        "library",
+        json!({ "action": "list", "kind": "music" }),
+    )
+    .await;
+    let items = listed["items"].as_array().unwrap();
+    assert!(items.len() >= 6 && items.iter().all(|i| i["bpm"].is_number()));
+    let missing = fails(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "whoosh" }),
+    )
+    .await;
+    assert_eq!(missing["code"], "fosscut.project.not_found");
+    let dir = workspace("library");
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Sounds.fosscut").display().to_string() }),
+    )
+    .await;
+    // Two whooshes at the same moment: the second goes on a track of its own, and the
+    // revision check covers the import.
+    let first = ok(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "whoosh", "start": { "seconds": "1" }, "expected_revision": 0 }),
+    )
+    .await;
+    let second = ok(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "whoosh", "start": { "seconds": "1" }, "expected_revision": first["revision"] }),
+    )
+    .await;
+    assert_ne!(first["results"][0]["track"], second["results"][0]["track"]);
+    let stale = fails(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "pop", "start": { "seconds": "2" }, "expected_revision": 0 }),
+    )
+    .await;
+    assert_eq!(stale["code"], "fosscut.revision.conflict");
+    let badge = ok(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "badge-new", "start": { "seconds": "0" } }),
+    )
+    .await;
+    assert_eq!(badge["item"]["kind"], "sticker");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

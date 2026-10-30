@@ -233,6 +233,35 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             },
             "cases": ["as_written", "upper", "lower", "title"],
         });
+        // The visual library and project templates (ADR-0028).
+        let visuals: Vec<Value> = crate::presets::visuals()
+            .into_iter()
+            .map(|v| {
+                if brief {
+                    json!({ "name": v.name, "kind": v.kind, "title": v.title, "tags": v.tags })
+                } else {
+                    json!(v)
+                }
+            })
+            .collect();
+        let project_templates: Vec<Value> = crate::presets::project_templates()
+            .into_iter()
+            .map(|t| {
+                let lines: Vec<&String> = t.elements.iter().flat_map(|e| &e.lines).collect();
+                json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "canvas": t.canvas,
+                    "slots": t.slots.len(),
+                    "lines": lines,
+                })
+            })
+            .collect();
+        result["library"] = json!({
+            "visuals": visuals,
+            "templates": project_templates,
+            "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
+        });
         if !brief {
             result["text"]["style_schema"] =
                 serde_json::to_value(schemars::schema_for!(fosscut_model::TextStyle))
@@ -428,6 +457,15 @@ fn clip_view(
             }
         }
         ClipContent::Adjustment => {}
+        ClipContent::Shape(shape) => {
+            view["shape"] = json!(shape.shape);
+            if let Some(label) = &shape.label {
+                view["text"] = json!(label.text);
+            }
+            if detail == Detail::Full {
+                view["content"] = json!(shape);
+            }
+        }
         ClipContent::Caption(caption) => {
             view["text"] = json!(caption.text());
             if detail == Detail::Full {

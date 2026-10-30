@@ -659,6 +659,79 @@
           "type": "object"
         },
         {
+          "description": "A drawn shape, background or sticker (ADR-0028).",
+          "properties": {
+            "fill": {
+              "$ref": "#/$defs/Paint",
+              "default": {
+                "color": "#FFFFFF"
+              },
+              "description": "What fills it."
+            },
+            "kind": {
+              "const": "shape",
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TextContent"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Text on it, styled as a text clip's."
+            },
+            "label_at": {
+              "description": "Where the label's centre sits in the shape's box, -1 to 1 on each axis; the middle\nwhen omitted.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "outline": {
+              "$ref": "#/$defs/ShapeOutline",
+              "description": "An outline along its edge."
+            },
+            "points": {
+              "description": "The points of a `path` shape, -1 to 1 across the shape's box.",
+              "items": {
+                "$ref": "#/$defs/PathPoint"
+              },
+              "type": "array"
+            },
+            "roundness": {
+              "description": "Corner rounding of a rectangle, from 0 (square) to 1 (fully round ends).",
+              "format": "double",
+              "type": "number"
+            },
+            "shape": {
+              "$ref": "#/$defs/MaskShape",
+              "description": "The outline: `rectangle` (with `roundness`), `ellipse`, `star`, `heart` or `path`\n(through `points`)."
+            },
+            "size": {
+              "description": "Width and height as fractions of the canvas's; `[1, 1]` covers it.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "shape",
+            "size"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A compound clip: another timeline of the project, shown from `source_in`\n(ADR-0025).",
           "properties": {
             "kind": {
@@ -985,6 +1058,29 @@
       },
       "required": [
         "enabled"
+      ],
+      "type": "object"
+    },
+    "Gradient": {
+      "additionalProperties": false,
+      "description": "How a gradient runs.",
+      "properties": {
+        "angle": {
+          "description": "Its direction in degrees: 0 runs left to right, 90 top to bottom.",
+          "format": "double",
+          "type": "number"
+        },
+        "radial": {
+          "description": "From the centre outwards instead of along a line.",
+          "type": "boolean"
+        },
+        "to": {
+          "$ref": "#/$defs/Color",
+          "description": "The colour it ends with."
+        }
+      },
+      "required": [
+        "to"
       ],
       "type": "object"
     },
@@ -1333,6 +1429,29 @@
       },
       "type": "object"
     },
+    "Paint": {
+      "additionalProperties": false,
+      "description": "A colour, or a gradient from it to a second colour.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFFFFF",
+          "description": "The colour, where a gradient starts (white when omitted)."
+        },
+        "gradient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A gradient to a second colour."
+        }
+      },
+      "type": "object"
+    },
     "ParamValue": {
       "anyOf": [
         {
@@ -1544,6 +1663,29 @@
       ],
       "type": "object"
     },
+    "ShapeOutline": {
+      "additionalProperties": false,
+      "description": "An outline along a shape's edge, inside it.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour (black when omitted)."
+        },
+        "enabled": {
+          "description": "Whether it is drawn.",
+          "type": "boolean"
+        },
+        "width": {
+          "description": "Its width as a fraction of the shape's shorter side, from 0 to 0.5 (0.04 when\nomitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "type": "object"
+    },
     "Speed": {
       "additionalProperties": false,
       "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
@@ -1671,6 +1813,42 @@
           "type": "string"
         }
       ]
+    },
+    "TextContent": {
+      "additionalProperties": false,
+      "description": "Text content: the text, its style, restyled parts and how it appears.",
+      "properties": {
+        "reveal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextReveal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the text appears at the clip's start (and leaves at its end)."
+        },
+        "spans": {
+          "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+          "items": {
+            "$ref": "#/$defs/TextSpan"
+          },
+          "type": "array"
+        },
+        "style": {
+          "$ref": "#/$defs/TextStyle",
+          "description": "Appearance; defaults when omitted."
+        },
+        "text": {
+          "description": "The text; `\\n` separates lines.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
     },
     "TextReveal": {
       "additionalProperties": false,

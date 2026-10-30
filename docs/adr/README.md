@@ -33,11 +33,12 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0025](0025-nest-timelines-in-clips-for-compound-clips.md) | Nest timelines in clips for compound clips | Proposed |
 | [0026](0026-sound-effects-in-the-effect-registry.md) | Apply sound effects from the effect registry in the mixer | Proposed |
 | [0027](0027-styled-text-with-project-fonts.md) | Compose styled text on the CPU with bundled and project fonts only | Proposed |
+| [0028](0028-a-built-in-library-made-by-fosscut.md) | Make the built-in library from FossCut's own data and code | Proposed |
 
 ## Reading order
 
 - **Product shape:** 0002, 0006, 0007, 0013, 0022.
-- **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027.
+- **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027, 0028.
 - **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 

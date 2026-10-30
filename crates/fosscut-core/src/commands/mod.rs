@@ -13,6 +13,7 @@ mod marker;
 mod mask;
 mod media;
 mod motion;
+mod shape;
 mod speed;
 mod text;
 mod timeline;
@@ -52,6 +53,7 @@ pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
 pub(crate) use motion::motion_capabilities;
 pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
+pub use shape::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateApply};
 pub(crate) use speed::speed_capabilities;
 pub use speed::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
 pub use text::{
@@ -120,6 +122,9 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TextPresetSave>();
     registry.register::<TextPresetRemove>();
     registry.register::<TextTemplate>();
+    registry.register::<ShapeAdd>();
+    registry.register::<ShapeSet>();
+    registry.register::<TemplateApply>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();
     registry.register::<CaptionsStyle>();

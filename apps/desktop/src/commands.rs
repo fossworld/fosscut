@@ -3,10 +3,15 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use fosscut_core::{ApiError, Request, Response, codes};
+use fosscut_engine::jobs::{JobStatus, Jobs};
 use fosscut_engine::live::ClientInfo;
+use fosscut_engine::{ExportOptions, ExportRequest, Preset, SettingsChoice, SubtitleFormat};
+use fosscut_model::{Id, Project};
 use fosscut_time::Flicks;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -17,6 +22,25 @@ use crate::preview::Job;
 use crate::workspace::{NewProject, Opened, Workspace};
 
 type Answer<T> = Result<T, ApiError>;
+
+/// How long `export_cancel` waits for the export to stop before answering.
+const CANCEL_WAIT: Duration = Duration::from_secs(2);
+
+fn invalid(message: impl Into<String>) -> ApiError {
+    ApiError::new(codes::INVALID_ARGUMENTS, message)
+}
+
+/// The open project's bundle, its state now and its primary timeline.
+fn open_project(workspace: &Workspace) -> Answer<(PathBuf, Project, Id)> {
+    workspace
+        .snapshot()
+        .ok_or_else(|| invalid("no project is open").with_hint("Open or create a project first."))
+}
+
+/// A text the window sent, or `None` when it sent nothing or only spaces.
+fn given(text: Option<&str>) -> Option<&str> {
+    text.map(str::trim).filter(|t| !t.is_empty())
+}
 
 /// Runs blocking work (opening a project may wait for a writer) off the main thread.
 async fn blocking<T: Send + 'static>(
@@ -435,6 +459,296 @@ pub async fn trash_delete(state: State<'_, AppState>, id: String) -> Answer<()> 
     blocking(move || library.delete(&id)).await
 }
 
+/// The built-in library's items (ADR-0028), of `kind` when given, with every word of
+/// `search` in their name, title, description or tags.
+#[tauri::command]
+pub fn library_list(kind: Option<String>, search: Option<String>) -> Answer<Value> {
+    Ok(library_items(kind.as_deref(), search.as_deref()))
+}
+
+/// What `library_list` answers.
+fn library_items(kind: Option<&str>, search: Option<&str>) -> Value {
+    json!(fosscut_engine::library::search(given(kind), given(search)))
+}
+
+/// What to add from the library, and where (`library_add`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LibraryAdd {
+    /// The item's name.
+    pub name: String,
+    /// Its kind, for names that repeat across kinds (such as `highlight`).
+    pub kind: Option<String>,
+    /// Where it starts on the timeline, in flicks; at the start when omitted.
+    pub start_flicks: Option<i64>,
+    /// The track to put it on; the engine picks one when omitted.
+    pub track: Option<String>,
+    /// The clip a look applies to.
+    pub clip: Option<String>,
+    /// Lines for titles and templates; a text style's text.
+    pub lines: Vec<String>,
+    /// Video or image assets for a template's slots, in order.
+    pub media: Vec<String>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+}
+
+/// Adds a library item to the open project as the user's edit and returns the response of
+/// the last step. Sounds and music are written into the bundle and imported first, as a
+/// step of their own, then placed; templates build a new timeline that becomes the one
+/// shown.
+#[tauri::command]
+pub async fn library_add(state: State<'_, AppState>, request: LibraryAdd) -> Answer<Response> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || add_from_library(&workspace, &request)).await
+}
+
+/// What `library_add` does for the project open in `workspace`.
+fn add_from_library(workspace: &Workspace, add: &LibraryAdd) -> Answer<Response> {
+    use fosscut_engine::library;
+    let (bundle, _, _) = open_project(workspace)?;
+    let item = library::find(&add.name, given(add.kind.as_deref()))?;
+    let reason = format!("Add {} from the library", item.title);
+    let start = add.start_flicks.map(|flicks| json!({ "flicks": flicks }));
+    let track = given(add.track.as_deref()).map(str::to_string);
+    // The revision on screen guards the first write; a sound's placement follows its import.
+    let mut request = if matches!(item.kind, "sound" | "music") {
+        let mut import = Request::single("media.add", library::sound_media(&bundle, &item.name)?);
+        import.expected_revision = add.expected_revision;
+        import.reason = Some(reason.clone());
+        let imported = workspace.execute(import)?;
+        let asset = imported
+            .results
+            .first()
+            .and_then(|result| result.get("asset"))
+            .cloned()
+            .ok_or_else(|| ApiError::new(codes::INTERNAL, "media.add returned no asset"))?;
+        let mut placed = json!({ "asset": asset });
+        match (start, track) {
+            (Some(start), None) => {
+                // A free audio track, so a sound never lands on another.
+                placed["start"] = start;
+                placed["free_track"] = json!(true);
+            }
+            (start, track) => {
+                if let Some(start) = start {
+                    placed["start"] = start;
+                }
+                if let Some(track) = track {
+                    placed["track"] = json!(track);
+                }
+            }
+        }
+        Request::single("clip.add", placed)
+    } else {
+        let placement = library::Placement {
+            start,
+            duration: None,
+            track,
+            clip: given(add.clip.as_deref()).map(str::to_string),
+            lines: add.lines.clone(),
+            media: add.media.clone(),
+        };
+        let call = library::command_for(&item, &placement)?;
+        let command = call["command"].as_str().unwrap_or_default().to_string();
+        let mut args = call["args"].clone();
+        if command == "template.apply" {
+            // The window shows the primary timeline, so the new one is made primary.
+            args["primary"] = json!(true);
+        }
+        let mut request = Request::single(command, args);
+        request.expected_revision = add.expected_revision;
+        request
+    };
+    request.reason = Some(reason);
+    workspace.execute(request)
+}
+
+/// The export presets with whether this machine can encode each, and the resolutions
+/// export offers by name.
+#[tauri::command]
+pub async fn export_presets() -> Answer<Value> {
+    blocking(|| Ok(presets_listing())).await
+}
+
+/// What `export_presets` answers.
+fn presets_listing() -> Value {
+    let resolutions: Vec<Value> = fosscut_engine::RESOLUTIONS
+        .iter()
+        .map(|(name, pixels)| json!({ "name": name, "pixels": pixels }))
+        .collect();
+    json!({ "presets": fosscut_engine::presets(), "resolutions": resolutions })
+}
+
+/// Asks where to save an export, suggesting `name` beside the open project; `None` when
+/// the user cancels.
+#[tauri::command]
+pub async fn export_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+    extension: Option<String>,
+) -> Answer<Option<PathBuf>> {
+    let dialog = app.clone();
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let mut file = dialog
+            .dialog()
+            .file()
+            .set_title("Export to")
+            .set_file_name(name);
+        if let Some(folder) = workspace
+            .snapshot()
+            .and_then(|(bundle, _, _)| bundle.parent().map(PathBuf::from))
+        {
+            file = file.set_directory(folder);
+        }
+        if let Some(extension) = given(extension.as_deref()) {
+            file = file.add_filter(extension.to_uppercase(), &[extension]);
+        }
+        let Some(path) = file.blocking_save_file() else {
+            return Ok(None);
+        };
+        path.into_path()
+            .map(Some)
+            .map_err(|e| invalid(e.to_string()))
+    })
+    .await
+}
+
+/// How to export the open project's primary timeline (`export_start`). Texts are as the
+/// CLI takes them: `720p`, `29.97`, `8M`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExportChoice {
+    /// The file to write, as a whole path; the preset's extension is added when it has none.
+    pub output: String,
+    /// The preset (`export_presets` lists them); the output's extension implies one when
+    /// omitted.
+    pub preset: Option<String>,
+    /// The shorter side, by name (`720p`, `4k`) or in pixels; the timeline's when omitted.
+    pub resolution: Option<String>,
+    /// The frame rate (`30`, `29.97`, `30000/1001`); the timeline's when omitted.
+    pub fps: Option<String>,
+    /// The video bit rate (`8M`); the encoder's choice for the size when omitted.
+    pub bitrate: Option<String>,
+    /// Only this part of the timeline, start and end in flicks.
+    pub range_flicks: Option<(i64, i64)>,
+    /// A cover image of the frame this long after the export's start, in flicks.
+    pub cover_flicks: Option<i64>,
+    /// `srt` or `vtt` subtitles from the first caption track; none when omitted or `none`.
+    pub subtitles: Option<String>,
+    /// Replace the output if it exists.
+    pub overwrite: bool,
+}
+
+/// Starts exporting the open project's primary timeline in the background, after checking
+/// everything an export checks before rendering, and returns the job at once.
+#[tauri::command]
+pub async fn export_start(state: State<'_, AppState>, choice: ExportChoice) -> Answer<JobStatus> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    blocking(move || start_export(&workspace, &jobs, &choice)).await
+}
+
+/// What `export_start` does for the project open in `workspace`.
+fn start_export(workspace: &Workspace, jobs: &Jobs, choice: &ExportChoice) -> Answer<JobStatus> {
+    let (project, request) = export_request(workspace, choice)?;
+    fosscut_engine::plan(&project, &request)?;
+    Ok(jobs.start_export(project, request)?)
+}
+
+/// The project to export and the request `choice` makes of it.
+fn export_request(
+    workspace: &Workspace,
+    choice: &ExportChoice,
+) -> Answer<(Project, ExportRequest)> {
+    let (bundle, project, timeline) = open_project(workspace)?;
+    let mut output = PathBuf::from(choice.output.trim());
+    if output.as_os_str().is_empty() {
+        return Err(invalid("choose where to save the export"));
+    }
+    if !output.is_absolute() {
+        return Err(invalid(format!(
+            "{}: give the whole path of the file to write",
+            output.display()
+        )));
+    }
+    let preset = match given(choice.preset.as_deref()) {
+        Some(name) => Preset::parse(name).ok_or_else(|| {
+            let names: Vec<&str> = Preset::ALL.iter().map(|p| p.name()).collect();
+            invalid(format!("unknown preset {name}"))
+                .with_hint(format!("Presets: {}.", names.join(", ")))
+        })?,
+        None => Preset::for_output(&output).ok_or_else(|| {
+            ApiError::new(
+                "fosscut.export.codec_unavailable",
+                "this machine cannot encode video",
+            )
+        })?,
+    };
+    if output.extension().is_none() {
+        output.set_extension(preset.extension());
+    }
+    let format = project
+        .timelines
+        .get(&timeline)
+        .map(|doc| doc.format.clone())
+        .ok_or_else(|| {
+            ApiError::new(
+                codes::TIMELINE_NOT_FOUND,
+                format!("timeline {timeline} is missing"),
+            )
+        })?;
+    let settings = SettingsChoice {
+        resolution: given(choice.resolution.as_deref())
+            .map(fosscut_engine::resolution)
+            .transpose()?,
+        rate: given(choice.fps.as_deref())
+            .map(fosscut_engine::frame_rate)
+            .transpose()?,
+        video_bit_rate: given(choice.bitrate.as_deref())
+            .map(fosscut_engine::bit_rate)
+            .transpose()?,
+        audio_bit_rate: None,
+    };
+    let options = ExportOptions {
+        range: choice
+            .range_flicks
+            .map(|(start, end)| (Flicks::new(start), Flicks::new(end))),
+        cover: choice.cover_flicks.map(Flicks::new),
+        subtitles: given(choice.subtitles.as_deref())
+            .filter(|name| *name != "none")
+            .map(SubtitleFormat::named)
+            .transpose()?,
+    };
+    let request = ExportRequest {
+        bundle,
+        settings: fosscut_engine::settings_for(preset, &format, &settings),
+        timeline,
+        output,
+        allow_overwrite: choice.overwrite,
+        expected_revision: None,
+        request_id: None,
+        cache: fosscut_engine::cache_dir(),
+        options,
+    };
+    Ok((project, request))
+}
+
+/// An export's state, progress and, once it finished, its verified report or its error.
+#[tauri::command]
+pub fn export_status(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    Ok(state.jobs.status(&job, Duration::ZERO)?)
+}
+
+/// Stops an export (nothing is written) and answers once it stopped, or after a moment.
+#[tauri::command]
+pub async fn export_cancel(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    let jobs = Arc::clone(&state.jobs);
+    blocking(move || Ok(jobs.cancel(&job, CANCEL_WAIT)?)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +802,431 @@ mod tests {
         workspace.close();
         let _ = std::fs::remove_dir_all(&runtime);
         let _ = std::fs::remove_dir_all(&work);
+    }
+
+    const SECOND: i64 = fosscut_time::FLICKS_PER_SECOND;
+
+    /// A workspace with nothing open, a short runtime directory (Unix socket paths are
+    /// limited to about 100 bytes) and a folder to work in.
+    fn workspace(name: &str) -> (Workspace, PathBuf, PathBuf) {
+        let base = if cfg!(unix) {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let runtime = base.join(format!("fcd-{name}-{}", std::process::id()));
+        let work =
+            std::env::temp_dir().join(format!("fosscut-desktop-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&runtime);
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).unwrap();
+        (Workspace::new(runtime.clone(), None), runtime, work)
+    }
+
+    fn open_new(workspace: &Workspace, work: &std::path::Path, width: u32, height: u32) -> Opened {
+        workspace
+            .create(&NewProject {
+                path: work.join("Demo.fosscut"),
+                name: None,
+                width,
+                height,
+                rate: "30".into(),
+            })
+            .unwrap()
+    }
+
+    fn done(workspace: Workspace, runtime: PathBuf, work: PathBuf) {
+        workspace.close();
+        let _ = std::fs::remove_dir_all(&runtime);
+        let _ = std::fs::remove_dir_all(&work);
+    }
+
+    fn add(name: &str) -> LibraryAdd {
+        LibraryAdd {
+            name: name.into(),
+            ..LibraryAdd::default()
+        }
+    }
+
+    /// The clips of the primary timeline, by id.
+    fn clips(workspace: &Workspace) -> Vec<Value> {
+        let timeline = workspace
+            .query("timeline.read", json!({ "detail": "full" }))
+            .unwrap();
+        timeline["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|t| t["clips"].as_array().unwrap().clone())
+            .collect()
+    }
+
+    fn clip<'a>(clips: &'a [Value], id: &Value) -> &'a Value {
+        clips.iter().find(|c| &c["id"] == id).unwrap()
+    }
+
+    #[test]
+    fn the_library_lists_items_by_kind_and_words() {
+        let all = library_items(None, None);
+        let all = all.as_array().unwrap();
+        assert!(all.len() > 40, "{}", all.len());
+        assert!(
+            all.iter().all(|i| i["commercial"] == true),
+            "all free to use"
+        );
+        let stickers = library_items(Some("sticker"), Some("  "));
+        let stickers = stickers.as_array().unwrap();
+        assert!(!stickers.is_empty());
+        assert!(
+            stickers.iter().all(|i| i["kind"] == "sticker"),
+            "a blank search is no search"
+        );
+        assert_eq!(
+            library_items(Some(""), Some("SALE badge")),
+            library_items(None, Some("sale BADGE")),
+            "a blank kind is any kind, and case does not matter"
+        );
+        let sale = library_items(Some("sticker"), Some("SALE badge"));
+        let names: Vec<&str> = sale
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|i| i["name"].as_str())
+            .collect();
+        assert_eq!(names, ["badge-sale"]);
+        let music = library_items(Some("music"), None);
+        assert!(
+            music
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|i| i["bpm"].is_number() && i["seconds"].is_number())
+        );
+        assert_eq!(library_items(Some("nothing"), None), json!([]));
+    }
+
+    #[test]
+    fn library_items_are_added_as_the_users_edits() {
+        let (workspace, runtime, work) = workspace("libadd");
+        let closed = add_from_library(&workspace, &add("badge-sale")).unwrap_err();
+        assert_eq!(closed.code, codes::INVALID_ARGUMENTS);
+        assert!(closed.message.contains("no project"), "{closed:?}");
+        open_new(&workspace, &work, 1920, 1080);
+
+        let sticker = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                kind: Some("sticker".into()),
+                start_flicks: Some(SECOND),
+                expected_revision: Some(0),
+                ..add("badge-sale")
+            },
+        )
+        .unwrap();
+        let badge = sticker.results[0]["clip"].clone();
+        let now = clips(&workspace);
+        assert_eq!(clip(&now, &badge)["kind"], "shape");
+        assert_eq!(clip(&now, &badge)["text"], "SALE");
+        assert_eq!(clip(&now, &badge)["start"]["flicks"], SECOND);
+
+        let stale = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                expected_revision: Some(0),
+                ..add("circle")
+            },
+        )
+        .unwrap_err();
+        assert_eq!(stale.code, codes::REVISION_CONFLICT);
+
+        let look = library_items(Some("look"), None)[0]["name"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let bare = add_from_library(&workspace, &add(&look)).unwrap_err();
+        assert!(bare.message.contains("needs the clip"), "{bare:?}");
+        add_from_library(
+            &workspace,
+            &LibraryAdd {
+                clip: badge.as_str().map(str::to_string),
+                ..add(&look)
+            },
+        )
+        .unwrap();
+        let now = clips(&workspace);
+        let effects = &clip(&now, &badge)["effects"];
+        assert!(
+            !effects.as_array().unwrap().is_empty(),
+            "the look's effects: {effects}"
+        );
+
+        let title = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                kind: Some("title".into()),
+                start_flicks: Some(4 * SECOND),
+                lines: vec!["Sam Lee".into(), "Host".into()],
+                ..add("lower-third")
+            },
+        )
+        .unwrap();
+        let shown: Vec<String> = clips(&workspace)
+            .iter()
+            .filter(|c| c["start"]["flicks"] == 4 * SECOND)
+            .filter_map(|c| c["text"].as_str().map(str::to_string))
+            .collect();
+        assert!(
+            shown.iter().any(|t| t.contains("Sam Lee")),
+            "{shown:?} {title:?}"
+        );
+
+        let ambiguous = add_from_library(&workspace, &add("highlight")).unwrap_err();
+        assert!(
+            ambiguous.message.contains("say which kind"),
+            "{ambiguous:?}"
+        );
+        let styled = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                kind: Some("text_style".into()),
+                start_flicks: Some(8 * SECOND),
+                ..add("highlight")
+            },
+        )
+        .unwrap();
+        let text = styled.results[0]["clip"].clone();
+        assert_eq!(clip(&clips(&workspace), &text)["text"], "Title");
+
+        let history = workspace
+            .query("history.list", json!({ "limit": 1 }))
+            .unwrap();
+        assert_eq!(history["entries"][0]["actor"], "human");
+        assert!(
+            history["entries"][0]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("from the library")
+        );
+
+        let before = workspace.query("project.info", Value::Null).unwrap();
+        let template = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                lines: vec!["Less, but better.".into()],
+                ..add("quote-card")
+            },
+        )
+        .unwrap();
+        let info = workspace.query("project.info", Value::Null).unwrap();
+        assert_ne!(info["primary_timeline"], before["primary_timeline"]);
+        assert_eq!(
+            info["primary_timeline"], template.results[0]["timeline"],
+            "the new timeline is the one shown"
+        );
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn sounds_are_imported_into_the_bundle_once_and_placed() {
+        let (workspace, runtime, work) = workspace("libsound");
+        let opened = open_new(&workspace, &work, 1280, 720);
+        let sound = library_items(Some("sound"), None)[0]["name"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let first = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                start_flicks: Some(2 * SECOND),
+                expected_revision: Some(0),
+                ..add(&sound)
+            },
+        )
+        .unwrap();
+        let again = add_from_library(
+            &workspace,
+            &LibraryAdd {
+                start_flicks: Some(5 * SECOND),
+                ..add(&sound)
+            },
+        )
+        .unwrap();
+        assert!(opened.bundle.join(format!("library/{sound}.wav")).is_file());
+        let media = workspace.query("media.list", Value::Null).unwrap();
+        let assets = media["assets"].as_array().unwrap();
+        assert_eq!(assets.len(), 1, "imported once: {assets:?}");
+        let now = clips(&workspace);
+        for (response, start) in [(&first, 2 * SECOND), (&again, 5 * SECOND)] {
+            let placed = clip(&now, &response.results[0]["clip"]);
+            assert_eq!(placed["kind"], "audio");
+            assert_eq!(placed["asset"], assets[0]["id"]);
+            assert_eq!(placed["start"]["flicks"], start);
+        }
+        done(workspace, runtime, work);
+    }
+
+    fn export(output: &std::path::Path) -> ExportChoice {
+        ExportChoice {
+            output: output.display().to_string(),
+            ..ExportChoice::default()
+        }
+    }
+
+    #[test]
+    fn export_choices_become_the_request() {
+        let (workspace, runtime, work) = workspace("exportreq");
+        let opened = open_new(&workspace, &work, 1920, 1080);
+        let (_, request) = export_request(
+            &workspace,
+            &ExportChoice {
+                preset: Some("mov-prores".into()),
+                resolution: Some("720p".into()),
+                fps: Some("25".into()),
+                bitrate: Some(" ".into()),
+                range_flicks: Some((0, SECOND)),
+                cover_flicks: Some(SECOND / 2),
+                subtitles: Some("vtt".into()),
+                overwrite: true,
+                ..export(&work.join("Promo"))
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            request.output,
+            work.join("Promo.mov"),
+            "the preset's extension"
+        );
+        assert_eq!(request.bundle, opened.bundle);
+        assert_eq!(
+            request.timeline.to_string(),
+            opened.info["primary_timeline"]
+        );
+        assert_eq!(request.settings.container.extension(), "mov");
+        let video = request.settings.video.as_ref().unwrap();
+        assert_eq!((video.width, video.height), (1280, 720));
+        assert_eq!(video.rate.to_string(), "25");
+        assert_eq!(
+            video.bit_rate, None,
+            "a blank bit rate is the encoder's choice"
+        );
+        assert_eq!(
+            request.options,
+            ExportOptions {
+                range: Some((Flicks::ZERO, Flicks::new(SECOND))),
+                cover: Some(Flicks::new(SECOND / 2)),
+                subtitles: Some(SubtitleFormat::Vtt),
+            }
+        );
+        assert!(request.allow_overwrite);
+
+        let (_, web) = export_request(
+            &workspace,
+            &ExportChoice {
+                subtitles: Some("none".into()),
+                fps: Some("29.97".into()),
+                ..export(&work.join("Web.webm"))
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            web.settings.container.extension(),
+            "webm",
+            "the extension's preset"
+        );
+        let video = web.settings.video.as_ref().unwrap();
+        assert_eq!(
+            (video.width, video.height),
+            (1920, 1080),
+            "the timeline's size"
+        );
+        assert_eq!(video.rate.to_string(), "30000/1001");
+        assert_eq!(web.options, ExportOptions::default());
+        assert!(!web.allow_overwrite);
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn exports_are_refused_before_they_start() {
+        let (workspace, runtime, work) = workspace("exportno");
+        let jobs = Jobs::new();
+        // WebM implies its preset without asking which encoders this machine has, and
+        // every refusal here comes before the encoders are checked.
+        let out = work.join("Out.webm");
+        let closed = start_export(&workspace, &jobs, &export(&out)).unwrap_err();
+        assert!(closed.message.contains("no project"), "{closed:?}");
+        open_new(&workspace, &work, 1280, 720);
+        let empty = start_export(&workspace, &jobs, &export(&out)).unwrap_err();
+        assert_eq!(empty.code, "fosscut.export.empty_timeline");
+        workspace
+            .execute(Request::single(
+                "text.add",
+                json!({ "text": "Hello", "duration": "2s" }),
+            ))
+            .unwrap();
+
+        let refused = |choice: ExportChoice| start_export(&workspace, &jobs, &choice).unwrap_err();
+        let blank = refused(export(std::path::Path::new(" ")));
+        assert!(blank.message.contains("where to save"), "{blank:?}");
+        let relative = refused(export(std::path::Path::new("Out.mp4")));
+        assert!(relative.message.contains("whole path"), "{relative:?}");
+        let preset = refused(ExportChoice {
+            preset: Some("vhs".into()),
+            ..export(&out)
+        });
+        assert!(preset.hint.unwrap_or_default().contains("mp4-h264"));
+        for bad in [
+            ExportChoice {
+                resolution: Some("huge".into()),
+                ..export(&out)
+            },
+            ExportChoice {
+                fps: Some("fast".into()),
+                ..export(&out)
+            },
+            ExportChoice {
+                bitrate: Some("lots".into()),
+                ..export(&out)
+            },
+            ExportChoice {
+                subtitles: Some("ass".into()),
+                ..export(&out)
+            },
+            ExportChoice {
+                range_flicks: Some((5 * SECOND, 6 * SECOND)),
+                ..export(&out)
+            },
+            ExportChoice {
+                range_flicks: Some((0, SECOND)),
+                cover_flicks: Some(SECOND),
+                ..export(&out)
+            },
+        ] {
+            let error = refused(bad.clone());
+            assert_eq!(
+                error.code, "fosscut.export.invalid_settings",
+                "{bad:?}: {error:?}"
+            );
+        }
+        assert!(jobs.list().is_empty(), "nothing started");
+        assert!(!out.exists());
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn export_presets_are_listed_with_the_resolutions() {
+        let listing = presets_listing();
+        let presets = listing["presets"].as_array().unwrap();
+        assert!(presets.iter().any(|p| p["name"] == "mp4-h264"));
+        assert!(
+            presets
+                .iter()
+                .all(|p| p["available"].is_boolean() && p["extension"].is_string())
+        );
+        assert!(
+            listing["resolutions"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({ "name": "720p", "pixels": 720 }))
+        );
     }
 }

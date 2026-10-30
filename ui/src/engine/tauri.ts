@@ -10,6 +10,11 @@ import type {
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  ExportChoice,
+  ExportPresets,
+  JobStatus,
+  LibraryAddRequest,
+  LibraryItem,
   Normalization,
   Opened,
   ProjectSummary,
@@ -80,6 +85,34 @@ export class TauriEngine implements EngineClient {
   audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization> {
     // Tauri hands camelCase arguments to the command's snake_case parameters.
     return invoke("audio_normalize", { clips, targetLufs: targetLufs ?? null });
+  }
+
+  libraryList(kind?: string, search?: string): Promise<LibraryItem[]> {
+    return invoke("library_list", { kind: kind ?? null, search: search ?? null });
+  }
+
+  libraryAdd(request: LibraryAddRequest): Promise<EditResponse> {
+    return invoke("library_add", { request });
+  }
+
+  exportPresets(): Promise<ExportPresets> {
+    return invoke("export_presets");
+  }
+
+  exportPick(name: string, extension?: string): Promise<string | null> {
+    return invoke("export_pick", { name, extension: extension ?? null });
+  }
+
+  exportStart(choice: ExportChoice): Promise<JobStatus> {
+    return invoke("export_start", { choice });
+  }
+
+  exportStatus(job: string): Promise<JobStatus> {
+    return invoke("export_status", { job });
+  }
+
+  exportCancel(job: string): Promise<JobStatus> {
+    return invoke("export_cancel", { job });
   }
 
   media = {

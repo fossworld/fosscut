@@ -170,6 +170,12 @@ pub mod codes {
     pub const TEXT_PRESET_EXISTS: &str = "fosscut.text.preset_exists";
     /// No title template has this name.
     pub const TEXT_UNKNOWN_TEMPLATE: &str = "fosscut.text.unknown_template";
+    /// A shape is out of range or not drawable.
+    pub const SHAPE_INVALID: &str = "fosscut.shape.invalid";
+    /// No library item has this name.
+    pub const LIBRARY_UNKNOWN_ITEM: &str = "fosscut.library.unknown_item";
+    /// No project template has this name.
+    pub const TEMPLATE_UNKNOWN: &str = "fosscut.template.unknown";
     /// Caption words are empty, out of order, overlapping or outside their page.
     pub const CAPTIONS_INVALID_WORDS: &str = "fosscut.captions.invalid_words";
     /// No caption preset has this name.
@@ -411,6 +417,21 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             TEXT_PRESET_EXISTS,
             "The project already has a text preset of this name.",
             "Pass replace: true to overwrite it, or choose another name.",
+        ),
+        entry(
+            SHAPE_INVALID,
+            "A shape is out of range or not drawable.",
+            "Shapes are rectangle, ellipse, star, heart or path; read the message for the field.",
+        ),
+        entry(
+            LIBRARY_UNKNOWN_ITEM,
+            "No library item has this name.",
+            "capabilities lists the shapes, stickers and backgrounds under library; fosscut library list shows the sounds too.",
+        ),
+        entry(
+            TEMPLATE_UNKNOWN,
+            "No project template has this name.",
+            "capabilities lists the project templates under library.templates.",
         ),
         entry(
             TEXT_UNKNOWN_TEMPLATE,

@@ -57,6 +57,12 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
         "text.template" => {
             json!({ "template": "lower-third", "lines": ["Sam Lee", "Editor"], "start": "0f" })
         }
+        "shape.add" => json!({ "item": "badge-new", "start": "0f", "duration": "1s" }),
+        "shape.set" => {
+            let added = run(&mut session, "shape.add", json!({ "shape": "ellipse" }));
+            json!({ "clip": added.results[0]["clip"], "set": { "fill": { "color": "#00AAFF" } } })
+        }
+        "template.apply" => json!({ "template": "photo-montage", "media": [asset] }),
         "captions.add" => json!({
             "words": [
                 { "text": "Hello", "start": { "seconds": "0.5" }, "end": { "seconds": "0.9" } },

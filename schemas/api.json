@@ -2360,6 +2360,11 @@
             "default": null,
             "description": "Length; the rest of the asset (images: 5 seconds) when omitted."
           },
+          "free_track": {
+            "default": false,
+            "description": "Without `track`: use the first track of the right kind that is free over the clip's\nrange (`start` is needed), adding one when none is, instead of the first track.",
+            "type": "boolean"
+          },
           "source_in": {
             "anyOf": [
               {
@@ -5543,6 +5548,79 @@
                 "type": "object"
               },
               {
+                "description": "A drawn shape, background or sticker (ADR-0028).",
+                "properties": {
+                  "fill": {
+                    "$ref": "#/$defs/Paint",
+                    "default": {
+                      "color": "#FFFFFF"
+                    },
+                    "description": "What fills it."
+                  },
+                  "kind": {
+                    "const": "shape",
+                    "type": "string"
+                  },
+                  "label": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/TextContent"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Text on it, styled as a text clip's."
+                  },
+                  "label_at": {
+                    "description": "Where the label's centre sits in the shape's box, -1 to 1 on each axis; the middle\nwhen omitted.",
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "outline": {
+                    "$ref": "#/$defs/ShapeOutline",
+                    "description": "An outline along its edge."
+                  },
+                  "points": {
+                    "description": "The points of a `path` shape, -1 to 1 across the shape's box.",
+                    "items": {
+                      "$ref": "#/$defs/PathPoint"
+                    },
+                    "type": "array"
+                  },
+                  "roundness": {
+                    "description": "Corner rounding of a rectangle, from 0 (square) to 1 (fully round ends).",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "shape": {
+                    "$ref": "#/$defs/MaskShape",
+                    "description": "The outline: `rectangle` (with `roundness`), `ellipse`, `star`, `heart` or `path`\n(through `points`)."
+                  },
+                  "size": {
+                    "description": "Width and height as fractions of the canvas's; `[1, 1]` covers it.",
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "shape",
+                  "size"
+                ],
+                "type": "object"
+              },
+              {
                 "description": "A compound clip: another timeline of the project, shown from `source_in`\n(ADR-0025).",
                 "properties": {
                   "kind": {
@@ -5873,6 +5951,29 @@
             ],
             "type": "object"
           },
+          "Gradient": {
+            "additionalProperties": false,
+            "description": "How a gradient runs.",
+            "properties": {
+              "angle": {
+                "description": "Its direction in degrees: 0 runs left to right, 90 top to bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "radial": {
+                "description": "From the centre outwards instead of along a line.",
+                "type": "boolean"
+              },
+              "to": {
+                "$ref": "#/$defs/Color",
+                "description": "The colour it ends with."
+              }
+            },
+            "required": [
+              "to"
+            ],
+            "type": "object"
+          },
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
@@ -6140,6 +6241,29 @@
               }
             ]
           },
+          "Paint": {
+            "additionalProperties": false,
+            "description": "A colour, or a gradient from it to a second colour.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "The colour, where a gradient starts (white when omitted)."
+              },
+              "gradient": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Gradient"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A gradient to a second colour."
+              }
+            },
+            "type": "object"
+          },
           "ParamValue": {
             "anyOf": [
               {
@@ -6318,6 +6442,29 @@
             ],
             "type": "object"
           },
+          "ShapeOutline": {
+            "additionalProperties": false,
+            "description": "An outline along a shape's edge, inside it.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the shape's shorter side, from 0 to 0.5 (0.04 when\nomitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
           "Speed": {
             "additionalProperties": false,
             "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
@@ -6445,6 +6592,42 @@
                 "type": "string"
               }
             ]
+          },
+          "TextContent": {
+            "additionalProperties": false,
+            "description": "Text content: the text, its style, restyled parts and how it appears.",
+            "properties": {
+              "reveal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextReveal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How the text appears at the clip's start (and leaves at its end)."
+              },
+              "spans": {
+                "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+                "items": {
+                  "$ref": "#/$defs/TextSpan"
+                },
+                "type": "array"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "Appearance; defaults when omitted."
+              },
+              "text": {
+                "description": "The text; `\\n` separates lines.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
           },
           "TextReveal": {
             "additionalProperties": false,
@@ -12211,6 +12394,1734 @@
     {
       "input_schema": {
         "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Gradient": {
+            "additionalProperties": false,
+            "description": "How a gradient runs.",
+            "properties": {
+              "angle": {
+                "description": "Its direction in degrees: 0 runs left to right, 90 top to bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "radial": {
+                "description": "From the centre outwards instead of along a line.",
+                "type": "boolean"
+              },
+              "to": {
+                "$ref": "#/$defs/Color",
+                "description": "The colour it ends with."
+              }
+            },
+            "required": [
+              "to"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "Paint": {
+            "additionalProperties": false,
+            "description": "A colour, or a gradient from it to a second colour.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "The colour, where a gradient starts (white when omitted)."
+              },
+              "gradient": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Gradient"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A gradient to a second colour."
+              }
+            },
+            "type": "object"
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "ShapeOutline": {
+            "additionalProperties": false,
+            "description": "An outline along a shape's edge, inside it.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the shape's shorter side, from 0 to 0.5 (0.04 when\nomitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextContent": {
+            "additionalProperties": false,
+            "description": "Text content: the text, its style, restyled parts and how it appears.",
+            "properties": {
+              "reveal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextReveal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How the text appears at the clip's start (and leaves at its end)."
+              },
+              "spans": {
+                "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+                "items": {
+                  "$ref": "#/$defs/TextSpan"
+                },
+                "type": "array"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "Appearance; defaults when omitted."
+              },
+              "text": {
+                "description": "The text; `\\n` separates lines.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "TextReveal": {
+            "additionalProperties": false,
+            "description": "How a text appears: its letters, words or lines one after another.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start until the whole text is shown."
+              },
+              "exit": {
+                "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
+                "type": "boolean"
+              },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "description": "How each one appears."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fill colour."
+              },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "font": {
+                "description": "Font family, as the style's `font`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TextStyle": {
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Draws a shape, sticker or background.",
+        "properties": {
+          "duration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Length; 3 seconds when omitted."
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Paint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its fill: `{\"color\": \"#FF3366\"}`, or with `gradient: {\"to\", \"angle\", \"radial\"}`."
+          },
+          "item": {
+            "default": null,
+            "description": "A library item to start from: a shape, sticker or background (`capabilities` lists\nthem under library.visuals).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TextContent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Text on it, as a text clip's content (`{\"text\": \"NEW\", \"style\": {...}}`)."
+          },
+          "label_at": {
+            "default": null,
+            "description": "Where the label's centre sits in the shape's box, -1 to 1 on each axis.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "outline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ShapeOutline"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "An outline inside its edge."
+          },
+          "points": {
+            "default": null,
+            "description": "Points of a path, -1 to 1 across the shape's box.",
+            "items": {
+              "$ref": "#/$defs/PathPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "roundness": {
+            "default": null,
+            "description": "Corner rounding of a rectangle, 0 to 1.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MaskShape"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The outline: `rectangle`, `ellipse`, `star`, `heart` or `path`; a rectangle when\nneither this nor `item` is given."
+          },
+          "size": {
+            "default": null,
+            "description": "Width and height as fractions of the canvas's.",
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position; 0 when omitted."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target video track; for backgrounds a track below the footage and for other shapes\none above it (reused or made) when omitted."
+          },
+          "transform": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Transform"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Placement; the library item's or centred when omitted."
+          }
+        },
+        "title": "ShapeAdd",
+        "type": "object"
+      },
+      "name": "shape.add",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "linked": {
+            "description": "The other clips of its group that the edit changed too (ADR-0024).",
+            "items": {
+              "$ref": "#"
+            },
+            "type": "array"
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Draw a shape (rectangle, ellipse, star, heart, a pen path), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill, gradient, outline and label. Backgrounds go below the footage, other shapes above it."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes a shape clip.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The shape clip."
+          },
+          "set": {
+            "description": "Changes to its shape as a JSON merge patch, for example\n`{\"fill\": {\"color\": \"#00AAFF\"}, \"label\": {\"text\": \"SALE\"}}`."
+          }
+        },
+        "required": [
+          "clip",
+          "set"
+        ],
+        "title": "ShapeSet",
+        "type": "object"
+      },
+      "name": "shape.set",
+      "output_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Glow": {
+            "additionalProperties": false,
+            "description": "Soft light around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour; its alpha sets the strength (white when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "radius": {
+                "description": "How far it reaches in em, from 0 to 2 (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Gradient": {
+            "additionalProperties": false,
+            "description": "How a gradient runs.",
+            "properties": {
+              "angle": {
+                "description": "Its direction in degrees: 0 runs left to right, 90 top to bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "radial": {
+                "description": "From the centre outwards instead of along a line.",
+                "type": "boolean"
+              },
+              "to": {
+                "$ref": "#/$defs/Color",
+                "description": "The colour it ends with."
+              }
+            },
+            "required": [
+              "to"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "MaskShape": {
+            "description": "The shape of a mask.",
+            "oneOf": [
+              {
+                "const": "rectangle",
+                "description": "A rectangle, with corners rounded by `roundness`.",
+                "type": "string"
+              },
+              {
+                "const": "ellipse",
+                "description": "An ellipse filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Everything on one side of a line through the centre (above it, before rotation).",
+                "type": "string"
+              },
+              {
+                "const": "mirror",
+                "description": "A band through the centre, `size` high: the mirror shape.",
+                "type": "string"
+              },
+              {
+                "const": "star",
+                "description": "A five-pointed star.",
+                "type": "string"
+              },
+              {
+                "const": "heart",
+                "description": "A heart.",
+                "type": "string"
+              },
+              {
+                "const": "path",
+                "description": "A closed path through `points`, straight or curved by their handles: the pen.",
+                "type": "string"
+              },
+              {
+                "const": "text",
+                "description": "The letters of `text`, filling the mask's box.",
+                "type": "string"
+              },
+              {
+                "const": "brush",
+                "description": "Painted `strokes`.",
+                "type": "string"
+              }
+            ]
+          },
+          "Paint": {
+            "additionalProperties": false,
+            "description": "A colour, or a gradient from it to a second colour.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "The colour, where a gradient starts (white when omitted)."
+              },
+              "gradient": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Gradient"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A gradient to a second colour."
+              }
+            },
+            "type": "object"
+          },
+          "PathPoint": {
+            "description": "A point of a path mask, with optional Bezier handles relative to it.",
+            "properties": {
+              "at": {
+                "description": "The point in the mask's box, -1 to 1.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "in": {
+                "description": "The handle towards the previous point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "out": {
+                "description": "The handle towards the next point; a corner when omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at"
+            ],
+            "type": "object"
+          },
+          "RevealMotion": {
+            "description": "How each unit of a reveal appears.",
+            "oneOf": [
+              {
+                "const": "appear",
+                "description": "At once (a typewriter for letters).",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "Fading in.",
+                "type": "string"
+              },
+              {
+                "const": "rise",
+                "description": "Fading in while rising into place.",
+                "type": "string"
+              }
+            ]
+          },
+          "RevealUnit": {
+            "description": "What a reveal shows at a time.",
+            "oneOf": [
+              {
+                "const": "letter",
+                "description": "One letter after another, as typed.",
+                "type": "string"
+              },
+              {
+                "const": "word",
+                "description": "One word after another.",
+                "type": "string"
+              },
+              {
+                "const": "line",
+                "description": "One line after another.",
+                "type": "string"
+              }
+            ]
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "ShapeContent": {
+            "additionalProperties": false,
+            "description": "A drawn shape.",
+            "properties": {
+              "fill": {
+                "$ref": "#/$defs/Paint",
+                "default": {
+                  "color": "#FFFFFF"
+                },
+                "description": "What fills it."
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextContent"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Text on it, styled as a text clip's."
+              },
+              "label_at": {
+                "description": "Where the label's centre sits in the shape's box, -1 to 1 on each axis; the middle\nwhen omitted.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "outline": {
+                "$ref": "#/$defs/ShapeOutline",
+                "description": "An outline along its edge."
+              },
+              "points": {
+                "description": "The points of a `path` shape, -1 to 1 across the shape's box.",
+                "items": {
+                  "$ref": "#/$defs/PathPoint"
+                },
+                "type": "array"
+              },
+              "roundness": {
+                "description": "Corner rounding of a rectangle, from 0 (square) to 1 (fully round ends).",
+                "format": "double",
+                "type": "number"
+              },
+              "shape": {
+                "$ref": "#/$defs/MaskShape",
+                "description": "The outline: `rectangle` (with `roundness`), `ellipse`, `star`, `heart` or `path`\n(through `points`)."
+              },
+              "size": {
+                "description": "Width and height as fractions of the canvas's; `[1, 1]` covers it.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "shape",
+              "size"
+            ],
+            "type": "object"
+          },
+          "ShapeOutline": {
+            "additionalProperties": false,
+            "description": "An outline along a shape's edge, inside it.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the shape's shorter side, from 0 to 0.5 (0.04 when\nomitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text, for captions and text clips.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "TextCase": {
+            "description": "Letter case shown.",
+            "oneOf": [
+              {
+                "const": "as_written",
+                "description": "As written.",
+                "type": "string"
+              },
+              {
+                "const": "upper",
+                "description": "ALL CAPITALS.",
+                "type": "string"
+              },
+              {
+                "const": "lower",
+                "description": "all lower case.",
+                "type": "string"
+              },
+              {
+                "const": "title",
+                "description": "The First Letter Of Every Word In Capitals, the rest lower case.",
+                "type": "string"
+              }
+            ]
+          },
+          "TextContent": {
+            "additionalProperties": false,
+            "description": "Text content: the text, its style, restyled parts and how it appears.",
+            "properties": {
+              "reveal": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TextReveal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How the text appears at the clip's start (and leaves at its end)."
+              },
+              "spans": {
+                "description": "Parts of the text styled differently, by character positions; later spans win where\nthey overlap.",
+                "items": {
+                  "$ref": "#/$defs/TextSpan"
+                },
+                "type": "array"
+              },
+              "style": {
+                "$ref": "#/$defs/TextStyle",
+                "description": "Appearance; defaults when omitted."
+              },
+              "text": {
+                "description": "The text; `\\n` separates lines.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "type": "object"
+          },
+          "TextReveal": {
+            "additionalProperties": false,
+            "description": "How a text appears: its letters, words or lines one after another.",
+            "properties": {
+              "duration": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Time from the clip's start until the whole text is shown."
+              },
+              "exit": {
+                "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
+                "type": "boolean"
+              },
+              "motion": {
+                "$ref": "#/$defs/RevealMotion",
+                "description": "How each one appears."
+              },
+              "unit": {
+                "$ref": "#/$defs/RevealUnit",
+                "description": "What appears at a time."
+              }
+            },
+            "required": [
+              "unit",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "TextSpan": {
+            "additionalProperties": false,
+            "description": "Part of a text styled differently. Positions count characters (Unicode scalar values)\nof the written text from 0; `end` is not included.",
+            "properties": {
+              "bold": {
+                "description": "Bold weight.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Fill colour."
+              },
+              "end": {
+                "description": "The character after the last one.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "font": {
+                "description": "Font family, as the style's `font`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "First character.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TextStyle": {
+            "additionalProperties": false,
+            "description": "Text appearance. Lengths such as spacing, stroke and shadow are fractions of the font\nsize (em), so a style looks the same at every size.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "bold": {
+                "description": "Bold weight.",
+                "type": "boolean"
+              },
+              "box": {
+                "$ref": "#/$defs/TextBox",
+                "description": "Box behind each line (off when omitted)."
+              },
+              "case": {
+                "$ref": "#/$defs/TextCase",
+                "description": "Letter case shown; the text itself is kept as written."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFFFFF",
+                "description": "Fill colour."
+              },
+              "font": {
+                "description": "Font family: `Inter` (bundled) or a family of one of the project's font assets;\n`Inter` when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glow": {
+                "$ref": "#/$defs/Glow",
+                "description": "Soft light around the letters (off when omitted)."
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "letter_spacing": {
+                "description": "Extra space between letters in em, from -0.5 to 2; 0 when omitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "line_height": {
+                "description": "Distance between lines as a multiple of the font size, from 0.5 to 4; 1.2 when\nomitted.",
+                "format": "double",
+                "type": "number"
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "Shadow under the letters (off when omitted)."
+              },
+              "size": {
+                "default": 0.08,
+                "description": "Font size as a fraction of the canvas height.",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (off when omitted)."
+              },
+              "underline": {
+                "description": "Underlined.",
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A shape clip's content after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "content": {
+            "$ref": "#/$defs/ShapeContent",
+            "description": "Its shape now; defaults are omitted."
+          }
+        },
+        "required": [
+          "clip",
+          "content"
+        ],
+        "title": "ShapeChanged",
+        "type": "object"
+      },
+      "summary": "Change a shape clip's outline, size, roundness, fill, gradient, outline or label by a merge patch."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Builds a new timeline from a built-in project template, with your media in its slots\nand your words in its titles.",
+        "properties": {
+          "lines": {
+            "default": [],
+            "description": "Lines for the template's titles, in order across all of them. A title your lines\nreach shows only them; titles they do not reach keep their placeholders.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "media": {
+            "default": [],
+            "description": "Video or image assets for the template's slots, in order; slots without media are\nleft out.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "The new timeline's name; the template's when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary": {
+            "default": false,
+            "description": "Make it the primary timeline.",
+            "type": "boolean"
+          },
+          "template": {
+            "description": "The template (`capabilities` lists them under library.templates).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "title": "TemplateApply",
+        "type": "object"
+      },
+      "name": "template.apply",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "What `template.apply` made.",
+        "properties": {
+          "clips": {
+            "description": "The clips it holds, in the order they were made.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Its name.",
+            "type": "string"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The new timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "name",
+          "clips"
+        ],
+        "title": "TemplateApplied",
+        "type": "object"
+      },
+      "summary": "Build a new timeline from a project template (vertical-promo, quote-card, photo-montage, product-reveal, talking-head-intro) with your media in its slots and your lines in its titles; everything it adds stays editable."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Color": {
             "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
@@ -14056,7 +15967,7 @@
           },
           "lines": {
             "default": [],
-            "description": "The text of each line, in order; lines left out show the template's placeholder,\nand empty strings drop a line.",
+            "description": "The text of each line, in order. With none, the template's placeholders show; once\nyou give any, the lines you leave out (and empty strings) are dropped.",
             "items": {
               "type": "string"
             },
@@ -17137,6 +19048,21 @@
       "meaning": "The project already has a text preset of this name."
     },
     {
+      "code": "fosscut.shape.invalid",
+      "hint": "Shapes are rectangle, ellipse, star, heart or path; read the message for the field.",
+      "meaning": "A shape is out of range or not drawable."
+    },
+    {
+      "code": "fosscut.library.unknown_item",
+      "hint": "capabilities lists the shapes, stickers and backgrounds under library; fosscut library list shows the sounds too.",
+      "meaning": "No library item has this name."
+    },
+    {
+      "code": "fosscut.template.unknown",
+      "hint": "capabilities lists the project templates under library.templates.",
+      "meaning": "No project template has this name."
+    },
+    {
       "code": "fosscut.text.unknown_template",
       "hint": "capabilities lists the templates under text.templates.",
       "meaning": "No title template has this name."
@@ -17227,7 +19153,1780 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.11.0",
+  "format_version": "0.12.0",
+  "library": {
+    "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
+    "templates": [
+      {
+        "canvas": {
+          "height": 1920,
+          "width": 1080
+        },
+        "description": "A 9:16 promo: a headline over the first shot, your shots in sequence with dissolves, and an end card on a gradient.",
+        "lines": [
+          "Big news",
+          "Something new is here",
+          "Thanks for watching",
+          "Follow for more"
+        ],
+        "name": "vertical-promo",
+        "slots": 3
+      },
+      {
+        "canvas": {
+          "height": 1080,
+          "width": 1080
+        },
+        "description": "A quotation typed out on a dark gradient, with its author: square, for feeds.",
+        "lines": [
+          "Simple things done well.",
+          "Someone wise"
+        ],
+        "name": "quote-card",
+        "slots": 0
+      },
+      {
+        "canvas": {
+          "height": 1080,
+          "width": 1920
+        },
+        "description": "A 16:9 montage: up to six photos or clips of two seconds with dissolves, and a chapter title first.",
+        "lines": [
+          "Our summer",
+          "A look back"
+        ],
+        "name": "photo-montage",
+        "slots": 6
+      },
+      {
+        "canvas": {
+          "height": 1920,
+          "width": 1080
+        },
+        "description": "A 9:16 reveal: a callout on the first shot, a lower third with the product's name, a sale badge and a subscribe button at the end.",
+        "lines": [
+          "Watch this",
+          "The product",
+          "Now available"
+        ],
+        "name": "product-reveal",
+        "slots": 2
+      },
+      {
+        "canvas": {
+          "height": 1080,
+          "width": 1920
+        },
+        "description": "A 16:9 interview opening: the speaker's clip with a lower third, then a live badge in the corner.",
+        "lines": [
+          "Speaker name",
+          "Their role"
+        ],
+        "name": "talking-head-intro",
+        "slots": 1
+      }
+    ],
+    "visuals": [
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "shape": "rectangle",
+          "size": [
+            0.3,
+            0.2
+          ]
+        },
+        "description": "A plain rectangle.",
+        "kind": "shape",
+        "name": "rectangle",
+        "tags": [
+          "box",
+          "bar",
+          "frame"
+        ],
+        "title": "Rectangle"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "roundness": 0.35,
+          "shape": "rectangle",
+          "size": [
+            0.3,
+            0.2
+          ]
+        },
+        "description": "A rectangle with soft corners.",
+        "kind": "shape",
+        "name": "rounded-rectangle",
+        "tags": [
+          "box",
+          "card",
+          "button"
+        ],
+        "title": "Rounded rectangle"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "shape": "ellipse",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A circle.",
+        "kind": "shape",
+        "name": "circle",
+        "tags": [
+          "dot",
+          "round"
+        ],
+        "title": "Circle"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFD23F"
+          },
+          "shape": "star",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A five-pointed star.",
+        "kind": "shape",
+        "name": "star",
+        "tags": [
+          "rating",
+          "favourite"
+        ],
+        "title": "Star"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF3B5C"
+          },
+          "shape": "heart",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A heart.",
+        "kind": "shape",
+        "name": "heart",
+        "tags": [
+          "love",
+          "like"
+        ],
+        "title": "Heart"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                1.0
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A triangle pointing up.",
+        "kind": "shape",
+        "name": "triangle",
+        "tags": [
+          "play",
+          "warning"
+        ],
+        "title": "Triangle"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.0
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.16,
+            0.3556
+          ]
+        },
+        "description": "A diamond.",
+        "kind": "shape",
+        "name": "diamond",
+        "tags": [
+          "rhombus"
+        ],
+        "title": "Diamond"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                -0.5
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                -0.5
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A regular hexagon.",
+        "kind": "shape",
+        "name": "hexagon",
+        "tags": [
+          "honeycomb",
+          "badge"
+        ],
+        "title": "Hexagon"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "points": [
+            {
+              "at": [
+                -1.0,
+                -0.35
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                -0.35
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                -0.9
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                0.9
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                0.35
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.35
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.25,
+            0.18
+          ]
+        },
+        "description": "A bold arrow pointing right.",
+        "kind": "shape",
+        "name": "arrow",
+        "tags": [
+          "pointer",
+          "direction",
+          "next"
+        ],
+        "title": "Arrow"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "roundness": 1.0,
+          "shape": "rectangle",
+          "size": [
+            0.4,
+            0.012
+          ]
+        },
+        "description": "A thin bar to underline or divide.",
+        "kind": "shape",
+        "name": "bar",
+        "tags": [
+          "line",
+          "divider",
+          "underline"
+        ],
+        "title": "Bar"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFD23F"
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                0.1863,
+                -0.6955
+              ]
+            },
+            {
+              "at": [
+                0.5,
+                -0.866
+              ]
+            },
+            {
+              "at": [
+                0.5091,
+                -0.5091
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                -0.5
+              ]
+            },
+            {
+              "at": [
+                0.6955,
+                -0.1863
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.6955,
+                0.1863
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                0.5091,
+                0.5091
+              ]
+            },
+            {
+              "at": [
+                0.5,
+                0.866
+              ]
+            },
+            {
+              "at": [
+                0.1863,
+                0.6955
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -0.1863,
+                0.6955
+              ]
+            },
+            {
+              "at": [
+                -0.5,
+                0.866
+              ]
+            },
+            {
+              "at": [
+                -0.5091,
+                0.5091
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                -0.6955,
+                0.1863
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                -0.6955,
+                -0.1863
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                -0.5
+              ]
+            },
+            {
+              "at": [
+                -0.5091,
+                -0.5091
+              ]
+            },
+            {
+              "at": [
+                -0.5,
+                -0.866
+              ]
+            },
+            {
+              "at": [
+                -0.1863,
+                -0.6955
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.25,
+            0.4444
+          ]
+        },
+        "description": "A twelve-pointed burst.",
+        "kind": "shape",
+        "name": "burst",
+        "tags": [
+          "explosion",
+          "sale",
+          "comic"
+        ],
+        "title": "Burst"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#E5484D"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#FFFFFF",
+              "letter_spacing": 0.08,
+              "size": 0.045
+            },
+            "text": "NEW"
+          },
+          "roundness": 1.0,
+          "shape": "rectangle",
+          "size": [
+            0.16,
+            0.08
+          ]
+        },
+        "description": "A red pill with NEW in white capitals.",
+        "kind": "sticker",
+        "name": "badge-new",
+        "tags": [
+          "new",
+          "label",
+          "badge"
+        ],
+        "title": "New badge"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFD23F"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#111111",
+              "letter_spacing": 0.04,
+              "size": 0.055
+            },
+            "text": "SALE"
+          },
+          "outline": {
+            "enabled": true,
+            "width": 0.02
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                0.2019,
+                -0.7534
+              ]
+            },
+            {
+              "at": [
+                0.5,
+                -0.866
+              ]
+            },
+            {
+              "at": [
+                0.5515,
+                -0.5515
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                -0.5
+              ]
+            },
+            {
+              "at": [
+                0.7534,
+                -0.2019
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.7534,
+                0.2019
+              ]
+            },
+            {
+              "at": [
+                0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                0.5515,
+                0.5515
+              ]
+            },
+            {
+              "at": [
+                0.5,
+                0.866
+              ]
+            },
+            {
+              "at": [
+                0.2019,
+                0.7534
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -0.2019,
+                0.7534
+              ]
+            },
+            {
+              "at": [
+                -0.5,
+                0.866
+              ]
+            },
+            {
+              "at": [
+                -0.5515,
+                0.5515
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                0.5
+              ]
+            },
+            {
+              "at": [
+                -0.7534,
+                0.2019
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                -0.7534,
+                -0.2019
+              ]
+            },
+            {
+              "at": [
+                -0.866,
+                -0.5
+              ]
+            },
+            {
+              "at": [
+                -0.5515,
+                -0.5515
+              ]
+            },
+            {
+              "at": [
+                -0.5,
+                -0.866
+              ]
+            },
+            {
+              "at": [
+                -0.2019,
+                -0.7534
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.2,
+            0.3556
+          ]
+        },
+        "description": "A yellow burst with SALE in black capitals.",
+        "kind": "sticker",
+        "name": "badge-sale",
+        "tags": [
+          "sale",
+          "discount",
+          "offer"
+        ],
+        "title": "Sale badge"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF2D2D"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#FFFFFF",
+              "letter_spacing": 0.12,
+              "size": 0.04
+            },
+            "text": "LIVE"
+          },
+          "roundness": 0.35,
+          "shape": "rectangle",
+          "size": [
+            0.11,
+            0.065
+          ]
+        },
+        "description": "A red rounded tag reading LIVE.",
+        "kind": "sticker",
+        "name": "badge-live",
+        "tags": [
+          "live",
+          "stream",
+          "broadcast"
+        ],
+        "title": "Live badge"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF0033"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#FFFFFF",
+              "letter_spacing": 0.04,
+              "size": 0.045
+            },
+            "text": "SUBSCRIBE"
+          },
+          "roundness": 0.3,
+          "shape": "rectangle",
+          "size": [
+            0.26,
+            0.09
+          ]
+        },
+        "description": "A red button reading SUBSCRIBE, for calls to action.",
+        "kind": "sticker",
+        "name": "subscribe",
+        "tags": [
+          "subscribe",
+          "follow",
+          "button",
+          "cta"
+        ],
+        "title": "Subscribe button"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#111111",
+              "size": 0.042
+            },
+            "text": "Follow for more"
+          },
+          "roundness": 1.0,
+          "shape": "rectangle",
+          "size": [
+            0.3,
+            0.085
+          ]
+        },
+        "description": "A white pill reading Follow for more.",
+        "kind": "sticker",
+        "name": "follow",
+        "tags": [
+          "follow",
+          "cta",
+          "button"
+        ],
+        "title": "Follow button"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#111111",
+              "size": 0.05
+            },
+            "text": "Hello!"
+          },
+          "label_at": [
+            0.0,
+            -0.27
+          ],
+          "outline": {
+            "enabled": true,
+            "width": 0.03
+          },
+          "points": [
+            {
+              "at": [
+                -1.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.45
+              ]
+            },
+            {
+              "at": [
+                -0.25,
+                0.45
+              ]
+            },
+            {
+              "at": [
+                -0.65,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -0.6,
+                0.45
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.45
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.3,
+            0.3
+          ]
+        },
+        "description": "A white speech bubble with a short line in it.",
+        "kind": "sticker",
+        "name": "speech-bubble",
+        "tags": [
+          "talk",
+          "quote",
+          "comic",
+          "chat"
+        ],
+        "title": "Speech bubble"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFE14D"
+          },
+          "outline": {
+            "enabled": true,
+            "width": 0.08
+          },
+          "points": [
+            {
+              "at": [
+                -1.0,
+                -0.35
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                -0.35
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                -0.9
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                0.9
+              ]
+            },
+            {
+              "at": [
+                0.2,
+                0.35
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.35
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.22,
+            0.16
+          ]
+        },
+        "description": "A yellow arrow with a black outline, to point at something.",
+        "kind": "sticker",
+        "name": "pointer",
+        "tags": [
+          "arrow",
+          "point",
+          "look"
+        ],
+        "title": "Pointer arrow"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#30A46C"
+          },
+          "points": [
+            {
+              "at": [
+                -1.0,
+                0.05
+              ]
+            },
+            {
+              "at": [
+                -0.62,
+                -0.33
+              ]
+            },
+            {
+              "at": [
+                -0.22,
+                0.07
+              ]
+            },
+            {
+              "at": [
+                0.62,
+                -0.77
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                -0.39
+              ]
+            },
+            {
+              "at": [
+                -0.22,
+                0.83
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.14,
+            0.2
+          ]
+        },
+        "description": "A green check mark.",
+        "kind": "sticker",
+        "name": "check",
+        "tags": [
+          "yes",
+          "done",
+          "correct",
+          "tick"
+        ],
+        "title": "Check mark"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#E5484D"
+          },
+          "points": [
+            {
+              "at": [
+                -0.75,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                -0.25
+              ]
+            },
+            {
+              "at": [
+                0.75,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                -0.75
+              ]
+            },
+            {
+              "at": [
+                0.25,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                1.0,
+                0.75
+              ]
+            },
+            {
+              "at": [
+                0.75,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                0.25
+              ]
+            },
+            {
+              "at": [
+                -0.75,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                0.75
+              ]
+            },
+            {
+              "at": [
+                -0.25,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                -1.0,
+                -0.75
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.12,
+            0.2133
+          ]
+        },
+        "description": "A red cross.",
+        "kind": "sticker",
+        "name": "cross",
+        "tags": [
+          "no",
+          "wrong",
+          "close"
+        ],
+        "title": "Cross"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFC53D",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#F76B15"
+            }
+          },
+          "outline": {
+            "color": "#5C3D00",
+            "enabled": true
+          },
+          "shape": "star",
+          "size": [
+            0.18,
+            0.32
+          ]
+        },
+        "description": "A gold star with a dark outline.",
+        "kind": "sticker",
+        "name": "gold-star",
+        "tags": [
+          "rating",
+          "best",
+          "award"
+        ],
+        "title": "Gold star"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#111111"
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#FFE14D",
+              "size": 0.045
+            },
+            "text": "$9.99"
+          },
+          "outline": {
+            "color": "#FFE14D",
+            "enabled": true
+          },
+          "roundness": 0.3,
+          "shape": "rectangle",
+          "size": [
+            0.18,
+            0.08
+          ]
+        },
+        "description": "A dark rounded tag with a price.",
+        "kind": "sticker",
+        "name": "price-tag",
+        "tags": [
+          "price",
+          "shop",
+          "cost"
+        ],
+        "title": "Price tag"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF3B5C",
+            "gradient": {
+              "radial": true,
+              "to": "#FFD23F"
+            }
+          },
+          "label": {
+            "style": {
+              "bold": true,
+              "color": "#FFFFFF",
+              "size": 0.06,
+              "stroke": {
+                "enabled": true
+              }
+            },
+            "text": "WOW!"
+          },
+          "outline": {
+            "color": "#111111",
+            "enabled": true,
+            "width": 0.025
+          },
+          "points": [
+            {
+              "at": [
+                0.0,
+                -1.0
+              ]
+            },
+            {
+              "at": [
+                0.1558,
+                -0.6824
+              ]
+            },
+            {
+              "at": [
+                0.4339,
+                -0.901
+              ]
+            },
+            {
+              "at": [
+                0.4364,
+                -0.5473
+              ]
+            },
+            {
+              "at": [
+                0.7818,
+                -0.6235
+              ]
+            },
+            {
+              "at": [
+                0.6307,
+                -0.3037
+              ]
+            },
+            {
+              "at": [
+                0.9749,
+                -0.2225
+              ]
+            },
+            {
+              "at": [
+                0.7,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                0.9749,
+                0.2225
+              ]
+            },
+            {
+              "at": [
+                0.6307,
+                0.3037
+              ]
+            },
+            {
+              "at": [
+                0.7818,
+                0.6235
+              ]
+            },
+            {
+              "at": [
+                0.4364,
+                0.5473
+              ]
+            },
+            {
+              "at": [
+                0.4339,
+                0.901
+              ]
+            },
+            {
+              "at": [
+                0.1558,
+                0.6824
+              ]
+            },
+            {
+              "at": [
+                0.0,
+                1.0
+              ]
+            },
+            {
+              "at": [
+                -0.1558,
+                0.6824
+              ]
+            },
+            {
+              "at": [
+                -0.4339,
+                0.901
+              ]
+            },
+            {
+              "at": [
+                -0.4364,
+                0.5473
+              ]
+            },
+            {
+              "at": [
+                -0.7818,
+                0.6235
+              ]
+            },
+            {
+              "at": [
+                -0.6307,
+                0.3037
+              ]
+            },
+            {
+              "at": [
+                -0.9749,
+                0.2225
+              ]
+            },
+            {
+              "at": [
+                -0.7,
+                0.0
+              ]
+            },
+            {
+              "at": [
+                -0.9749,
+                -0.2225
+              ]
+            },
+            {
+              "at": [
+                -0.6307,
+                -0.3037
+              ]
+            },
+            {
+              "at": [
+                -0.7818,
+                -0.6235
+              ]
+            },
+            {
+              "at": [
+                -0.4364,
+                -0.5473
+              ]
+            },
+            {
+              "at": [
+                -0.4339,
+                -0.901
+              ]
+            },
+            {
+              "at": [
+                -0.1558,
+                -0.6824
+              ]
+            }
+          ],
+          "shape": "path",
+          "size": [
+            0.24,
+            0.4267
+          ]
+        },
+        "description": "A comic burst shouting WOW.",
+        "kind": "sticker",
+        "name": "wow",
+        "tags": [
+          "wow",
+          "comic",
+          "surprise"
+        ],
+        "title": "WOW burst"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF5C7A",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#C2002F"
+            }
+          },
+          "shape": "heart",
+          "size": [
+            0.16,
+            0.2844
+          ]
+        },
+        "description": "A glossy red heart.",
+        "kind": "sticker",
+        "name": "heart-like",
+        "tags": [
+          "like",
+          "love",
+          "favourite"
+        ],
+        "title": "Like heart"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#000000"
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Plain black.",
+        "kind": "background",
+        "name": "black",
+        "tags": [
+          "solid",
+          "dark"
+        ],
+        "title": "Black"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFFFFF"
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Plain white.",
+        "kind": "background",
+        "name": "white",
+        "tags": [
+          "solid",
+          "light"
+        ],
+        "title": "White"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF8A3D",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#E93D82"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Warm orange fading to pink from top to bottom.",
+        "kind": "background",
+        "name": "sunset",
+        "tags": [
+          "warm",
+          "gradient"
+        ],
+        "title": "Sunset"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#12A594",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#0B1E4F"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Teal deepening to navy.",
+        "kind": "background",
+        "name": "ocean",
+        "tags": [
+          "blue",
+          "cool",
+          "gradient"
+        ],
+        "title": "Ocean"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#6E3FD8",
+            "gradient": {
+              "radial": true,
+              "to": "#0A0618"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "A purple glow fading to black at the edges.",
+        "kind": "background",
+        "name": "night",
+        "tags": [
+          "dark",
+          "purple",
+          "radial"
+        ],
+        "title": "Night"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#B8F2D0",
+            "gradient": {
+              "angle": 45.0,
+              "to": "#12A594"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Fresh mint to teal across.",
+        "kind": "background",
+        "name": "mint",
+        "tags": [
+          "green",
+          "fresh",
+          "gradient"
+        ],
+        "title": "Mint"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FFC9A8",
+            "gradient": {
+              "angle": 135.0,
+              "to": "#FFF4E6"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Soft peach to cream.",
+        "kind": "background",
+        "name": "peach",
+        "tags": [
+          "soft",
+          "warm",
+          "pastel"
+        ],
+        "title": "Peach"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#5A5A5A",
+            "gradient": {
+              "radial": true,
+              "to": "#111111"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "A grey spotlight fading to near black, like a studio backdrop.",
+        "kind": "background",
+        "name": "studio",
+        "tags": [
+          "grey",
+          "neutral",
+          "radial"
+        ],
+        "title": "Studio"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#D8001D",
+            "gradient": {
+              "angle": -90.0,
+              "to": "#FFC53D"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Red rising into yellow.",
+        "kind": "background",
+        "name": "fire",
+        "tags": [
+          "hot",
+          "red",
+          "gradient"
+        ],
+        "title": "Fire"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#46A758",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#0E2A16"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Leaf green to dark pine.",
+        "kind": "background",
+        "name": "forest",
+        "tags": [
+          "green",
+          "nature",
+          "gradient"
+        ],
+        "title": "Forest"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#FF8DC7",
+            "gradient": {
+              "angle": 45.0,
+              "to": "#8E4EC6"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Pink to purple on the diagonal.",
+        "kind": "background",
+        "name": "candy",
+        "tags": [
+          "pink",
+          "purple",
+          "fun"
+        ],
+        "title": "Candy"
+      },
+      {
+        "content": {
+          "fill": {
+            "color": "#4F6A8F",
+            "gradient": {
+              "angle": 90.0,
+              "to": "#1C2333"
+            }
+          },
+          "shape": "rectangle",
+          "size": [
+            1.0,
+            1.0
+          ]
+        },
+        "description": "Cool slate blue to charcoal.",
+        "kind": "background",
+        "name": "slate",
+        "tags": [
+          "neutral",
+          "corporate",
+          "gradient"
+        ],
+        "title": "Slate"
+      }
+    ]
+  },
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",

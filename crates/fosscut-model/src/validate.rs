@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Animator, AssetKind, CaptionContent, CaptionStyle, Clip, ClipContent, Effect, Id, IdKind,
-    KeyValue, ParamKind, ParamValue, Project, PropertyKind, TextContent, TextStyle, Track,
-    TrackKind, clip_property, effect_type,
+    KeyValue, ParamKind, ParamValue, Project, PropertyKind, ShapeContent, TextContent, TextStyle,
+    Track, TrackKind, clip_property, effect_type,
 };
 
 /// One rule violation found by [`validate`].
@@ -814,6 +814,7 @@ fn check_content(
         ClipContent::Video { .. }
         | ClipContent::Image { .. }
         | ClipContent::Adjustment
+        | ClipContent::Shape(_)
         | ClipContent::Timeline { .. } => track_kind == TrackKind::Video,
         ClipContent::Audio { .. } => track_kind == TrackKind::Audio,
         ClipContent::Text(_) => track_kind == TrackKind::Text,
@@ -839,6 +840,9 @@ fn check_content(
     if let ClipContent::Caption(caption) = content {
         check_caption(issues, caption, duration, path);
     }
+    if let ClipContent::Shape(shape) = content {
+        check_shape(issues, project, shape, path);
+    }
     let Some(asset_id) = content.asset() else {
         return;
     };
@@ -857,6 +861,7 @@ fn check_content(
         ClipContent::Text(_)
         | ClipContent::Caption(_)
         | ClipContent::Adjustment
+        | ClipContent::Shape(_)
         | ClipContent::Timeline { .. } => true,
     };
     if !kind_ok {
@@ -879,6 +884,49 @@ fn check_content(
             "fosscut.model.source_range",
             "clip reads beyond the start or end of its asset",
         );
+    }
+}
+
+/// Problems with a shape in `project` (ADR-0028), so commands can report them before they
+/// change anything.
+pub fn shape_issues(project: &Project, shape: &ShapeContent) -> Vec<Issue> {
+    let mut issues = Issues(Vec::new());
+    check_shape(&mut issues, project, shape, "shape");
+    issues.0
+}
+
+/// A shape must be drawable, sized, and its outline and label must make sense.
+fn check_shape(issues: &mut Issues, project: &Project, shape: &ShapeContent, path: &str) {
+    let within = |v: f64, low: f64, high: f64| v.is_finite() && v >= low && v <= high;
+    let mut bad = |message: &str| issues.push(path, "fosscut.model.shape", message);
+    if !ShapeContent::drawable(shape.shape) {
+        bad("shapes are rectangle, ellipse, star, heart or path");
+    }
+    if !shape.size.iter().all(|&v| within(v, 1e-4, 4.0)) {
+        bad("size must be from 0.0001 to 4 times the canvas");
+    }
+    if !within(shape.roundness, 0.0, 1.0) {
+        bad("roundness must be from 0 to 1");
+    }
+    if !within(shape.outline.width, 0.0, 0.5) {
+        bad("the outline width must be from 0 to 0.5 of the shorter side");
+    }
+    if !shape.label_at.iter().all(|&v| within(v, -1.0, 1.0)) {
+        bad("label_at must be from -1 to 1 on each axis");
+    }
+    if shape.shape == crate::MaskShape::Path && shape.points.len() < 3 {
+        bad("a path shape needs at least three points");
+    }
+    if let Some(gradient) = &shape.fill.gradient
+        && !gradient.angle.is_finite()
+    {
+        bad("a gradient's angle must be a number of degrees");
+    }
+    if let Some(label) = &shape.label {
+        if label.text.trim().is_empty() {
+            issues.push(path, "fosscut.model.shape", "a label needs text");
+        }
+        check_text(issues, project, label, path);
     }
 }
 

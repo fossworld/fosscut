@@ -974,3 +974,265 @@ body.browser .preview-hole::after {
   flex: 1;
   min-width: 0;
 }
+
+/* The sidebar's bin: the project's media or FossCut's library, as tabs. */
+.bin-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 8px;
+}
+
+.bin-tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.bin-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.library input[type="search"],
+.library .filters select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.library .filters {
+  margin: 6px 0;
+}
+
+.library .note {
+  margin: 4px 0 6px;
+  font-size: 11px;
+}
+
+.library .items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.library .item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.library .item .about {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.library .item .title {
+  font-weight: 600;
+}
+
+.library .item .kind,
+.library .item .description,
+.library .item .detail {
+  color: var(--muted);
+  font-weight: normal;
+  font-size: 11px;
+}
+
+.library .item .detail {
+  font-variant-numeric: tabular-nums;
+}
+
+.library .item button {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+/* The shape panel's label. */
+.shape-panel .label-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+  user-select: text;
+}
+
+/* Dialogs: opaque over a dimmed window, the preview included. */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.dialog {
+  width: min(460px, 92vw);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 50%);
+}
+
+.dialog h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.dialog h2 .muted {
+  font-weight: normal;
+}
+
+.dialog h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dialog input:not([type="checkbox"], [type="radio"]) {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: inherit;
+  user-select: text;
+}
+
+.dialog input:disabled,
+.dialog select:disabled {
+  opacity: 0.45;
+}
+
+.dialog .hint {
+  margin: -2px 0 6px;
+  font-size: 11px;
+}
+
+.dialog .buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.dialog .problem {
+  color: var(--error);
+  margin: 8px 0;
+  user-select: text;
+}
+
+.export-form .short {
+  width: 110px;
+}
+
+.export-form .time {
+  width: 110px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.export-form .times {
+  margin-left: 22px;
+}
+
+.export-form .output input {
+  flex: 3;
+  min-width: 0;
+}
+
+.export-form .output span {
+  flex: none;
+}
+
+.export-form .choice button {
+  padding: 2px 8px;
+}
+
+.export-job .name {
+  margin: 0 0 8px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-job .bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.export-job .bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.export-job .bar span.busy {
+  opacity: 0.35;
+}
+
+.export-job .report {
+  display: grid;
+  gap: 2px;
+  margin: 10px 0 0;
+}
+
+.export-job .report div {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 8px;
+}
+
+.export-job .report dt {
+  color: var(--muted);
+}
+
+.export-job .report dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.export-job .rights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.export-job .rights li {
+  margin: 3px 0;
+}
+
+.export-job .rights li.library strong {
+  color: var(--agent);
+}
