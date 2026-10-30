@@ -597,9 +597,12 @@ fn exports_take_a_range_a_size_a_cover_and_subtitles() {
         });
     assert!(fosscut_model::validate(&project).is_empty());
     let format = project.timelines[&timeline].format.clone();
-    let mut request = request(&project, Preset::Mp4H264, "part.mp4");
+    // The most compatible video preset this machine has (CI's Linux has no H.264).
+    let preset = Preset::default_video().unwrap();
+    let name = format!("part.{}", preset.extension());
+    let mut request = request(&project, preset, &name);
     request.settings = settings_for(
-        Preset::Mp4H264,
+        preset,
         &format,
         &SettingsChoice {
             resolution: Some(90),

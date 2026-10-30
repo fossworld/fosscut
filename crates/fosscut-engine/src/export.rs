@@ -735,11 +735,12 @@ fn validate(settings: &OutputSettings) -> Result<(), EngineError> {
     {
         return Err(EngineError::CodecUnavailable {
             codec: a.codec.probe_name().to_string(),
-            available: encoder_capabilities()
-                .audio
-                .iter()
-                .map(|(c, _)| c.probe_name().to_string())
-                .collect(),
+            available: unique(
+                encoder_capabilities()
+                    .audio
+                    .iter()
+                    .map(|(c, _)| c.probe_name().to_string()),
+            ),
         });
     }
     if let Some(v) = video
@@ -747,14 +748,26 @@ fn validate(settings: &OutputSettings) -> Result<(), EngineError> {
     {
         return Err(EngineError::CodecUnavailable {
             codec: v.codec.probe_name().to_string(),
-            available: encoder_capabilities()
-                .video
-                .iter()
-                .map(|(c, _)| c.probe_name().to_string())
-                .collect(),
+            available: unique(
+                encoder_capabilities()
+                    .video
+                    .iter()
+                    .map(|(c, _)| c.probe_name().to_string()),
+            ),
         });
     }
     Ok(())
+}
+
+/// `names` in their first order without repeats (the ProRes profiles share a codec name).
+fn unique(names: impl Iterator<Item = String>) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for name in names {
+        if !seen.contains(&name) {
+            seen.push(name);
+        }
+    }
+    seen
 }
 
 /// Every difference between the request and the written file.
