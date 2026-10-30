@@ -6,8 +6,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Animator, AssetKind, CaptionContent, CaptionStyle, ClipContent, Id, IdKind, Project, Track,
-    TrackKind,
+    Animator, AssetKind, CaptionContent, CaptionStyle, Clip, ClipContent, Id, IdKind, KeyValue,
+    Project, PropertyKind, Track, TrackKind, clip_property,
 };
 
 /// One rule violation found by [`validate`].
@@ -164,6 +164,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                         "volume must be a finite number of at least 0",
                     );
                 }
+                check_properties(&mut issues, clip, &clip_path);
                 check_content(
                     &mut issues,
                     project,
@@ -176,6 +177,105 @@ pub fn validate(project: &Project) -> Vec<Issue> {
         }
     }
     issues.0
+}
+
+/// Placement, crop, sound and keyframes must hold values their properties allow
+/// (ADR-0011, item 3).
+fn check_properties(issues: &mut Issues, clip: &Clip, path: &str) {
+    let mut bad = |code: &str, message: String| issues.push(path, code, message);
+    let t = &clip.transform;
+    let finite = |v: &[f64]| v.iter().all(|x| x.is_finite());
+    if !finite(&[t.position[0], t.position[1], t.rotation]) {
+        bad(
+            "fosscut.model.transform",
+            "position and rotation must be finite".into(),
+        );
+    }
+    if !(finite(&[t.scale, t.stretch[0], t.stretch[1]])
+        && t.scale > 0.0
+        && t.stretch.iter().all(|s| *s > 0.0))
+    {
+        bad(
+            "fosscut.model.transform",
+            "scale and stretch must be greater than 0".into(),
+        );
+    }
+    let c = &clip.crop;
+    let edges = [c.left, c.right, c.top, c.bottom];
+    if !edges
+        .iter()
+        .all(|e| e.is_finite() && (0.0..1.0).contains(e))
+        || c.left + c.right >= 1.0
+        || c.top + c.bottom >= 1.0
+    {
+        bad(
+            "fosscut.model.crop",
+            "crop edges must be 0 to 1 and leave part of the picture".into(),
+        );
+    }
+    let a = &clip.audio;
+    if a.fade_in.is_negative() || a.fade_out.is_negative() {
+        bad("fosscut.model.fade", "fades cannot be negative".into());
+    }
+    if !(a.pan.is_finite() && (-1.0..=1.0).contains(&a.pan)) {
+        bad("fosscut.model.pan", "pan must be between -1 and 1".into());
+    }
+    for (property, keys) in &clip.keyframes {
+        let Some(spec) = clip_property(property).filter(|p| p.animatable) else {
+            bad(
+                "fosscut.model.keyframe_path",
+                format!("{property} does not take keyframes"),
+            );
+            continue;
+        };
+        if keys.is_empty() {
+            bad(
+                "fosscut.model.keyframes",
+                format!("{property} has an empty keyframe list"),
+            );
+        }
+        for pair in keys.windows(2) {
+            if pair[1].time <= pair[0].time {
+                bad(
+                    "fosscut.model.keyframes",
+                    format!("{property} keyframes must be in time order, one per time"),
+                );
+                break;
+            }
+        }
+        for key in keys {
+            let values: Vec<f64> = match (spec.kind, key.value) {
+                (PropertyKind::Number, KeyValue::Number(v)) => vec![v],
+                (PropertyKind::Pair, KeyValue::Pair(v)) => v.to_vec(),
+                _ => {
+                    bad(
+                        "fosscut.model.keyframe_value",
+                        format!("{property} keyframes need {:?} values", spec.kind),
+                    );
+                    continue;
+                }
+            };
+            let in_range = values.iter().all(|v| {
+                v.is_finite()
+                    && spec.min.is_none_or(|m| *v >= m)
+                    && spec.max.is_none_or(|m| *v <= m)
+            });
+            if !in_range {
+                bad(
+                    "fosscut.model.keyframe_value",
+                    format!("{property} keyframe value {:?} is out of range", key.value),
+                );
+            }
+            if let crate::Interpolation::Bezier([x1, y1, x2, y2]) = key.interpolation
+                && !(finite(&[y1, y2]) && (0.0..=1.0).contains(&x1) && (0.0..=1.0).contains(&x2))
+            {
+                bad(
+                    "fosscut.model.keyframe_easing",
+                    format!("{property} Bezier x control points must be 0 to 1"),
+                );
+            }
+        }
+    }
 }
 
 fn check_content(

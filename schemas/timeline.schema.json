@@ -235,6 +235,81 @@
         }
       ]
     },
+    "BlendMode": {
+      "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
+      "oneOf": [
+        {
+          "const": "normal",
+          "description": "Covers what is below.",
+          "type": "string"
+        },
+        {
+          "const": "multiply",
+          "description": "Darkens: below times the picture.",
+          "type": "string"
+        },
+        {
+          "const": "screen",
+          "description": "Lightens: the inverse of multiplying the inverses.",
+          "type": "string"
+        },
+        {
+          "const": "overlay",
+          "description": "Multiply in the shadows of what is below and screen in its highlights.",
+          "type": "string"
+        },
+        {
+          "const": "darken",
+          "description": "The darker of the two, per channel.",
+          "type": "string"
+        },
+        {
+          "const": "lighten",
+          "description": "The lighter of the two, per channel.",
+          "type": "string"
+        },
+        {
+          "const": "color_dodge",
+          "description": "Brightens what is below to reflect the picture.",
+          "type": "string"
+        },
+        {
+          "const": "color_burn",
+          "description": "Darkens what is below to reflect the picture.",
+          "type": "string"
+        },
+        {
+          "const": "hard_light",
+          "description": "Overlay with the roles swapped: the picture decides multiply or screen.",
+          "type": "string"
+        },
+        {
+          "const": "soft_light",
+          "description": "A gentler hard light.",
+          "type": "string"
+        },
+        {
+          "const": "linear_burn",
+          "description": "Sum minus one: darkens more than multiply.",
+          "type": "string"
+        },
+        {
+          "const": "add",
+          "description": "Sum (linear dodge), clipped at white.",
+          "type": "string"
+        },
+        {
+          "const": "difference",
+          "description": "Absolute difference.",
+          "type": "string"
+        },
+        {
+          "const": "exclusion",
+          "description": "Like difference with lower contrast.",
+          "type": "string"
+        }
+      ]
+    },
     "CaptionBox": {
       "additionalProperties": false,
       "description": "A box behind each line of text.",
@@ -380,6 +455,31 @@
       ],
       "type": "object"
     },
+    "ChannelMode": {
+      "description": "Which channels of a clip's sound play where (fill channel).",
+      "oneOf": [
+        {
+          "const": "stereo",
+          "description": "As recorded.",
+          "type": "string"
+        },
+        {
+          "const": "left",
+          "description": "The left channel fills both.",
+          "type": "string"
+        },
+        {
+          "const": "right",
+          "description": "The right channel fills both.",
+          "type": "string"
+        },
+        {
+          "const": "mono",
+          "description": "Both channels mixed to one, played on both.",
+          "type": "string"
+        }
+      ]
+    },
     "Clip": {
       "description": "A clip on a track. The content kind decides which fields apply.",
       "oneOf": [
@@ -475,13 +575,39 @@
         }
       ],
       "properties": {
+        "audio": {
+          "$ref": "#/$defs/ClipAudio",
+          "description": "Fades, pan and channels of the clip's sound; unchanged when omitted."
+        },
+        "blend": {
+          "$ref": "#/$defs/BlendMode",
+          "description": "How the picture combines with the layers below it (normal when omitted)."
+        },
+        "crop": {
+          "$ref": "#/$defs/Crop",
+          "description": "Edges of the picture removed; nothing when omitted."
+        },
         "duration": {
           "$ref": "#/$defs/Flicks",
           "description": "Length on the timeline."
         },
+        "enabled": {
+          "description": "False deactivates the clip: it keeps its place but is neither drawn nor heard.",
+          "type": "boolean"
+        },
         "id": {
           "$ref": "#/$defs/Id",
           "description": "Clip id (`clip_…`)."
+        },
+        "keyframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Keyframe"
+            },
+            "type": "array"
+          },
+          "description": "Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted\nby time with at most one keyframe per time. A property with keyframes takes its\nvalue from them, not from its field.",
+          "type": "object"
         },
         "opacity": {
           "description": "Opacity from 0 to 1.",
@@ -509,10 +635,59 @@
       ],
       "type": "object"
     },
+    "ClipAudio": {
+      "description": "How a clip's sound is shaped: fades, pan and channels.",
+      "properties": {
+        "channels": {
+          "$ref": "#/$defs/ChannelMode",
+          "description": "Which source channels play."
+        },
+        "fade_in": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Fade in from silence over this long at the clip's start."
+        },
+        "fade_out": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Fade out to silence over this long at the clip's end."
+        },
+        "pan": {
+          "description": "Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "Color": {
       "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
       "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
       "type": "string"
+    },
+    "Crop": {
+      "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
+      "properties": {
+        "bottom": {
+          "description": "Fraction of the height removed at the bottom.",
+          "format": "double",
+          "type": "number"
+        },
+        "left": {
+          "description": "Fraction of the width removed on the left.",
+          "format": "double",
+          "type": "number"
+        },
+        "right": {
+          "description": "Fraction of the width removed on the right.",
+          "format": "double",
+          "type": "number"
+        },
+        "top": {
+          "description": "Fraction of the height removed at the top.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
     },
     "Flicks": {
       "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
@@ -547,6 +722,82 @@
       "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
       "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
       "type": "string"
+    },
+    "Interpolation": {
+      "description": "How a value travels from one keyframe to the next.",
+      "oneOf": [
+        {
+          "const": "hold",
+          "description": "Keeps this keyframe's value until the next keyframe.",
+          "type": "string"
+        },
+        {
+          "const": "linear",
+          "description": "Changes at a constant rate.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+          "properties": {
+            "bezier": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            }
+          },
+          "required": [
+            "bezier"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "KeyValue": {
+      "anyOf": [
+        {
+          "description": "A number, such as a scale or an opacity.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "A pair, such as a position `[x, y]`.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      ],
+      "description": "A keyframed value: a number, or a pair such as a position."
+    },
+    "Keyframe": {
+      "description": "A property's value at one time.",
+      "properties": {
+        "interpolation": {
+          "$ref": "#/$defs/Interpolation",
+          "description": "How the value moves from this keyframe to the next (linear when omitted)."
+        },
+        "time": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Time from the clip's start; it may lie outside the clip after a trim."
+        },
+        "value": {
+          "$ref": "#/$defs/KeyValue",
+          "description": "The value at that time."
+        }
+      },
+      "required": [
+        "time",
+        "value"
+      ],
+      "type": "object"
     },
     "PageFade": {
       "additionalProperties": false,
@@ -814,6 +1065,14 @@
     "Transform": {
       "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
       "properties": {
+        "flip_horizontal": {
+          "description": "Mirrors the picture left to right.",
+          "type": "boolean"
+        },
+        "flip_vertical": {
+          "description": "Mirrors the picture top to bottom.",
+          "type": "boolean"
+        },
         "position": {
           "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
           "items": {
@@ -833,6 +1092,16 @@
           "description": "Uniform scale relative to the fitted size (1 when omitted).",
           "format": "double",
           "type": "number"
+        },
+        "stretch": {
+          "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
         }
       },
       "type": "object"

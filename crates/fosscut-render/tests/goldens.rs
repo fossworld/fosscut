@@ -13,8 +13,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fosscut_model::{
-    Align, Animated, Animator, CaptionBox, CaptionContent, CaptionLine, CaptionStyle, CaptionWord,
-    Color, FontWeight, PageFade, Placement, TextContent, TextStyle, Transform, WordReveal,
+    Align, Animated, Animator, BlendMode, CaptionBox, CaptionContent, CaptionLine, CaptionStyle,
+    CaptionWord, Color, FontWeight, PageFade, Placement, TextContent, TextStyle, Transform,
+    WordReveal,
 };
 use fosscut_render::caption::CaptionLayer;
 use fosscut_render::color::TransferFunction;
@@ -116,6 +117,7 @@ fn composite_scene() {
             position: [0.18, -0.12],
             scale: 0.55,
             rotation: 12.0,
+            ..Transform::default()
         },
         opacity: 0.85,
         mask: Some(Mask {
@@ -137,6 +139,66 @@ fn composite_scene() {
         .with(1, pattern(640, 360, 0))
         .with(2, pattern(400, 400, 100));
     check("composite-scene", &mut renderer, &plan, &mut frames);
+}
+
+/// Fourteen tiles of one warm color over the test pattern, one per blend mode in
+/// `BlendMode` order, left to right and top to bottom; the last tile is flipped, cropped
+/// and stretched to show those placements too.
+#[test]
+fn blend_modes_and_placements() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let modes = [
+        BlendMode::Normal,
+        BlendMode::Multiply,
+        BlendMode::Screen,
+        BlendMode::Overlay,
+        BlendMode::Darken,
+        BlendMode::Lighten,
+        BlendMode::ColorDodge,
+        BlendMode::ColorBurn,
+        BlendMode::HardLight,
+        BlendMode::SoftLight,
+        BlendMode::LinearBurn,
+        BlendMode::Add,
+        BlendMode::Difference,
+        BlendMode::Exclusion,
+    ];
+    let mut layers = vec![Layer::new(source(1))];
+    for (index, mode) in modes.into_iter().enumerate() {
+        let (column, row) = ((index % 7) as f64, (index / 7) as f64);
+        layers.push(Layer {
+            blend: mode,
+            transform: Transform {
+                position: [-0.42 + column * 0.14, -0.2 + row * 0.4],
+                scale: 0.12,
+                ..Transform::default()
+            },
+            ..Layer::new(source(2))
+        });
+    }
+    layers.push(Layer {
+        transform: Transform {
+            position: [0.0, 0.42],
+            scale: 0.3,
+            stretch: [2.0, 0.5],
+            rotation: -6.0,
+            flip_horizontal: true,
+            ..Transform::default()
+        },
+        crop: [0.0, 0.0, 0.75, 1.0],
+        ..Layer::new(source(1))
+    });
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default()
+        .with(1, pattern(320, 180, 0))
+        .with(2, solid(160, 90, [150, 70, 190]));
+    check("blend-modes", &mut renderer, &plan, &mut frames);
 }
 
 #[test]
@@ -231,6 +293,7 @@ fn text_styles() {
             position: [0.2, 0.24],
             scale: 1.0,
             rotation: -5.0,
+            ..Transform::default()
         },
         opacity: 0.8,
         ..Layer::text(text("Bold, right,\nturned, 80%", |s| {
@@ -395,6 +458,7 @@ fn caption_presets_and_placements() {
         position: [0.0, -0.3],
         scale: 1.2,
         rotation: -4.0,
+        ..Transform::default()
     };
     check_at(
         "caption-transformed",

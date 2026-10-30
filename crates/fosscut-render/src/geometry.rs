@@ -35,14 +35,19 @@ pub fn stored_uv(local: [f32; 2], rotation: u16) -> [f32; 2] {
     }
 }
 
+/// The whole picture: nothing cropped (`[left, top, right, bottom]` fractions kept).
+pub const UNCROPPED: [f64; 4] = [0.0, 0.0, 1.0, 1.0];
+
 /// The four corners (top-left, top-right, bottom-left, bottom-right, ready for a triangle
 /// strip) of a `width` x `height` stored frame, displayed rotated `rotation` degrees
-/// clockwise, fitted inside a `canvas` and moved by `transform`.
+/// clockwise, fitted inside a `canvas`, cropped to `kept` (see [`fosscut_model::Crop::kept`])
+/// and moved by `transform`.
 pub fn layer_quad(
     canvas: (u32, u32),
     source: (u32, u32),
     rotation: u16,
     transform: &Transform,
+    kept: [f64; 4],
 ) -> [Vertex; 4] {
     let (canvas_w, canvas_h) = (f64::from(canvas.0), f64::from(canvas.1));
     let (mut w, mut h) = (f64::from(source.0.max(1)), f64::from(source.1.max(1)));
@@ -51,7 +56,14 @@ pub fn layer_quad(
     }
     // "Fitted size": the largest size that shows the whole frame on the canvas.
     let fit = (canvas_w / w).min(canvas_h / h);
-    quad(canvas, (w * fit, h * fit), (0.0, 0.0), rotation, transform)
+    quad(
+        canvas,
+        (w * fit, h * fit),
+        (0.0, 0.0),
+        rotation,
+        transform,
+        kept,
+    )
 }
 
 /// The corners of a layer drawn at its natural `size` in canvas pixels (no fitting),
@@ -63,53 +75,71 @@ pub fn placed_quad(
     size: (f64, f64),
     offset: (f64, f64),
     transform: &Transform,
+    kept: [f64; 4],
 ) -> [Vertex; 4] {
-    quad(canvas, size, offset, 0, transform)
+    quad(canvas, size, offset, 0, transform, kept)
 }
 
 /// Corners of a layer `size` canvas pixels large (as displayed), whose point `offset`
-/// from its centre is placed by `transform`.
+/// from its centre is placed by `transform`, showing only the `kept` part of the picture.
+/// Cropping removes edges without moving what remains; flips mirror the picture within
+/// its place.
 fn quad(
     canvas: (u32, u32),
     size: (f64, f64),
     offset: (f64, f64),
     rotation: u16,
     transform: &Transform,
+    kept: [f64; 4],
 ) -> [Vertex; 4] {
     let (canvas_w, canvas_h) = (f64::from(canvas.0), f64::from(canvas.1));
-    let (half_w, half_h) = (
-        size.0 * transform.scale / 2.0,
-        size.1 * transform.scale / 2.0,
-    );
+    let [fx, fy] = transform.size_factors();
+    let (half_w, half_h) = (size.0 * fx / 2.0, size.1 * fy / 2.0);
     let center = (
         canvas_w / 2.0 + transform.position[0] * canvas_w,
         canvas_h / 2.0 + transform.position[1] * canvas_h,
     );
+    // The kept part in displayed coordinates: a flip mirrors which side it is on.
+    let [left, top, right, bottom] = kept;
+    let (u0, u1) = if transform.flip_horizontal {
+        (1.0 - right, 1.0 - left)
+    } else {
+        (left, right)
+    };
+    let (v0, v1) = if transform.flip_vertical {
+        (1.0 - bottom, 1.0 - top)
+    } else {
+        (top, bottom)
+    };
     // Clockwise on screen: with y pointing down, the standard rotation matrix turns
     // clockwise.
     let (sin, cos) = transform.rotation.to_radians().sin_cos();
-    let corner = |lx: f64, ly: f64| {
+    let corner = |u: f64, v: f64| {
         let (dx, dy) = (
-            (2.0 * lx - 1.0) * half_w - offset.0 * transform.scale,
-            (2.0 * ly - 1.0) * half_h - offset.1 * transform.scale,
+            (2.0 * u - 1.0) * half_w - offset.0 * fx,
+            (2.0 * v - 1.0) * half_h - offset.1 * fy,
         );
         let x = center.0 + dx * cos - dy * sin;
         let y = center.1 + dx * sin + dy * cos;
-        let local = [lx as f32, ly as f32];
+        let flip = |value: f64, flipped: bool| if flipped { 1.0 - value } else { value };
+        let picture = [
+            flip(u, transform.flip_horizontal) as f32,
+            flip(v, transform.flip_vertical) as f32,
+        ];
         Vertex {
             position: [
                 (2.0 * x / canvas_w - 1.0) as f32,
                 (1.0 - 2.0 * y / canvas_h) as f32,
             ],
-            local,
-            uv: stored_uv(local, rotation),
+            local: [u as f32, v as f32],
+            uv: stored_uv(picture, rotation),
         }
     };
     [
-        corner(0.0, 0.0),
-        corner(1.0, 0.0),
-        corner(0.0, 1.0),
-        corner(1.0, 1.0),
+        corner(u0, v0),
+        corner(u1, v0),
+        corner(u0, v1),
+        corner(u1, v1),
     ]
 }
 
@@ -123,7 +153,13 @@ mod tests {
 
     #[test]
     fn matching_aspect_fills_the_canvas() {
-        let quad = layer_quad((1920, 1080), (1280, 720), 0, &Transform::default());
+        let quad = layer_quad(
+            (1920, 1080),
+            (1280, 720),
+            0,
+            &Transform::default(),
+            UNCROPPED,
+        );
         assert!(close(quad[0].position, [-1.0, 1.0]));
         assert!(close(quad[3].position, [1.0, -1.0]));
         assert_eq!(quad[0].uv, [0.0, 0.0]);
@@ -133,11 +169,23 @@ mod tests {
     #[test]
     fn other_aspects_are_fitted_inside() {
         // A 4:3 frame on a 16:9 canvas: full height, centred, pillarboxed.
-        let quad = layer_quad((1920, 1080), (640, 480), 0, &Transform::default());
+        let quad = layer_quad(
+            (1920, 1080),
+            (640, 480),
+            0,
+            &Transform::default(),
+            UNCROPPED,
+        );
         assert!(close(quad[0].position, [-0.75, 1.0]));
         assert!(close(quad[3].position, [0.75, -1.0]));
         // A portrait phone frame stored landscape and rotated 90 degrees on a vertical canvas.
-        let quad = layer_quad((1080, 1920), (1920, 1080), 90, &Transform::default());
+        let quad = layer_quad(
+            (1080, 1920),
+            (1920, 1080),
+            90,
+            &Transform::default(),
+            UNCROPPED,
+        );
         assert!(close(quad[0].position, [-1.0, 1.0]));
         assert!(close(quad[3].position, [1.0, -1.0]));
         assert!(
@@ -152,8 +200,9 @@ mod tests {
             position: [0.25, -0.25],
             scale: 0.5,
             rotation: 0.0,
+            ..Transform::default()
         };
-        let quad = layer_quad((1920, 1080), (1920, 1080), 0, &moved);
+        let quad = layer_quad((1920, 1080), (1920, 1080), 0, &moved, UNCROPPED);
         // Half size, centre moved a quarter canvas right and up.
         assert!(close(quad[0].position, [0.0, 1.0]));
         assert!(close(quad[3].position, [1.0, 0.0]));
@@ -162,7 +211,7 @@ mod tests {
             rotation: 90.0,
             ..Transform::default()
         };
-        let quad = layer_quad((1000, 1000), (1000, 1000), 0, &turned);
+        let quad = layer_quad((1000, 1000), (1000, 1000), 0, &turned, UNCROPPED);
         // Clockwise quarter turn: the top-left corner moves to the top-right.
         assert!(close(quad[0].position, [1.0, 1.0]));
         assert!(close(quad[1].position, [1.0, -1.0]));
@@ -175,6 +224,7 @@ mod tests {
             (480.0, 108.0),
             (0.0, 0.0),
             &Transform::default(),
+            UNCROPPED,
         );
         assert!(close(quad[0].position, [-0.25, 0.1]));
         assert!(close(quad[3].position, [0.25, -0.1]));
@@ -184,16 +234,78 @@ mod tests {
             (480.0, 108.0),
             (96.0, 0.0),
             &Transform::default(),
+            UNCROPPED,
         );
         assert!(close(shifted[0].position, [-0.35, 0.1]));
         let lower = Transform {
             position: [0.0, 0.35],
             scale: 2.0,
             rotation: 0.0,
+            ..Transform::default()
         };
-        let quad = placed_quad((1920, 1080), (480.0, 108.0), (0.0, 0.0), &lower);
+        let quad = placed_quad((1920, 1080), (480.0, 108.0), (0.0, 0.0), &lower, UNCROPPED);
         assert!(close(quad[0].position, [-0.5, -0.5]));
         assert_eq!(quad[3].uv, [1.0, 1.0]);
+    }
+
+    #[test]
+    fn stretch_crop_and_flips_shape_the_quad() {
+        let wide = Transform {
+            scale: 0.5,
+            stretch: [2.0, 1.0],
+            ..Transform::default()
+        };
+        let quad = layer_quad((1920, 1080), (1920, 1080), 0, &wide, UNCROPPED);
+        assert!(
+            close(quad[0].position, [-1.0, 0.5]),
+            "full width, half height"
+        );
+        // Cropping keeps the rest in place: the left quarter goes, the right edge stays.
+        let quad = layer_quad(
+            (1920, 1080),
+            (1920, 1080),
+            0,
+            &Transform::default(),
+            [0.25, 0.0, 1.0, 0.5],
+        );
+        assert!(close(quad[0].position, [-0.5, 1.0]));
+        assert!(close(quad[3].position, [1.0, 0.0]));
+        assert!(close(quad[0].uv, [0.25, 0.0]));
+        assert!(
+            close(quad[0].local, [0.25, 0.0]),
+            "masks see the whole layer"
+        );
+        // A horizontal flip mirrors the kept part to the other side and the texture with it.
+        let mirrored = Transform {
+            flip_horizontal: true,
+            ..Transform::default()
+        };
+        let quad = layer_quad(
+            (1920, 1080),
+            (1920, 1080),
+            0,
+            &mirrored,
+            [0.25, 0.0, 1.0, 1.0],
+        );
+        assert!(close(quad[0].position, [-1.0, 1.0]));
+        assert!(
+            close(quad[1].position, [0.5, 1.0]),
+            "the cropped left is now on the right"
+        );
+        assert!(
+            close(quad[0].uv, [1.0, 0.0]),
+            "the left edge shows the picture's right"
+        );
+        assert!(close(quad[1].uv, [0.25, 0.0]));
+        let upside = Transform {
+            flip_vertical: true,
+            ..Transform::default()
+        };
+        let quad = layer_quad((1920, 1080), (1920, 1080), 0, &upside, UNCROPPED);
+        assert!(close(quad[0].uv, [0.0, 1.0]));
+        // An offset scales per axis with the stretch.
+        let offset = placed_quad((1920, 1080), (480.0, 108.0), (96.0, 0.0), &wide, UNCROPPED);
+        assert!(close(offset[0].position, [-0.35, 0.05]));
     }
 
     #[test]

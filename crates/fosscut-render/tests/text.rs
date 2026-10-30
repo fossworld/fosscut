@@ -106,6 +106,7 @@ fn titles_are_centred_and_follow_their_transform() {
             position: [0.25, 0.3],
             scale: 0.5,
             rotation: 0.0,
+            ..Transform::default()
         },
         ..Layer::text(title("HI", |_| {}))
     };

@@ -1,4 +1,4 @@
-use fosscut_model::{AssetKind, Clip, ClipContent, Id, IdKind, Transform};
+use fosscut_model::{AssetKind, Clip, ClipContent, Id, IdKind};
 use fosscut_time::{Flicks, Rate, TimeInput, TimeReport};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -136,15 +136,7 @@ impl Command for ClipAdd {
         };
         ensure_valid_range(start, duration)?;
         ensure_free(track_doc, start, start + duration, None, rate)?;
-        let clip = Clip {
-            id,
-            start,
-            duration,
-            content,
-            transform: Transform::default(),
-            opacity: 1.0,
-            volume: 1.0,
-        };
+        let clip = Clip::new(id, start, duration, content);
         let placement = ClipPlacement::of(&clip, &track, rate);
         insert_sorted(track_doc, clip);
         Ok(placement)
@@ -229,6 +221,10 @@ impl Command for ClipSplit {
             right.content = ClipContent::Caption(right_words);
             track.clips[location.clip].content = ClipContent::Caption(left);
         }
+        // Keyframes keep their place on the content; fades stay at the outer edges.
+        right.shift_keyframes(Flicks::ZERO - offset);
+        right.audio.fade_in = Flicks::ZERO;
+        track.clips[location.clip].audio.fade_out = Flicks::ZERO;
         track.clips[location.clip].duration = offset;
         let left = ClipPlacement::of(&track.clips[location.clip], &track.id, rate);
         let right_placement = ClipPlacement::of(&right, &track.id, rate);
@@ -346,6 +342,8 @@ impl Command for ClipTrim {
         let mut trimmed = original.clone();
         trimmed.start = start;
         trimmed.duration = duration;
+        // Keyframes stay where they are on the timeline.
+        trimmed.shift_keyframes(Flicks::ZERO - shift);
         match &mut trimmed.content {
             ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
                 let moved = *source_in + shift;

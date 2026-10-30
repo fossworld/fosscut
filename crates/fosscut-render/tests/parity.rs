@@ -52,21 +52,23 @@ fn project() -> (Project, Id) {
     project.manifest.next_id = 10;
     let timeline = project.manifest.primary_timeline.clone();
     let clip = |id: u64, n: u64, start: i64, transform: Transform, opacity: f64| Clip {
-        id: Id::new(IdKind::Clip, id),
-        start: frames(start),
-        duration: frames(90),
-        content: ClipContent::Video {
-            asset: asset(n),
-            source_in: Flicks::ZERO,
-        },
         transform,
         opacity,
-        volume: 1.0,
+        ..Clip::new(
+            Id::new(IdKind::Clip, id),
+            frames(start),
+            frames(90),
+            ClipContent::Video {
+                asset: asset(n),
+                source_in: Flicks::ZERO,
+            },
+        )
     };
     let overlay = Transform {
         position: [0.2, 0.15],
         scale: 0.4,
         rotation: -8.0,
+        ..Transform::default()
     };
     let tracks = [
         (20, clip(30, 1, 0, Transform::default(), 1.0)),
@@ -228,23 +230,23 @@ fn text_matches_between_preview_and_export() {
     };
     let (mut project, timeline) = project();
     let title = Clip {
-        id: Id::new(IdKind::Clip, 40),
-        start: Flicks::ZERO,
-        duration: frames(90),
-        content: ClipContent::Text(fosscut_model::TextContent {
-            text: "Preview equals export".into(),
-            style: fosscut_model::TextStyle {
-                size: 0.08,
-                bold: true,
-                ..fosscut_model::TextStyle::default()
-            },
-        }),
         transform: Transform {
             position: [0.0, 0.3],
             ..Transform::default()
         },
-        opacity: 1.0,
-        volume: 1.0,
+        ..Clip::new(
+            Id::new(IdKind::Clip, 40),
+            Flicks::ZERO,
+            frames(90),
+            ClipContent::Text(fosscut_model::TextContent {
+                text: "Preview equals export".into(),
+                style: fosscut_model::TextStyle {
+                    size: 0.08,
+                    bold: true,
+                    ..fosscut_model::TextStyle::default()
+                },
+            }),
+        )
     };
     project
         .timelines

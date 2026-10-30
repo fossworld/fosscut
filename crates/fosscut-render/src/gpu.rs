@@ -19,6 +19,7 @@ use crate::lut::Lut3d;
 use crate::plan::{LayerSource, MaskShape, RenderPlan, SourceRef};
 use crate::text::{TextEngine, TextRaster, linear_color};
 use crate::{FrameProvider, RenderError};
+use fosscut_model::BlendMode;
 
 const COMMON: &str = include_str!("shaders/common.wgsl");
 const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -82,10 +83,16 @@ impl Image {
 /// Where a texture is used, so each layer keeps its own textures between frames.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Slot {
-    Plane { layer: usize, plane: usize },
+    Plane {
+        layer: usize,
+        plane: usize,
+    },
     Layer(usize),
     Text(usize),
-    Canvas,
+    /// The two canvases that blend passes alternate between.
+    Canvas(u8),
+    /// A layer with a blend mode, drawn on its own before it is blended.
+    Placed,
     CanvasSamples,
     Readback,
 }
@@ -122,6 +129,7 @@ pub struct Renderer {
     convert: wgpu::RenderPipeline,
     mip: wgpu::RenderPipeline,
     composite: wgpu::RenderPipeline,
+    blend: wgpu::RenderPipeline,
     encode_module: wgpu::ShaderModule,
     encoders: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     linear: wgpu::Sampler,
@@ -177,6 +185,7 @@ impl Renderer {
         let mip_module = module("mip", include_str!("shaders/mip.wgsl"));
         let composite_module = module("composite", include_str!("shaders/composite.wgsl"));
         let encode_module = module("encode", include_str!("shaders/encode.wgsl"));
+        let blend_module = module("blend", include_str!("shaders/blend.wgsl"));
 
         let full_screen = |module: &wgpu::ShaderModule, label: &str, blend| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -207,6 +216,7 @@ impl Renderer {
         };
         let convert = full_screen(&convert_module, "convert", None);
         let mip = full_screen(&mip_module, "mip", None);
+        let blend = full_screen(&blend_module, "blend", None);
 
         let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x2];
         let composite = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -260,6 +270,7 @@ impl Renderer {
             convert,
             mip,
             composite,
+            blend,
             encode_module,
             encoders: HashMap::new(),
             linear,
@@ -427,6 +438,7 @@ impl Renderer {
                         (frame.width, frame.height),
                         layer.rotation,
                         &layer.transform,
+                        layer.crop,
                     );
                     (view, vertices)
                 }
@@ -452,7 +464,7 @@ impl Renderer {
                     );
                     (
                         view,
-                        placed_quad(plan.canvas, natural, offset, &layer.transform),
+                        placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
                     )
                 }
                 LayerSource::Caption(caption) => {
@@ -484,7 +496,10 @@ impl Renderer {
                     placed.position[0] += (x - w / 2.0) / w;
                     placed.position[1] += (y - h / 2.0) / h;
                     placed.scale *= f64::from(look.scale);
-                    (view, placed_quad(plan.canvas, natural, (0.0, 0.0), &placed))
+                    (
+                        view,
+                        placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
+                    )
                 }
             };
             let (mask_kind, mask) = match &layer.mask {
@@ -536,40 +551,110 @@ impl Renderer {
                     contents: bytemuck::cast_slice(&vertices),
                     usage: wgpu::BufferUsages::VERTEX,
                 });
-            draws.push((bind_group, vertex_buffer));
+            draws.push(Draw {
+                bind_group,
+                vertex_buffer,
+                blend: layer.blend,
+            });
         }
 
-        let canvas = self.texture(
-            Slot::Canvas,
-            size,
-            CANVAS_FORMAT,
-            1,
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        );
-        let canvas_view = canvas.create_view(&Default::default());
+        // Runs of normal layers draw straight onto the canvas in one multisampled pass. A
+        // layer with another blend mode is drawn alone, then a blend pass combines it with
+        // the canvas into the other canvas texture; the next run starts by copying that
+        // canvas back into the multisampled target.
         let samples = self.multisampled_canvas(size);
         let samples_view = samples.create_view(&Default::default());
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("composite"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &samples_view,
-                    depth_slice: None,
-                    resolve_target: Some(&canvas_view),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Discard,
-                    },
-                })],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.composite);
-            for (bind_group, vertex_buffer) in &draws {
-                pass.set_bind_group(0, bind_group, &[]);
-                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        let mut current: Option<wgpu::TextureView> = None;
+        let mut flip = 0u8;
+        let mut index = 0;
+        loop {
+            let run_end = draws[index..]
+                .iter()
+                .position(|d| d.blend != BlendMode::Normal)
+                .map_or(draws.len(), |p| index + p);
+            if run_end > index || current.is_none() {
+                let target = self.canvas(Slot::Canvas(flip), size);
+                flip ^= 1;
+                let copy = current.as_ref().map(|below| self.copy_draw(below));
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("composite"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &samples_view,
+                        depth_slice: None,
+                        resolve_target: Some(&target),
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Discard,
+                        },
+                    })],
+                    ..Default::default()
+                });
+                pass.set_pipeline(&self.composite);
+                for draw in copy.iter().chain(&draws[index..run_end]) {
+                    pass.set_bind_group(0, &draw.bind_group, &[]);
+                    pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                    pass.draw(0..4, 0..1);
+                }
+                drop(pass);
+                current = Some(target);
+            }
+            index = run_end;
+            let Some(draw) = draws.get(index) else {
+                break;
+            };
+            let placed = self.canvas(Slot::Placed, size);
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("blended layer"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &samples_view,
+                        depth_slice: None,
+                        resolve_target: Some(&placed),
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Discard,
+                        },
+                    })],
+                    ..Default::default()
+                });
+                pass.set_pipeline(&self.composite);
+                pass.set_bind_group(0, &draw.bind_group, &[]);
+                pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                 pass.draw(0..4, 0..1);
             }
+            // The run above always leaves a canvas to blend onto.
+            let Some(below) = current.take() else {
+                break;
+            };
+            let target = self.canvas(Slot::Canvas(flip), size);
+            flip ^= 1;
+            let mode = self.uniform(&[blend_index(draw.blend), 0, 0, 0]);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("blend"),
+                layout: &self.blend.get_bind_group_layout(0),
+                entries: &[
+                    entry(0, wgpu::BindingResource::TextureView(&below)),
+                    entry(1, wgpu::BindingResource::TextureView(&placed)),
+                    entry(2, mode.as_entire_binding()),
+                ],
+            });
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("blend"),
+                    color_attachments: &[Some(attachment(&target, None))],
+                    ..Default::default()
+                });
+                pass.set_pipeline(&self.blend);
+                pass.set_bind_group(0, &bind_group, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            current = Some(target);
+            index += 1;
         }
+        let canvas_view = match current {
+            Some(view) => view,
+            None => self.canvas(Slot::Canvas(flip), size),
+        };
 
         let pipeline = self.encoder_pipeline(format);
         let output = self.uniform(&[transfer as u32, 0, 0, 0]);
@@ -590,6 +675,62 @@ impl Renderer {
         pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..3, 0..1);
         Ok(())
+    }
+
+    /// A canvas-sized linear texture for `slot` that passes render into and later sample.
+    fn canvas(&mut self, slot: Slot, size: (u32, u32)) -> wgpu::TextureView {
+        self.texture(
+            slot,
+            size,
+            CANVAS_FORMAT,
+            1,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        )
+        .create_view(&Default::default())
+    }
+
+    /// A draw that copies `canvas` over the whole target, to continue compositing on it.
+    fn copy_draw(&self, canvas: &wgpu::TextureView) -> Draw {
+        let uniform = LayerUniform {
+            params: [1.0, 0.0, 0.0, 0.0],
+            mask: [0.0; 4],
+            lut: [0.0; 4],
+        };
+        let no_lut = self.no_lut.create_view(&Default::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("canvas copy"),
+            layout: &self.composite.get_bind_group_layout(0),
+            entries: &[
+                entry(0, wgpu::BindingResource::TextureView(canvas)),
+                entry(1, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(2, wgpu::BindingResource::TextureView(&no_lut)),
+                entry(3, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(4, self.uniform(&uniform).as_entire_binding()),
+            ],
+        });
+        let corner = |x: f32, y: f32| Vertex {
+            position: [2.0 * x - 1.0, 1.0 - 2.0 * y],
+            local: [x, y],
+            uv: [x, y],
+        };
+        let vertices = [
+            corner(0.0, 0.0),
+            corner(1.0, 0.0),
+            corner(0.0, 1.0),
+            corner(1.0, 1.0),
+        ];
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("canvas copy quad"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        Draw {
+            bind_group,
+            vertex_buffer,
+            blend: BlendMode::Normal,
+        }
     }
 
     /// Uploads a frame and converts it to a mipmapped linear-light texture.
@@ -971,6 +1112,33 @@ impl Renderer {
                 })
             })
             .clone()
+    }
+}
+
+/// One layer ready to draw.
+struct Draw {
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    blend: BlendMode,
+}
+
+/// The mode number the blend shader expects.
+fn blend_index(mode: BlendMode) -> u32 {
+    match mode {
+        BlendMode::Normal => 0,
+        BlendMode::Multiply => 1,
+        BlendMode::Screen => 2,
+        BlendMode::Overlay => 3,
+        BlendMode::Darken => 4,
+        BlendMode::Lighten => 5,
+        BlendMode::ColorDodge => 6,
+        BlendMode::ColorBurn => 7,
+        BlendMode::HardLight => 8,
+        BlendMode::SoftLight => 9,
+        BlendMode::LinearBurn => 10,
+        BlendMode::Add => 11,
+        BlendMode::Difference => 12,
+        BlendMode::Exclusion => 13,
     }
 }
 

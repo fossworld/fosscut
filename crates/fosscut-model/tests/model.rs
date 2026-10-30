@@ -65,30 +65,24 @@ fn round_one_project() -> Project {
         locked: false,
         caption_style: None,
         clips: vec![
-            Clip {
-                id: clip_a,
-                start: Flicks::ZERO,
-                duration: frames(118),
-                content: ClipContent::Video {
+            Clip::new(
+                clip_a,
+                Flicks::ZERO,
+                frames(118),
+                ClipContent::Video {
                     asset: asset.clone(),
                     source_in: Flicks::ZERO,
                 },
-                transform: Transform::default(),
-                opacity: 1.0,
-                volume: 1.0,
-            },
-            Clip {
-                id: clip_b,
-                start: frames(118),
-                duration: frames(122),
-                content: ClipContent::Video {
+            ),
+            Clip::new(
+                clip_b,
+                frames(118),
+                frames(122),
+                ClipContent::Video {
                     asset,
                     source_in: frames(118),
                 },
-                transform: Transform::default(),
-                opacity: 1.0,
-                volume: 1.0,
-            },
+            ),
         ],
     });
     timeline.tracks.push(Track {
@@ -99,18 +93,15 @@ fn round_one_project() -> Project {
         hidden: false,
         locked: false,
         caption_style: None,
-        clips: vec![Clip {
-            id: title,
-            start: Flicks::ZERO,
-            duration: frames(90),
-            content: ClipContent::Text(TextContent {
+        clips: vec![Clip::new(
+            title,
+            Flicks::ZERO,
+            frames(90),
+            ClipContent::Text(TextContent {
                 text: "FossCut audit".into(),
                 style: TextStyle::default(),
             }),
-            transform: Transform::default(),
-            opacity: 1.0,
-            volume: 1.0,
-        }],
+        )],
     });
     project
 }
@@ -383,18 +374,15 @@ fn each_validation_rule_reports_its_code() {
                     hidden: false,
                     locked: false,
                     caption_style: None,
-                    clips: vec![Clip {
-                        id: Id::new(IdKind::Clip, 7),
-                        start: Flicks::ZERO,
-                        duration: frames(30),
-                        content: ClipContent::Audio {
+                    clips: vec![Clip::new(
+                        Id::new(IdKind::Clip, 7),
+                        Flicks::ZERO,
+                        frames(30),
+                        ClipContent::Audio {
                             asset,
                             source_in: Flicks::ZERO,
                         },
-                        transform: Transform::default(),
-                        opacity: 1.0,
-                        volume: 1.0,
-                    }],
+                    )],
                 });
             },
         ),
@@ -475,13 +463,9 @@ proptest! {
             position += gap;
             let id = project.allocate_id(IdKind::Clip);
             clips.push(Clip {
-                id,
-                start: frames(position),
-                duration: frames(length),
-                content: ClipContent::Text(TextContent { text: format!("clip {position}"), style: TextStyle::default() }),
-                transform: Transform { position: [0.1, -0.2], scale: 1.5, rotation: 12.0 },
+                transform: Transform { position: [0.1, -0.2], scale: 1.5, rotation: 12.0, ..Transform::default() },
                 opacity: 0.5,
-                volume: 1.0,
+                ..Clip::new(id, frames(position), frames(length), ClipContent::Text(TextContent { text: format!("clip {position}"), style: TextStyle::default() }))
             });
             position += length;
         }
@@ -528,11 +512,11 @@ fn captioned_project() -> Project {
             hidden: false,
             locked: false,
             caption_style: Some(style),
-            clips: vec![Clip {
-                id: clip,
-                start: frames(12),
-                duration: frames(30),
-                content: ClipContent::Caption(CaptionContent {
+            clips: vec![Clip::new(
+                clip,
+                frames(12),
+                frames(30),
+                ClipContent::Caption(CaptionContent {
                     lines: vec![
                         CaptionLine {
                             words: vec![
@@ -560,10 +544,7 @@ fn captioned_project() -> Project {
                         },
                     ],
                 }),
-                transform: Transform::default(),
-                opacity: 1.0,
-                volume: 1.0,
-            }],
+            )],
         });
     project
 }
@@ -634,14 +615,17 @@ fn older_formats_load_and_save_as_the_current_version() {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
-    manifest["format_version"] = "0.1.0".into();
-    store
-        .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
-        .unwrap();
-    let loaded = Project::load(&store).unwrap();
-    assert_eq!(loaded.manifest.format_version, "0.2.0");
-    assert_eq!(loaded, project, "nothing else changes");
-    assert!(READABLE_VERSIONS.contains(&"0.1.0"));
+    for older in ["0.1.0", "0.2.0"] {
+        manifest["format_version"] = older.into();
+        store
+            .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
+            .unwrap();
+        let loaded = Project::load(&store).unwrap();
+        assert_eq!(loaded.manifest.format_version, FORMAT_VERSION, "{older}");
+        assert_eq!(loaded, project, "nothing else changes in {older}");
+        assert!(READABLE_VERSIONS.contains(&older));
+    }
+    assert_eq!(FORMAT_VERSION, "0.3.0");
 }
 
 #[test]

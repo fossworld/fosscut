@@ -26,6 +26,8 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Word-timed captions, SRT files (the `viral-captions` skill has the flow) | `captions` | `fosscut captions generate`, `fosscut captions import <file.srt>` |
 | Cut pauses or retakes from every track at once (`talking-head-cleanup` skill) | `edit` with `timeline.remove_ranges` | `fosscut timeline remove-ranges 3.4s..4.1s` |
 | A vertical copy, framed shot by shot (`vertical-reframe` skill) | `edit` with `timeline.duplicate` and `clip.set` | `fosscut timeline duplicate --width 1080 --height 1920 --fill`, `fosscut clip set` |
+| Placement, crop, mirror, opacity, blend mode, volume, fades, pan, deactivate a clip | `edit` with `clip.set` (paths in `capabilities` under `properties`) | `fosscut clip set --clip <id> --blend screen --fade-in 0.5s --set crop.left=0.1` |
+| Animate any of those over time (zoom in, fade a title, duck music) | `edit` with `keyframe.set` at two or more times, with an easing | `fosscut keyframe set --clip <id> --property opacity --at 1s --value 0` |
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 

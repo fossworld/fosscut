@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+mod animation;
 mod bundle;
 mod caption;
 mod error;
@@ -26,6 +27,10 @@ mod store;
 mod timeline;
 mod validate;
 
+pub use animation::{
+    Applies, BLEND_MODES, CHANNEL_MODES, Interpolation, KeyValue, Keyframe, Property, PropertyKind,
+    clip_properties, clip_property, evaluate,
+};
 pub use bundle::{DocumentKey, MANIFEST_PATH, MEDIA_PATH, OPS_LOG_PATH, Project, TIMELINES_DIR};
 pub use caption::{
     Animated, Animator, CaptionBox, CaptionContent, CaptionLine, CaptionStyle, CaptionWord,
@@ -40,18 +45,19 @@ pub use media::{
 pub use project::{Manifest, TimelineEntry};
 pub use store::{DirStore, MemoryStore, ProjectStore, StoreError};
 pub use timeline::{
-    Align, Clip, ClipContent, Color, TextContent, TextStyle, Timeline, TimelineFormat, Track,
-    TrackKind, Transform,
+    Align, BlendMode, ChannelMode, Clip, ClipAudio, ClipContent, Color, Crop, TextContent,
+    TextStyle, Timeline, TimelineFormat, Track, TrackKind, Transform,
 };
 pub use validate::{Issue, validate};
 
 /// Current project format version (semantic version, ADR-0004). 0.2.0 added caption
-/// tracks and caption clips (ADR-0021).
-pub const FORMAT_VERSION: &str = "0.2.0";
+/// tracks and caption clips (ADR-0021); 0.3.0 added keyframes, crop, stretch, flips, blend
+/// modes, audio fades, pan and channels, and deactivated clips (ADR-0011).
+pub const FORMAT_VERSION: &str = "0.3.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
-pub const READABLE_VERSIONS: &[&str] = &["0.1.0"];
+pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0"];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.
 pub fn document_schemas() -> Vec<(&'static str, schemars::Schema)> {

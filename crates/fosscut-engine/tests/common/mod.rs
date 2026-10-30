@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 
 use fosscut_model::{
     Asset, AssetKind, AudioInfo, Clip, ClipContent, Id, IdKind, MediaInfo, PathHints, Project,
-    TextContent, TextStyle, TimelineFormat, Track, TrackKind, Transform, VideoInfo,
+    TextContent, TextStyle, TimelineFormat, Track, TrackKind, VideoInfo,
 };
 use fosscut_render::Renderer;
 use fosscut_time::{Flicks, Rate};
@@ -129,18 +129,15 @@ pub fn project(relative: &str) -> Project {
         hidden: false,
         locked: false,
         caption_style: None,
-        clips: vec![Clip {
-            id: Id::new(IdKind::Clip, 3),
-            start: Flicks::ZERO,
-            duration: frames(30),
-            content: ClipContent::Video {
+        clips: vec![Clip::new(
+            Id::new(IdKind::Clip, 3),
+            Flicks::ZERO,
+            frames(30),
+            ClipContent::Video {
                 asset,
                 source_in: frames(15),
             },
-            transform: Transform::default(),
-            opacity: 1.0,
-            volume: 1.0,
-        }],
+        )],
     });
     doc.tracks.push(Track {
         id: Id::new(IdKind::Track, 4),
@@ -150,18 +147,15 @@ pub fn project(relative: &str) -> Project {
         hidden: false,
         locked: false,
         caption_style: None,
-        clips: vec![Clip {
-            id: Id::new(IdKind::Clip, 5),
-            start: Flicks::ZERO,
-            duration: frames(15),
-            content: ClipContent::Text(TextContent {
+        clips: vec![Clip::new(
+            Id::new(IdKind::Clip, 5),
+            Flicks::ZERO,
+            frames(15),
+            ClipContent::Text(TextContent {
                 text: "Title".into(),
                 style: TextStyle::default(),
             }),
-            transform: Transform::default(),
-            opacity: 1.0,
-            volume: 1.0,
-        }],
+        )],
     });
     project
 }

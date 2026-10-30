@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use fosscut_model::{
     CaptionContent, CaptionLine, CaptionStyle, CaptionWord, Clip, ClipContent, Id, IdKind, Project,
-    TrackKind, Transform,
+    TrackKind,
 };
 use fosscut_time::{Flicks, Rate, TimeInput, TimeReport};
 use schemars::JsonSchema;
@@ -593,15 +593,12 @@ impl Command for CaptionsAdd {
         let mut reports = Vec::with_capacity(pages.len());
         for (page, id) in pages.into_iter().zip(ids) {
             ensure_free(track, page.start, page.start + page.duration, None, rate)?;
-            let clip = Clip {
+            let clip = Clip::new(
                 id,
-                start: page.start,
-                duration: page.duration,
-                content: ClipContent::Caption(page.content),
-                transform: Transform::default(),
-                opacity: 1.0,
-                volume: 1.0,
-            };
+                page.start,
+                page.duration,
+                ClipContent::Caption(page.content),
+            );
             reports.push(CaptionPage::of(&clip, rate));
             insert_sorted(track, clip);
         }

@@ -392,3 +392,87 @@ body.browser .preview-hole::after {
 .field .unit {
   color: var(--muted);
 }
+
+.field {
+  grid-template-columns: 14px 1fr 72px 18px;
+}
+
+.field.animated input {
+  border-color: var(--accent, #ff7a45);
+}
+
+.key {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.key svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.key.animated {
+  color: var(--accent, #ff7a45);
+}
+
+.key.on {
+  color: var(--accent, #ff7a45);
+}
+
+.key.on svg path {
+  fill: currentColor;
+}
+
+.inspector.disabled .fields {
+  opacity: 0.55;
+}
+
+.toggle,
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.choice span {
+  flex: 1;
+}
+
+.choice select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font: inherit;
+}
+
+.options {
+  margin-top: 8px;
+}
+
+.options .buttons,
+.keyframes {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.options .buttons button.active {
+  background: var(--accent, #ff7a45);
+  color: #fff;
+}
+
+.keyframes .choice {
+  margin: 0 0 0 auto;
+}

@@ -34,7 +34,7 @@ The full project document is too verbose for an agent's context on long timeline
 ## Implementation notes
 
 - **The commands patches compile to** (milestone 6), usable on their own through `edit` until the patch layer exists:
-  - `clip.set` sets a clip's `transform.position`, `transform.scale`, `transform.rotation`, `opacity` and `volume` by property path (the `set` op);
+  - `clip.set` sets a clip's properties by path (the `set` op): placement, crop, opacity, blend mode, sound and whether it is active, from the closed vocabulary of [ADR-0011](0011-effects-and-animatable-properties.md); `keyframe.set` and `keyframe.remove` animate them;
   - `timeline.remove_ranges` cuts time ranges from every track, or chosen tracks, with ripple (the range `remove` op with `ripple: true`);
   - `timeline.duplicate` copies a timeline onto another canvas, optionally scaling pictures to fill it.
   - `clip.trim` (milestone 5) moves a clip's start or end edge within its media, keeping the picture under the rest of the clip in place (the `set` op on a clip's `start` and `end`).

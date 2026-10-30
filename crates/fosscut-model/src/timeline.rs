@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 use fosscut_time::{Flicks, Rate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::{Id, is_default};
 
@@ -137,19 +140,147 @@ pub struct Clip {
     /// Placement on the canvas; identity when omitted.
     #[serde(default, skip_serializing_if = "is_default")]
     pub transform: Transform,
+    /// Edges of the picture removed; nothing when omitted.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub crop: Crop,
     /// Opacity from 0 to 1.
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub opacity: f64,
+    /// How the picture combines with the layers below it (normal when omitted).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub blend: BlendMode,
     /// Linear audio gain (1 is unchanged, 0 is silent).
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub volume: f64,
+    /// Fades, pan and channels of the clip's sound; unchanged when omitted.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub audio: ClipAudio,
+    /// False deactivates the clip: it keeps its place but is neither drawn nor heard.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub enabled: bool,
+    /// Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted
+    /// by time with at most one keyframe per time. A property with keyframes takes its
+    /// value from them, not from its field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keyframes: BTreeMap<String, Vec<Keyframe>>,
 }
 
 impl Clip {
+    /// A clip with default placement, sound and no keyframes.
+    pub fn new(id: Id, start: Flicks, duration: Flicks, content: ClipContent) -> Clip {
+        Clip {
+            id,
+            start,
+            duration,
+            content,
+            transform: Transform::default(),
+            crop: Crop::default(),
+            opacity: 1.0,
+            blend: BlendMode::default(),
+            volume: 1.0,
+            audio: ClipAudio::default(),
+            enabled: true,
+            keyframes: BTreeMap::new(),
+        }
+    }
+
     /// Timeline position just after the last frame.
     pub fn end(&self) -> Flicks {
         self.start + self.duration
     }
+
+    /// The value of an animatable property at `offset` from the clip's start: from its
+    /// keyframes when it has any, otherwise `None`.
+    pub fn keyed(&self, path: &str, offset: Flicks) -> Option<KeyValue> {
+        self.keyframes.get(path).and_then(|k| evaluate(k, offset))
+    }
+
+    fn number_at(&self, path: &str, offset: Flicks, value: f64) -> f64 {
+        self.keyed(path, offset)
+            .and_then(KeyValue::number)
+            .unwrap_or(value)
+    }
+
+    fn pair_at(&self, path: &str, offset: Flicks, value: [f64; 2]) -> [f64; 2] {
+        self.keyed(path, offset)
+            .and_then(KeyValue::pair)
+            .unwrap_or(value)
+    }
+
+    /// The placement at `offset` from the clip's start, with keyframes applied.
+    pub fn transform_at(&self, offset: Flicks) -> Transform {
+        let t = &self.transform;
+        Transform {
+            position: self.pair_at("transform.position", offset, t.position),
+            scale: self.number_at("transform.scale", offset, t.scale),
+            stretch: self.pair_at("transform.stretch", offset, t.stretch),
+            rotation: self.number_at("transform.rotation", offset, t.rotation),
+            flip_horizontal: t.flip_horizontal,
+            flip_vertical: t.flip_vertical,
+        }
+    }
+
+    /// The crop at `offset`, with keyframes applied.
+    pub fn crop_at(&self, offset: Flicks) -> Crop {
+        let c = &self.crop;
+        Crop {
+            left: self.number_at("crop.left", offset, c.left),
+            right: self.number_at("crop.right", offset, c.right),
+            top: self.number_at("crop.top", offset, c.top),
+            bottom: self.number_at("crop.bottom", offset, c.bottom),
+        }
+    }
+
+    /// The opacity at `offset`, with keyframes applied, clamped to 0 to 1.
+    pub fn opacity_at(&self, offset: Flicks) -> f64 {
+        self.number_at("opacity", offset, self.opacity)
+            .clamp(0.0, 1.0)
+    }
+
+    /// The linear gain at `offset`, with keyframes applied, never below 0.
+    pub fn volume_at(&self, offset: Flicks) -> f64 {
+        self.number_at("volume", offset, self.volume).max(0.0)
+    }
+
+    /// The pan at `offset`, with keyframes applied, clamped to -1 to 1.
+    pub fn pan_at(&self, offset: Flicks) -> f64 {
+        self.number_at("audio.pan", offset, self.audio.pan)
+            .clamp(-1.0, 1.0)
+    }
+
+    /// Gain of the clip's fades at `offset`: rising from 0 over the fade in, falling to 0
+    /// over the fade out, on a quarter sine (constant power), 1 in between. When the fades
+    /// overlap, the lower gain wins.
+    pub fn fade_at(&self, offset: Flicks) -> f64 {
+        let ramp = |position: Flicks, length: Flicks| -> f64 {
+            if !length.is_positive() {
+                return 1.0;
+            }
+            let t = (position.get() as f64 / length.get() as f64).clamp(0.0, 1.0);
+            (t * std::f64::consts::FRAC_PI_2).sin()
+        };
+        let fade_in = ramp(offset, self.audio.fade_in);
+        let fade_out = ramp(self.duration - offset, self.audio.fade_out);
+        fade_in.min(fade_out)
+    }
+
+    /// Shifts every keyframe by `delta`, as when the clip's start moves over its content
+    /// (a trim of the start edge, or the right half of a split).
+    pub fn shift_keyframes(&mut self, delta: Flicks) {
+        for keys in self.keyframes.values_mut() {
+            for key in keys {
+                key.time = key.time + delta;
+            }
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_yes(value: &bool) -> bool {
+    *value
 }
 
 fn one() -> f64 {
@@ -236,9 +367,19 @@ pub struct Transform {
     /// Uniform scale relative to the fitted size (1 when omitted).
     #[serde(default = "one", skip_serializing_if = "is_one")]
     pub scale: f64,
+    /// Extra width and height factors on top of `scale`, for non-uniform scaling
+    /// (`[1, 1]` when omitted).
+    #[serde(default = "ones", skip_serializing_if = "is_ones")]
+    pub stretch: [f64; 2],
     /// Clockwise rotation in degrees.
     #[serde(default, skip_serializing_if = "is_default")]
     pub rotation: f64,
+    /// Mirrors the picture left to right.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub flip_horizontal: bool,
+    /// Mirrors the picture top to bottom.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub flip_vertical: bool,
 }
 
 impl Default for Transform {
@@ -246,9 +387,133 @@ impl Default for Transform {
         Transform {
             position: [0.0, 0.0],
             scale: 1.0,
+            stretch: ones(),
             rotation: 0.0,
+            flip_horizontal: false,
+            flip_vertical: false,
         }
     }
+}
+
+impl Transform {
+    /// Width and height factors relative to the fitted size: `scale` times `stretch`.
+    pub fn size_factors(&self) -> [f64; 2] {
+        [self.scale * self.stretch[0], self.scale * self.stretch[1]]
+    }
+}
+
+fn ones() -> [f64; 2] {
+    [1.0, 1.0]
+}
+
+fn is_ones(value: &[f64; 2]) -> bool {
+    *value == ones()
+}
+
+/// Edges removed from a clip's picture, as fractions of its width and height before any
+/// flip. What remains keeps its size and place on the canvas.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Crop {
+    /// Fraction of the width removed on the left.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub left: f64,
+    /// Fraction of the width removed on the right.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub right: f64,
+    /// Fraction of the height removed at the top.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub top: f64,
+    /// Fraction of the height removed at the bottom.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub bottom: f64,
+}
+
+impl Crop {
+    /// The kept part `[left, top, right, bottom]` as fractions from the top-left corner,
+    /// each edge clamped to 0 to 1 and never past the opposite edge.
+    pub fn kept(&self) -> [f64; 4] {
+        let edge = |v: f64| {
+            if v.is_finite() {
+                v.clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        let left = edge(self.left);
+        let top = edge(self.top);
+        let right = (1.0 - edge(self.right)).max(left);
+        let bottom = (1.0 - edge(self.bottom)).max(top);
+        [left, top, right, bottom]
+    }
+}
+
+/// How a clip's picture combines with the layers below it. Every mode except `normal`
+/// works on display-encoded (sRGB) values, as designers expect, and then mixes by the
+/// clip's opacity (ADR-0011, item 4).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BlendMode {
+    /// Covers what is below.
+    #[default]
+    Normal,
+    /// Darkens: below times the picture.
+    Multiply,
+    /// Lightens: the inverse of multiplying the inverses.
+    Screen,
+    /// Multiply in the shadows of what is below and screen in its highlights.
+    Overlay,
+    /// The darker of the two, per channel.
+    Darken,
+    /// The lighter of the two, per channel.
+    Lighten,
+    /// Brightens what is below to reflect the picture.
+    ColorDodge,
+    /// Darkens what is below to reflect the picture.
+    ColorBurn,
+    /// Overlay with the roles swapped: the picture decides multiply or screen.
+    HardLight,
+    /// A gentler hard light.
+    SoftLight,
+    /// Sum minus one: darkens more than multiply.
+    LinearBurn,
+    /// Sum (linear dodge), clipped at white.
+    Add,
+    /// Absolute difference.
+    Difference,
+    /// Like difference with lower contrast.
+    Exclusion,
+}
+
+/// How a clip's sound is shaped: fades, pan and channels.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ClipAudio {
+    /// Fade in from silence over this long at the clip's start.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub fade_in: Flicks,
+    /// Fade out to silence over this long at the clip's end.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub fade_out: Flicks,
+    /// Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub pan: f64,
+    /// Which source channels play.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub channels: ChannelMode,
+}
+
+/// Which channels of a clip's sound play where (fill channel).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChannelMode {
+    /// As recorded.
+    #[default]
+    Stereo,
+    /// The left channel fills both.
+    Left,
+    /// The right channel fills both.
+    Right,
+    /// Both channels mixed to one, played on both.
+    Mono,
 }
 
 /// Text content with a single style.

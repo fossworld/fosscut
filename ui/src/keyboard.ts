@@ -13,7 +13,8 @@ export type Action =
   | "redo"
   | "delete"
   | "split"
-  | "deselect";
+  | "deselect"
+  | "toggle-enabled";
 
 export interface Keystroke {
   key: string;
@@ -54,6 +55,8 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
       return "delete";
     case "Escape":
       return "deselect";
+    case "v":
+      return stroke.shiftKey ? null : "toggle-enabled";
     default:
       return null;
   }
