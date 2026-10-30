@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { EASINGS, type EasingName, easingName, keyAt, keyTimes } from "../app/animation";
 import type { Editor } from "../app/editor";
-import type { ClipView } from "../engine/types";
+import type { Catalog, ClipView } from "../engine/types";
+import { Effects } from "./Effects";
 import {
   type Field,
   type Viewing,
@@ -10,6 +11,7 @@ import {
   fieldsFor,
   hasPicture,
   hasSound,
+  isPlaced,
   keyedPaths,
   stretched,
   toggleKey,
@@ -21,6 +23,7 @@ const KINDS: Record<string, string> = {
   image: "Image",
   text: "Title",
   caption: "Caption page",
+  adjustment: "Adjustment layer",
 };
 
 const BLENDS = [
@@ -168,7 +171,21 @@ function Keyframes({ editor, clip, playhead }: { editor: Editor; clip: ClipView;
  * The selected clip at the playhead: what and where it is, its placement, crop, opacity,
  * blend mode and sound, with keyframe diamonds beside the animatable values.
  */
-export function Inspector({ editor, clip, playhead }: { editor: Editor; clip: ClipView; playhead: number }) {
+export function Inspector({
+  editor,
+  clip,
+  playhead,
+  catalog = null,
+  luts = [],
+  others = [],
+}: {
+  editor: Editor;
+  clip: ClipView;
+  playhead: number;
+  catalog?: Catalog | null;
+  luts?: { id: string; name: string }[];
+  others?: ClipView[];
+}) {
   const [separate, setSeparate] = useState(false);
   const viewing: Viewing = { playhead, separate };
   const set = (properties: Record<string, unknown>) => void editor.setProperties(clip.id, properties);
@@ -204,7 +221,7 @@ export function Inspector({ editor, clip, playhead }: { editor: Editor; clip: Cl
           />
         ))}
       </div>
-      {hasPicture(clip) && (
+      {isPlaced(clip) && (
         <div className="options">
           <label className="toggle">
             <input
@@ -243,6 +260,9 @@ export function Inspector({ editor, clip, playhead }: { editor: Editor; clip: Cl
             onChange={(channels) => set({ "audio.channels": channels })}
           />
         </div>
+      )}
+      {hasPicture(clip) && (
+        <Effects editor={editor} clip={clip} playhead={playhead} catalog={catalog} luts={luts} others={others} />
       )}
     </section>
   );

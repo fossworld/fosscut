@@ -19,6 +19,7 @@ use fosscut_model::{
 };
 use fosscut_render::caption::CaptionLayer;
 use fosscut_render::color::TransferFunction;
+use fosscut_render::effects::PlannedEffect;
 use fosscut_render::lut::Lut3d;
 use fosscut_render::plan::{Layer, Mask, MaskShape, RenderPlan};
 use fosscut_render::{Image, Renderer};
@@ -199,6 +200,111 @@ fn blend_modes_and_placements() {
         .with(1, pattern(320, 180, 0))
         .with(2, solid(160, 90, [150, 70, 190]));
     check("blend-modes", &mut renderer, &plan, &mut frames);
+}
+
+fn planned(kind: &str, values: &[(&str, fosscut_model::ParamValue)]) -> PlannedEffect {
+    let spec = fosscut_model::effect_type(kind).unwrap();
+    let mut all: std::collections::BTreeMap<String, fosscut_model::ParamValue> = spec
+        .params
+        .iter()
+        .map(|p| (p.name.to_string(), p.default.value()))
+        .collect();
+    for (name, value) in values {
+        all.insert(name.to_string(), value.clone());
+    }
+    PlannedEffect {
+        effect_type: kind.into(),
+        values: all,
+        seed: 3,
+    }
+}
+
+/// The test pattern in a 4x2 grid, each tile with one effect: adjust (warm, punchy),
+/// curves (an S curve), HSL (reds to orange, blues muted), wheels (teal shadows, warm
+/// highlights), vignette, blur, sharpen and grain. An adjustment layer on top lowers the
+/// saturation of everything below it a little.
+#[test]
+fn effects_on_tiles() {
+    use fosscut_model::ParamValue::{Number, Pair, Points};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let tiles = vec![
+        planned(
+            "color.adjust",
+            &[
+                ("temperature", Number(0.6)),
+                ("contrast", Number(0.4)),
+                ("saturation", Number(0.3)),
+            ],
+        ),
+        planned(
+            "color.curves",
+            &[(
+                "master",
+                Points(vec![[0.0, 0.0], [0.25, 0.15], [0.75, 0.85], [1.0, 1.0]]),
+            )],
+        ),
+        planned(
+            "color.hsl",
+            &[
+                ("red_hue", Number(1.0)),
+                ("blue_saturation", Number(-0.8)),
+                ("aqua_lightness", Number(0.5)),
+            ],
+        ),
+        planned(
+            "color.wheels",
+            &[("lift", Pair([-0.4, -0.1])), ("gain", Pair([0.3, 0.17]))],
+        ),
+        planned(
+            "color.vignette",
+            &[("amount", Number(0.9)), ("midpoint", Number(0.3))],
+        ),
+        planned("blur.gaussian", &[("radius", Number(0.04))]),
+        planned(
+            "detail.sharpen",
+            &[("amount", Number(2.0)), ("radius", Number(0.01))],
+        ),
+        planned(
+            "stylize.grain",
+            &[("amount", Number(0.7)), ("size", Number(2.0))],
+        ),
+    ];
+    let mut layers = Vec::new();
+    for (index, effect) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 4) as f64, (index / 4) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.375 + column * 0.25, -0.25 + row * 0.5],
+                scale: 0.24,
+                ..Transform::default()
+            },
+            effects: vec![effect],
+            ..Layer::new(source(1))
+        });
+    }
+    layers.push(Layer {
+        source: fosscut_render::plan::LayerSource::Adjustment,
+        effects: vec![planned(
+            "color.adjust",
+            &[("saturation", fosscut_model::ParamValue::Number(-0.3))],
+        )],
+        ..Layer::new(source(1))
+    });
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, pattern(320, 180, 0));
+    check_at(
+        "effects-tiles",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        (640, 360),
+    );
 }
 
 #[test]

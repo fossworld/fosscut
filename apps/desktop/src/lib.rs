@@ -137,6 +137,7 @@ pub fn run() {
             commands::query,
             commands::execute,
             commands::clients,
+            commands::color_suggest,
             commands::preview_viewport,
             commands::preview_show,
             commands::preview_play,

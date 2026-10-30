@@ -19,6 +19,8 @@ pub enum IdKind {
     Clip,
     /// A media asset (`asset_…`).
     Asset,
+    /// An effect on a clip (`effect_…`).
+    Effect,
 }
 
 impl IdKind {
@@ -30,6 +32,7 @@ impl IdKind {
             IdKind::Track => "track",
             IdKind::Clip => "clip",
             IdKind::Asset => "asset",
+            IdKind::Effect => "effect",
         }
     }
 }

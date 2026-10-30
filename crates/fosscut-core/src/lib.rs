@@ -25,12 +25,17 @@ mod commands;
 mod envelope;
 mod error;
 mod history;
+mod looks;
 mod presets;
 mod queries;
 mod session;
 
 pub use changes::ChangeSummary;
 pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry};
+pub use commands::{
+    AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
+    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
+};
 pub use commands::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
     ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,
@@ -42,6 +47,7 @@ pub use commands::{
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};
+pub use looks::{Look, LookEffect, look, looks};
 pub use presets::{CaptionPreset, caption_animators, caption_preset, caption_presets};
 pub use session::Session;
 

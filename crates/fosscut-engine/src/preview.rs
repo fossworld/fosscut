@@ -8,6 +8,7 @@ use std::path::Path;
 
 use fosscut_media::{AudioBuffer, VideoFrame};
 use fosscut_model::{Id, Project};
+use fosscut_render::lut::Lut3d;
 use fosscut_render::plan::{SourceRef, plan_frame};
 use fosscut_render::{FrameProvider, PreviewGraph, RenderError, Renderer};
 use fosscut_time::{Flicks, TimeReport};
@@ -282,6 +283,10 @@ impl<P: FrameProvider> FrameProvider for Cached<'_, P> {
         let frame = self.inner.frame(source)?;
         self.cache.insert(&source.asset, frame.clone());
         Ok(frame)
+    }
+
+    fn lut(&mut self, asset: &Id) -> Result<std::sync::Arc<Lut3d>, RenderError> {
+        self.inner.lut(asset)
     }
 }
 

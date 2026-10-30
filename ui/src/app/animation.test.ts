@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { KeyframeView } from "../engine/types";
 import { clip, moment } from "../test/fixtures";
 import { FLICKS_PER_SECOND } from "../transport/time";
-import { EASINGS, easingName, evaluate, keyAt, keyTimes, numberAt, pairAt, progress } from "./animation";
+import { EASINGS, easingName, evaluate, keyAt, keyTimes, numberAt, pairAt, progress, sampleCurve } from "./animation";
 
 function key(seconds: number, value: number | [number, number], interpolation: KeyframeView["interpolation"] = "linear"): KeyframeView {
   return { at: moment(seconds), offset: moment(seconds), value, interpolation };
@@ -53,5 +53,21 @@ describe("keyframes", () => {
     expect(keyAt(video, "opacity", s(3))).toBeUndefined();
     expect(keyTimes(video)).toEqual([s(2), s(3), s(4)]);
     expect(keyTimes(clip("c2", "video", 0, 1))).toEqual([]);
+  });
+});
+
+describe("curves", () => {
+  it("sample like the renderer: through the points, monotone, flat outside", () => {
+    const straight = sampleCurve([[0, 0], [1, 1]]);
+    expect(straight[128]).toBeCloseTo(128 / 255, 6);
+    const curve = sampleCurve([[0, 0], [0.25, 0.4], [0.5, 0.5], [1, 1]]);
+    expect(curve[Math.round(0.5 * 255)]).toBeCloseTo(0.5, 1);
+    expect(curve.every((v, i) => i === 0 || v >= curve[i - 1]! - 1e-6), "monotone").toBe(true);
+    const flat = sampleCurve([[0.2, 0.3], [0.8, 0.7]]);
+    expect([flat[0], flat[255]]).toEqual([0.3, 0.7]);
+    expect(sampleCurve([[0.5, 0.5]], 3)).toEqual([0, 0.5, 1]);
+    const wave = sampleCurve([[0, 0], [0.3, 0.8], [0.6, 0.2], [1, 1]]);
+    expect(Math.max(...wave)).toBeLessThanOrEqual(1);
+    expect(wave[Math.round(0.3 * 255)]!).toBeLessThanOrEqual(0.81);
   });
 });

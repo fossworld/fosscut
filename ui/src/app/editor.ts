@@ -5,6 +5,7 @@
 import type { EngineClient, Rect, Unsubscribe } from "../engine/client";
 import {
   type ApiError,
+  type Catalog,
   type Client,
   type CommandCall,
   type EditRequest,
@@ -36,6 +37,10 @@ export interface EditorState {
   playing: boolean;
   selection: string | null;
   notice: Notice | null;
+  /** Effect types and looks, from `capabilities`; null until read. */
+  catalog: Catalog | null;
+  /** LUT assets in the media table, for `color.lut` effects. */
+  luts: { id: string; name: string }[];
 }
 
 const EMPTY: EditorState = {
@@ -48,6 +53,8 @@ const EMPTY: EditorState = {
   playing: false,
   selection: null,
   notice: null,
+  catalog: null,
+  luts: [],
 };
 
 /** Asks the user a yes-or-no question; the app passes `window.confirm`. */
@@ -126,8 +133,18 @@ export class Editor {
   private async show(opened: Opened | null): Promise<void> {
     if (!opened) return;
     this.set({ ...EMPTY, recent: this.state.recent, opened });
-    await this.refresh();
+    await Promise.all([this.refresh(), this.loadCatalog()]);
     await this.seek(0);
+  }
+
+  /** Reads the effect types and looks once per project; without them effects still show. */
+  private async loadCatalog(): Promise<void> {
+    try {
+      const caps = await this.engine.query<Catalog>("capabilities", { detail: "full" });
+      this.set({ catalog: { effects: caps.effects ?? [], looks: caps.looks ?? [] } });
+    } catch {
+      this.set({ catalog: null });
+    }
   }
 
   async open(path: string): Promise<void> {
@@ -190,7 +207,11 @@ export class Editor {
       ]);
       const selection =
         this.state.selection && findClip(timeline, this.state.selection) ? this.state.selection : null;
-      this.set({ opened: { ...opened, info }, timeline, history: history.entries, selection });
+      const luts = await this.engine
+        .query<{ assets: { id: string; name: string; kind: string }[] }>("media.list")
+        .then((media) => media.assets.filter((a) => a.kind === "lut").map(({ id, name }) => ({ id, name })))
+        .catch(() => this.state.luts);
+      this.set({ opened: { ...opened, info }, timeline, history: history.entries, selection, luts });
     } catch (error) {
       this.notify(error);
     }
@@ -340,6 +361,40 @@ export class Editor {
   async setProperties(clip: string, set: Record<string, unknown>): Promise<void> {
     if (Object.keys(set).length === 0) return;
     await this.edit([{ command: "clip.set", args: { clip, set } }]);
+  }
+
+  /** Adds an effect at its defaults to the end of a clip's effects. */
+  async addEffect(clip: string, type: string): Promise<void> {
+    await this.edit([{ command: "effect.add", args: { clip, type } }]);
+  }
+
+  /** Adds a built-in look's effects to a clip. */
+  async applyLook(clip: string, look: string): Promise<void> {
+    await this.edit([{ command: "look.apply", args: { clip, look } }]);
+  }
+
+  /** Adds an adjustment layer from the playhead, three seconds long. */
+  async addAdjustment(): Promise<void> {
+    if (!this.state.timeline) return;
+    await this.edit([
+      {
+        command: "adjustment.add",
+        args: { start: { flicks: this.state.playhead }, duration: { seconds: "3" } },
+      },
+    ]);
+  }
+
+  /**
+   * Measures a clip and adds the engine's color correction as one step: automatic, or
+   * matching `reference`.
+   */
+  async autoColor(clip: string, reference?: string): Promise<void> {
+    try {
+      const suggestion = await this.engine.colorSuggest(clip, reference);
+      await this.edit([{ command: "effect.add", args: suggestion.effect_add }], reference ? "Match color" : "Auto color");
+    } catch (error) {
+      this.notify(error);
+    }
   }
 
   /** Deactivates the selected clip, or activates it again. */

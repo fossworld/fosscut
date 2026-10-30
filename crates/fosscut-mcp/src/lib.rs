@@ -44,9 +44,10 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler,
 use serde_json::{Value, json};
 
 use params::{
-    CapabilitiesArgs, CaptionsAction, CaptionsArgs, Detail, EditArgs, ExportArgs, FrameArgs,
-    HistoryArgs, HistoryStepArgs, JobArgs, MediaAnalyzeArgs, MediaImportArgs, ModelsArgs,
-    ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
+    CapabilitiesArgs, CaptionsAction, CaptionsArgs, ColorAction, ColorArgs, Detail, EditArgs,
+    ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs, MediaAnalyzeArgs,
+    MediaImportArgs, ModelsArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs,
+    SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -699,6 +700,70 @@ impl FosscutServer {
                     .projects
                     .execute(&bundle, write)
                     .map(|response| as_value(&response))
+            })
+            .await,
+        )
+    }
+
+    /// Corrects a clip's color, or matches it to another.
+    #[tool(
+        description = "Automatic color for a video or image clip, measured from its frames on this machine. action auto adds a color.adjust effect (first in the clip's effects) that neutralizes the white balance, sets the brightness and stretches blacks and whites; action match adds one that brings the clip's balance, brightness, contrast and saturation close to the reference clip. One undoable step with expected_revision, dry_run and request_id; returns the measurements and the effect. Adjust the effect afterwards with edit (effect.set) and check frame_grab."
+    )]
+    async fn color(
+        &self,
+        params: Parameters<ColorArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let bundle = match self.bundle(args.project.clone()) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let actor = actor(&context);
+        let state = Arc::clone(&self.state);
+        reply(
+            blocking(move || {
+                let snapshot = state.projects.snapshot(&bundle)?;
+                let id = |text: &str, what: &str| {
+                    fosscut_model::Id::parse(text).map_err(|e| {
+                        ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}"))
+                    })
+                };
+                let clip = id(&args.clip, "clip")?;
+                let reference = match (args.action, &args.reference) {
+                    (ColorAction::Match, Some(reference)) => Some(id(reference, "reference")?),
+                    (ColorAction::Match, None) => {
+                        return Err(ApiError::new(
+                            codes::INVALID_ARGUMENTS,
+                            "color match needs reference: the clip to match",
+                        ));
+                    }
+                    (ColorAction::Auto, _) => None,
+                };
+                let suggestion = FosscutServer::with_renderer(&state, |renderer| {
+                    fosscut_engine::color::suggest(
+                        &snapshot,
+                        &bundle,
+                        &clip,
+                        reference.as_ref(),
+                        renderer,
+                    )
+                    .map_err(ApiError::from)
+                })?;
+                let mut write = Request::single("effect.add", suggestion.effect_add.clone());
+                write.expected_revision = args.expected_revision;
+                write.dry_run = args.dry_run;
+                write.request_id = args.request_id;
+                write.reason = args.reason;
+                write.actor = actor;
+                write.at_ms = project::now_ms();
+                let response = state.projects.execute(&bundle, write)?;
+                let mut value = as_value(&response);
+                value["measured"] = json!(suggestion.stats);
+                if let Some(reference) = suggestion.reference {
+                    value["reference"] = json!(reference);
+                }
+                Ok(value)
             })
             .await,
         )

@@ -79,6 +79,18 @@ pub enum Command {
     /// Animate clip properties with keyframes.
     #[command(subcommand)]
     Keyframe(KeyframeCommand),
+    /// Add, change, reorder and copy effects on clips.
+    #[command(subcommand)]
+    Effect(EffectCommand),
+    /// Add adjustment layers: effects over everything below them.
+    #[command(subcommand)]
+    Adjustment(AdjustmentCommand),
+    /// Apply built-in looks (filters) as effects.
+    #[command(subcommand)]
+    Look(LookCommand),
+    /// Correct a clip's color automatically, or match it to another clip.
+    #[command(subcommand)]
+    Color(ColorCommand),
     /// Add titles.
     #[command(subcommand)]
     Text(TextCommand),
@@ -451,6 +463,136 @@ pub enum ClipCommand {
         /// transform.flip_horizontal=true, crop.left=0.1 or audio.channels=left. Repeatable.
         #[arg(long = "set", value_name = "PATH=VALUE")]
         properties: Vec<String>,
+    },
+}
+
+/// `fosscut effect ...`
+#[derive(Debug, Subcommand)]
+pub enum EffectCommand {
+    /// Add an effect to a clip, for example `--type color.adjust --param exposure=0.5`.
+    Add {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Effect type: color.adjust, color.curves, color.hsl, color.wheels, color.lut,
+        /// color.vignette, blur.gaussian, detail.sharpen or stylize.grain.
+        #[arg(long = "type")]
+        effect_type: String,
+        /// A parameter as NAME=VALUE, VALUE in JSON (a bare word is a string). Repeatable.
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        params: Vec<String>,
+        /// Position in the clip's effects; last when omitted.
+        #[arg(long)]
+        index: Option<usize>,
+    },
+    /// Change an effect's parameters, reset some, or bypass it.
+    Set {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Effect id.
+        #[arg(long)]
+        effect: String,
+        /// A parameter as NAME=VALUE. Repeatable.
+        #[arg(long = "param", value_name = "NAME=VALUE")]
+        params: Vec<String>,
+        /// A parameter to return to its default. Repeatable.
+        #[arg(long)]
+        reset: Vec<String>,
+        /// false bypasses the effect; true applies it again.
+        #[arg(long)]
+        enabled: Option<bool>,
+    },
+    /// Remove an effect.
+    Remove {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Effect id.
+        #[arg(long)]
+        effect: String,
+    },
+    /// Move an effect to another position (0 applies first).
+    Move {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Effect id.
+        #[arg(long)]
+        effect: String,
+        /// New position.
+        #[arg(long)]
+        index: usize,
+    },
+    /// Copy one clip's effects to other clips.
+    Copy {
+        /// The clip whose effects are copied.
+        #[arg(long)]
+        from: String,
+        /// A clip that receives them. Repeatable.
+        #[arg(long, required = true)]
+        to: Vec<String>,
+        /// Add after the receivers' effects instead of replacing them.
+        #[arg(long)]
+        append: bool,
+    },
+}
+
+/// `fosscut adjustment ...`
+#[derive(Debug, Subcommand)]
+pub enum AdjustmentCommand {
+    /// Add an adjustment layer above the video tracks.
+    Add {
+        /// Where it starts.
+        #[arg(long, value_parser = parse_time)]
+        start: TimeInput,
+        /// How long it lasts.
+        #[arg(long, value_parser = parse_time)]
+        duration: TimeInput,
+        /// An effect type to start with, at its defaults. Repeatable.
+        #[arg(long = "type")]
+        effects: Vec<String>,
+        /// Video track id; an adjustment track above the video when omitted.
+        #[arg(long)]
+        track: Option<String>,
+    },
+}
+
+/// `fosscut look ...`
+#[derive(Debug, Subcommand)]
+pub enum LookCommand {
+    /// Apply a look, such as warm, teal_orange, vintage or noir (`fosscut capabilities`
+    /// lists them).
+    Apply {
+        /// The look.
+        look: String,
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Replace the clip's effects instead of adding after them.
+        #[arg(long)]
+        replace: bool,
+    },
+}
+
+/// `fosscut color ...`
+#[derive(Debug, Subcommand)]
+pub enum ColorCommand {
+    /// Measure a clip and add a color.adjust that corrects its white balance, brightness
+    /// and levels.
+    Auto {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+    },
+    /// Measure two clips and add a color.adjust to the first that matches the second.
+    Match {
+        /// The clip to change.
+        #[arg(long)]
+        clip: String,
+        /// The clip to match.
+        #[arg(long)]
+        reference: String,
     },
 }
 

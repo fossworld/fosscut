@@ -49,6 +49,13 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
       </span>
       <span className="spacer" />
       <button
+        title="Add an adjustment layer at the playhead: effects on it change every picture below"
+        onClick={() => void editor.addAdjustment()}
+        disabled={!timeline}
+      >
+        Adjustment
+      </button>
+      <button
         title="Split at the playhead (Mod+B)"
         onClick={() => void editor.splitAtPlayhead()}
         disabled={!timeline}

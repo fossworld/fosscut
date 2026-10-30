@@ -235,6 +235,19 @@
         }
       ]
     },
+    "AssetRef": {
+      "description": "A reference to a media asset, such as a LUT file.",
+      "properties": {
+        "asset": {
+          "$ref": "#/$defs/Id",
+          "description": "The asset (`asset_…`)."
+        }
+      },
+      "required": [
+        "asset"
+      ],
+      "type": "object"
+    },
     "BlendMode": {
       "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
       "oneOf": [
@@ -572,6 +585,19 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "An adjustment layer: its effects apply to everything below it while it lasts.",
+          "properties": {
+            "kind": {
+              "const": "adjustment",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -590,6 +616,13 @@
         "duration": {
           "$ref": "#/$defs/Flicks",
           "description": "Length on the timeline."
+        },
+        "effects": {
+          "description": "Effects on the clip's picture, applied in order before placement. On an adjustment\nclip they apply to everything below it.",
+          "items": {
+            "$ref": "#/$defs/Effect"
+          },
+          "type": "array"
         },
         "enabled": {
           "description": "False deactivates the clip: it keeps its place but is neither drawn nor heard.",
@@ -687,6 +720,52 @@
           "type": "number"
         }
       },
+      "type": "object"
+    },
+    "Effect": {
+      "description": "An effect on a clip.",
+      "properties": {
+        "enabled": {
+          "description": "False bypasses the effect without removing it.",
+          "type": "boolean"
+        },
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Effect id (`effect_…`)."
+        },
+        "keyframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Keyframe"
+            },
+            "type": "array"
+          },
+          "description": "Keyframes of numeric parameters by parameter name, each sorted by time from the\nclip's start. A parameter with keyframes takes its value from them.",
+          "type": "object"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ParamValue"
+          },
+          "description": "Parameters that differ from their defaults.",
+          "type": "object"
+        },
+        "type": {
+          "description": "The effect type, such as `color.adjust`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Version of the type's parameters this instance was written with.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "version"
+      ],
       "type": "object"
     },
     "Flicks": {
@@ -839,6 +918,51 @@
         }
       },
       "type": "object"
+    },
+    "ParamValue": {
+      "anyOf": [
+        {
+          "description": "A number.",
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "description": "A pair such as a color wheel position `[x, y]`.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        {
+          "description": "On or off.",
+          "type": "boolean"
+        },
+        {
+          "description": "One of a fixed set of names.",
+          "type": "string"
+        },
+        {
+          "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+          "items": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
+        {
+          "$ref": "#/$defs/AssetRef",
+          "description": "A media asset."
+        }
+      ],
+      "description": "A parameter value."
     },
     "Placement": {
       "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",

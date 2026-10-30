@@ -11,6 +11,7 @@
 pub mod analysis;
 mod cache;
 pub mod captions;
+pub mod color;
 mod error;
 mod export;
 pub mod frame;

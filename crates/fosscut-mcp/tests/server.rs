@@ -943,3 +943,82 @@ async fn an_agents_edits_run_live_in_the_host_and_undo_there() {
     let info = ok(&client, "project_info", json!({})).await;
     assert_eq!(info["session"], json!({ "live": false }));
 }
+
+#[tokio::test]
+async fn agents_grade_with_effects_luts_and_automatic_color() {
+    if !has_ffmpeg() || !can_render() {
+        return;
+    }
+    let dir = workspace("color");
+    let status = std::process::Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("testsrc2=s=320x180:r=30:d=1,colorchannelmixer=rr=0.6:gg=0.8:bb=1.0")
+        .args(["-c:v", "mpeg4", "-q:v", "2", "cool.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    std::fs::write(
+        dir.join("flat.cube"),
+        "LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
+    )
+    .unwrap();
+    let client = connect(None).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Grade.fosscut"), "width": 320, "height": 180 }),
+    )
+    .await;
+    let imported = ok(
+        &client,
+        "media_import",
+        json!({ "files": [dir.join("cool.mp4"), dir.join("flat.cube")] }),
+    )
+    .await;
+    let lut = imported["results"][1]["asset"].clone();
+    let placed = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "clip.add", "args": { "asset": imported["results"][0]["asset"] } }] }),
+    )
+    .await;
+    let clip = placed["results"][0]["clip"].clone();
+    let effects = ok(
+        &client,
+        "edit",
+        json!({ "commands": [
+            { "command": "effect.add", "args": { "clip": clip, "type": "color.lut", "params": { "lut": { "asset": lut }, "intensity": 0.5 } } },
+            { "command": "look.apply", "args": { "clip": clip, "look": "warm" } }
+        ] }),
+    )
+    .await;
+    assert_eq!(
+        effects["results"][1]["effects"].as_array().unwrap().len(),
+        2,
+        "the LUT, then the warm look's adjust"
+    );
+    let caps = ok(&client, "capabilities", json!({ "detail": "outline" })).await;
+    assert!(caps["effects"].as_array().unwrap().len() >= 9);
+    assert!(caps["looks"].as_array().unwrap().len() >= 10);
+
+    let corrected = ok(&client, "color", json!({ "action": "auto", "clip": clip })).await;
+    let first = &corrected["results"][0]["effects"][0];
+    assert_eq!(first["type"], "color.adjust", "auto color goes first");
+    assert!(first["params"]["temperature"].as_f64().unwrap() > 0.0);
+    assert!(
+        corrected["measured"]["mean"][2].as_f64().unwrap()
+            > corrected["measured"]["mean"][0].as_f64().unwrap()
+    );
+    let unmatched = fails(&client, "color", json!({ "action": "match", "clip": clip })).await;
+    assert_eq!(unmatched["code"], "fosscut.request.invalid_arguments");
+    let frame = call_raw(
+        &client,
+        "frame_grab",
+        json!({ "time": { "frames": 10 }, "width": 160 }),
+    )
+    .await;
+    assert_eq!(png_size(&frame), (160, 90));
+    let undone = ok(&client, "undo", json!({})).await;
+    assert!(undone["revision"].as_u64().is_some());
+}

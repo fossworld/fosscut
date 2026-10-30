@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::caption::window_caption;
-use super::util::{ensure_unlocked, resolve, timeline_id, timeline_mut, track_index};
+use super::util::{
+    ensure_unlocked, renew_effect_ids, resolve, timeline_id, timeline_mut, track_index,
+};
 use crate::{ApiError, Command, Context, codes};
 
 fn invalid(message: impl Into<String>) -> ApiError {
@@ -116,6 +118,7 @@ impl Command for TimelineDuplicate {
             track.id = ctx.project.allocate_id(IdKind::Track);
             for clip in &mut track.clips {
                 clip.id = ctx.project.allocate_id(IdKind::Clip);
+                renew_effect_ids(ctx.project, clip);
                 clips += 1;
                 let asset = match &clip.content {
                     ClipContent::Video { asset, .. } | ClipContent::Image { asset } => asset,
@@ -423,6 +426,7 @@ fn cut_track(
             } else {
                 Flicks::ZERO
             };
+            let renew = id != clip.id;
             if !(untouched && shift == Flicks::ZERO) && id == clip.id {
                 report.clips_changed.push(id.clone());
             }
@@ -440,6 +444,9 @@ fn cut_track(
             }
             if to != clip.end() {
                 part.audio.fade_out = Flicks::ZERO;
+            }
+            if renew {
+                renew_effect_ids(project, &mut part);
             }
             out.push(part);
         }

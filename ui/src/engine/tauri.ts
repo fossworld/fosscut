@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
-import type { AppInfo, Client, EditRequest, EditResponse, Opened } from "./types";
+import type { AppInfo, Client, ColorSuggestion, EditRequest, EditResponse, Opened } from "./types";
 
 /** True inside the desktop app. */
 export function inDesktopApp(): boolean {
@@ -50,6 +50,10 @@ export class TauriEngine implements EngineClient {
 
   clients(): Promise<Client[]> {
     return invoke("clients");
+  }
+
+  colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion> {
+    return invoke("color_suggest", { clip, reference: reference ?? null });
   }
 
   preview = {

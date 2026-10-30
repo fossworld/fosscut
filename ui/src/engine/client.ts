@@ -6,6 +6,7 @@ import type {
   AppInfo,
   Change,
   Client,
+  ColorSuggestion,
   EditRequest,
   EditResponse,
   Opened,
@@ -53,6 +54,11 @@ export interface EngineClient {
   query<T>(name: string, args?: unknown): Promise<T>;
   execute(request: EditRequest): Promise<EditResponse>;
   clients(): Promise<Client[]>;
+  /**
+   * Measures a clip and suggests a color correction (matching `reference` when given),
+   * to apply with `execute` like any edit.
+   */
+  colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion>;
   preview: {
     viewport(rect: Rect): Promise<void>;
     show(flicks: number): Promise<void>;

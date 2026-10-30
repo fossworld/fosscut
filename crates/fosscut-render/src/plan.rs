@@ -8,6 +8,7 @@ use fosscut_time::Flicks;
 
 use crate::RenderError;
 use crate::caption::CaptionLayer;
+use crate::effects::PlannedEffect;
 use crate::geometry::{UNCROPPED, clockwise_rotation};
 use crate::lut::Lut3d;
 
@@ -29,6 +30,9 @@ pub enum LayerSource {
     Text(TextContent),
     /// A caption page at one moment (ADR-0021), composed at the output resolution.
     Caption(Box<CaptionLayer>),
+    /// An adjustment layer: its effects apply to everything below it, mixed by its
+    /// opacity.
+    Adjustment,
 }
 
 /// Mask shape, in the layer's displayed coordinates.
@@ -77,6 +81,9 @@ pub struct Layer {
     pub mask: Option<Mask>,
     /// Optional 3D LUT, applied to the display-referred signal.
     pub lut: Option<Arc<Lut3d>>,
+    /// Effects applied to the layer's picture in order before placement (ADR-0011); on an
+    /// adjustment layer, to the canvas below it.
+    pub effects: Vec<PlannedEffect>,
 }
 
 impl Layer {
@@ -106,6 +113,7 @@ impl Layer {
             blend: BlendMode::Normal,
             mask: None,
             lut: None,
+            effects: Vec::new(),
         }
     }
 }
@@ -178,6 +186,19 @@ pub fn plan_frame(
             continue;
         }
         let offset = time - clip.start;
+        let frame = u32::try_from(doc.format.rate.frame_at(time).max(0)).unwrap_or(u32::MAX);
+        let effects: Vec<PlannedEffect> = clip
+            .effects
+            .iter()
+            .filter(|e| e.enabled)
+            .filter_map(|e| {
+                Some(PlannedEffect {
+                    effect_type: e.effect_type.clone(),
+                    values: e.values_at(offset)?,
+                    seed: frame,
+                })
+            })
+            .collect();
         let placed = |source: LayerSource, rotation: u16| Layer {
             clip: Some(clip.id.clone()),
             source,
@@ -188,6 +209,7 @@ pub fn plan_frame(
             blend: clip.blend,
             mask: None,
             lut: None,
+            effects: effects.clone(),
         };
         let source = match (&clip.content, track.kind) {
             (ClipContent::Video { asset, source_in }, TrackKind::Video) => SourceRef {
@@ -200,6 +222,12 @@ pub fn plan_frame(
             },
             (ClipContent::Text(text), _) => {
                 plan.layers.push(placed(LayerSource::Text(text.clone()), 0));
+                continue;
+            }
+            (ClipContent::Adjustment, TrackKind::Video) => {
+                if !effects.is_empty() {
+                    plan.layers.push(placed(LayerSource::Adjustment, 0));
+                }
                 continue;
             }
             (ClipContent::Caption(caption), _) => {
@@ -238,7 +266,7 @@ mod tests {
     fn time(layer: &Layer) -> Option<Flicks> {
         match &layer.source {
             LayerSource::Frame(source) => Some(source.time),
-            LayerSource::Text(_) | LayerSource::Caption(_) => None,
+            LayerSource::Text(_) | LayerSource::Caption(_) | LayerSource::Adjustment => None,
         }
     }
 
@@ -277,6 +305,7 @@ mod tests {
                     rotation: -90,
                 }),
                 audio: None,
+                lut: None,
             },
         });
         let base = clip(
@@ -414,6 +443,65 @@ mod tests {
         assert_eq!(layer.blend, BlendMode::Screen);
         assert!(layer.transform.flip_vertical);
         assert_eq!(plan.layers[1].crop, UNCROPPED, "the title is not cropped");
+    }
+
+    #[test]
+    fn effects_are_planned_at_the_frame_and_adjustments_become_layers() {
+        let (mut project, timeline) = project();
+        let effect = |id: u64, kind: &str, enabled: bool| fosscut_model::Effect {
+            id: Id::new(fosscut_model::IdKind::Effect, id),
+            effect_type: kind.into(),
+            version: 1,
+            enabled,
+            params: [(
+                "exposure".to_string(),
+                fosscut_model::ParamValue::Number(0.5),
+            )]
+            .into_iter()
+            .filter(|_| kind == "color.adjust")
+            .collect(),
+            keyframes: Default::default(),
+        };
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[0].clips[0].effects = vec![
+            effect(1, "color.adjust", true),
+            effect(2, "color.vignette", false),
+            effect(3, "color.future", true),
+        ];
+        let adjustment = |id: u64, effects| fosscut_model::Clip {
+            effects,
+            ..Clip::new(
+                Id::new(fosscut_model::IdKind::Clip, id),
+                frames(0),
+                frames(100),
+                ClipContent::Adjustment,
+            )
+        };
+        doc.tracks[1].clips = vec![adjustment(50, vec![effect(4, "stylize.grain", true)])];
+        let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
+        let base = &plan.layers[0];
+        assert_eq!(
+            base.effects.len(),
+            1,
+            "disabled and unknown effects are left out"
+        );
+        assert_eq!(base.effects[0].effect_type, "color.adjust");
+        assert_eq!(
+            base.effects[0].values["exposure"],
+            fosscut_model::ParamValue::Number(0.5)
+        );
+        assert_eq!(base.effects[0].seed, 60, "the timeline frame");
+        assert!(matches!(plan.layers[1].source, LayerSource::Adjustment));
+        assert_eq!(plan.layers[1].effects[0].effect_type, "stylize.grain");
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[1].clips = vec![adjustment(51, Vec::new())];
+        let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
+        assert!(
+            plan.layers
+                .iter()
+                .all(|l| !matches!(l.source, LayerSource::Adjustment)),
+            "an adjustment without effects draws nothing"
+        );
     }
 
     #[test]

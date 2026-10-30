@@ -171,7 +171,8 @@ pub(crate) struct Media {
 }
 
 impl Media {
-    /// Opens the media of every frame layer of `plan` not opened yet.
+    /// Opens the media of every frame layer of `plan` not opened yet, and loads the LUTs
+    /// its effects use.
     pub(crate) fn open_for(
         &mut self,
         project: &Project,
@@ -179,6 +180,14 @@ impl Media {
         plan: &RenderPlan,
     ) -> Result<(), EngineError> {
         for layer in &plan.layers {
+            for effect in &layer.effects {
+                if let Some(asset) = effect.asset("lut")
+                    && !self.decoders.has_lut(asset)
+                {
+                    let lut = load_lut(project, bundle, asset)?;
+                    self.decoders.insert_lut(asset.clone(), lut);
+                }
+            }
             if let LayerSource::Frame(source) = &layer.source
                 && !self.opened.contains(&source.asset)
             {
@@ -196,6 +205,39 @@ impl Media {
     pub(crate) fn frames(&mut self) -> &mut DecoderFrames {
         &mut self.decoders
     }
+}
+
+/// Reads and parses the `.cube` file of LUT asset `asset`.
+pub(crate) fn load_lut(
+    project: &Project,
+    bundle: &Path,
+    asset: &Id,
+) -> Result<std::sync::Arc<fosscut_render::lut::Lut3d>, EngineError> {
+    let path = resolve(project, bundle, asset)?;
+    let text = std::fs::read_to_string(&path).map_err(|e| EngineError::InvalidArguments {
+        message: format!("cannot read the LUT {}: {e}", path.display()),
+    })?;
+    let lut = fosscut_render::lut::Lut3d::parse_cube(&text)?;
+    Ok(std::sync::Arc::new(lut))
+}
+
+/// Every LUT asset the effects of `timeline` use.
+pub(crate) fn timeline_luts(project: &Project, timeline: &Id) -> Vec<Id> {
+    let mut luts: Vec<Id> = project
+        .timelines
+        .get(timeline)
+        .into_iter()
+        .flat_map(|t| &t.tracks)
+        .flat_map(|t| &t.clips)
+        .flat_map(|c| &c.effects)
+        .filter_map(|e| match e.params.get("lut") {
+            Some(fosscut_model::ParamValue::Asset(reference)) => Some(reference.asset.clone()),
+            _ => None,
+        })
+        .collect();
+    luts.sort();
+    luts.dedup();
+    luts
 }
 
 /// Frames of one timeline, with each clip's media opened on first use.

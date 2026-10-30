@@ -50,6 +50,42 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
         "keyframe.set" => {
             json!({ "clip": clip, "property": "opacity", "at": "1s", "value": 0.25, "easing": "ease_in_out" })
         }
+        "effect.add" => {
+            json!({ "clip": clip, "type": "color.adjust", "params": { "exposure": 0.5 } })
+        }
+        "effect.set" | "effect.remove" | "effect.move" => {
+            let added = run(
+                &mut session,
+                "effect.add",
+                json!({ "clip": clip, "type": "color.vignette" }),
+            );
+            run(
+                &mut session,
+                "effect.add",
+                json!({ "clip": clip, "type": "stylize.grain" }),
+            );
+            let effect = added.results[0]["effect"].clone();
+            match command {
+                "effect.set" => {
+                    json!({ "clip": clip, "effect": effect, "params": { "amount": 0.4 } })
+                }
+                "effect.move" => json!({ "clip": clip, "effect": effect, "index": 1 }),
+                _ => json!({ "clip": clip, "effect": effect }),
+            }
+        }
+        "effect.copy" => {
+            run(
+                &mut session,
+                "effect.add",
+                json!({ "clip": clip, "type": "color.adjust" }),
+            );
+            let title = run(&mut session, "text.add", json!({ "text": "Graded too" }));
+            json!({ "from": clip, "to": [title.results[0]["clip"]] })
+        }
+        "adjustment.add" => {
+            json!({ "start": "1s", "duration": "2s", "effects": [{ "type": "color.adjust", "params": { "saturation": -1 } }] })
+        }
+        "look.apply" => json!({ "clip": clip, "look": "teal_orange" }),
         "keyframe.remove" => {
             run(
                 &mut session,

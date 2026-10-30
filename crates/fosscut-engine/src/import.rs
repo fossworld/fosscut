@@ -44,8 +44,43 @@ fn ffprobe_path() -> String {
     std::env::var("FOSSCUT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
 }
 
-/// Runs ffprobe on `file`.
+/// Probes `file`: `.cube` files are read as 3D LUTs, everything else goes to ffprobe.
 pub fn probe(file: &Path) -> Result<Probed, ApiError> {
+    let is_cube = file
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("cube"));
+    if is_cube {
+        return probe_lut(file);
+    }
+    probe_media(file)
+}
+
+/// Reads a `.cube` file and checks it parses as a 3D LUT.
+fn probe_lut(file: &Path) -> Result<Probed, ApiError> {
+    let text = std::fs::read_to_string(file).map_err(|e| {
+        ApiError::new(
+            codes::PROBE_FAILED,
+            format!("cannot read {}: {e}", file.display()),
+        )
+    })?;
+    let lut = fosscut_render::lut::Lut3d::parse_cube(&text).map_err(|e| {
+        ApiError::new(
+            codes::PROBE_FAILED,
+            format!("{} is not a usable 3D LUT: {e}", file.display()),
+        )
+        .with_hint("FossCut reads Adobe/Resolve .cube files with LUT_3D_SIZE from 2 to 256.")
+    })?;
+    Ok(Probed {
+        kind: AssetKind::Lut,
+        info: MediaInfo {
+            lut: Some(fosscut_model::LutInfo { size: lut.size }),
+            ..MediaInfo::default()
+        },
+    })
+}
+
+/// Runs ffprobe on `file`.
+fn probe_media(file: &Path) -> Result<Probed, ApiError> {
     let output = Command::new(ffprobe_path())
         .args([
             "-v",
@@ -155,6 +190,7 @@ fn interpret(report: &Value) -> Option<Probed> {
             } else {
                 audio_info
             },
+            lut: None,
         },
     })
 }

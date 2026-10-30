@@ -527,6 +527,7 @@ mod thread_tests {
                     rotation: 0,
                 }),
                 audio: None,
+                lut: None,
             },
         });
         let doc = project.timelines.get_mut(&scene.timeline).unwrap();

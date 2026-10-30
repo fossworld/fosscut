@@ -261,3 +261,111 @@ fn each_property_rule_reports_its_code() {
         "an animation may grow from nothing"
     );
 }
+
+#[test]
+fn each_effect_rule_reports_its_code() {
+    use fosscut_model::{AssetRef, Effect, ParamValue};
+    let effect = |kind: &str, params: Vec<(&str, ParamValue)>| Effect {
+        id: Id::new(IdKind::Effect, 9),
+        effect_type: kind.into(),
+        version: 1,
+        enabled: true,
+        params: params
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+        keyframes: Default::default(),
+    };
+    let with = |effect: Effect| {
+        let mut clip = title();
+        clip.effects.push(effect);
+        codes(clip)
+    };
+    let n = ParamValue::Number;
+    assert!(with(effect("color.adjust", vec![("exposure", n(1.0))])).is_empty());
+    assert_eq!(
+        with(effect("color.glow", vec![])),
+        ["fosscut.model.effect_type"]
+    );
+    let mut newer = effect("color.adjust", vec![]);
+    newer.version = 2;
+    assert_eq!(with(newer), ["fosscut.model.effect_version"]);
+    let mut bad_id = effect("color.adjust", vec![]);
+    bad_id.id = Id::new(IdKind::Clip, 9);
+    assert_eq!(with(bad_id), ["fosscut.model.id_kind"]);
+    for (case, params) in [
+        ("unknown parameter", vec![("glow", n(1.0))]),
+        ("out of range", vec![("exposure", n(9.0))]),
+        ("wrong kind", vec![("exposure", ParamValue::Flag(true))]),
+    ] {
+        assert_eq!(
+            with(effect("color.adjust", params)),
+            ["fosscut.model.effect_param"],
+            "{case}"
+        );
+    }
+    assert_eq!(
+        with(effect(
+            "color.wheels",
+            vec![("lift", ParamValue::Pair([2.0, 0.0]))]
+        )),
+        ["fosscut.model.effect_param"]
+    );
+    assert_eq!(
+        with(effect(
+            "color.curves",
+            vec![("red", ParamValue::Points(vec![[0.5, 0.0], [0.4, 1.0]]))]
+        )),
+        ["fosscut.model.effect_param"],
+        "points out of order"
+    );
+    assert_eq!(
+        with(effect("color.lut", vec![])),
+        ["fosscut.model.effect_param"],
+        "a LUT effect needs its LUT"
+    );
+    assert_eq!(
+        with(effect(
+            "color.lut",
+            vec![(
+                "lut",
+                ParamValue::Asset(AssetRef {
+                    asset: Id::new(IdKind::Asset, 4)
+                })
+            )]
+        )),
+        ["fosscut.model.effect_param"],
+        "a missing asset"
+    );
+    let mut keyed = effect("color.adjust", vec![]);
+    keyed
+        .keyframes
+        .insert("exposure".into(), vec![key(0, KeyValue::Number(9.0))]);
+    keyed.keyframes.insert(
+        "contrast".into(),
+        vec![key(3, KeyValue::Number(0.0)), key(3, KeyValue::Number(0.1))],
+    );
+    let mut keyed_codes = with(keyed);
+    keyed_codes.sort();
+    assert_eq!(
+        keyed_codes,
+        ["fosscut.model.keyframe_value", "fosscut.model.keyframes"]
+    );
+    let mut curve_keys = effect("color.curves", vec![]);
+    curve_keys
+        .keyframes
+        .insert("red".into(), vec![key(0, KeyValue::Number(0.5))]);
+    assert_eq!(with(curve_keys), ["fosscut.model.keyframe_path"]);
+    let mut sound = Clip::new(
+        Id::new(IdKind::Clip, 3),
+        Flicks::ZERO,
+        frames(10),
+        ClipContent::Text(TextContent {
+            text: "x".into(),
+            style: TextStyle::default(),
+        }),
+    );
+    sound.effects.push(effect("color.adjust", vec![]));
+    sound.effects.push(effect("color.adjust", vec![]));
+    assert_eq!(codes(sound), ["fosscut.model.duplicate_id"]);
+}

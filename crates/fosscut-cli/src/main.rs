@@ -10,8 +10,9 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    CaptionsCommand, Cli, ClipCommand, Command, KeyframeCommand, MediaCommand, ModelsCommand,
-    ProjectCommand, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    AdjustmentCommand, CaptionsCommand, Cli, ClipCommand, ColorCommand, Command, EffectCommand,
+    KeyframeCommand, LookCommand, MediaCommand, ModelsCommand, ProjectCommand, SkillTarget,
+    SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -452,6 +453,35 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             skill,
         }) => install_skills(cli, *target, *user, dir.as_deref(), skill.as_deref()),
         Command::Captions(command) => captions(cli, command),
+        Command::Effect(command) => effect(cli, command),
+        Command::Adjustment(AdjustmentCommand::Add {
+            start,
+            duration,
+            effects,
+            track,
+        }) => {
+            let effects: Vec<Value> = effects.iter().map(|t| json!({ "type": t })).collect();
+            write(
+                cli,
+                "adjustment.add",
+                object(vec![
+                    ("start", some(&Some(start))),
+                    ("duration", some(&Some(duration))),
+                    ("effects", Some(json!(effects))),
+                    ("track", some(track)),
+                ]),
+            )
+        }
+        Command::Look(LookCommand::Apply {
+            look,
+            clip,
+            replace,
+        }) => write(
+            cli,
+            "look.apply",
+            json!({ "clip": clip, "look": look, "replace": replace }),
+        ),
+        Command::Color(command) => color(cli, command),
         Command::Models(ModelsCommand::List) => Ok(Outcome::Query(
             "models.list".into(),
             json!({
@@ -867,6 +897,93 @@ fn preset_for(output: &Path) -> Result<Preset, ApiError> {
 
 /// `fosscut captions ...`: generate and import become `captions.add` with the global write
 /// options; export writes an SRT file; style and edit run their commands.
+/// Parameters from `NAME=VALUE` arguments.
+fn params_of(values: &[String]) -> Result<Value, ApiError> {
+    let mut params = Map::new();
+    for text in values {
+        let (name, value) = property_value(text)?;
+        params.insert(name.to_string(), value);
+    }
+    Ok(Value::Object(params))
+}
+
+fn effect(cli: &Cli, command: &EffectCommand) -> Result<Outcome, ApiError> {
+    match command {
+        EffectCommand::Add {
+            clip,
+            effect_type,
+            params,
+            index,
+        } => write(
+            cli,
+            "effect.add",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("type", Some(json!(effect_type))),
+                ("params", Some(params_of(params)?)),
+                ("index", some(index)),
+            ]),
+        ),
+        EffectCommand::Set {
+            clip,
+            effect,
+            params,
+            reset,
+            enabled,
+        } => write(
+            cli,
+            "effect.set",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("effect", Some(json!(effect))),
+                ("params", Some(params_of(params)?)),
+                ("reset", Some(json!(reset))),
+                ("enabled", some(enabled)),
+            ]),
+        ),
+        EffectCommand::Remove { clip, effect } => write(
+            cli,
+            "effect.remove",
+            json!({ "clip": clip, "effect": effect }),
+        ),
+        EffectCommand::Move {
+            clip,
+            effect,
+            index,
+        } => write(
+            cli,
+            "effect.move",
+            json!({ "clip": clip, "effect": effect, "index": index }),
+        ),
+        EffectCommand::Copy { from, to, append } => write(
+            cli,
+            "effect.copy",
+            json!({ "from": from, "to": to, "append": append }),
+        ),
+    }
+}
+
+/// `fosscut color auto|match`: measures on this machine, then adds the correction with
+/// `effect.add` as one undoable step.
+fn color(cli: &Cli, command: &ColorCommand) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let parse = |id: &str, what: &str| {
+        Id::parse(id).map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+    };
+    let (clip, reference) = match command {
+        ColorCommand::Auto { clip } => (parse(clip, "clip")?, None),
+        ColorCommand::Match { clip, reference } => {
+            (parse(clip, "clip")?, Some(parse(reference, "reference")?))
+        }
+    };
+    let mut renderer = renderer()?;
+    let suggestion =
+        fosscut_engine::color::suggest(&snapshot, &path, &clip, reference.as_ref(), &mut renderer)
+            .map_err(|e| engine_error(&e))?;
+    write(cli, "effect.add", suggestion.effect_add)
+}
+
 fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
     match command {

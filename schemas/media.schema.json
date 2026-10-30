@@ -60,6 +60,11 @@
           "const": "image",
           "description": "A still image.",
           "type": "string"
+        },
+        {
+          "const": "lut",
+          "description": "A 3D color lookup table (`.cube`), used by the `color.lut` effect.",
+          "type": "string"
         }
       ]
     },
@@ -122,6 +127,21 @@
       "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
       "type": "string"
     },
+    "LutInfo": {
+      "description": "A LUT file's table.",
+      "properties": {
+        "size": {
+          "description": "Entries per axis, for example 33.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "size"
+      ],
+      "type": "object"
+    },
     "MediaInfo": {
       "description": "Stream information probed at import.",
       "properties": {
@@ -153,6 +173,17 @@
             }
           ],
           "description": "Playable duration; absent for still images."
+        },
+        "lut": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LutInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Size of a LUT asset's table."
         },
         "video": {
           "anyOf": [

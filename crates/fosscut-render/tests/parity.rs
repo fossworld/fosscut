@@ -46,6 +46,7 @@ fn project() -> (Project, Id) {
                     rotation: 0,
                 }),
                 audio: None,
+                lut: None,
             },
         });
     }

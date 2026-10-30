@@ -343,6 +343,235 @@
     {
       "input_schema": {
         "$defs": {
+          "EffectInput": {
+            "additionalProperties": false,
+            "description": "An effect to create: its type and parameters.",
+            "properties": {
+              "params": {
+                "additionalProperties": true,
+                "default": {},
+                "description": "Parameter values.",
+                "type": "object"
+              },
+              "type": {
+                "description": "The effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds an adjustment layer: a clip whose effects apply to every picture below it.",
+        "properties": {
+          "duration": {
+            "$ref": "#/$defs/TimeInput",
+            "description": "How long it lasts."
+          },
+          "effects": {
+            "default": [],
+            "description": "Effects to start with, applied in order.",
+            "items": {
+              "$ref": "#/$defs/EffectInput"
+            },
+            "type": "array"
+          },
+          "start": {
+            "$ref": "#/$defs/TimeInput",
+            "description": "Where it starts."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A video track; by default an adjustment track above every video track (created\nwhen needed), so titles and captions stay as they are."
+          }
+        },
+        "required": [
+          "start",
+          "duration"
+        ],
+        "title": "AdjustmentAdd",
+        "type": "object"
+      },
+      "name": "adjustment.add",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `adjustment.add`.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "effects": {
+            "description": "Its effects.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration",
+          "effects"
+        ],
+        "title": "AdjustmentAdded",
+        "type": "object"
+      },
+      "summary": "Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
@@ -2787,6 +3016,885 @@
     },
     {
       "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds an effect to a clip.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip: a video, image, text, caption or adjustment clip."
+          },
+          "index": {
+            "default": null,
+            "description": "Position in the clip's effects (0 applies first); last when omitted.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "Parameter values; the rest keep their defaults.",
+            "type": "object"
+          },
+          "type": {
+            "description": "The effect type, such as `color.adjust` (capabilities lists them under effects).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "type"
+        ],
+        "title": "EffectAdd",
+        "type": "object"
+      },
+      "name": "effect.add",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Copies one clip's effects to other clips.",
+        "properties": {
+          "append": {
+            "default": false,
+            "description": "Add after the receivers' own effects instead of replacing them.",
+            "type": "boolean"
+          },
+          "from": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip whose effects are copied."
+          },
+          "to": {
+            "description": "The clips that receive them.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "EffectCopy",
+        "type": "object"
+      },
+      "name": "effect.copy",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "EffectsChanged": {
+            "description": "A clip's effects after a change.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "The clip."
+              },
+              "effect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The effect the command added or changed, when there is one."
+              },
+              "effects": {
+                "description": "Every effect of the clip in the order they apply.",
+                "items": {
+                  "$ref": "#/$defs/EffectReport"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "clip",
+              "effects"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `effect.copy`.",
+        "properties": {
+          "clips": {
+            "description": "Every receiving clip with its effects now.",
+            "items": {
+              "$ref": "#/$defs/EffectsChanged"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "EffectsCopied",
+        "type": "object"
+      },
+      "summary": "Apply one clip's effects (with their keyframes) to other clips, replacing theirs or, with append, after them: the way to grade every clip alike."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Moves an effect to another place in the clip's order.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "$ref": "#/$defs/Id",
+            "description": "The effect."
+          },
+          "index": {
+            "description": "New position: 0 applies first.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "effect",
+          "index"
+        ],
+        "title": "EffectMove",
+        "type": "object"
+      },
+      "name": "effect.move",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Move an effect to another position in its clip's order; effects apply first to last."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes an effect from a clip.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "$ref": "#/$defs/Id",
+            "description": "The effect."
+          }
+        },
+        "required": [
+          "clip",
+          "effect"
+        ],
+        "title": "EffectRemove",
+        "type": "object"
+      },
+      "name": "effect.remove",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Remove an effect and its keyframes from a clip."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes an effect's parameters or turns it on or off.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "$ref": "#/$defs/Id",
+            "description": "The effect (`effect_…`)."
+          },
+          "enabled": {
+            "default": null,
+            "description": "false bypasses the effect, true applies it again.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "New parameter values.",
+            "type": "object"
+          },
+          "reset": {
+            "default": [],
+            "description": "Parameters to return to their defaults.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effect"
+        ],
+        "title": "EffectSet",
+        "type": "object"
+      },
+      "name": "effect.set",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Change an effect's parameters, reset some to their defaults, or bypass it (enabled: false). Parameters with keyframes are set with keyframe.set as effects.<id>.<param>."
+    },
+    {
+      "input_schema": {
         "additionalProperties": false,
         "type": "object"
       },
@@ -3578,7 +4686,7 @@
             "description": "Position from the clip's start, instead of `at`."
           },
           "property": {
-            "description": "An animatable property: `transform.position`, `transform.scale`,\n`transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,\n`crop.bottom`, `opacity`, `volume` or `audio.pan`.",
+            "description": "An animatable property: `transform.position`, `transform.scale`,\n`transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,\n`crop.bottom`, `opacity`, `volume` or `audio.pan`, or a numeric effect parameter as\n`effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`).",
             "type": "string"
           },
           "value": {
@@ -3982,7 +5090,174 @@
         "title": "KeyframesChanged",
         "type": "object"
       },
-      "summary": "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan."
+      "summary": "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Applies a built-in look: a set of effects with parameters chosen for a style.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip (an adjustment clip grades everything below it)."
+          },
+          "look": {
+            "description": "The look's name (capabilities lists them under looks).",
+            "type": "string"
+          },
+          "replace": {
+            "default": false,
+            "description": "Replace the clip's effects instead of adding after them.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "look"
+        ],
+        "title": "LookApply",
+        "type": "object"
+      },
+      "name": "look.apply",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards."
     },
     {
       "input_schema": {
@@ -4003,6 +5278,11 @@
               {
                 "const": "image",
                 "description": "A still image.",
+                "type": "string"
+              },
+              {
+                "const": "lut",
+                "description": "A 3D color lookup table (`.cube`), used by the `color.lut` effect.",
                 "type": "string"
               }
             ]
@@ -4061,6 +5341,21 @@
             "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
             "type": "integer"
           },
+          "LutInfo": {
+            "description": "A LUT file's table.",
+            "properties": {
+              "size": {
+                "description": "Entries per axis, for example 33.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "size"
+            ],
+            "type": "object"
+          },
           "MediaInfo": {
             "description": "Stream information probed at import.",
             "properties": {
@@ -4092,6 +5387,17 @@
                   }
                 ],
                 "description": "Playable duration; absent for still images."
+              },
+              "lut": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/LutInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Size of a LUT asset's table."
               },
               "video": {
                 "anyOf": [
@@ -5152,6 +6458,636 @@
       "summary": "Add an empty video, audio or text track; later tracks draw on top of earlier ones."
     }
   ],
+  "effects": [
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 4.0,
+          "meaning": "brightness in stops of light: 1 doubles it",
+          "min": -4.0,
+          "name": "exposure",
+          "unit": "stops"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "cooler (negative, bluer) or warmer (positive, more orange)",
+          "min": -1.0,
+          "name": "temperature"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "greener (negative) or more magenta (positive)",
+          "min": -1.0,
+          "name": "tint"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "flatter (negative) or punchier (positive) around mid gray",
+          "min": -1.0,
+          "name": "contrast"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens or lifts the midtones, keeping black and white",
+          "min": -1.0,
+          "name": "brightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or brightens (positive) the bright parts",
+          "min": -1.0,
+          "name": "highlights"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "deepens (negative) or lifts (positive) the dark parts",
+          "min": -1.0,
+          "name": "shadows"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "moves the white point: positive clips more to white",
+          "min": -1.0,
+          "name": "whites"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "moves the black point: positive lifts the blacks",
+          "min": -1.0,
+          "name": "blacks"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 is black and white, 1 doubles the color",
+          "min": -1.0,
+          "name": "saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "like saturation, but mostly on muted colors",
+          "min": -1.0,
+          "name": "vibrance"
+        }
+      ],
+      "summary": "Exposure, white balance, contrast, tone ranges and saturation: the basic color corrections.",
+      "title": "Adjust",
+      "type": "color.adjust",
+      "version": 1
+    },
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": false,
+          "default": "identity",
+          "kind": "curve",
+          "max": 1.0,
+          "meaning": "the brightness curve, applied to all three channels first",
+          "min": 0.0,
+          "name": "master"
+        },
+        {
+          "animatable": false,
+          "default": "identity",
+          "kind": "curve",
+          "max": 1.0,
+          "meaning": "the red channel's curve",
+          "min": 0.0,
+          "name": "red"
+        },
+        {
+          "animatable": false,
+          "default": "identity",
+          "kind": "curve",
+          "max": 1.0,
+          "meaning": "the green channel's curve",
+          "min": 0.0,
+          "name": "green"
+        },
+        {
+          "animatable": false,
+          "default": "identity",
+          "kind": "curve",
+          "max": 1.0,
+          "meaning": "the blue channel's curve",
+          "min": 0.0,
+          "name": "blue"
+        }
+      ],
+      "summary": "Tone curves for brightness and for each of red, green and blue: control points from 0 to 1, joined smoothly without overshoot.",
+      "title": "Curves",
+      "type": "color.curves",
+      "version": 1
+    },
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "red_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "red_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "red_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "orange_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "orange_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "orange_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "yellow_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "yellow_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "yellow_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "green_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "green_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "green_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "aqua_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "aqua_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "aqua_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "blue_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "blue_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "blue_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "purple_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "purple_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "purple_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "turns this band's hues towards its neighbours, up to 30 degrees",
+          "min": -1.0,
+          "name": "magenta_hue"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "-1 removes this band's color, 1 doubles it",
+          "min": -1.0,
+          "name": "magenta_saturation"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens (negative) or lightens (positive) this band",
+          "min": -1.0,
+          "name": "magenta_lightness"
+        }
+      ],
+      "summary": "Hue, saturation and lightness for eight color bands: red, orange, yellow, green, aqua, blue, purple and magenta.",
+      "title": "HSL",
+      "type": "color.hsl",
+      "version": 1
+    },
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": true,
+          "default": [
+            0.0,
+            0.0
+          ],
+          "kind": "pair",
+          "max": 1.0,
+          "meaning": "color pushed into the shadows: direction is the hue, length the strength",
+          "min": -1.0,
+          "name": "lift"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens or lifts the shadows",
+          "min": -1.0,
+          "name": "lift_luma"
+        },
+        {
+          "animatable": true,
+          "default": [
+            0.0,
+            0.0
+          ],
+          "kind": "pair",
+          "max": 1.0,
+          "meaning": "color pushed into the midtones",
+          "min": -1.0,
+          "name": "gamma"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens or lifts the midtones",
+          "min": -1.0,
+          "name": "gamma_luma"
+        },
+        {
+          "animatable": true,
+          "default": [
+            0.0,
+            0.0
+          ],
+          "kind": "pair",
+          "max": 1.0,
+          "meaning": "color pushed into the highlights",
+          "min": -1.0,
+          "name": "gain"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens or brightens the highlights",
+          "min": -1.0,
+          "name": "gain_luma"
+        },
+        {
+          "animatable": true,
+          "default": [
+            0.0,
+            0.0
+          ],
+          "kind": "pair",
+          "max": 1.0,
+          "meaning": "color added everywhere",
+          "min": -1.0,
+          "name": "offset"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "darkens or brightens everything",
+          "min": -1.0,
+          "name": "offset_luma"
+        }
+      ],
+      "summary": "Lift, gamma and gain wheels for shadows, midtones and highlights, and an offset for everything: each a color push [x, y] inside the unit circle plus a brightness amount.",
+      "title": "Color wheels",
+      "type": "color.wheels",
+      "version": 1
+    },
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "lut"
+          ],
+          "default": "required",
+          "kind": "asset",
+          "meaning": "the LUT asset: {\"asset\": \"asset_…\"} from importing a .cube file",
+          "name": "lut"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the LUT applies: 0 none, 1 all",
+          "min": 0.0,
+          "name": "intensity"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "keeps skin tones closer to the original",
+          "min": 0.0,
+          "name": "protect_skin"
+        }
+      ],
+      "summary": "Applies a 3D LUT from a .cube file imported as a media asset, with an intensity and protection for skin tones.",
+      "title": "LUT",
+      "type": "color.lut",
+      "version": 1
+    },
+    {
+      "category": "color",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "positive darkens the edges, negative lightens them",
+          "min": -1.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how far from the centre the vignette begins",
+          "min": 0.0,
+          "name": "midpoint"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "0 follows the picture's shape, 1 is a circle, -1 squarer",
+          "min": -1.0,
+          "name": "roundness"
+        },
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how soft the transition is",
+          "min": 0.0,
+          "name": "feather"
+        }
+      ],
+      "summary": "Darkens (or lightens) the edges of the picture.",
+      "title": "Vignette",
+      "type": "color.vignette",
+      "version": 1
+    },
+    {
+      "category": "detail",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.01,
+          "kind": "number",
+          "max": 0.2,
+          "meaning": "blur radius (one standard deviation) as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "radius",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Gaussian blur.",
+      "title": "Blur",
+      "type": "blur.gaussian",
+      "version": 1
+    },
+    {
+      "category": "detail",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 2.0,
+          "meaning": "strength: 0 none",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 0.002,
+          "kind": "number",
+          "max": 0.02,
+          "meaning": "size of the detail sharpened, as a fraction of the picture's height",
+          "min": 0.0005,
+          "name": "radius",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Sharpens edges with an unsharp mask.",
+      "title": "Sharpen",
+      "type": "detail.sharpen",
+      "version": 1
+    },
+    {
+      "category": "stylize",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.2,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how visible the grain is",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 4.0,
+          "meaning": "grain size: 1 is fine grain at 1080p",
+          "min": 0.5,
+          "name": "size"
+        }
+      ],
+      "summary": "Adds moving film grain, the same on every render of a frame.",
+      "title": "Film grain",
+      "type": "stylize.grain",
+      "version": 1
+    }
+  ],
   "errors": [
     {
       "code": "fosscut.request.invalid",
@@ -5269,6 +7205,21 @@
       "meaning": "The keyframe time is outside the clip."
     },
     {
+      "code": "fosscut.effect.unknown_type",
+      "hint": "List the effect types and their parameters with capabilities (under effects).",
+      "meaning": "No effect type has this name."
+    },
+    {
+      "code": "fosscut.effect.not_found",
+      "hint": "Read the clip's effects with timeline.read; effect ids look like effect_0007.",
+      "meaning": "The clip has no effect with this id."
+    },
+    {
+      "code": "fosscut.look.unknown",
+      "hint": "List the looks with capabilities (under looks).",
+      "meaning": "No built-in look has this name."
+    },
+    {
       "code": "fosscut.asset.not_found",
       "hint": "List assets with media.list.",
       "meaning": "The asset does not exist."
@@ -5369,7 +7320,256 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.3.0",
+  "format_version": "0.4.0",
+  "looks": [
+    {
+      "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",
+      "effects": [
+        {
+          "params": {
+            "saturation": 0.1,
+            "temperature": 0.35,
+            "tint": 0.05,
+            "vibrance": 0.1
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "warm",
+      "title": "Warm"
+    },
+    {
+      "description": "A cooler, crisper picture with a touch more contrast.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.1,
+            "temperature": -0.35,
+            "tint": -0.05
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "cool",
+      "title": "Cool"
+    },
+    {
+      "description": "Teal shadows and warm highlights that make skin tones stand out, a common cinematic grade.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.15,
+            "saturation": 0.15
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "gain": [
+              0.16,
+              0.09
+            ],
+            "lift": [
+              -0.22,
+              -0.04
+            ]
+          },
+          "type": "color.wheels"
+        }
+      ],
+      "name": "teal_orange",
+      "title": "Teal and orange"
+    },
+    {
+      "description": "Muted, warm and soft, with lifted blacks, a vignette and grain, like old film.",
+      "effects": [
+        {
+          "params": {
+            "blacks": 0.25,
+            "contrast": -0.15,
+            "saturation": -0.25,
+            "temperature": 0.2
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "amount": 0.3
+          },
+          "type": "color.vignette"
+        },
+        {
+          "params": {
+            "amount": 0.25
+          },
+          "type": "stylize.grain"
+        }
+      ],
+      "name": "vintage",
+      "title": "Vintage"
+    },
+    {
+      "description": "Contrasty black and white with a dark vignette.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.35,
+            "saturation": -1
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "amount": 0.35
+          },
+          "type": "color.vignette"
+        },
+        {
+          "params": {
+            "amount": 0.15
+          },
+          "type": "stylize.grain"
+        }
+      ],
+      "name": "noir",
+      "title": "Noir"
+    },
+    {
+      "description": "Warm-toned monochrome.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.1,
+            "saturation": -1
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "gain": [
+              0.12,
+              0.07
+            ],
+            "gamma": [
+              0.2,
+              0.12
+            ]
+          },
+          "type": "color.wheels"
+        }
+      ],
+      "name": "sepia",
+      "title": "Sepia"
+    },
+    {
+      "description": "Low contrast with milky blacks and softened highlights.",
+      "effects": [
+        {
+          "params": {
+            "blacks": 0.35,
+            "contrast": -0.25,
+            "highlights": -0.2,
+            "saturation": -0.15
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "faded",
+      "title": "Faded"
+    },
+    {
+      "description": "Rich color and a little punch, for food, travel and product shots.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.15,
+            "saturation": 0.3,
+            "vibrance": 0.3
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "vivid",
+      "title": "Vivid"
+    },
+    {
+      "description": "Late-afternoon warmth with open shadows and a soft vignette.",
+      "effects": [
+        {
+          "params": {
+            "highlights": -0.15,
+            "saturation": 0.15,
+            "shadows": 0.15,
+            "temperature": 0.5,
+            "tint": 0.1
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "amount": 0.15
+          },
+          "type": "color.vignette"
+        }
+      ],
+      "name": "golden_hour",
+      "title": "Golden hour"
+    },
+    {
+      "description": "Darker, cooler and more contrasty, with deep shadows.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.25,
+            "exposure": -0.3,
+            "saturation": -0.2,
+            "shadows": -0.2,
+            "temperature": -0.15
+          },
+          "type": "color.adjust"
+        },
+        {
+          "params": {
+            "amount": 0.3
+          },
+          "type": "color.vignette"
+        }
+      ],
+      "name": "moody",
+      "title": "Moody"
+    },
+    {
+      "description": "Bright, soft and gently colored.",
+      "effects": [
+        {
+          "params": {
+            "blacks": 0.2,
+            "brightness": 0.2,
+            "contrast": -0.3,
+            "saturation": -0.1
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "pastel",
+      "title": "Pastel"
+    },
+    {
+      "description": "Silvery and harsh: low saturation with strong contrast.",
+      "effects": [
+        {
+          "params": {
+            "contrast": 0.4,
+            "saturation": -0.5,
+            "whites": 0.1
+          },
+          "type": "color.adjust"
+        }
+      ],
+      "name": "bleach_bypass",
+      "title": "Bleach bypass"
+    }
+  ],
   "properties": [
     {
       "animatable": true,

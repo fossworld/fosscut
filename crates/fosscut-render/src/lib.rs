@@ -9,6 +9,7 @@
 
 pub mod caption;
 pub mod color;
+pub mod effects;
 mod error;
 pub mod geometry;
 mod gpu;

@@ -158,6 +158,43 @@ pub async fn execute(state: State<'_, AppState>, request: Request) -> Answer<Res
     blocking(move || workspace.execute(request)).await
 }
 
+/// Measures a clip (and a reference, for a match) and returns the `effect.add` arguments
+/// of the color correction; the window applies them with `execute`, as any edit.
+#[tauri::command]
+pub async fn color_suggest(
+    state: State<'_, AppState>,
+    clip: String,
+    reference: Option<String>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let parse = |text: &str| {
+            fosscut_model::Id::parse(text).map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, e))
+        };
+        let clip = parse(&clip)?;
+        let reference = reference.as_deref().map(parse).transpose()?;
+        let (bundle, project, _) = workspace
+            .snapshot()
+            .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+        let mut renderer = fosscut_render::Renderer::headless()
+            .map_err(|e| ApiError::new(e.code(), e.to_string()))?;
+        let suggestion = fosscut_engine::color::suggest(
+            &project,
+            &bundle,
+            &clip,
+            reference.as_ref(),
+            &mut renderer,
+        )
+        .map_err(ApiError::from)?;
+        Ok(json!({
+            "effect_add": suggestion.effect_add,
+            "measured": suggestion.stats,
+            "reference": suggestion.reference,
+        }))
+    })
+    .await
+}
+
 /// The agents and other front ends connected to the open project.
 #[tauri::command]
 pub fn clients(state: State<'_, AppState>) -> Vec<ClientInfo> {
