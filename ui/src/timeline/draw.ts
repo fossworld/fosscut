@@ -36,6 +36,32 @@ const KIND_NAMES: Record<string, string> = {
 export interface DrawState {
   playhead: number;
   selection: string | null;
+  /** A clip being dragged, and where it would land. */
+  drag?: { clip: string; start: number; end: number; track: string } | null;
+}
+
+/** Draws a clip's block and label between x0 and x1 on the row at y. */
+function block(ctx: CanvasRenderingContext2D, clip: ClipView, x0: number, x1: number, y: number, selected: boolean): void {
+  ctx.fillStyle = CLIP_COLORS[clip.kind] ?? "#5a5d66";
+  ctx.beginPath();
+  ctx.roundRect(x0 + 0.5, y + 4.5, x1 - x0 - 1, ROW - 9, 4);
+  ctx.fill();
+  if (selected) {
+    ctx.strokeStyle = COLORS.selection;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  if (x1 - x0 > 24) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0 + 6, y, x1 - x0 - 12, ROW);
+    ctx.clip();
+    ctx.fillStyle = COLORS.text;
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label(clip), x0 + 8, y + ROW / 2);
+    ctx.restore();
+  }
 }
 
 function label(clip: ClipView): string {
@@ -68,28 +94,22 @@ export function drawTimeline(
       const x0 = Math.max(HEADER, timeToX(clip.start.flicks, view));
       const x1 = Math.min(width, timeToX(clip.end.flicks, view));
       if (x1 - x0 < 1) continue;
-      ctx.fillStyle = CLIP_COLORS[clip.kind] ?? "#5a5d66";
-      ctx.beginPath();
-      ctx.roundRect(x0 + 0.5, y + 4.5, x1 - x0 - 1, ROW - 9, 4);
-      ctx.fill();
-      if (clip.id === state.selection) {
-        ctx.strokeStyle = COLORS.selection;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
-      if (x1 - x0 > 24) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x0 + 6, y, x1 - x0 - 12, ROW);
-        ctx.clip();
-        ctx.fillStyle = COLORS.text;
-        ctx.font = "12px system-ui, sans-serif";
-        ctx.textBaseline = "middle";
-        ctx.fillText(label(clip), x0 + 8, y + ROW / 2);
-        ctx.restore();
-      }
+      const dragged = state.drag?.clip === clip.id;
+      ctx.globalAlpha = dragged ? 0.3 : 1;
+      block(ctx, clip, x0, x1, y, !dragged && clip.id === state.selection);
+      ctx.globalAlpha = 1;
     }
   });
+
+  // Where a dragged clip would land.
+  const drag = state.drag;
+  const row = drag ? ordered.findIndex((t) => t.id === drag.track) : -1;
+  const dragged = drag ? timeline.tracks.flatMap((t) => t.clips).find((c) => c.id === drag.clip) : undefined;
+  if (drag && dragged && row >= 0) {
+    const x0 = Math.max(HEADER, timeToX(drag.start, view));
+    const x1 = Math.min(width, timeToX(drag.end, view));
+    if (x1 - x0 >= 1) block(ctx, dragged, x0, x1, rowY(row), true);
+  }
 
   // Ruler with labels on round steps.
   ctx.fillStyle = COLORS.ruler;

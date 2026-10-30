@@ -251,6 +251,29 @@ fn works_without_media_tools() {
         json!(1),
         "the failed batch changed nothing"
     );
+
+    // Trimming moves an edge; a title has no media to run out of.
+    let clip = title["results"][0]["clip"].as_str().unwrap().to_string();
+    let trimmed = ok(
+        &dir,
+        &[
+            "clip",
+            "trim",
+            "--clip",
+            &clip,
+            "--start",
+            "30f",
+            "--end",
+            "00:00:05;00",
+        ],
+    );
+    assert_eq!(trimmed["results"][0]["start"]["frames"], json!(30));
+    assert_eq!(
+        trimmed["results"][0]["end"]["timecode"],
+        json!("00:00:05;00")
+    );
+    let nothing = fails(&dir, &["clip", "trim", "--clip", &clip]);
+    assert_eq!(nothing["code"], json!("fosscut.request.invalid_arguments"));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

@@ -2,15 +2,30 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
 import { drawTimeline } from "./draw";
-import { type View, hitTest, onRuler, scrollBy, xToTime, zoomAround, zoomToFit } from "./geometry";
+import { parseRate } from "../transport/time";
+import {
+  type Drag,
+  type DragTarget,
+  type View,
+  dragTarget,
+  grabAt,
+  hitTest,
+  onRuler,
+  scrollBy,
+  unchanged,
+  xToTime,
+  zoomAround,
+  zoomToFit,
+} from "./geometry";
 
 interface Props {
   editor: Editor;
   state: EditorState;
 }
 
-/** The timeline: click a clip to select it, drag on the ruler to move the playhead, scroll
- * to move along it, and pinch or Mod+scroll to zoom. */
+/** The timeline: click a clip to select it, drag it to move it, drag its edges to trim it,
+ * drag on the ruler to move the playhead, scroll to move along it, and pinch or Mod+scroll
+ * to zoom. */
 export function Timeline({ editor, state }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -19,6 +34,11 @@ export function Timeline({ editor, state }: Props) {
   const [view, setView] = useState<View>({ zoom: 60, scroll: 0, width: 800 });
   const fitted = useRef<string | null>(null);
   const scrubbing = useRef(false);
+  const dragging = useRef<Drag | null>(null);
+  // The latest drop target: state draws it, the ref is what a release commits, since a
+  // release can arrive before the last move has rendered.
+  const [target, setTarget] = useState<DragTarget | null>(null);
+  const latest = useRef<DragTarget | null>(null);
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -51,11 +71,16 @@ export function Timeline({ editor, state }: Props) {
     element.width = Math.round(size.width * scale);
     element.height = Math.round(size.height * scale);
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const drag = dragging.current;
     drawTimeline(ctx, timeline, { ...view, width: size.width }, size.height, {
       playhead: state.playhead,
       selection: state.selection,
+      drag:
+        drag && target
+          ? { clip: drag.clip.id, start: target.start, end: target.end, track: target.track.id }
+          : null,
     });
-  }, [timeline, view, size, state.playhead, state.selection]);
+  }, [timeline, view, size, state.playhead, state.selection, target]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -94,12 +119,51 @@ export function Timeline({ editor, state }: Props) {
           }
           const hit = hitTest(timeline, view, x, y);
           editor.select(hit?.clip?.id ?? null);
+          if (hit?.clip) {
+            dragging.current = { clip: hit.clip, track: hit.track, mode: grabAt(hit.clip, view, x), fromX: x };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }
         }}
         onPointerMove={(event) => {
-          if (scrubbing.current) void editor.seek(xToTime(pointer(event).x, view));
+          const { x, y } = pointer(event);
+          if (scrubbing.current) {
+            void editor.seek(xToTime(x, view));
+            return;
+          }
+          const drag = dragging.current;
+          if (drag && timeline) {
+            const next = dragTarget(drag, timeline, view, x, y, parseRate(timeline.format.rate));
+            latest.current = unchanged(drag, next) ? null : next;
+            setTarget(latest.current);
+            return;
+          }
+          // Show what a press would grab.
+          const hit = timeline ? hitTest(timeline, view, x, y) : null;
+          const grab = hit?.clip ? grabAt(hit.clip, view, x) : null;
+          event.currentTarget.style.cursor = grab === "move" ? "grab" : grab ? "ew-resize" : "default";
         }}
         onPointerUp={() => {
           scrubbing.current = false;
+          const drag = dragging.current;
+          const target = latest.current;
+          dragging.current = null;
+          latest.current = null;
+          setTarget(null);
+          if (!drag || !target) return;
+          if (drag.mode === "move") {
+            const track = target.track.id !== drag.track.id ? target.track.id : undefined;
+            void editor.moveClip(drag.clip.id, target.start, track);
+          } else if (drag.mode === "trim-start") {
+            void editor.trimClip(drag.clip.id, { start: target.start });
+          } else {
+            void editor.trimClip(drag.clip.id, { end: target.end });
+          }
+        }}
+        onPointerCancel={() => {
+          scrubbing.current = false;
+          dragging.current = null;
+          latest.current = null;
+          setTarget(null);
         }}
       />
     </div>

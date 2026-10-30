@@ -288,6 +288,130 @@ impl Command for ClipMove {
     }
 }
 
+/// Moves a clip's edges: shorter, or longer into more of its media.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClipTrim {
+    /// The clip to trim.
+    pub clip: Id,
+    /// New timeline position of the clip's first frame. What plays under the rest of the
+    /// clip stays where it is: media starts later or earlier in its source. Unchanged when
+    /// omitted.
+    #[serde(default)]
+    pub start: Option<TimeInput>,
+    /// New timeline position just after the clip's last frame; unchanged when omitted.
+    #[serde(default)]
+    pub end: Option<TimeInput>,
+}
+
+impl Command for ClipTrim {
+    const NAME: &'static str = "clip.trim";
+    const SUMMARY: &'static str = "Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.";
+    type Output = ClipPlacement;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
+        if self.start.is_none() && self.end.is_none() {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "clip.trim: give a new start, a new end, or both",
+            ));
+        }
+        let location = locate_clip(ctx.project, &self.clip)?;
+        let asset_duration =
+            |asset: &Id| ctx.project.media.get(asset).and_then(|a| a.info.duration);
+        let original = ctx.project.timelines[&location.timeline].tracks[location.track].clips
+            [location.clip]
+            .clone();
+        let total = match &original.content {
+            ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
+                asset_duration(asset)
+            }
+            _ => None,
+        };
+        let timeline = timeline_mut(ctx.project, &location.timeline)?;
+        let rate = timeline.format.rate;
+        let track = &mut timeline.tracks[location.track];
+        ensure_unlocked(track)?;
+        let start = match &self.start {
+            Some(start) => resolve(start, rate)?,
+            None => original.start,
+        };
+        let end = match &self.end {
+            Some(end) => resolve(end, rate)?,
+            None => original.end(),
+        };
+        let duration = end - start;
+        ensure_valid_range(start, duration)?;
+        let shift = start - original.start;
+        let mut trimmed = original.clone();
+        trimmed.start = start;
+        trimmed.duration = duration;
+        match &mut trimmed.content {
+            ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
+                let moved = *source_in + shift;
+                if moved.is_negative() || total.is_some_and(|total| moved + duration > total) {
+                    return Err(ApiError::new(
+                        codes::CLIP_SOURCE_RANGE,
+                        format!("{} would read outside its media", original.id),
+                    )
+                    .with_details(json!({
+                        "source_in": TimeReport::new(moved, rate),
+                        "duration": TimeReport::new(duration, rate),
+                        "asset_duration": total.map(|t| TimeReport::new(t, rate)),
+                    }))
+                    .with_hint("Keep the edges within the media: the clip can start no earlier than the media's first frame and end no later than its last."));
+                }
+                *source_in = moved;
+            }
+            ClipContent::Caption(caption) => {
+                *caption = trim_caption(caption, shift, duration).ok_or_else(|| {
+                    ApiError::new(
+                        codes::CAPTIONS_INVALID_WORDS,
+                        format!("trimming {} would leave it without words", original.id),
+                    )
+                    .with_hint("Keep at least one word inside the clip, or remove the caption clip instead.")
+                })?;
+            }
+            ClipContent::Image { .. } | ClipContent::Text(_) => {}
+        }
+        ensure_free(track, start, end, Some(&original.id), rate)?;
+        track.clips.remove(location.clip);
+        let placement = ClipPlacement::of(&trimmed, &track.id, rate);
+        insert_sorted(track, trimmed);
+        Ok(placement)
+    }
+}
+
+/// A caption page after its start moved by `shift` and its length became `duration`:
+/// words before the new start or after the new end go, times follow the start. `None`
+/// when no word is left.
+fn trim_caption(
+    caption: &fosscut_model::CaptionContent,
+    shift: Flicks,
+    duration: Flicks,
+) -> Option<fosscut_model::CaptionContent> {
+    let mut page = caption.clone();
+    if shift.is_positive() {
+        page = split_caption(&page, shift)?.1;
+    } else if shift.is_negative() {
+        for word in page.lines.iter_mut().flat_map(|line| line.words.iter_mut()) {
+            word.start = word.start - shift;
+            word.end = word.end - shift;
+        }
+    }
+    let length = page
+        .lines
+        .iter()
+        .flat_map(|line| &line.words)
+        .map(|word| word.end)
+        .max()
+        .unwrap_or(Flicks::ZERO);
+    if duration < length {
+        page = split_caption(&page, duration)?.0;
+    }
+    Some(page)
+}
+
 /// Removes a clip, optionally closing the gap.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

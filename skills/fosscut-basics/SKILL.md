@@ -29,7 +29,7 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 
-The commands `edit` runs include `clip.add`, `clip.split`, `clip.move`, `clip.remove`, `text.add` and `track.add`. Before using one the first time, ask `capabilities` for it by name to get its arguments; do not guess field names. `detail: "full"` returns every schema at once and is too large to read comfortably.
+The commands `edit` runs include `clip.add`, `clip.split`, `clip.move`, `clip.trim` (move a clip's start or end edge), `clip.remove`, `text.add` and `track.add`. Before using one the first time, ask `capabilities` for it by name to get its arguments; do not guess field names. `detail: "full"` returns every schema at once and is too large to read comfortably.
 
 ## The safe editing loop
 

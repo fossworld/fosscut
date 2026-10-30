@@ -43,6 +43,16 @@ export interface Opened {
   info: ProjectInfo;
 }
 
+/** Placement on the canvas; omitted fields are at their defaults. */
+export interface Transform {
+  /** Offset of the clip's centre from the canvas centre, in fractions of its size. */
+  position?: [number, number];
+  /** Scale relative to the fitted size; 1 when omitted. */
+  scale?: number;
+  /** Clockwise rotation in degrees. */
+  rotation?: number;
+}
+
 export interface ClipView {
   id: string;
   kind: string;
@@ -51,6 +61,10 @@ export interface ClipView {
   duration: Moment;
   text?: string;
   asset_name?: string;
+  source_in?: Moment;
+  transform?: Transform;
+  opacity?: number;
+  volume?: number;
 }
 
 export interface TrackView {

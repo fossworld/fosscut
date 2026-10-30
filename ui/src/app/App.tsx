@@ -2,8 +2,10 @@ import { useEffect, useSyncExternalStore } from "react";
 
 import { type Action, actionFor, isTyping } from "../keyboard";
 import { Activity } from "../panels/Activity";
+import { Inspector } from "../panels/Inspector";
 import { who } from "../panels/runs";
 import { PreviewHole } from "../preview/PreviewHole";
+import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
 import { Transport } from "../transport/Transport";
 import type { Editor } from "./editor";
@@ -70,6 +72,7 @@ export function App({ editor }: { editor: Editor }) {
   }, [editor, open]);
 
   const agents = state.clients.filter((c) => c.name.startsWith("agent:"));
+  const selected = state.timeline && state.selection ? findClip(state.timeline, state.selection) : null;
   return (
     <div className={open ? "app" : "app empty"}>
       {state.notice && (
@@ -102,7 +105,10 @@ export function App({ editor }: { editor: Editor }) {
           </header>
           <main>
             <PreviewHole editor={editor} />
-            <Activity editor={editor} state={state} />
+            <aside className="activity">
+              {selected && <Inspector editor={editor} clip={selected} />}
+              <Activity editor={editor} state={state} />
+            </aside>
           </main>
           <Transport editor={editor} state={state} />
           <Timeline editor={editor} state={state} />

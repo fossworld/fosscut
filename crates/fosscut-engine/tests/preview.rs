@@ -9,7 +9,7 @@ mod common;
 use common::{frames, project, renderer, workspace};
 use fosscut_engine::EngineError;
 use fosscut_engine::frame::frame;
-use fosscut_engine::preview::Previewer;
+use fosscut_engine::preview::{Previewer, Sound};
 use fosscut_model::{Id, IdKind, Project, TrackKind};
 use fosscut_time::Flicks;
 
@@ -166,4 +166,68 @@ fn bad_requests_get_typed_errors() {
         Err(EngineError::InvalidArguments { .. })
     ));
     assert!(Previewer::size(&project, &unknown, (100, 100)).is_err());
+}
+
+fn has_ffmpeg() -> bool {
+    let present = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    assert!(
+        present || !common::required("FOSSCUT_REQUIRE_FFMPEG"),
+        "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+    );
+    present
+}
+
+fn rms(samples: &[f32]) -> f32 {
+    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len().max(1) as f32).sqrt()
+}
+
+#[test]
+fn playback_sound_is_the_timeline_mixed_in_spans() {
+    if !has_ffmpeg() {
+        return;
+    }
+    let project = project("../clip.mp4");
+    let timeline = project.manifest.primary_timeline.clone();
+    let mut sound = Sound::new();
+    let half = Flicks::from_millis(500);
+    let first = sound
+        .mix(
+            &project,
+            &bundle(),
+            &timeline,
+            Flicks::ZERO,
+            half,
+            48_000,
+            2,
+        )
+        .unwrap();
+    assert_eq!((first.sample_rate, first.channels), (48_000, 2));
+    assert_eq!(first.samples.len(), 48_000);
+    assert!(rms(&first.samples) > 0.02, "the clip's tone plays");
+    // The next span continues from the same decoder; past the 1 s timeline it is silent.
+    let second = sound
+        .mix(&project, &bundle(), &timeline, half, half, 48_000, 2)
+        .unwrap();
+    assert!(rms(&second.samples) > 0.02);
+    let after = sound
+        .mix(
+            &project,
+            &bundle(),
+            &timeline,
+            Flicks::from_millis(1200),
+            half,
+            48_000,
+            2,
+        )
+        .unwrap();
+    assert_eq!(rms(&after.samples), 0.0);
+
+    let gone = common::project("../gone.mp4");
+    let error = Sound::new()
+        .mix(&gone, &bundle(), &timeline, Flicks::ZERO, half, 48_000, 2)
+        .unwrap_err();
+    assert!(error.to_string().contains("asset"), "{error}");
 }

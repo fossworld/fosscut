@@ -27,6 +27,7 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
         "clip.add" => json!({ "asset": asset, "source_in": { "frames": 30 }, "duration": "2s" }),
         "clip.split" => json!({ "clip": clip, "at": "00:00:03:28" }),
         "clip.move" => json!({ "clip": clip, "start": { "seconds": "1" } }),
+        "clip.trim" => json!({ "clip": clip, "start": "1s", "end": "5s" }),
         "clip.remove" => {
             let title = run(&mut session, "text.add", json!({ "text": "Remove me" }));
             json!({ "clip": title.results[0]["clip"] })

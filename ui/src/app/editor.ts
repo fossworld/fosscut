@@ -321,6 +321,27 @@ export class Editor {
     await this.edit([{ command: "clip.split", args: { clip: chosen.id, at: { flicks: at } } }]);
   }
 
+  /** Moves a clip to `start` (flicks), and to `track` when given. */
+  async moveClip(clip: string, start: number, track?: string): Promise<void> {
+    const args: Record<string, unknown> = { clip, start: { flicks: start } };
+    if (track) args.track = track;
+    await this.edit([{ command: "clip.move", args }]);
+  }
+
+  /** Moves a clip's start or end edge (flicks). */
+  async trimClip(clip: string, edges: { start?: number; end?: number }): Promise<void> {
+    const args: Record<string, unknown> = { clip };
+    if (edges.start !== undefined) args.start = { flicks: edges.start };
+    if (edges.end !== undefined) args.end = { flicks: edges.end };
+    await this.edit([{ command: "clip.trim", args }]);
+  }
+
+  /** Sets clip properties by path (`transform.position`, `opacity`, ...) as one step. */
+  async setProperties(clip: string, set: Record<string, unknown>): Promise<void> {
+    if (Object.keys(set).length === 0) return;
+    await this.edit([{ command: "clip.set", args: { clip, set } }]);
+  }
+
   async undo(): Promise<void> {
     if (this.state.opened?.info.can_undo) await this.edit([{ command: "history.undo" }]);
   }

@@ -108,6 +108,7 @@ commands:
   clip.remove    Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
   clip.set       Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
+  clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.
   history.redo   Redo the most recently undone transaction. Must be the only command in its request.
   history.undo   Undo the most recent committed transaction. Must be the only command in its request.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).

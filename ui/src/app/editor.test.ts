@@ -224,4 +224,22 @@ describe("editor", () => {
     await editor.refreshClients();
     expect(editor.getState().clients.map((c) => c.name)).toEqual(["agent:claude-code"]);
   });
+
+  it("moves, trims and sets properties as single commands", async () => {
+    const { editor, fake } = await started();
+    await editor.moveClip("clip_0005", 3 * FLICKS_PER_SECOND);
+    await editor.moveClip("clip_0003", 0, "track_0009");
+    await editor.trimClip("clip_0003", { start: FLICKS_PER_SECOND });
+    await editor.trimClip("clip_0003", { end: 2 * FLICKS_PER_SECOND });
+    await editor.setProperties("clip_0003", { opacity: 0.5, "transform.scale": 2 });
+    await editor.setProperties("clip_0003", {});
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "clip.move", args: { clip: "clip_0005", start: { flicks: 3 * FLICKS_PER_SECOND } } },
+      { command: "clip.move", args: { clip: "clip_0003", start: { flicks: 0 }, track: "track_0009" } },
+      { command: "clip.trim", args: { clip: "clip_0003", start: { flicks: FLICKS_PER_SECOND } } },
+      { command: "clip.trim", args: { clip: "clip_0003", end: { flicks: 2 * FLICKS_PER_SECOND } } },
+      { command: "clip.set", args: { clip: "clip_0003", set: { opacity: 0.5, "transform.scale": 2 } } },
+    ]);
+  });
 });

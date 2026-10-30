@@ -33,6 +33,13 @@ Milestone 2 built the compositor in `fosscut-render` on wgpu 30:
 - **Graphs:** `ExportGraph` (every frame, full resolution, readback) and `PreviewGraph` (on demand, fitted to a preview size, into any texture view such as a window surface) share the plan and the renderer.
 - **Tests:** color bars against hand-computed values, layering, masks, LUTs, rotation, aliasing-free downscaling, golden frames compared by PSNR (`cargo xtask goldens`), and preview/export parity above 40 dB at three timestamps. CI runs them on Mesa lavapipe (Linux), WARP (Windows) and Metal (macOS) with `FOSSCUT_REQUIRE_GPU=1`.
 - **Audio mix** (milestone 3): `fosscut_audio::mix` renders any span of a timeline as interleaved 48 kHz stereo `f32`: audio clips, and the embedded audio of video clips, on unmuted tracks, each scaled by its clip's `volume`, summed and clamped to full scale. Positions are exact to the sample, since 48 kHz divides a second of flicks. Export mixes one frame's span at a time. Fades, pan, buses, loudness and playback come later.
+- **Preview playback** (milestone 5): the desktop preview graph is `fosscut_engine::preview`.
+  - **Frames:** `Previewer` renders frames on demand through the export's plan, renderer and media handling.
+  - **Sound:** `Sound` mixes spans with the export's mixer.
+  - **Audio clock:** the app mixes about 250 ms ahead into a queue that a `cpal` output stream drains in 32-bit float at the device's rate. The count of samples the device has played is the clock the picture follows. Silence played while the queue runs dry does not count, so the picture never runs ahead of the sound.
+  - **No device:** without an audio output, or one that plays no float format, playback keeps time by the wall clock.
+  - **Frame cache** (item 6, first part): the previewer keeps the most recently decoded frames, up to 256 MiB, dropping the least recently used first. A frame answers every time it covers, so scrubbing back over frames already shown skips the decoder's seek to the previous keyframe (about 220 ms on long-GOP sources).
+  - **Not yet:** frame dropping under load, and proxies for media never shown yet.
 
 ## Consequences
 
