@@ -18,6 +18,7 @@ pub mod lut;
 pub mod mask;
 pub mod plan;
 pub mod text;
+pub mod transitions;
 
 pub use error::RenderError;
 pub use gpu::{Image, Renderer};

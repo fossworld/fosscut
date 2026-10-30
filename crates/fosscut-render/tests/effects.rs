@@ -65,6 +65,7 @@ fn effect(kind: &str, values: &[(&str, ParamValue)]) -> PlannedEffect {
         effect_type: kind.into(),
         values: all,
         seed: 1,
+        time: 0.0,
     }
 }
 

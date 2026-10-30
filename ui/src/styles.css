@@ -456,6 +456,22 @@ body.browser .preview-hole::after {
   font: inherit;
 }
 
+.motion .choice span {
+  white-space: nowrap;
+}
+
+.motion .seconds {
+  width: 4.5em;
+  flex: none;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font: inherit;
+  text-align: right;
+}
+
 .options {
   margin-top: 8px;
 }

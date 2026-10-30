@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.5.0
+Demo (project_<random>)  revision 0  format 0.6.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,14 +93,15 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.5.0
+Demo (project_<random>)  revision 8  format 0.6.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.5.0
+API 0.1.0  project format 0.6.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
+  animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
@@ -128,6 +129,8 @@ commands:
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
   timeline.remove_ranges Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
+  transition.remove Remove the transition from a clip into the next one: a plain cut again.
+  transition.set Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it.
 queries:
   capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.
   history.list   Most recent operation log entries, newest first.

@@ -6,6 +6,7 @@ mod effect;
 mod keyframe;
 mod mask;
 mod media;
+mod motion;
 mod text;
 mod timeline;
 mod track;
@@ -28,6 +29,8 @@ pub use keyframe::{
 pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
 pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
+pub(crate) use motion::motion_capabilities;
+pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub use text::TextAdd;
 pub use timeline::{
     Fit, RangeInput, RangeReport, RangesRemoved, TimelineDuplicate, TimelineDuplicated,
@@ -58,6 +61,9 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<MaskAdd>();
     registry.register::<MaskSet>();
     registry.register::<MaskRemove>();
+    registry.register::<TransitionSet>();
+    registry.register::<TransitionRemove>();
+    registry.register::<AnimationSet>();
     registry.register::<TextAdd>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();

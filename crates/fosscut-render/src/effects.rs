@@ -18,6 +18,8 @@ pub struct PlannedEffect {
     pub values: BTreeMap<String, ParamValue>,
     /// Seed for effects that vary from frame to frame (grain): the frame's index.
     pub seed: u32,
+    /// Seconds since the clip's start, for effects that move over time.
+    pub time: f64,
 }
 
 impl PlannedEffect {
@@ -63,6 +65,8 @@ pub enum Pass {
     Blur,
     /// A blur, then the picture plus its difference from the blur.
     Sharpen,
+    /// One per-pixel pass that samples the input's mip levels.
+    Mipped(&'static str),
 }
 
 /// The pass of an effect type, or `None` for a type this renderer does not draw.
@@ -76,6 +80,18 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "color.vignette" => Pass::Pixel("fs_vignette"),
         "stylize.grain" => Pass::Pixel("fs_grain"),
         "key.chroma" => Pass::Pixel("fs_chroma"),
+        "stylize.glitch" => Pass::Pixel("fs_glitch"),
+        "stylize.rgb_split" => Pass::Pixel("fs_rgb_split"),
+        "stylize.pixelate" => Pass::Mipped("fs_pixelate"),
+        "stylize.vhs" => Pass::Pixel("fs_vhs"),
+        "stylize.mirror" => Pass::Pixel("fs_mirror"),
+        "stylize.posterize" => Pass::Pixel("fs_posterize"),
+        "stylize.invert" => Pass::Pixel("fs_invert"),
+        "motion.shake" => Pass::Pixel("fs_shake"),
+        "motion.zoom_blur" => Pass::Pixel("fs_zoom_blur"),
+        "motion.flash" => Pass::Pixel("fs_flash"),
+        "motion.rainbow" => Pass::Pixel("fs_rainbow"),
+        "motion.zoom_pulse" => Pass::Pixel("fs_zoom_pulse"),
         "blur.gaussian" => Pass::Blur,
         "detail.sharpen" => Pass::Sharpen,
         _ => return None,
@@ -83,7 +99,7 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
 }
 
 /// Every per-pixel entry point, for building pipelines.
-pub const PIXEL_ENTRIES: [&str; 12] = [
+pub const PIXEL_ENTRIES: [&str; 26] = [
     "fs_copy",
     "fs_mix",
     "fs_adjust",
@@ -94,6 +110,20 @@ pub const PIXEL_ENTRIES: [&str; 12] = [
     "fs_vignette",
     "fs_grain",
     "fs_chroma",
+    "fs_glitch",
+    "fs_rgb_split",
+    "fs_pixelate",
+    "fs_vhs",
+    "fs_mirror",
+    "fs_posterize",
+    "fs_invert",
+    "fs_shake",
+    "fs_zoom_blur",
+    "fs_flash",
+    "fs_rainbow",
+    "fs_zoom_pulse",
+    "fs_transition",
+    "fs_over",
     "fs_blur",
     "fs_sharpen",
 ];
@@ -132,6 +162,25 @@ pub fn pack(effect: &PlannedEffect, size: (u32, u32), lut_size: u32) -> [[f32; 4
             p[1] = [h / 1080.0, 0.0, 0.0, 0.0];
         }
         "detail.sharpen" => p[0] = [n("amount"), 0.0, 0.0, 0.0],
+        "stylize.glitch" => p[0] = [n("amount"), n("block"), (effect.seed % 4096) as f32, 0.0],
+        "stylize.rgb_split" => p[0] = [n("amount"), n("angle").to_radians(), 0.0, 0.0],
+        "stylize.pixelate" => p[0] = [n("size") * h, 0.0, 0.0, 0.0],
+        "stylize.vhs" => p[0] = [n("amount"), (effect.seed % 4096) as f32, 0.0, 0.0],
+        "stylize.mirror" => {
+            let mode = match effect.values.get("mode") {
+                Some(ParamValue::Name(m)) if m == "vertical" => 1.0,
+                Some(ParamValue::Name(m)) if m == "quad" => 2.0,
+                _ => 0.0,
+            };
+            p[0] = [mode, 0.0, 0.0, 0.0];
+        }
+        "stylize.posterize" => p[0] = [n("levels"), 0.0, 0.0, 0.0],
+        "stylize.invert" => p[0] = [n("amount"), 0.0, 0.0, 0.0],
+        "motion.shake" => p[0] = [n("amount"), n("speed"), effect.time as f32, 0.0],
+        "motion.zoom_blur" => p[0] = [n("amount"), 0.0, 0.0, 0.0],
+        "motion.flash" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
+        "motion.rainbow" => p[0] = [n("amount"), n("speed"), effect.time as f32, 0.0],
+        "motion.zoom_pulse" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
         "key.chroma" => {
             p[0] = [n("similarity"), n("smoothness"), n("spill"), 0.0];
             let color = match effect.values.get("color") {
@@ -263,6 +312,7 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
             seed: 0,
+            time: 0.0,
         }
     }
 

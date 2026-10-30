@@ -155,7 +155,14 @@ export class Editor {
   private async loadCatalog(): Promise<void> {
     try {
       const caps = await this.engine.query<Catalog>("capabilities", { detail: "full" });
-      this.set({ catalog: { effects: caps.effects ?? [], looks: caps.looks ?? [] } });
+      this.set({
+        catalog: {
+          effects: caps.effects ?? [],
+          looks: caps.looks ?? [],
+          transitions: caps.transitions ?? [],
+          animations: caps.animations ?? [],
+        },
+      });
     } catch {
       this.set({ catalog: null });
     }
@@ -428,6 +435,30 @@ export class Editor {
         if (made) this.set({ maskTool: { ...tool, mask: made.id } });
       }
     }
+  }
+
+  /** Sets the transition from a clip into the next, or removes it when `type` is empty. */
+  async setTransition(clip: string, type: string, seconds = 0.5, params: Record<string, unknown> = {}): Promise<void> {
+    if (!type) {
+      await this.edit([{ command: "transition.remove", args: { clip } }]);
+      return;
+    }
+    await this.edit([
+      { command: "transition.set", args: { clip, type, duration: { seconds: String(seconds) }, params } },
+    ]);
+  }
+
+  /** Sets or clears one of a clip's animations (`in`, `out` or `combo`). */
+  async setAnimation(clip: string, place: "in" | "out" | "combo", preset: string, seconds?: number): Promise<void> {
+    const args: Record<string, unknown> = { clip };
+    if (preset) {
+      const animation: Record<string, unknown> = { preset };
+      if (seconds !== undefined) animation.duration = { seconds: String(seconds) };
+      args[place] = animation;
+    } else {
+      args.clear = [place];
+    }
+    await this.edit([{ command: "animation.set", args }]);
   }
 
   /** Adds an effect at its defaults to the end of a clip's effects. */

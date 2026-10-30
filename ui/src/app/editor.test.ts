@@ -306,6 +306,37 @@ describe("editor", () => {
     ]);
   });
 
+  it("sets and removes transitions and animations", async () => {
+    const fake = engine();
+    fake.answers["capabilities"] = {
+      effects: [],
+      looks: [],
+      transitions: [{ type: "wipe", title: "Wipe", summary: "", params: [] }],
+      animations: [{ preset: "pulse", applies: "combo", meaning: "" }],
+    };
+    const { editor } = await started(fake);
+    expect(editor.getState().catalog?.transitions[0]?.type).toBe("wipe");
+    expect(editor.getState().catalog?.animations[0]?.applies).toBe("combo");
+    await editor.setTransition("clip_0003", "wipe", 1, { direction: "up" });
+    await editor.setTransition("clip_0003", "dissolve");
+    await editor.setTransition("clip_0003", "");
+    await editor.setAnimation("clip_0003", "in", "fade");
+    await editor.setAnimation("clip_0003", "combo", "pulse", 2);
+    await editor.setAnimation("clip_0003", "out", "");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      {
+        command: "transition.set",
+        args: { clip: "clip_0003", type: "wipe", duration: { seconds: "1" }, params: { direction: "up" } },
+      },
+      { command: "transition.set", args: { clip: "clip_0003", type: "dissolve", duration: { seconds: "0.5" }, params: {} } },
+      { command: "transition.remove", args: { clip: "clip_0003" } },
+      { command: "animation.set", args: { clip: "clip_0003", in: { preset: "fade" } } },
+      { command: "animation.set", args: { clip: "clip_0003", combo: { preset: "pulse", duration: { seconds: "2" } } } },
+      { command: "animation.set", args: { clip: "clip_0003", clear: ["out"] } },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

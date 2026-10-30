@@ -31,7 +31,11 @@ export function demoEngine(): FakeEngine {
     duration: moment(24),
     tracks: [
       track("track_0002", "video", 0, [
-        clip("clip_0003", "video", 0, 8, { asset_name: "interview.mp4" }),
+        clip("clip_0003", "video", 0, 8, {
+          asset_name: "interview.mp4",
+          transition: { type: "dissolve", duration: moment(1) },
+          animations: { in: { preset: "fade", duration: 352_800_000 } },
+        }),
         clip("clip_0006", "video", 8, 15, {
           asset_name: "b-roll.mp4",
           picture: [1920, 1080],
@@ -113,6 +117,20 @@ export function demoEngine(): FakeEngine {
     looks: [
       { name: "warm", title: "Warm", description: "A gentle warm cast." },
       { name: "noir", title: "Noir", description: "Contrasty black and white." },
+    ],
+    transitions: [
+      { type: "dissolve", title: "Dissolve", summary: "A cross-fade.", params: [] },
+      {
+        type: "push",
+        title: "Push",
+        summary: "The next clip pushes this one out.",
+        params: [{ name: "direction", kind: "choice", default: "left", choices: ["left", "right", "up", "down"], animatable: false, meaning: "where it moves" }],
+      },
+    ],
+    animations: [
+      { preset: "fade", applies: "in or out", meaning: "from or to transparent" },
+      { preset: "pop", applies: "in or out", meaning: "springs to size" },
+      { preset: "pulse", applies: "combo", meaning: "beats larger and back" },
     ],
   };
   engine.answers["media.list"] = {

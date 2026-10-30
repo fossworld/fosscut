@@ -8,6 +8,7 @@ use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
 use crate::mask::Mask;
+use crate::transition::{ClipAnimations, Transition};
 use crate::{Id, is_default};
 
 /// A timeline document (`timelines/<id>.json`).
@@ -168,6 +169,13 @@ pub struct Clip {
     /// adjustment clip, where its effects apply.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub masks: Vec<Mask>,
+    /// The transition into the next clip on the track, played over the cut when the next
+    /// clip starts where this one ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transition: Option<Transition>,
+    /// How the clip moves in, out and while it shows.
+    #[serde(default, skip_serializing_if = "ClipAnimations::is_empty")]
+    pub animations: ClipAnimations,
     /// Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted
     /// by time with at most one keyframe per time. A property with keyframes takes its
     /// value from them, not from its field.
@@ -192,6 +200,8 @@ impl Clip {
             enabled: true,
             effects: Vec::new(),
             masks: Vec::new(),
+            transition: None,
+            animations: ClipAnimations::default(),
             keyframes: BTreeMap::new(),
         }
     }

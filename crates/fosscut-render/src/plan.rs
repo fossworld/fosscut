@@ -3,7 +3,9 @@
 
 use std::sync::Arc;
 
-use fosscut_model::{BlendMode, ClipContent, Id, Project, TextContent, TrackKind, Transform};
+use fosscut_model::{
+    BlendMode, Clip, ClipContent, Id, Project, TextContent, Track, TrackKind, Transform, animate,
+};
 use fosscut_time::Flicks;
 
 use crate::RenderError;
@@ -33,6 +35,24 @@ pub enum LayerSource {
     /// An adjustment layer: its effects apply to everything below it, mixed by its
     /// opacity.
     Adjustment,
+    /// Two clips over the cut between them, mixed by a transition.
+    Transition(Box<TransitionLayer>),
+}
+
+/// A transition in progress: the clip it leaves and the one it enters, each as its own
+/// layer, and how far it has gone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransitionLayer {
+    /// The clip before the cut.
+    pub outgoing: Layer,
+    /// The clip after the cut.
+    pub incoming: Layer,
+    /// The transition type, such as `wipe`.
+    pub kind: String,
+    /// Its parameters that differ from the defaults.
+    pub params: std::collections::BTreeMap<String, fosscut_model::ParamValue>,
+    /// 0 at the start, 1 at the end.
+    pub progress: f64,
 }
 
 /// Mask shape, in the layer's displayed coordinates.
@@ -105,7 +125,7 @@ impl Layer {
         Layer::with_source(LayerSource::Caption(Box::new(caption)))
     }
 
-    fn with_source(source: LayerSource) -> Layer {
+    pub(crate) fn with_source(source: LayerSource) -> Layer {
         Layer {
             clip: None,
             source,
@@ -163,9 +183,120 @@ pub fn source_geometry(project: &Project, asset: &Id) -> Option<((u32, u32), u16
     ))
 }
 
+/// The layer of `clip` on `track` at timeline time `time`, or `None` when it draws
+/// nothing. `time` may lie outside the clip during a transition: video then shows the
+/// media beyond the clip's edges, held at the media's first and last frames.
+fn layer_for(
+    project: &Project,
+    format: &fosscut_model::TimelineFormat,
+    track: &Track,
+    clip: &Clip,
+    time: Flicks,
+) -> Option<Layer> {
+    if !clip.enabled {
+        return None;
+    }
+    let offset = time - clip.start;
+    let frame = u32::try_from(format.rate.frame_at(time).max(0)).unwrap_or(u32::MAX);
+    let effects: Vec<PlannedEffect> = clip
+        .effects
+        .iter()
+        .filter(|e| e.enabled)
+        .filter_map(|e| {
+            Some(PlannedEffect {
+                effect_type: e.effect_type.clone(),
+                values: e.values_at(offset)?,
+                seed: frame,
+                time: offset.as_seconds_f64(),
+            })
+        })
+        .collect();
+    let masks: Vec<fosscut_model::Mask> = clip
+        .masks
+        .iter()
+        .filter(|m| m.enabled)
+        .map(|m| m.at(offset))
+        .collect();
+    let motion = animate(&clip.animations, offset, clip.duration);
+    let mut transform = clip.transform_at(offset);
+    transform.position[0] += motion.offset[0];
+    transform.position[1] += motion.offset[1];
+    transform.scale *= motion.scale;
+    transform.rotation += motion.rotation;
+    let placed = |source: LayerSource, rotation: u16| Layer {
+        clip: Some(clip.id.clone()),
+        source,
+        rotation,
+        transform: transform.clone(),
+        crop: clip.crop_at(offset).kept(),
+        opacity: (clip.opacity_at(offset) * motion.opacity).clamp(0.0, 1.0) as f32,
+        blend: clip.blend,
+        mask: None,
+        lut: None,
+        effects: effects.clone(),
+        masks: masks.clone(),
+    };
+    let source = match (&clip.content, track.kind) {
+        (ClipContent::Video { asset, source_in }, TrackKind::Video) => {
+            let last = project
+                .media
+                .get(asset)
+                .and_then(|a| a.info.duration)
+                .map(|d| d - format.rate.frame_duration())
+                .unwrap_or(Flicks::new(i64::MAX));
+            let wanted = *source_in + offset;
+            SourceRef {
+                asset: asset.clone(),
+                time: wanted.max(Flicks::ZERO).min(last.max(Flicks::ZERO)),
+            }
+        }
+        (ClipContent::Image { asset }, TrackKind::Video) => SourceRef {
+            asset: asset.clone(),
+            time: Flicks::ZERO,
+        },
+        (ClipContent::Text(text), _) => return Some(placed(LayerSource::Text(text.clone()), 0)),
+        (ClipContent::Adjustment, TrackKind::Video) => {
+            return (!effects.is_empty()).then(|| placed(LayerSource::Adjustment, 0));
+        }
+        (ClipContent::Caption(caption), _) => {
+            let layer = CaptionLayer {
+                style: track.caption_style.clone().unwrap_or_default(),
+                content: caption.clone(),
+                time: offset,
+                duration: clip.duration,
+            };
+            return Some(placed(LayerSource::Caption(Box::new(layer)), 0));
+        }
+        _ => return None,
+    };
+    let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
+    Some(placed(LayerSource::Frame(source), rotation))
+}
+
+/// The transition playing on `track` at `time`: the clip it leaves, the clip it enters,
+/// and how far it has gone, 0 to 1. A transition is centred on the cut between a clip
+/// and the next one, when the next starts where the clip ends.
+fn transition_at(track: &Track, time: Flicks) -> Option<(&Clip, &Clip, f64)> {
+    track.clips.windows(2).find_map(|pair| {
+        let (out, into) = (&pair[0], &pair[1]);
+        let t = out.transition.as_ref()?;
+        if into.start != out.end() || !t.duration.is_positive() {
+            return None;
+        }
+        let half = Flicks::new(t.duration.get() / 2);
+        let begin = out.end() - half;
+        let end = begin + t.duration;
+        (begin <= time && time < end).then(|| {
+            let progress = (time - begin).get() as f64 / t.duration.get() as f64;
+            (out, into, progress)
+        })
+    })
+}
+
 /// Plans the frame of `timeline` displayed at `time`: every visible, enabled video, image,
 /// text and caption clip that covers `time`, bottom track first, with its keyframed
-/// properties evaluated at that time.
+/// properties and animations evaluated at that time. Over a cut with a transition, the
+/// two clips form one transition layer.
 pub fn plan_frame(
     project: &Project,
     timeline: &Id,
@@ -179,6 +310,31 @@ pub fn plan_frame(
         })?;
     let mut plan = RenderPlan::empty((doc.format.width, doc.format.height));
     for track in doc.tracks.iter().filter(|t| !t.hidden) {
+        if let Some((out, into, progress)) = transition_at(track, time) {
+            let (Some(outgoing), Some(incoming)) = (
+                layer_for(project, &doc.format, track, out, time),
+                layer_for(project, &doc.format, track, into, time),
+            ) else {
+                // One side is off or empty: show the other one alone.
+                let clip = if time < out.end() { out } else { into };
+                plan.layers
+                    .extend(layer_for(project, &doc.format, track, clip, time));
+                continue;
+            };
+            if let Some(t) = &out.transition {
+                plan.layers.push(Layer {
+                    clip: into.id.clone().into(),
+                    ..Layer::with_source(LayerSource::Transition(Box::new(TransitionLayer {
+                        outgoing,
+                        incoming,
+                        kind: t.transition_type.clone(),
+                        params: t.params.clone(),
+                        progress,
+                    })))
+                });
+            }
+            continue;
+        }
         let Some(clip) = track
             .clips
             .iter()
@@ -186,77 +342,8 @@ pub fn plan_frame(
         else {
             continue;
         };
-        if !clip.enabled {
-            continue;
-        }
-        let offset = time - clip.start;
-        let frame = u32::try_from(doc.format.rate.frame_at(time).max(0)).unwrap_or(u32::MAX);
-        let effects: Vec<PlannedEffect> = clip
-            .effects
-            .iter()
-            .filter(|e| e.enabled)
-            .filter_map(|e| {
-                Some(PlannedEffect {
-                    effect_type: e.effect_type.clone(),
-                    values: e.values_at(offset)?,
-                    seed: frame,
-                })
-            })
-            .collect();
-        let masks: Vec<fosscut_model::Mask> = clip
-            .masks
-            .iter()
-            .filter(|m| m.enabled)
-            .map(|m| m.at(offset))
-            .collect();
-        let placed = |source: LayerSource, rotation: u16| Layer {
-            clip: Some(clip.id.clone()),
-            source,
-            rotation,
-            transform: clip.transform_at(offset),
-            crop: clip.crop_at(offset).kept(),
-            opacity: clip.opacity_at(offset) as f32,
-            blend: clip.blend,
-            mask: None,
-            lut: None,
-            effects: effects.clone(),
-            masks: masks.clone(),
-        };
-        let source = match (&clip.content, track.kind) {
-            (ClipContent::Video { asset, source_in }, TrackKind::Video) => SourceRef {
-                asset: asset.clone(),
-                time: *source_in + offset,
-            },
-            (ClipContent::Image { asset }, TrackKind::Video) => SourceRef {
-                asset: asset.clone(),
-                time: Flicks::ZERO,
-            },
-            (ClipContent::Text(text), _) => {
-                plan.layers.push(placed(LayerSource::Text(text.clone()), 0));
-                continue;
-            }
-            (ClipContent::Adjustment, TrackKind::Video) => {
-                if !effects.is_empty() {
-                    plan.layers.push(placed(LayerSource::Adjustment, 0));
-                }
-                continue;
-            }
-            (ClipContent::Caption(caption), _) => {
-                let layer = CaptionLayer {
-                    style: track.caption_style.clone().unwrap_or_default(),
-                    content: caption.clone(),
-                    time: offset,
-                    duration: clip.duration,
-                };
-                plan.layers
-                    .push(placed(LayerSource::Caption(Box::new(layer)), 0));
-                continue;
-            }
-            _ => continue,
-        };
-        let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
         plan.layers
-            .push(placed(LayerSource::Frame(source), rotation));
+            .extend(layer_for(project, &doc.format, track, clip, time));
     }
     Ok(plan)
 }
@@ -277,7 +364,7 @@ mod tests {
     fn time(layer: &Layer) -> Option<Flicks> {
         match &layer.source {
             LayerSource::Frame(source) => Some(source.time),
-            LayerSource::Text(_) | LayerSource::Caption(_) | LayerSource::Adjustment => None,
+            _ => None,
         }
     }
 

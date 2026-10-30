@@ -179,7 +179,12 @@ impl Media {
         bundle: &Path,
         plan: &RenderPlan,
     ) -> Result<(), EngineError> {
-        for layer in &plan.layers {
+        // A transition holds two layers of its own.
+        let layers = plan.layers.iter().flat_map(|layer| match &layer.source {
+            LayerSource::Transition(t) => vec![&t.outgoing, &t.incoming],
+            _ => vec![layer],
+        });
+        for layer in layers {
             for effect in &layer.effects {
                 if let Some(asset) = effect.asset("lut")
                     && !self.decoders.has_lut(asset)
