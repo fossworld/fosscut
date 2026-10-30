@@ -590,9 +590,11 @@ mod thread_tests {
         };
         run.preview.send(Job::Scene(Some(titled("empty", 30))));
         assert_eq!(run.shown.recv_timeout(WAIT).unwrap(), None, "no hole yet");
-        run.preview.send(Job::Viewport([0.0, 0.0, 320.0, 180.0]));
+        // One job at a time: the thread may draw after each.
         run.preview.send(Job::Scene(None));
         assert_eq!(run.shown.recv_timeout(WAIT).unwrap(), None, "nothing open");
+        run.preview.send(Job::Viewport([0.0, 0.0, 320.0, 180.0]));
+        assert_eq!(run.shown.recv_timeout(WAIT).unwrap(), None, "a hole, but nothing open");
         run.preview.send(Job::Scene(Some(missing_media("missing"))));
         let failure = run.failures.recv_timeout(WAIT).unwrap();
         assert!(failure.contains("is missing"), "{failure}");
