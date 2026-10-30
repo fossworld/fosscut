@@ -24,6 +24,25 @@ pub struct Timeline {
     /// Tracks from bottom to top: later tracks draw over earlier ones.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<Track>,
+    /// Points to come back to, in time order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<Marker>,
+}
+
+/// A point on a timeline to come back to: a beat, a cue, a note.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Marker {
+    /// Marker id (`marker_…`).
+    pub id: Id,
+    /// Where on the timeline.
+    pub at: Flicks,
+    /// A label, such as `drop` or `cut here`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Its color as `#RRGGBB`; the default marker color when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Color>,
 }
 
 impl Timeline {
@@ -177,6 +196,9 @@ pub struct Clip {
     /// How the clip moves in, out and while it shows.
     #[serde(default, skip_serializing_if = "ClipAnimations::is_empty")]
     pub animations: ClipAnimations,
+    /// The group of clips this one edits together with (`group_…`, ADR-0024).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<Id>,
     /// How a video or audio clip plays its source: faster, slower, along a curve,
     /// backwards or frozen (ADR-0023). Absent, it plays one to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -208,6 +230,7 @@ impl Clip {
             transition: None,
             animations: ClipAnimations::default(),
             speed: None,
+            group: None,
             keyframes: BTreeMap::new(),
         }
     }
@@ -598,6 +621,10 @@ pub struct ClipAudio {
     /// Which source channels play.
     #[serde(default, skip_serializing_if = "is_default")]
     pub channels: ChannelMode,
+    /// A video clip's sound plays from an audio clip extracted from it, so the video clip
+    /// itself is not heard (ADR-0024).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub detached: bool,
 }
 
 /// Which channels of a clip's sound play where (fill channel).

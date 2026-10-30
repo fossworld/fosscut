@@ -29,10 +29,15 @@ export function demoEngine(): FakeEngine {
     revision: engine.revision,
     format: { width: 1920, height: 1080, rate: "30" },
     duration: moment(24),
+    markers: [
+      { id: "marker_0020", at: moment(4), name: "beat" },
+      { id: "marker_0021", at: moment(15), name: "drop", color: "#ffcc33" },
+    ],
     tracks: [
       track("track_0002", "video", 0, [
         clip("clip_0003", "video", 0, 8, {
           asset_name: "interview.mp4",
+          group: "group_0022",
           transition: { type: "dissolve", duration: moment(1) },
           animations: { in: { preset: "fade", duration: 352_800_000 } },
         }),
@@ -66,7 +71,9 @@ export function demoEngine(): FakeEngine {
           audio: { fade_in: 705_600_000, fade_out: 2 * 705_600_000 },
         }),
       ]),
-      track("track_0005", "text", 2, [clip("clip_0009", "text", 0.5, 3.5, { text: "Meet FossCut" })]),
+      track("track_0005", "text", 2, [
+        clip("clip_0009", "text", 0.5, 3.5, { text: "Meet FossCut", group: "group_0022" }),
+      ]),
       track("track_0010", "caption", 3, [
         clip("clip_0011", "caption", 1, 2.2, { text: "Edit by talking" }),
         clip("clip_0012", "caption", 2.2, 3.6, { text: "to your agent" }),

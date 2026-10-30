@@ -109,6 +109,12 @@ pub enum Command {
     /// Read timelines.
     #[command(subcommand)]
     Timeline(TimelineCommand),
+    /// Copy and paste clips.
+    #[command(subcommand)]
+    Clips(ClipsCommand),
+    /// Timeline markers.
+    #[command(subcommand)]
+    Marker(MarkerCommand),
     /// Show the operation log, newest first.
     History {
         /// Number of entries.
@@ -391,6 +397,9 @@ pub enum ClipCommand {
         /// Timeline position strictly inside the clip.
         #[arg(long, value_parser = parse_time)]
         at: TimeInput,
+        /// Split only this clip, not the clips of its group.
+        #[arg(long)]
+        unlinked: bool,
     },
     /// Move a clip's start or end edge: trim it shorter, or extend it into more of its
     /// media. The picture under the rest of the clip stays where it is.
@@ -404,6 +413,13 @@ pub enum ClipCommand {
         /// New timeline position just after the last frame.
         #[arg(long, value_parser = parse_time)]
         end: Option<TimeInput>,
+        /// Keep the clip's start and move what follows on its track by the change in
+        /// length (trim and delete left or right).
+        #[arg(long)]
+        ripple: bool,
+        /// Trim only this clip, not the clips of its group.
+        #[arg(long)]
+        unlinked: bool,
     },
     /// Change a video or audio clip's speed: a rate, a curve or a preset, reverse, pitch
     /// and smooth slow motion. The clip keeps the media it plays, so faster clips get
@@ -466,6 +482,9 @@ pub enum ClipCommand {
         /// Target track id.
         #[arg(long)]
         track: Option<String>,
+        /// Move only this clip, not the clips of its group.
+        #[arg(long)]
+        unlinked: bool,
     },
     /// Remove a clip.
     Remove {
@@ -475,6 +494,70 @@ pub enum ClipCommand {
         /// Shift later clips left to close the gap.
         #[arg(long)]
         ripple: bool,
+        /// Remove only this clip, not the clips of its group.
+        #[arg(long)]
+        unlinked: bool,
+    },
+    /// Group clips so moves, splits, trims and removals edit them together.
+    Group {
+        /// Clip ids, two or more.
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+    },
+    /// Take clips out of their groups.
+    Ungroup {
+        /// Clip ids.
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+    },
+    /// Move a video clip's sound to an audio clip of its own, linked to it.
+    ExtractAudio {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+    },
+    /// Put a video clip's extracted sound back.
+    RestoreAudio {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+    },
+    /// Put other media under a clip, keeping its place and everything done to it.
+    Replace {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// The new asset id.
+        #[arg(long)]
+        asset: String,
+        /// Where in the new media the clip starts.
+        #[arg(long, value_parser = parse_time)]
+        source_in: Option<TimeInput>,
+    },
+    /// Line a clip's picture up with the canvas's edges or centre.
+    Align {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// left, center or right.
+        #[arg(long)]
+        horizontal: Option<String>,
+        /// top, center or bottom.
+        #[arg(long)]
+        vertical: Option<String>,
+    },
+    /// Copy one clip's attributes (placement, crop, opacity, blend, volume, audio, effects,
+    /// masks, animations) to other clips.
+    CopyAttributes {
+        /// The clip to copy from.
+        #[arg(long)]
+        from: String,
+        /// The clips that receive them.
+        #[arg(long = "to", required = true)]
+        to: Vec<String>,
+        /// Only these attributes; all when omitted.
+        #[arg(long = "attribute")]
+        attributes: Vec<String>,
     },
     /// Set a clip's placement, crop, opacity, blend mode or sound. Position and scale are
     /// relative to the canvas and the fitted picture, so the same values work at any
@@ -918,6 +1001,69 @@ pub enum TextCommand {
     },
 }
 
+/// `fosscut clips ...`
+#[derive(Debug, Subcommand)]
+pub enum ClipsCommand {
+    /// Copy clips as JSON documents, to paste with `clips paste` here or in another
+    /// project.
+    Copy {
+        /// Clip ids.
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+    },
+    /// Paste clips copied with `clips copy`, keeping their arrangement.
+    Paste {
+        /// Where the earliest of them starts.
+        #[arg(long, value_parser = parse_time)]
+        at: TimeInput,
+        /// The output of `clips copy --json`: `@file`, `-` for standard input, or the JSON
+        /// itself.
+        #[arg(long, default_value = "-")]
+        from: String,
+        /// Put them all on this track.
+        #[arg(long)]
+        track: Option<String>,
+    },
+}
+
+/// `fosscut marker ...`
+#[derive(Debug, Subcommand)]
+pub enum MarkerCommand {
+    /// Add a marker.
+    Add {
+        /// Where.
+        #[arg(long, value_parser = parse_time)]
+        at: TimeInput,
+        /// A label.
+        #[arg(long)]
+        name: Option<String>,
+        /// A color as #RRGGBB.
+        #[arg(long)]
+        color: Option<String>,
+    },
+    /// Move, rename or recolor a marker.
+    Set {
+        /// Marker id.
+        #[arg(long)]
+        marker: String,
+        /// A new time.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// A new label; empty removes it.
+        #[arg(long)]
+        name: Option<String>,
+        /// A new color; empty returns to the default.
+        #[arg(long)]
+        color: Option<String>,
+    },
+    /// Remove a marker.
+    Remove {
+        /// Marker id.
+        #[arg(long)]
+        marker: String,
+    },
+}
+
 /// `fosscut timeline ...`
 #[derive(Debug, Subcommand)]
 pub enum TimelineCommand {
@@ -929,6 +1075,15 @@ pub enum TimelineCommand {
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+    /// Split every clip under a time, on every unlocked track or the ones named.
+    Split {
+        /// Where to cut.
+        #[arg(long, value_parser = parse_time)]
+        at: TimeInput,
+        /// Only these tracks.
+        #[arg(long = "track")]
+        tracks: Vec<String>,
     },
     /// Copy a timeline, for example onto a 1080x1920 canvas for a vertical version.
     Duplicate {

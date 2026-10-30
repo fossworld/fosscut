@@ -32,6 +32,20 @@ function run(editor: Editor, action: Action): void {
     split: () => editor.splitAtPlayhead(),
     deselect: () => editor.select(null),
     "toggle-enabled": () => editor.toggleEnabled(),
+    copy: () => editor.copy(),
+    cut: () => editor.cut(),
+    paste: () => editor.paste(),
+    "copy-attributes": () => editor.copyAttributes(),
+    "paste-attributes": () => editor.pasteAttributes(),
+    "delete-left": () => editor.deleteSide("left"),
+    "delete-right": () => editor.deleteSide("right"),
+    "split-all": () => editor.splitAll(),
+    group: () => editor.group(),
+    ungroup: () => editor.ungroup(),
+    marker: () => editor.toggleMarker(),
+    "previous-marker": () => editor.seekMarker(-1),
+    "next-marker": () => editor.seekMarker(1),
+    magnet: () => editor.setMagnet(!editor.getState().magnet),
   };
   void actions[action]();
 }

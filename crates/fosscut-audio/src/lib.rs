@@ -95,8 +95,9 @@ pub fn mix(
         for (index, clip) in track.clips.iter().enumerate() {
             let (asset, source_in) = match (&clip.content, track.kind) {
                 (ClipContent::Audio { asset, source_in }, TrackKind::Audio) => (asset, *source_in),
+                // Detached sound plays from its extracted audio clip instead (ADR-0024).
                 (ClipContent::Video { asset, source_in }, TrackKind::Video)
-                    if has_audio(project, asset) =>
+                    if has_audio(project, asset) && !clip.audio.detached =>
                 {
                     (asset, *source_in)
                 }
@@ -461,6 +462,29 @@ mod tests {
     fn level_at(buffer: &AudioBuffer, frame: i64) -> f32 {
         let index = samples_in(frames(frame), RATE) as usize;
         buffer.samples[index * 2]
+    }
+
+    #[test]
+    fn detached_video_sound_is_not_heard() {
+        let (mut project, timeline, mut source) = setup();
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[0].clips[0].audio.detached = true;
+        let out = mix(
+            &project,
+            &timeline,
+            Flicks::ZERO,
+            frames(100),
+            RATE,
+            2,
+            &mut source,
+        )
+        .unwrap();
+        assert_eq!(
+            level_at(&out, 10),
+            0.0,
+            "its extracted clip plays it instead"
+        );
+        assert_eq!(level_at(&out, 45), 0.2, "the bed still plays");
     }
 
     #[test]

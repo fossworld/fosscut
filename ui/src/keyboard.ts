@@ -14,7 +14,21 @@ export type Action =
   | "delete"
   | "split"
   | "deselect"
-  | "toggle-enabled";
+  | "toggle-enabled"
+  | "copy"
+  | "cut"
+  | "paste"
+  | "copy-attributes"
+  | "paste-attributes"
+  | "delete-left"
+  | "delete-right"
+  | "split-all"
+  | "group"
+  | "ungroup"
+  | "marker"
+  | "previous-marker"
+  | "next-marker"
+  | "magnet";
 
 export interface Keystroke {
   key: string;
@@ -31,11 +45,23 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
   if (stroke.typing) return null;
   const mod = mac ? stroke.metaKey && !stroke.ctrlKey : stroke.ctrlKey && !stroke.metaKey;
   const key = stroke.key.length === 1 ? stroke.key.toLowerCase() : stroke.key;
-  if (stroke.altKey) return null;
+  if (stroke.altKey) {
+    // Mod+Alt+C and Mod+Alt+V copy and paste attributes. On macOS Option changes the key
+    // the layout reports, so match the physical letters through their usual results too.
+    if (!mod || stroke.shiftKey) return null;
+    if (key === "c" || key === "ç") return "copy-attributes";
+    if (key === "v" || key === "√") return "paste-attributes";
+    return null;
+  }
   if (mod) {
     if (key === "z") return stroke.shiftKey ? "redo" : "undo";
     if (key === "y" && !mac && !stroke.shiftKey) return "redo";
-    if (key === "b" && !stroke.shiftKey) return "split";
+    if (key === "b") return stroke.shiftKey ? "split-all" : "split";
+    if (key === "g") return stroke.shiftKey ? "ungroup" : "group";
+    if (stroke.shiftKey) return null;
+    if (key === "c") return "copy";
+    if (key === "x") return "cut";
+    if (key === "v") return "paste";
     return null;
   }
   if (stroke.metaKey || stroke.ctrlKey) return null;
@@ -57,6 +83,18 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
       return "deselect";
     case "v":
       return stroke.shiftKey ? null : "toggle-enabled";
+    case "q":
+      return stroke.shiftKey ? null : "delete-left";
+    case "w":
+      return stroke.shiftKey ? null : "delete-right";
+    case "m":
+      return stroke.shiftKey ? null : "marker";
+    case "[":
+      return "previous-marker";
+    case "]":
+      return "next-marker";
+    case "p":
+      return stroke.shiftKey ? null : "magnet";
     default:
       return null;
   }

@@ -99,6 +99,11 @@ pub(crate) fn register(registry: &mut Registry) {
         "Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.",
         timeline_read,
     );
+    registry.register_query::<ClipsCopyArgs>(
+        "clips.copy",
+        "Copy clips as documents (media, effects, masks, keyframes, groups) to pass to clips.paste, in this project or another with the same media.",
+        clips_copy,
+    );
     registry.register_query::<HistoryArgs>(
         "history.list",
         "Most recent operation log entries, newest first.",
@@ -385,6 +390,12 @@ fn clip_view(
     if !clip.enabled {
         view["enabled"] = json!(false);
     }
+    if let Some(group) = &clip.group {
+        view["group"] = json!(group);
+    }
+    if clip.audio.detached {
+        view["audio_detached"] = json!(true);
+    }
     if let Some(t) = &clip.transition {
         view["transition"] = json!({
             "type": t.transition_type,
@@ -514,14 +525,52 @@ fn timeline_read(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError>
             view
         })
         .collect();
-    Ok(json!({
+    let markers: Vec<Value> = timeline
+        .markers
+        .iter()
+        .map(|m| {
+            let mut marker = json!({ "id": m.id, "at": TimeReport::new(m.at, rate) });
+            if let Some(name) = &m.name {
+                marker["name"] = json!(name);
+            }
+            if let Some(color) = &m.color {
+                marker["color"] = json!(color);
+            }
+            marker
+        })
+        .collect();
+    let mut view = json!({
         "timeline": timeline.id,
         "name": timeline.name,
         "revision": project.manifest.revision,
         "format": timeline.format,
         "duration": TimeReport::new(timeline.duration(), rate),
         "tracks": tracks,
-    }))
+    });
+    if !markers.is_empty() {
+        view["markers"] = json!(markers);
+    }
+    Ok(view)
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ClipsCopyArgs {
+    /// The clips to copy, from one or more tracks.
+    clips: Vec<Id>,
+}
+
+/// The clipboard: clips as stored, for `clips.paste` here or in another project.
+fn clips_copy(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
+    let args: ClipsCopyArgs = parse("clips.copy", args)?;
+    if args.clips.is_empty() {
+        return Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            "clips.copy: give the clips to copy",
+        ));
+    }
+    let clips = crate::commands::copied(ctx.project, &args.clips)?;
+    Ok(json!({ "clips": clips }))
 }
 
 fn history_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {

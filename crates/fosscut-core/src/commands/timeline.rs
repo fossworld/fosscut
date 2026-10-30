@@ -111,14 +111,33 @@ impl Command for TimelineDuplicate {
             name: name.clone(),
             format: format.clone(),
             tracks: Vec::with_capacity(original.tracks.len()),
+            markers: Vec::new(),
         };
         let mut clips = 0;
+        let mut groups: std::collections::BTreeMap<Id, Id> = std::collections::BTreeMap::new();
+        for marker in &original.markers {
+            let mut marker = marker.clone();
+            marker.id = ctx.project.allocate_id(IdKind::Marker);
+            copy.markers.push(marker);
+        }
         for track in &original.tracks {
             let mut track = track.clone();
             track.id = ctx.project.allocate_id(IdKind::Track);
             for clip in &mut track.clips {
                 clip.id = ctx.project.allocate_id(IdKind::Clip);
                 renew_effect_ids(ctx.project, clip);
+                // A group belongs to one timeline: the copy's clips form groups of their own.
+                if let Some(group) = clip.group.take() {
+                    let fresh = match groups.get(&group) {
+                        Some(id) => id.clone(),
+                        None => {
+                            let id = ctx.project.allocate_id(IdKind::Group);
+                            groups.insert(group, id.clone());
+                            id
+                        }
+                    };
+                    clip.group = Some(fresh);
+                }
                 clips += 1;
                 let asset = match &clip.content {
                     ClipContent::Video { asset, .. } | ClipContent::Image { asset } => asset,

@@ -43,6 +43,16 @@ export interface EditorState {
   luts: { id: string; name: string }[];
   /** Drawing a path or painting a brush mask on the preview, when not null. */
   maskTool: MaskTool | null;
+  /** More selected clips, shift-clicked after the first (for grouping). */
+  also: string[];
+  /** Edits of a grouped clip edit its whole group (ADR-0024). */
+  linkage: boolean;
+  /** The main track stays gapless: deleting from it closes the gap. */
+  magnet: boolean;
+  /** Clips copied or cut, as `clips.copy` returns them. */
+  clipboard: unknown[] | null;
+  /** The clip whose attributes Mod+Alt+V pastes. */
+  attributesFrom: string | null;
 }
 
 /** What drawing on the preview edits. */
@@ -65,6 +75,11 @@ const EMPTY: EditorState = {
   playhead: 0,
   playing: false,
   selection: null,
+  also: [],
+  linkage: true,
+  magnet: false,
+  clipboard: null,
+  attributesFrom: null,
   notice: null,
   catalog: null,
   luts: [],
@@ -296,7 +311,45 @@ export class Editor {
   }
 
   select(clip: string | null): void {
-    this.set({ selection: clip });
+    this.set({ selection: clip, also: [] });
+  }
+
+  /** Adds a clip to the selection, or takes it out (shift-click). */
+  toggleSelected(clip: string): void {
+    const { selection, also } = this.state;
+    if (!selection) {
+      this.set({ selection: clip, also: [] });
+    } else if (clip === selection) {
+      this.set({ selection: also[0] ?? null, also: also.slice(1) });
+    } else if (also.includes(clip)) {
+      this.set({ also: also.filter((c) => c !== clip) });
+    } else {
+      this.set({ also: [...also, clip] });
+    }
+  }
+
+  /** Every selected clip, the first one first. */
+  selected(): string[] {
+    return this.state.selection ? [this.state.selection, ...this.state.also] : [];
+  }
+
+  setLinkage(on: boolean): void {
+    this.set({ linkage: on });
+  }
+
+  setMagnet(on: boolean): void {
+    this.set({ magnet: on });
+  }
+
+  /** The arguments that make an edit follow the linkage switch. */
+  private linked(): Record<string, unknown> {
+    return this.state.linkage ? {} : { linked: false };
+  }
+
+  /** True when a clip is on the main track: the lowest video track. */
+  private onMainTrack(clip: string): boolean {
+    const main = this.state.timeline?.tracks.find((t) => t.kind === "video");
+    return Boolean(main?.clips.some((c) => c.id === clip));
   }
 
   // ---- Edits ----
@@ -336,9 +389,124 @@ export class Editor {
   }
 
   async deleteSelection(): Promise<void> {
-    const clip = this.state.selection;
-    if (!clip) return;
-    if (await this.edit([{ command: "clip.remove", args: { clip } }])) this.set({ selection: null });
+    const clips = this.selected();
+    if (clips.length === 0) return;
+    const commands = clips.map((clip) => {
+      const args: Record<string, unknown> = { clip, ...this.linked() };
+      if (this.state.magnet && this.onMainTrack(clip)) args.ripple = true;
+      return { command: "clip.remove", args };
+    });
+    if (await this.edit(commands)) this.set({ selection: null, also: [] });
+  }
+
+  /** Copies the selected clips to the clipboard. */
+  async copy(): Promise<boolean> {
+    const clips = this.selected();
+    if (clips.length === 0) return false;
+    try {
+      const copied = await this.engine.query<{ clips: unknown[] }>("clips.copy", { clips });
+      this.set({ clipboard: copied.clips });
+      return true;
+    } catch (error) {
+      this.notify(error);
+      return false;
+    }
+  }
+
+  /** Copies the selected clips, then removes them. */
+  async cut(): Promise<void> {
+    if (await this.copy()) await this.deleteSelection();
+  }
+
+  /** Pastes the clipboard at the playhead. */
+  async paste(): Promise<void> {
+    const clips = this.state.clipboard;
+    if (!clips) return;
+    await this.edit([{ command: "clips.paste", args: { clips, at: { flicks: this.state.playhead } } }]);
+  }
+
+  /** Remembers the selected clip as the one whose attributes to paste. */
+  copyAttributes(): void {
+    if (this.state.selection) this.set({ attributesFrom: this.state.selection });
+  }
+
+  /** Pastes the remembered clip's attributes onto the selected clips. */
+  async pasteAttributes(): Promise<void> {
+    const from = this.state.attributesFrom;
+    const to = this.selected().filter((c) => c !== from);
+    if (!from || to.length === 0) return;
+    await this.edit([{ command: "clip.copy_attributes", args: { from, to } }]);
+  }
+
+  /**
+   * Deletes the part of the selected clip before (`left`) or after the playhead, closing
+   * the gap: the clip keeps its start and what follows moves (ripple).
+   */
+  async deleteSide(side: "left" | "right"): Promise<void> {
+    const timeline = this.state.timeline;
+    const id = this.state.selection;
+    const clip = timeline && id ? findClip(timeline, id) : null;
+    const at = this.state.playhead;
+    if (!clip || at <= clip.start.flicks || at >= clip.end.flicks) {
+      this.set({ notice: { kind: "info", text: "Put the playhead inside the selected clip first." } });
+      return;
+    }
+    const edge = side === "left" ? { start: { flicks: at } } : { end: { flicks: at } };
+    await this.edit([{ command: "clip.trim", args: { clip: clip.id, ...edge, ripple: true, ...this.linked() } }]);
+  }
+
+  /** Splits every clip under the playhead. */
+  async splitAll(): Promise<void> {
+    await this.edit([{ command: "timeline.split", args: { at: { flicks: this.state.playhead } } }]);
+  }
+
+  /** Groups the selected clips. */
+  async group(): Promise<void> {
+    const clips = this.selected();
+    if (clips.length < 2) {
+      this.set({ notice: { kind: "info", text: "Shift-click to select two or more clips to group." } });
+      return;
+    }
+    await this.edit([{ command: "clip.group", args: { clips } }]);
+  }
+
+  /** Takes the selected clips out of their groups. */
+  async ungroup(): Promise<void> {
+    const clips = this.selected();
+    if (clips.length > 0) await this.edit([{ command: "clip.ungroup", args: { clips } }]);
+  }
+
+  /** Extracts a video clip's sound into a linked audio clip, or puts it back. */
+  async toggleExtractedAudio(clip: string): Promise<void> {
+    const view = this.state.timeline ? findClip(this.state.timeline, clip) : null;
+    if (!view) return;
+    const command = view.audio_detached ? "clip.restore_audio" : "clip.extract_audio";
+    await this.edit([{ command, args: { clip } }]);
+  }
+
+  /** Lines a clip up with the canvas's edges or centre. */
+  async align(clip: string, place: { horizontal?: string; vertical?: string }): Promise<void> {
+    await this.edit([{ command: "clip.align", args: { clip, ...place } }]);
+  }
+
+  /** Adds a marker at the playhead, or removes the one there. */
+  async toggleMarker(): Promise<void> {
+    const at = this.state.playhead;
+    const here = this.state.timeline?.markers?.find((m) => m.at.flicks === at);
+    if (here) {
+      await this.edit([{ command: "marker.remove", args: { marker: here.id } }]);
+    } else {
+      await this.edit([{ command: "marker.add", args: { at: { flicks: at } } }]);
+    }
+  }
+
+  /** Moves the playhead to the previous or next marker. */
+  async seekMarker(direction: -1 | 1): Promise<void> {
+    const at = this.state.playhead;
+    const markers = this.state.timeline?.markers ?? [];
+    const target =
+      direction > 0 ? markers.find((m) => m.at.flicks > at) : [...markers].reverse().find((m) => m.at.flicks < at);
+    if (target) await this.seek(target.at.flicks);
   }
 
   /** Splits the selected clip at the playhead, or the only clip under it. */
@@ -366,14 +534,14 @@ export class Editor {
 
   /** Moves a clip to `start` (flicks), and to `track` when given. */
   async moveClip(clip: string, start: number, track?: string): Promise<void> {
-    const args: Record<string, unknown> = { clip, start: { flicks: start } };
+    const args: Record<string, unknown> = { clip, start: { flicks: start }, ...this.linked() };
     if (track) args.track = track;
     await this.edit([{ command: "clip.move", args }]);
   }
 
   /** Moves a clip's start or end edge (flicks). */
   async trimClip(clip: string, edges: { start?: number; end?: number }): Promise<void> {
-    const args: Record<string, unknown> = { clip };
+    const args: Record<string, unknown> = { clip, ...this.linked() };
     if (edges.start !== undefined) args.start = { flicks: edges.start };
     if (edges.end !== undefined) args.end = { flicks: edges.end };
     await this.edit([{ command: "clip.trim", args }]);

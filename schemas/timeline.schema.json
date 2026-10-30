@@ -682,6 +682,17 @@
           "description": "False deactivates the clip: it keeps its place but is neither drawn nor heard.",
           "type": "boolean"
         },
+        "group": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The group of clips this one edits together with (`group_…`, ADR-0024)."
+        },
         "id": {
           "$ref": "#/$defs/Id",
           "description": "Clip id (`clip_…`)."
@@ -796,6 +807,10 @@
         "channels": {
           "$ref": "#/$defs/ChannelMode",
           "description": "Which source channels play."
+        },
+        "detached": {
+          "description": "A video clip's sound plays from an audio clip extracted from it, so the video clip\nitself is not heard (ADR-0024).",
+          "type": "boolean"
         },
         "fade_in": {
           "$ref": "#/$defs/Flicks",
@@ -1012,6 +1027,43 @@
       "required": [
         "time",
         "value"
+      ],
+      "type": "object"
+    },
+    "Marker": {
+      "additionalProperties": false,
+      "description": "A point on a timeline to come back to: a beat, a cue, a note.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Where on the timeline."
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Color"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its color as `#RRGGBB`; the default marker color when omitted."
+        },
+        "id": {
+          "$ref": "#/$defs/Id",
+          "description": "Marker id (`marker_…`)."
+        },
+        "name": {
+          "description": "A label, such as `drop` or `cut here`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at"
       ],
       "type": "object"
     },
@@ -1779,6 +1831,13 @@
     "id": {
       "$ref": "#/$defs/Id",
       "description": "Timeline id (`timeline_…`)."
+    },
+    "markers": {
+      "description": "Points to come back to, in time order.",
+      "items": {
+        "$ref": "#/$defs/Marker"
+      },
+      "type": "array"
     },
     "name": {
       "description": "Timeline name.",

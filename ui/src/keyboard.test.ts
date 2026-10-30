@@ -13,6 +13,25 @@ const key = (k: string, extra: Partial<Keystroke> = {}): Keystroke => ({
 });
 
 describe("keyboard", () => {
+  it("maps clipboard, timeline and marker keys", () => {
+    expect(actionFor(key("c", { metaKey: true }), true)).toBe("copy");
+    expect(actionFor(key("x", { ctrlKey: true }), false)).toBe("cut");
+    expect(actionFor(key("v", { metaKey: true }), true)).toBe("paste");
+    expect(actionFor(key("ç", { metaKey: true, altKey: true }), true), "Option+C on macOS").toBe("copy-attributes");
+    expect(actionFor(key("v", { ctrlKey: true, altKey: true }), false)).toBe("paste-attributes");
+    expect(actionFor(key("c", { altKey: true }), true), "Alt alone does nothing").toBeNull();
+    expect(actionFor(key("B", { metaKey: true, shiftKey: true }), true)).toBe("split-all");
+    expect(actionFor(key("g", { metaKey: true }), true)).toBe("group");
+    expect(actionFor(key("G", { metaKey: true, shiftKey: true }), true)).toBe("ungroup");
+    expect(actionFor(key("q"), true)).toBe("delete-left");
+    expect(actionFor(key("w"), true)).toBe("delete-right");
+    expect(actionFor(key("m"), true)).toBe("marker");
+    expect(actionFor(key("["), true)).toBe("previous-marker");
+    expect(actionFor(key("]"), true)).toBe("next-marker");
+    expect(actionFor(key("p"), true)).toBe("magnet");
+    expect(actionFor(key("C", { metaKey: true, shiftKey: true }), true)).toBeNull();
+  });
+
   it("uses Command on macOS and Control elsewhere", () => {
     expect(actionFor(key("z", { metaKey: true }), true)).toBe("undo");
     expect(actionFor(key("Z", { metaKey: true, shiftKey: true }), true)).toBe("redo");

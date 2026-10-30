@@ -2550,3 +2550,107 @@ fn speed_reverse_and_freeze_from_the_command_line() {
     let bad = fails(&dir, &["clip", "speed", "--clip", &clip, "--curve", "half"]);
     assert_eq!(bad["code"], "fosscut.request.invalid_arguments", "{bad}");
 }
+
+/// ADR-0024 and the timeline commands: markers, extracting sound into a linked clip that
+/// moves with its video, copying and pasting clips, split all, ripple trims and alignment.
+#[test]
+fn timeline_editing_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("timeline-editing");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=160x90:r=30:d=4",
+        ])
+        .args(["-f", "lavfi", "-i", "sine=frequency=440:duration=4"])
+        .args(["-c:v", "mpeg4", "-c:a", "aac", "-shortest", "clip.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let new = [
+        "project",
+        "new",
+        "Edit.fosscut",
+        "--width",
+        "160",
+        "--height",
+        "90",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "clip.mp4"]);
+    let added = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let video = added["results"][0]["clip"].as_str().unwrap().to_string();
+    ok(&dir, &["marker", "add", "--at", "1s", "--name", "beat"]);
+    let extracted = ok(&dir, &["clip", "extract-audio", "--clip", &video]);
+    let audio = extracted["results"][0]["audio"]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let moved = ok(&dir, &["clip", "move", "--clip", &video, "--start", "1s"]);
+    assert_eq!(moved["results"][0]["linked"][0]["clip"], audio, "{moved}");
+    let read = ok(&dir, &["timeline", "read", "--detail", "full"]);
+    assert_eq!(read["markers"][0]["name"], "beat");
+    let sound = &read["tracks"][1]["clips"][0];
+    assert_eq!(
+        sound["start"]["seconds"], "1",
+        "the sound moved with the picture"
+    );
+    assert_eq!(read["tracks"][0]["clips"][0]["audio_detached"], true);
+    // Copy both and paste them later, keeping their arrangement.
+    let copied = ok(&dir, &["clips", "copy", "--clip", &video, "--clip", &audio]);
+    let pasted = ok(
+        &dir,
+        &[
+            "clips",
+            "paste",
+            "--at",
+            "6s",
+            "--from",
+            &copied.to_string(),
+        ],
+    );
+    assert_eq!(pasted["results"][0]["clips"].as_array().unwrap().len(), 2);
+    let split = ok(&dir, &["timeline", "split", "--at", "2s"]);
+    assert_eq!(split["results"][0]["splits"].as_array().unwrap().len(), 2);
+    // Delete left of 1.5 s with ripple: the linked sound loses the same part.
+    let trimmed = ok(
+        &dir,
+        &[
+            "clip", "trim", "--clip", &video, "--start", "1.5s", "--ripple",
+        ],
+    );
+    assert_eq!(
+        trimmed["results"][0]["linked"][0]["clip"], audio,
+        "{trimmed}"
+    );
+    let read = ok(&dir, &["timeline", "read", "--detail", "full"]);
+    assert_eq!(read["tracks"][0]["clips"][0]["duration"]["seconds"], "0.5");
+    assert_eq!(read["tracks"][1]["clips"][0]["duration"]["seconds"], "0.5");
+    ok(
+        &dir,
+        &[
+            "clip",
+            "set",
+            "--clip",
+            &video,
+            "--set",
+            "transform.scale=0.5",
+        ],
+    );
+    let aligned = ok(
+        &dir,
+        &["clip", "align", "--clip", &video, "--horizontal", "right"],
+    );
+    assert_eq!(aligned["results"][0]["position"], json!([0.25, 0.0]));
+    let restored = ok(&dir, &["clip", "restore-audio", "--clip", &video]);
+    assert_eq!(restored["results"][0]["removed"], json!([audio]));
+    let bad = fails(&dir, &["clips", "paste", "--at", "1s", "--from", "{}"]);
+    assert_eq!(bad["code"], "fosscut.request.invalid_arguments", "{bad}");
+}

@@ -58,7 +58,7 @@ pub use speed::{
 };
 pub use store::{DirStore, MemoryStore, ProjectStore, StoreError};
 pub use timeline::{
-    Align, BlendMode, ChannelMode, Clip, ClipAudio, ClipContent, Color, Crop, TextContent,
+    Align, BlendMode, ChannelMode, Clip, ClipAudio, ClipContent, Color, Crop, Marker, TextContent,
     TextStyle, Timeline, TimelineFormat, Track, TrackKind, Transform,
 };
 pub use transition::{
@@ -72,12 +72,14 @@ pub use validate::{Issue, validate};
 /// modes, audio fades, pan and channels, and deactivated clips (ADR-0011); 0.4.0 added
 /// effects, adjustment clips and LUT assets (ADR-0011); 0.5.0 added masks and the color
 /// parameter kind (chroma key); 0.6.0 added transitions and clip animations; 0.7.0 added
-/// clip speed (ADR-0023).
-pub const FORMAT_VERSION: &str = "0.7.0";
+/// clip speed (ADR-0023); 0.8.0 added markers, clip groups and detached audio (ADR-0024).
+pub const FORMAT_VERSION: &str = "0.8.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
-pub const READABLE_VERSIONS: &[&str] = &["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"];
+pub const READABLE_VERSIONS: &[&str] = &[
+    "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0",
+];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.
 pub fn document_schemas() -> Vec<(&'static str, schemars::Schema)> {

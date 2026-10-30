@@ -23,6 +23,10 @@ pub enum IdKind {
     Effect,
     /// A mask on a clip (`mask_…`).
     Mask,
+    /// A marker on a timeline (`marker_…`).
+    Marker,
+    /// A group of clips that edit together (`group_…`, ADR-0024).
+    Group,
 }
 
 impl IdKind {
@@ -36,6 +40,8 @@ impl IdKind {
             IdKind::Asset => "asset",
             IdKind::Effect => "effect",
             IdKind::Mask => "mask",
+            IdKind::Marker => "marker",
+            IdKind::Group => "group",
         }
     }
 }

@@ -616,7 +616,9 @@ fn older_formats_load_and_save_as_the_current_version() {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
-    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0"] {
+    for older in [
+        "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0",
+    ] {
         manifest["format_version"] = older.into();
         store
             .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
@@ -626,7 +628,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.7.0");
+    assert_eq!(FORMAT_VERSION, "0.8.0");
 }
 
 #[test]
@@ -913,4 +915,75 @@ fn clips_map_source_through_speed_and_split_into_parts() {
     );
     text.retime_part(frames(5), frames(10));
     assert_eq!(text.source_at(Flicks::ZERO), None);
+}
+
+#[test]
+fn markers_groups_and_detached_sound_round_trip_and_are_checked() {
+    let mut project = round_one_project();
+    let timeline = project.manifest.primary_timeline.clone();
+    let group = Id::new(IdKind::Group, 90);
+    {
+        let doc = primary(&mut project);
+        doc.markers.push(Marker {
+            id: Id::new(IdKind::Marker, 91),
+            at: frames(15),
+            name: Some("drop".into()),
+            color: Some(Color::parse("#ff8800").unwrap()),
+        });
+        for clip in doc.tracks.iter_mut().flat_map(|t| &mut t.clips).take(2) {
+            clip.group = Some(group.clone());
+        }
+        doc.tracks[0].clips[0].audio.detached = true;
+    }
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let json = serde_json::to_value(&project.timelines[&timeline]).unwrap();
+    assert_eq!(json["markers"][0]["color"], "#FF8800");
+    assert_eq!(json["tracks"][0]["clips"][0]["audio"]["detached"], true);
+    let plain = round_one_project();
+    let id = plain.manifest.primary_timeline.clone();
+    let plain = serde_json::to_value(&plain.timelines[&id]).unwrap();
+    assert!(plain.get("markers").is_none(), "no markers, no key");
+
+    type Breakage = fn(&mut Project);
+    let cases: [(&str, &str, Breakage); 5] = [
+        ("a group of one", "fosscut.model.group", |p| {
+            primary(p).tracks[0].clips[0].group = None;
+        }),
+        ("a marker before zero", "fosscut.model.marker", |p| {
+            primary(p).markers[0].at = frames(-1);
+        }),
+        ("a marker with a clip id", "fosscut.model.id_kind", |p| {
+            primary(p).markers[0].id = Id::new(IdKind::Clip, 92);
+        }),
+        ("a group with a mask id", "fosscut.model.id_kind", |p| {
+            for clip in primary(p).tracks.iter_mut().flat_map(|t| &mut t.clips) {
+                if clip.group.is_some() {
+                    clip.group = Some(Id::new(IdKind::Mask, 93));
+                }
+            }
+        }),
+        (
+            "detached sound on a text clip",
+            "fosscut.model.detached",
+            |p| {
+                let doc = primary(p);
+                let text = doc
+                    .tracks
+                    .iter_mut()
+                    .flat_map(|t| &mut t.clips)
+                    .find(|c| matches!(c.content, ClipContent::Text(_)))
+                    .unwrap();
+                text.audio.detached = true;
+            },
+        ),
+    ];
+    for (case, code, breakage) in cases {
+        let mut broken = project.clone();
+        breakage(&mut broken);
+        let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
+        assert!(codes.contains(&code.to_string()), "{case}: {codes:?}");
+    }
 }

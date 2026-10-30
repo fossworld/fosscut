@@ -18,6 +18,8 @@ const COLORS = {
   tick: "#3a3d45",
   playhead: "#ff7a45",
   selection: "#ffffff",
+  marker: "#4fb8ff",
+  group: "rgba(255, 255, 255, 0.55)",
 } as const;
 
 const CLIP_COLORS: Record<string, string> = {
@@ -38,6 +40,8 @@ const KIND_NAMES: Record<string, string> = {
 export interface DrawState {
   playhead: number;
   selection: string | null;
+  /** More selected clips. */
+  also?: string[];
   /** A clip being dragged, and where it would land. */
   drag?: { clip: string; start: number; end: number; track: string } | null;
 }
@@ -156,7 +160,13 @@ export function drawTimeline(
       if (x1 - x0 < 1) continue;
       const dragged = state.drag?.clip === clip.id;
       ctx.globalAlpha = dragged ? 0.3 : 1;
-      block(ctx, clip, x0, x1, y, !dragged && clip.id === state.selection);
+      const chosen = clip.id === state.selection || (state.also ?? []).includes(clip.id);
+      block(ctx, clip, x0, x1, y, !dragged && chosen);
+      if (clip.group && x1 - x0 > 10) {
+        // A grouped clip: a short bar under its top edge.
+        ctx.fillStyle = COLORS.group;
+        ctx.fillRect(x0 + 4, y + 6, Math.min(16, x1 - x0 - 8), 2);
+      }
       marks(ctx, clip, view, x0, x1, y);
       ctx.globalAlpha = 1;
     }
@@ -201,6 +211,20 @@ export function drawTimeline(
     ctx.fillStyle = COLORS.text;
     ctx.fillText(track.name ?? KIND_NAMES[track.kind] ?? track.kind, 10, rowY(row) + ROW / 2);
   });
+
+  // Markers: flags on the ruler.
+  for (const marker of timeline.markers ?? []) {
+    const mx = timeToX(marker.at.flicks, view);
+    if (mx < HEADER || mx > width) continue;
+    ctx.fillStyle = marker.color ?? COLORS.marker;
+    ctx.beginPath();
+    ctx.moveTo(mx, RULER - 12);
+    ctx.lineTo(mx + 7, RULER - 9);
+    ctx.lineTo(mx, RULER - 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(Math.round(mx), RULER - 12, 1, 12);
+  }
 
   // Playhead.
   const x = timeToX(state.playhead, view);

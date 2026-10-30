@@ -33,6 +33,14 @@ FossCut clips are independent today: `clip.move`, `clip.trim`, `clip.split` and 
 - **Edits ignore groups unless asked (`linked: true` to follow):** safer for an agent that skips the projection, but it breaks what the person arranged on the first edit. Defaulting to the link, with the result listing what moved, makes the effect visible.
 - **Muting the video clip on extraction (`volume: 0`):** loses the volume the person set and cannot be told apart from a deliberately silent clip.
 
+## Implementation notes
+
+- **Model** (format 0.8.0): `Clip::group` holds the group id, `ClipAudio::detached` marks extracted sound, and validation reports `fosscut.model.group` and `fosscut.model.detached`. Commands that can leave a group with one clip (`clip.remove`, `clip.ungroup`, `clip.split`, `clips.paste`, `clip.restore_audio`) tidy it away.
+- **Linked edits:** `clip.move` takes every member out of its track before placing any, so members on one track never collide with each other's old places. `clip.trim` passes `ripple` on to the members it trims.
+- **Copies:** `timeline.duplicate` and `clips.paste` give the copies' groups new ids, so a group never spans timelines and pasted clips form groups of their own.
+- **Sound:** the mixer skips a video clip whose sound is detached. `clip.extract_audio` copies the clip's volume, fades, pan, channels, speed and their keyframes to the new audio clip, and joins the video clip's group when it already has one.
+- **Desktop:** the transport bar has the linkage switch (edits pass `linked: false` when it is off) and the magnet switch, which makes deleting from the main track ripple. Shift-click adds clips to the selection; Mod+G groups them and Mod+Shift+G ungroups. The inspector extracts and restores sound, and the timeline marks grouped clips with a bar.
+
 ## Validation
 
 - Contract tests: moving, splitting, trimming and removing a member edits the group, `linked: false` edits one clip, and a member that cannot move fails the whole command.

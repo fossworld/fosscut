@@ -67,6 +67,11 @@ Illustrative clip (not normative; the generated schema is):
 - **Adopting OpenTimelineIO as the native format:** excellent for interchange but lacks effects, text styling, masks and keyframes at the level FossCut needs, and uses floating-point rates.
 - **Adopting an existing proprietary editor's schema:** ties FossCut to a format it does not control and inherits the problems listed in the context.
 
+## Implementation notes
+
+- **Markers** (format 0.8.0): a timeline's `markers` hold `{id, at, name, color}` in time order, omitted when empty, with `marker_…` ids. `marker.add`, `marker.set` and `marker.remove` edit them, `timeline.read` lists them, and `timeline.duplicate` copies them with new ids. Selectors by marker (ADR-0007, item 4) can build on them.
+- **Clip groups and detached sound** (format 0.8.0) are decided in [ADR-0024](0024-link-clips-in-groups-that-edit-together.md).
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.

@@ -48,6 +48,14 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
         <span className="muted"> / {timeline?.duration.timecode ?? "00:00:00:00"}</span>
       </span>
       <span className="spacer" />
+      <label className="toggle" title="Edits of a grouped clip edit its whole group">
+        <input type="checkbox" checked={state.linkage} onChange={(e) => editor.setLinkage(e.target.checked)} />
+        <span>Linkage</span>
+      </label>
+      <label className="toggle" title="Keep the main track gapless: deleting from it closes the gap (P)">
+        <input type="checkbox" checked={state.magnet} onChange={(e) => editor.setMagnet(e.target.checked)} />
+        <span>Magnet</span>
+      </label>
       <button
         title="Add an adjustment layer at the playhead: effects on it change every picture below"
         onClick={() => void editor.addAdjustment()}
@@ -61,6 +69,20 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
         disabled={!timeline}
       >
         Split
+      </button>
+      <button
+        title="Split every clip under the playhead (Mod+Shift+B)"
+        onClick={() => void editor.splitAll()}
+        disabled={!timeline}
+      >
+        Split all
+      </button>
+      <button
+        title="Add a marker at the playhead, or remove the one there (M)"
+        onClick={() => void editor.toggleMarker()}
+        disabled={!timeline}
+      >
+        Marker
       </button>
       <button
         title="Delete the selected clip (Delete)"
