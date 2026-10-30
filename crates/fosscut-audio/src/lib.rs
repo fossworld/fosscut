@@ -337,6 +337,7 @@ mod tests {
     fn asset(project: &mut Project, kind: AssetKind, audio: bool) -> Id {
         let id = project.allocate_id(IdKind::Asset);
         project.media.assets.push(Asset {
+            folder: None,
             id: id.clone(),
             kind,
             name: "a".into(),

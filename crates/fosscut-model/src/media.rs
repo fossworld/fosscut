@@ -10,6 +10,10 @@ pub struct Media {
     /// Imported assets in import order.
     #[serde(default)]
     pub assets: Vec<Asset>,
+    /// Folders of the media bin as paths such as `B-roll/Day 1`, sorted; each parent is
+    /// listed too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<String>,
 }
 
 impl Media {
@@ -50,6 +54,24 @@ pub struct Asset {
     /// Stream information recorded at import.
     #[serde(default, skip_serializing_if = "is_default")]
     pub info: MediaInfo,
+    /// The bin folder it is in; the top level when omitted. Organizing media never changes
+    /// its identity (ADR-0004, item 3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+}
+
+/// True for a folder path of non-empty names separated by `/`, without surrounding spaces.
+pub fn valid_folder(path: &str) -> bool {
+    !path.is_empty()
+        && path
+            .split('/')
+            .all(|name| !name.is_empty() && name.trim() == name)
+}
+
+/// The folder and its parents, `a/b/c` giving `a`, `a/b` and `a/b/c`.
+pub fn folder_and_parents(path: &str) -> Vec<String> {
+    let names: Vec<&str> = path.split('/').collect();
+    (1..=names.len()).map(|n| names[..n].join("/")).collect()
 }
 
 impl Asset {

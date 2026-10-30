@@ -71,6 +71,8 @@ Illustrative clip (not normative; the generated schema is):
 
 - **Markers** (format 0.8.0): a timeline's `markers` hold `{id, at, name, color}` in time order, omitted when empty, with `marker_…` ids. `marker.add`, `marker.set` and `marker.remove` edit them, `timeline.read` lists them, and `timeline.duplicate` copies them with new ids. Selectors by marker (ADR-0007, item 4) can build on them.
 - **Clip groups and detached sound** (format 0.8.0) are decided in [ADR-0024](0024-link-clips-in-groups-that-edit-together.md).
+- **Media bin** (format 0.9.0): an asset's `folder` and the media document's sorted `folders` organize the bin; `name`, `folder` and the path hints are organization, while the content identity and the probed information never change (item 3). `media.rename`, `media.move` and `media.folder` organize; `media.relink` records a moved file's new place only when its identity matches; `media.replace` points every clip at another asset; `media.remove` refuses an asset in use unless told to remove its clips. Front ends mark assets whose files are missing (`fosscut_engine::import::mark_missing`).
+- **Timelines:** `timeline.add` creates one, empty or from chosen media placed one after another with the first video's canvas and rate; `timeline.rename`, `timeline.set_primary` and `timeline.remove` (a project keeps at least one) complete the set. A removed timeline's document is deleted from the bundle (`ProjectStore::remove`).
 
 ## Validation
 

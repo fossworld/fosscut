@@ -3,6 +3,13 @@
     "Asset": {
       "description": "A source media file referenced by clips. Splitting a clip never copies an asset.",
       "properties": {
+        "folder": {
+          "description": "The bin folder it is in; the top level when omitted. Organizing media never changes\nits identity (ADR-0004, item 3).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "$ref": "#/$defs/Id",
           "description": "Asset id (`asset_…`)."
@@ -286,6 +293,13 @@
       "description": "Imported assets in import order.",
       "items": {
         "$ref": "#/$defs/Asset"
+      },
+      "type": "array"
+    },
+    "folders": {
+      "description": "Folders of the media bin as paths such as `B-roll/Day 1`, sorted; each parent is\nlisted too.",
+      "items": {
+        "type": "string"
       },
       "type": "array"
     }

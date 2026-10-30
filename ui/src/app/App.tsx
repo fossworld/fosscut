@@ -3,12 +3,14 @@ import { useEffect, useSyncExternalStore } from "react";
 import { type Action, actionFor, isTyping } from "../keyboard";
 import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
+import { Media } from "../panels/Media";
 import { who } from "../panels/runs";
 import { Guides } from "../preview/Guides";
 import { MaskOverlay } from "../preview/MaskOverlay";
 import { PreviewHole } from "../preview/PreviewHole";
 import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
+import { TimelineTabs } from "../timeline/TimelineTabs";
 import { Transport } from "../transport/Transport";
 import type { Editor } from "./editor";
 import { Start } from "./Start";
@@ -156,11 +158,15 @@ export function App({ editor }: { editor: Editor }) {
                     .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}
                 />
               )}
+              <Media editor={editor} state={state} />
               <Activity editor={editor} state={state} />
             </aside>
           </main>
           <Transport editor={editor} state={state} />
-          <Timeline editor={editor} state={state} />
+          <div className="timeline-area">
+            <TimelineTabs editor={editor} state={state} />
+            <Timeline editor={editor} state={state} />
+          </div>
         </>
       )}
     </div>

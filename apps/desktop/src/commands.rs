@@ -148,7 +148,92 @@ pub fn project_close(app: AppHandle, state: State<'_, AppState>) {
 #[tauri::command]
 pub async fn query(state: State<'_, AppState>, name: String, args: Option<Value>) -> Answer<Value> {
     let workspace: Arc<Workspace> = Arc::clone(&state.workspace);
-    blocking(move || workspace.query(&name, args.unwrap_or(Value::Null))).await
+    blocking(move || {
+        let mut value = workspace.query(&name, args.unwrap_or(Value::Null))?;
+        // The window offers to relink media whose files are gone.
+        if name == "media.list"
+            && let Some((bundle, _, _)) = workspace.snapshot()
+        {
+            fosscut_engine::import::mark_missing(&mut value, &bundle);
+        }
+        Ok(value)
+    })
+    .await
+}
+
+/// Shows an asset's file in the system's file manager.
+#[tauri::command]
+pub async fn media_reveal(state: State<'_, AppState>, asset: String) -> Answer<()> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let (bundle, project, _) = workspace
+            .snapshot()
+            .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+        let asset = asset
+            .parse()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{asset}: {e}")))?;
+        let file = fosscut_engine::import::asset_file(&project, &bundle, &asset)?;
+        reveal(&file).map_err(|e| {
+            ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                format!("cannot show {}: {e}", file.display()),
+            )
+        })
+    })
+    .await
+}
+
+/// Opens the file manager at `file`, selected where the system allows.
+fn reveal(file: &std::path::Path) -> std::io::Result<()> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut open = std::process::Command::new("open");
+        open.arg("-R").arg(file);
+        open
+    } else if cfg!(windows) {
+        let mut explorer = std::process::Command::new("explorer");
+        explorer.arg(format!("/select,{}", file.display()));
+        explorer
+    } else {
+        let mut open = std::process::Command::new("xdg-open");
+        open.arg(file.parent().unwrap_or(file));
+        open
+    };
+    command.spawn().map(|_| ())
+}
+
+/// Asks where an asset's file is now and relinks it; `None` when the user cancels.
+#[tauri::command]
+pub async fn media_relink(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    asset: String,
+) -> Answer<Option<Response>> {
+    let dialog = app.clone();
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        let (bundle, _, _) = workspace
+            .snapshot()
+            .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+        let Some(file) = dialog
+            .dialog()
+            .file()
+            .set_title("Find the media file")
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        let path = file
+            .into_path()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, e.to_string()))?;
+        let id = asset
+            .parse()
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{asset}: {e}")))?;
+        let args = fosscut_engine::import::media_relink_args(&id, &path, &bundle)?;
+        workspace
+            .execute(Request::single("media.relink", args))
+            .map(Some)
+    })
+    .await
 }
 
 /// Applies the user's edit as one undoable step.

@@ -154,7 +154,50 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             let args = fosscut_engine::import::media_add_args(file, name.as_deref(), &bundle)?;
             write(cli, "media.add", args)
         }
-        Command::Media(MediaCommand::List) => query(cli, "media.list", Value::Null),
+        Command::Media(MediaCommand::List) => {
+            let bundle = bundle::bundle_path(cli.project.as_deref())?;
+            let mut listing = bundle::query(&bundle, "media.list", Value::Null)?;
+            fosscut_engine::import::mark_missing(&mut listing, &bundle);
+            Ok(Outcome::Query("media.list".into(), listing))
+        }
+        Command::Media(MediaCommand::Rename { asset, name }) => {
+            write(cli, "media.rename", json!({ "asset": asset, "name": name }))
+        }
+        Command::Media(MediaCommand::Remove { asset, with_clips }) => write(
+            cli,
+            "media.remove",
+            json!({ "asset": asset, "remove_clips": with_clips }),
+        ),
+        Command::Media(MediaCommand::Move { assets, folder }) => write(
+            cli,
+            "media.move",
+            object(vec![
+                ("assets", Some(json!(assets))),
+                ("folder", some(folder)),
+            ]),
+        ),
+        Command::Media(MediaCommand::Folder { action, folder, to }) => write(
+            cli,
+            "media.folder",
+            object(vec![
+                ("action", Some(json!(action))),
+                ("folder", Some(json!(folder))),
+                ("to", some(to)),
+            ]),
+        ),
+        Command::Media(MediaCommand::Relink { asset, file }) => {
+            let bundle = bundle::bundle_path(cli.project.as_deref())?;
+            let asset = asset
+                .parse()
+                .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{asset}: {e}")))?;
+            let args = fosscut_engine::import::media_relink_args(&asset, file, &bundle)?;
+            write(cli, "media.relink", args)
+        }
+        Command::Media(MediaCommand::Replace { asset, with }) => write(
+            cli,
+            "media.replace",
+            json!({ "asset": asset, "with": with }),
+        ),
         Command::Media(MediaCommand::Analyze {
             asset,
             analyzers,
@@ -550,6 +593,39 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("timeline", some(timeline)),
             ]),
         ),
+        Command::Timeline(TimelineCommand::Add {
+            name,
+            assets,
+            width,
+            height,
+            rate,
+            primary,
+        }) => write(
+            cli,
+            "timeline.add",
+            object(vec![
+                ("name", some(name)),
+                ("assets", Some(json!(assets))),
+                ("width", some(width)),
+                ("height", some(height)),
+                ("rate", some(rate)),
+                ("primary", Some(json!(primary))),
+            ]),
+        ),
+        Command::Timeline(TimelineCommand::Rename { name, timeline }) => write(
+            cli,
+            "timeline.rename",
+            object(vec![
+                ("name", Some(json!(name))),
+                ("timeline", some(timeline)),
+            ]),
+        ),
+        Command::Timeline(TimelineCommand::Primary { timeline }) => {
+            write(cli, "timeline.set_primary", json!({ "timeline": timeline }))
+        }
+        Command::Timeline(TimelineCommand::Remove { timeline }) => {
+            write(cli, "timeline.remove", json!({ "timeline": timeline }))
+        }
         Command::Timeline(TimelineCommand::Split { at, tracks }) => {
             write(cli, "timeline.split", json!({ "at": at, "tracks": tracks }))
         }

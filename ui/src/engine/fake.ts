@@ -95,6 +95,17 @@ export class FakeEngine implements EngineClient {
     return { effect_add: { clip, type: "color.adjust", params, index: 0 } };
   }
 
+  /** What relinking answers: true for a file chosen, false for a cancel. */
+  relinkChooses = true;
+
+  media = {
+    reveal: async (asset: string): Promise<void> => this.record("media.reveal", asset),
+    relink: async (asset: string): Promise<boolean> => {
+      this.record("media.relink", asset);
+      return this.relinkChooses;
+    },
+  };
+
   preview = {
     viewport: async (rect: Rect): Promise<void> => this.record("preview.viewport", rect),
     show: async (flicks: number): Promise<void> => this.record("preview.show", flicks),

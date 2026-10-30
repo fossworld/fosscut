@@ -30,6 +30,7 @@ fn project() -> (Project, Id) {
     let mut project = Project::new(Id::new(IdKind::Project, 7), "Parity", format);
     for n in [1, 2] {
         project.media.assets.push(Asset {
+            folder: None,
             id: asset(n),
             kind: AssetKind::Video,
             name: format!("pattern-{n}.mp4"),

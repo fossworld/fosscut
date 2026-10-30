@@ -41,6 +41,7 @@ fn with_blue(project: &mut Project) -> Id {
     blue_clip();
     let asset = Id::new(IdKind::Asset, 5);
     project.media.assets.push(Asset {
+        folder: None,
         id: asset.clone(),
         kind: AssetKind::Video,
         name: "blue.mp4".into(),
@@ -151,6 +152,7 @@ fn lut_effects_read_cube_files_in_frame_grabs() {
     .unwrap();
     let lut = Id::new(IdKind::Asset, 7);
     project.media.assets.push(Asset {
+        folder: None,
         id: lut.clone(),
         kind: AssetKind::Lut,
         name: "invert.cube".into(),

@@ -7,6 +7,7 @@ mod clipboard;
 mod effect;
 mod group;
 mod keyframe;
+mod library;
 mod marker;
 mod mask;
 mod media;
@@ -14,6 +15,7 @@ mod motion;
 mod speed;
 mod text;
 mod timeline;
+mod timelines;
 mod track;
 mod util;
 
@@ -39,6 +41,10 @@ pub use keyframe::{
     ClipProperties, ClipSet, Easing, KeyframeRemove, KeyframeReport, KeyframeSet, KeyframesChanged,
 };
 pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
+pub use library::{
+    AssetChanged, FolderAction, Folders, MediaFolder, MediaMove, MediaMoved, MediaRelink,
+    MediaRemove, MediaRemoved, MediaRename, MediaReplace, MediaReplaced,
+};
 pub use marker::{MarkerAdd, MarkerRemove, MarkerReport, MarkerSet};
 pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
@@ -51,12 +57,22 @@ pub use timeline::{
     Fit, RangeInput, RangeReport, RangesRemoved, TimelineDuplicate, TimelineDuplicated,
     TimelineRemoveRanges,
 };
+pub use timelines::{
+    TimelineAdd, TimelineRemove, TimelineRemoved, TimelineRename, TimelineReport,
+    TimelineSetPrimary,
+};
 pub use track::{TrackAdd, TrackAdded};
 
 use crate::Registry;
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.register::<MediaAdd>();
+    registry.register::<MediaRename>();
+    registry.register::<MediaRemove>();
+    registry.register::<MediaMove>();
+    registry.register::<MediaFolder>();
+    registry.register::<MediaRelink>();
+    registry.register::<MediaReplace>();
     registry.register::<TrackAdd>();
     registry.register::<ClipAdd>();
     registry.register::<ClipSplit>();
@@ -99,4 +115,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TimelineDuplicate>();
     registry.register::<TimelineRemoveRanges>();
     registry.register::<TimelineSplit>();
+    registry.register::<TimelineAdd>();
+    registry.register::<TimelineRename>();
+    registry.register::<TimelineSetPrimary>();
+    registry.register::<TimelineRemove>();
 }

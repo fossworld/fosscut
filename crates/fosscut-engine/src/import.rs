@@ -7,7 +7,9 @@ use std::path::{Component, Path};
 use std::process::Command;
 
 use fosscut_core::{ApiError, codes};
-use fosscut_model::{AssetKind, AudioInfo, ContentIdentity, MediaInfo, PathHints, VideoInfo};
+use fosscut_model::{
+    AssetKind, AudioInfo, ContentIdentity, Id, MediaInfo, PathHints, Project, VideoInfo,
+};
 use fosscut_time::{Flicks, Rate};
 use serde_json::{Value, json};
 
@@ -37,6 +39,62 @@ pub fn media_add_args(file: &Path, name: Option<&str>, bundle: &Path) -> Result<
         "identity": identity(file)?,
         "info": probed.info,
     }))
+}
+
+/// The arguments of a `media.relink` command pointing `asset` at `file`, its new place.
+/// Only the content identity is measured; `media.relink` refuses a different file.
+pub fn media_relink_args(asset: &Id, file: &Path, bundle: &Path) -> Result<Value, ApiError> {
+    Ok(json!({
+        "asset": asset,
+        "path": path_hints(file, bundle)?,
+        "identity": identity(file)?,
+    }))
+}
+
+/// The assets of `project` whose files cannot be found from `bundle`.
+pub fn missing_assets(project: &Project, bundle: &Path) -> Vec<Id> {
+    project
+        .media
+        .assets
+        .iter()
+        .filter(|a| crate::export::resolve(project, bundle, &a.id).is_err())
+        .map(|a| a.id.clone())
+        .collect()
+}
+
+/// Marks the assets of a `media.list` result whose files cannot be found from `bundle`
+/// with `"missing": true`, so front ends can offer to relink them.
+pub fn mark_missing(listing: &mut Value, bundle: &Path) {
+    let Some(assets) = listing.get_mut("assets").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for asset in assets {
+        let hints: PathHints = asset
+            .get("path")
+            .and_then(|p| serde_json::from_value(p.clone()).ok())
+            .unwrap_or_default();
+        let relative = hints.relative.as_ref().map(|r| {
+            r.split('/')
+                .fold(bundle.to_path_buf(), |path, part| path.join(part))
+        });
+        let found = relative.is_some_and(|p| p.is_file())
+            || hints
+                .absolute
+                .as_ref()
+                .is_some_and(|a| Path::new(a).is_file());
+        if !found {
+            asset["missing"] = json!(true);
+        }
+    }
+}
+
+/// Where the file of `asset` is, for showing it in the file manager.
+pub fn asset_file(
+    project: &Project,
+    bundle: &Path,
+    asset: &Id,
+) -> Result<std::path::PathBuf, ApiError> {
+    crate::export::resolve(project, bundle, asset).map_err(ApiError::from)
 }
 
 /// The ffprobe program: `FOSSCUT_FFPROBE` when set, otherwise `ffprobe` on the path.

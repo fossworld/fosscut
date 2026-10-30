@@ -21,6 +21,8 @@
     "allow-preview-play",
     "allow-preview-pause",
     "allow-preview-shuttle",
-    "allow-window-fullscreen"
+    "allow-window-fullscreen",
+    "allow-media-reveal",
+    "allow-media-relink"
   ]
 }

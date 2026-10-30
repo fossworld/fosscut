@@ -44,6 +44,9 @@ describe("the Tauri engine client", () => {
     await engine.preview.pause();
     await engine.preview.shuttle(-2);
     await engine.fullscreen(true);
+    await engine.media.reveal("asset_0001");
+    invoke.mockResolvedValueOnce(null);
+    expect(await engine.media.relink("asset_0001"), "a cancelled dialog").toBe(false);
     expect(invoke.mock.calls).toEqual([
       ["app_info"],
       ["recent_projects"],
@@ -65,6 +68,8 @@ describe("the Tauri engine client", () => {
       ["preview_pause"],
       ["preview_shuttle", { rate: -2 }],
       ["window_fullscreen", { on: true }],
+      ["media_reveal", { asset: "asset_0001" }],
+      ["media_relink", { asset: "asset_0001" }],
     ]);
   });
 

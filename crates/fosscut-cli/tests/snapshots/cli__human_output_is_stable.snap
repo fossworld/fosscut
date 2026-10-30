@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.8.0
+Demo (project_<random>)  revision 0  format 0.9.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.8.0
+Demo (project_<random>)  revision 8  format 0.9.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.8.0
+API 0.1.0  project format 0.9.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -138,9 +138,19 @@ commands:
   mask.remove    Remove a mask and its keyframes from a clip.
   mask.set       Change a mask: shape, placement (center, size, rotation), feather, expansion, roundness, invert, mode, path points, text or brush strokes, or turn it off (enabled: false). Animated values are set with keyframe.set as masks.<id>.<property>.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
+  media.folder   Add, rename (or move) or remove a media bin folder. Removing one moves its assets and subfolders up to its parent; assets are never removed.
+  media.move     Put assets in a media bin folder such as B-roll/Day 1 (created when missing), or back at the top level.
+  media.relink   Point an asset at its file's new location (front ends measure the file; the CLI's media relink and the MCP media_import with relink do both). The content must be the same file (fosscut.asset.identity_mismatch); for other media use media.replace.
+  media.remove   Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too.
+  media.rename   Rename an asset in the media bin. Only the display name changes, not the file.
+  media.replace  Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin.
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  timeline.add   Add a timeline to the project: empty, or a new timeline from chosen media placed one after another, with the canvas and rate of the first video unless given. primary makes it the one commands and exports use by default.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
+  timeline.remove Remove a timeline (allow_destructive when it has clips). A project keeps at least one timeline; removing the primary one makes the next primary.
   timeline.remove_ranges Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.
+  timeline.rename Rename a timeline.
+  timeline.set_primary Make a timeline the primary one: the timeline the app shows and commands, frames and exports use when given no timeline.
   timeline.split Split all: cut every clip under a time on every unlocked track (or the tracks named) in one step. Grouped clips' right parts form new groups.
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
   transition.remove Remove the transition from a clip into the next one: a plain cut again.

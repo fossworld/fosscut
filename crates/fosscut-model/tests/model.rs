@@ -21,6 +21,7 @@ fn round_one_project() -> Project {
     let mut project = Project::new(Id::new(IdKind::Project, 0x2f3a), "FossCut audit", format);
     let asset = project.allocate_id(IdKind::Asset);
     project.media.assets.push(Asset {
+        folder: None,
         id: asset.clone(),
         kind: AssetKind::Video,
         name: "test-pattern.mp4".into(),
@@ -628,7 +629,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.8.0");
+    assert_eq!(FORMAT_VERSION, "0.9.0");
 }
 
 #[test]
@@ -986,4 +987,86 @@ fn markers_groups_and_detached_sound_round_trip_and_are_checked() {
         let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
         assert!(codes.contains(&code.to_string()), "{case}: {codes:?}");
     }
+}
+
+#[test]
+fn media_folders_round_trip_and_are_checked() {
+    let mut project = round_one_project();
+    project.media.folders = vec!["B-roll".into(), "B-roll/Day 1".into()];
+    project.media.assets[0].folder = Some("B-roll/Day 1".into());
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let json = serde_json::to_value(&project.media).unwrap();
+    assert_eq!(json["assets"][0]["folder"], "B-roll/Day 1");
+    assert!(
+        serde_json::to_value(&round_one_project().media)
+            .unwrap()
+            .get("folders")
+            .is_none()
+    );
+    assert_eq!(
+        folder_and_parents("a/b/c"),
+        vec!["a".to_string(), "a/b".into(), "a/b/c".into()]
+    );
+    for bad in ["", "a//b", " a", "a/", "/a"] {
+        assert!(!valid_folder(bad), "{bad:?}");
+    }
+    type Breakage = fn(&mut Project);
+    let cases: [(&str, Breakage); 3] = [
+        ("a missing parent", |p| {
+            p.media.folders = vec!["B-roll/Day 1".into()]
+        }),
+        ("out of order", |p| {
+            p.media.folders.reverse();
+        }),
+        ("an unlisted folder", |p| {
+            p.media.assets[0].folder = Some("Elsewhere".into());
+        }),
+    ];
+    for (case, breakage) in cases {
+        let mut broken = project.clone();
+        breakage(&mut broken);
+        let codes: Vec<String> = validate(&broken).into_iter().map(|i| i.code).collect();
+        assert!(
+            codes.contains(&"fosscut.model.folder".to_string()),
+            "{case}: {codes:?}"
+        );
+    }
+}
+
+#[test]
+fn removed_timelines_lose_their_documents() {
+    let mut project = round_one_project();
+    let extra = Id::new(IdKind::Timeline, 77);
+    let mut copy = project.primary_timeline().unwrap().clone();
+    copy.id = extra.clone();
+    project.manifest.timelines.push(TimelineEntry {
+        id: extra.clone(),
+        name: "Copy".into(),
+    });
+    project.timelines.insert(extra.clone(), copy);
+    let root = std::env::temp_dir().join(format!("fosscut-model-removal-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut store = DirStore::new(root.join("Removal.fosscut"));
+    project.save_all(&mut store).unwrap();
+    let path = DocumentKey::Timeline(extra.clone()).path();
+    assert!(store.exists(&path));
+    project.timelines.remove(&extra);
+    project.manifest.timelines.retain(|t| t.id != extra);
+    project
+        .save_documents(
+            &mut store,
+            &[DocumentKey::Timeline(extra.clone()), DocumentKey::Manifest],
+        )
+        .unwrap();
+    assert!(!store.exists(&path), "the document went with the timeline");
+    assert_eq!(Project::load(&store).unwrap(), project);
+    store.remove("timelines/never.json").unwrap();
+    std::fs::remove_dir_all(&root).unwrap();
+    let mut memory = MemoryStore::new();
+    memory.write_atomic("a.json", b"{}").unwrap();
+    memory.remove("a.json").unwrap();
+    assert!(!memory.exists("a.json"));
 }

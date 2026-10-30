@@ -144,6 +144,8 @@ pub fn run() {
             commands::preview_pause,
             commands::preview_shuttle,
             commands::window_fullscreen,
+            commands::media_reveal,
+            commands::media_relink,
         ])
         .build(tauri::generate_context!());
     match app {

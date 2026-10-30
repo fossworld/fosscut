@@ -86,10 +86,35 @@ pub fn validate(project: &Project) -> Vec<Issue> {
         );
     }
 
+    // Folders are valid paths, sorted, each with its parents; assets sit in listed ones.
+    let folders = &project.media.folders;
+    let listed = folders.windows(2).all(|w| w[0] < w[1])
+        && folders.iter().all(|f| {
+            crate::media::valid_folder(f)
+                && crate::media::folder_and_parents(f)
+                    .iter()
+                    .all(|p| folders.contains(p))
+        });
+    if !listed {
+        issues.push(
+            "media",
+            "fosscut.model.folder",
+            "folders must be sorted paths of names, each listed with its parents",
+        );
+    }
     for asset in &project.media.assets {
         let path = asset.id.to_string();
         expect_kind(&mut issues, &asset.id, IdKind::Asset, &path);
         unique(&mut issues, &asset.id, &path);
+        if let Some(folder) = &asset.folder
+            && !folders.contains(folder)
+        {
+            issues.push(
+                &path,
+                "fosscut.model.folder",
+                format!("asset is in folder {folder}, which the media bin does not list"),
+            );
+        }
         let timed = matches!(asset.kind, AssetKind::Video | AssetKind::Audio);
         if asset.kind == AssetKind::Lut && asset.info.lut.as_ref().is_none_or(|l| l.size < 2) {
             issues.push(

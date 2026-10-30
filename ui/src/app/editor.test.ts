@@ -499,6 +499,56 @@ describe("editor", () => {
     expect(commands).toEqual([{ command: "clip.split", args: { clip: "clip_0003", at: { flicks: FLICKS_PER_SECOND } } }]);
   });
 
+  it("manages the media bin and the project's timelines", async () => {
+    const fake = engine();
+    fake.answers["media.list"] = {
+      assets: [
+        { id: "asset_0001", name: "clip.mp4", kind: "video", used_by: ["clip_0003"], folder: "Footage" },
+        { id: "asset_0002", name: "gone.mp4", kind: "video", used_by: [], missing: true },
+      ],
+      folders: ["Footage"],
+    };
+    const { editor } = await started(fake);
+    expect(editor.getState().folders).toEqual(["Footage"]);
+    expect(editor.getState().media[1]?.missing).toBe(true);
+    await editor.renameAsset("asset_0002", "Found");
+    await editor.renameAsset("asset_0002", "  ");
+    await editor.removeAsset("asset_0001");
+    await editor.removeAsset("asset_0002");
+    await editor.moveAssets(["asset_0002"], "Footage/Day 1");
+    await editor.moveAssets(["asset_0002"], "");
+    await editor.moveAssets([], "Footage");
+    await editor.folder("rename", "Footage", "Shots");
+    await editor.revealAsset("asset_0001");
+    await editor.relinkAsset("asset_0002");
+    fake.relinkChooses = false;
+    await editor.relinkAsset("asset_0002");
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.addToTimeline("asset_0001");
+    await editor.addTimeline(["asset_0001", "asset_0002"]);
+    await editor.showTimeline("timeline_0000");
+    await editor.showTimeline("timeline_0009");
+    expect(editor.getState().playhead, "a new timeline starts at its beginning").toBe(0);
+    await editor.renameTimeline("timeline_0009", "Shorts");
+    await editor.removeTimeline("timeline_0009");
+    expect(fake.callsOf("media.reveal")).toEqual([["asset_0001"]]);
+    expect(fake.callsOf("media.relink")).toEqual([["asset_0002"], ["asset_0002"]]);
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "media.rename", args: { asset: "asset_0002", name: "Found" } },
+      { command: "media.remove", args: { asset: "asset_0001", remove_clips: true } },
+      { command: "media.remove", args: { asset: "asset_0002" } },
+      { command: "media.move", args: { assets: ["asset_0002"], folder: "Footage/Day 1" } },
+      { command: "media.move", args: { assets: ["asset_0002"] } },
+      { command: "media.folder", args: { action: "rename", folder: "Footage", to: "Shots" } },
+      { command: "clip.add", args: { asset: "asset_0001", start: { flicks: FLICKS_PER_SECOND } } },
+      { command: "timeline.add", args: { assets: ["asset_0001", "asset_0002"], primary: true } },
+      { command: "timeline.set_primary", args: { timeline: "timeline_0009" } },
+      { command: "timeline.rename", args: { timeline: "timeline_0009", name: "Shorts" } },
+      { command: "timeline.remove", args: { timeline: "timeline_0009" } },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

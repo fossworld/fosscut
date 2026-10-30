@@ -11028,6 +11028,470 @@
     {
       "input_schema": {
         "$defs": {
+          "FolderAction": {
+            "description": "What `media.folder` does.",
+            "oneOf": [
+              {
+                "const": "add",
+                "description": "Create it, with its parents.",
+                "type": "string"
+              },
+              {
+                "const": "rename",
+                "description": "Rename or move it.",
+                "type": "string"
+              },
+              {
+                "const": "remove",
+                "description": "Remove it; its assets and subfolders move to its parent.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds, renames or removes a folder of the media bin.",
+        "properties": {
+          "action": {
+            "$ref": "#/$defs/FolderAction",
+            "description": "`add`, `rename` or `remove`."
+          },
+          "folder": {
+            "description": "The folder, such as `B-roll/Day 1`.",
+            "type": "string"
+          },
+          "to": {
+            "default": null,
+            "description": "For `rename`: the new path. Subfolders and the assets in them move along.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "folder"
+        ],
+        "title": "MediaFolder",
+        "type": "object"
+      },
+      "name": "media.folder",
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The folders of the bin after a change.",
+        "properties": {
+          "folders": {
+            "description": "Every folder, sorted.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "Folders",
+        "type": "object"
+      },
+      "summary": "Add, rename (or move) or remove a media bin folder. Removing one moves its assets and subfolders up to its parent; assets are never removed."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Puts assets in a folder of the media bin.",
+        "properties": {
+          "assets": {
+            "description": "The assets.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "folder": {
+            "default": null,
+            "description": "The folder, such as `B-roll/Day 1`; created with its parents when missing. Empty or\nomitted moves them to the top level.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "assets"
+        ],
+        "title": "MediaMove",
+        "type": "object"
+      },
+      "name": "media.move",
+      "output_schema": {
+        "$defs": {
+          "AssetChanged": {
+            "description": "An asset after a change.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset."
+              },
+              "folder": {
+                "description": "Its folder; the top level when absent.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "name": {
+                "description": "Its display name.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "asset",
+              "name"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `media.move`.",
+        "properties": {
+          "assets": {
+            "description": "The assets moved.",
+            "items": {
+              "$ref": "#/$defs/AssetChanged"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets"
+        ],
+        "title": "MediaMoved",
+        "type": "object"
+      },
+      "summary": "Put assets in a media bin folder such as B-roll/Day 1 (created when missing), or back at the top level."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "ContentIdentity": {
+            "description": "Identity of a file's content: its size and a BLAKE3 hash of its first and last MiB.",
+            "properties": {
+              "sample_blake3": {
+                "description": "Hex BLAKE3 digest of the size, the first MiB and the last MiB of the file.",
+                "type": "string"
+              },
+              "size": {
+                "description": "File size in bytes.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "size",
+              "sample_blake3"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "PathHints": {
+            "description": "Path hints for a source file. Relative paths are relative to the project bundle.",
+            "properties": {
+              "absolute": {
+                "description": "Absolute path at import time.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "relative": {
+                "description": "Path relative to the `.fosscut` bundle directory, with `/` separators.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Records where an asset's file is now, after it was moved or renamed on disk.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset."
+          },
+          "identity": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ContentIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The file's content identity, as front ends measure it; it must match the asset's."
+          },
+          "path": {
+            "$ref": "#/$defs/PathHints",
+            "description": "Where the file is now."
+          }
+        },
+        "required": [
+          "asset",
+          "path"
+        ],
+        "title": "MediaRelink",
+        "type": "object"
+      },
+      "name": "media.relink",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An asset after a change.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset."
+          },
+          "folder": {
+            "description": "Its folder; the top level when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Its display name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "name"
+        ],
+        "title": "AssetChanged",
+        "type": "object"
+      },
+      "summary": "Point an asset at its file's new location (front ends measure the file; the CLI's media relink and the MCP media_import with relink do both). The content must be the same file (fosscut.asset.identity_mismatch); for other media use media.replace."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes an asset from the media bin.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset."
+          },
+          "remove_clips": {
+            "default": false,
+            "description": "Also remove the clips that show it (needs allow_destructive). Without it, an asset\nin use fails with `fosscut.asset.in_use`.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asset"
+        ],
+        "title": "MediaRemove",
+        "type": "object"
+      },
+      "name": "media.remove",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `media.remove`.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset removed."
+          },
+          "clips": {
+            "description": "The clips removed with it.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "asset",
+          "clips"
+        ],
+        "title": "MediaRemoved",
+        "type": "object"
+      },
+      "summary": "Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Renames an asset in the media bin; the file is not touched.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset."
+          },
+          "name": {
+            "description": "Its new display name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "name"
+        ],
+        "title": "MediaRename",
+        "type": "object"
+      },
+      "name": "media.rename",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "An asset after a change.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset."
+          },
+          "folder": {
+            "description": "Its folder; the top level when absent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "description": "Its display name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset",
+          "name"
+        ],
+        "title": "AssetChanged",
+        "type": "object"
+      },
+      "summary": "Rename an asset in the media bin. Only the display name changes, not the file."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Shows other media in every clip that shows an asset.",
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset to replace."
+          },
+          "with": {
+            "$ref": "#/$defs/Id",
+            "description": "The asset that takes its place in every clip."
+          }
+        },
+        "required": [
+          "asset",
+          "with"
+        ],
+        "title": "MediaReplace",
+        "type": "object"
+      },
+      "name": "media.replace",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `media.replace`.",
+        "properties": {
+          "clips": {
+            "description": "The clips that show the new asset now.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "MediaReplaced",
+        "type": "object"
+      },
+      "summary": "Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Align": {
             "description": "Horizontal text alignment.",
             "oneOf": [
@@ -11376,6 +11840,145 @@
     {
       "input_schema": {
         "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a timeline: empty, or with chosen media placed one after another.",
+        "properties": {
+          "assets": {
+            "default": [],
+            "description": "Assets to place one after another, pictures on a video track and sound on an audio\ntrack; images last three seconds.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "height": {
+            "default": null,
+            "description": "Canvas height in pixels.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "default": null,
+            "description": "Its name; `Timeline N` when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary": {
+            "default": false,
+            "description": "Make it the primary timeline.",
+            "type": "boolean"
+          },
+          "rate": {
+            "default": null,
+            "description": "Frame rate such as `30` or `30000/1001`; the first video's, or the primary\ntimeline's, when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "width": {
+            "default": null,
+            "description": "Canvas width in pixels; the first video's, or the primary timeline's, when omitted.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "TimelineAdd",
+        "type": "object"
+      },
+      "name": "timeline.add",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A timeline after a change.",
+        "properties": {
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Its length."
+          },
+          "name": {
+            "description": "Its name.",
+            "type": "string"
+          },
+          "primary": {
+            "description": "True when it is the primary timeline.",
+            "type": "boolean"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "name",
+          "primary",
+          "duration"
+        ],
+        "title": "TimelineReport",
+        "type": "object"
+      },
+      "summary": "Add a timeline to the project: empty, or a new timeline from chosen media placed one after another, with the canvas and rate of the first video unless given. primary makes it the one commands and exports use by default."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Fit": {
             "description": "How pictures meet a canvas of another shape.",
             "oneOf": [
@@ -11552,6 +12155,60 @@
         "type": "object"
       },
       "summary": "Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes a timeline from the project.",
+        "properties": {
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline. The project keeps at least one; removing the primary one makes the\nfirst remaining timeline primary."
+          }
+        },
+        "required": [
+          "timeline"
+        ],
+        "title": "TimelineRemove",
+        "type": "object"
+      },
+      "name": "timeline.remove",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `timeline.remove`.",
+        "properties": {
+          "primary": {
+            "$ref": "#/$defs/Id",
+            "description": "The primary timeline now."
+          },
+          "removed": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline removed."
+          }
+        },
+        "required": [
+          "removed",
+          "primary"
+        ],
+        "title": "TimelineRemoved",
+        "type": "object"
+      },
+      "summary": "Remove a timeline (allow_destructive when it has clips). A project keeps at least one timeline; removing the primary one makes the next primary."
     },
     {
       "input_schema": {
@@ -11808,6 +12465,212 @@
         "type": "object"
       },
       "summary": "Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Renames a timeline.",
+        "properties": {
+          "name": {
+            "description": "Its new name.",
+            "type": "string"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The timeline; the primary one when omitted."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TimelineRename",
+        "type": "object"
+      },
+      "name": "timeline.rename",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A timeline after a change.",
+        "properties": {
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Its length."
+          },
+          "name": {
+            "description": "Its name.",
+            "type": "string"
+          },
+          "primary": {
+            "description": "True when it is the primary timeline.",
+            "type": "boolean"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "name",
+          "primary",
+          "duration"
+        ],
+        "title": "TimelineReport",
+        "type": "object"
+      },
+      "summary": "Rename a timeline."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Makes a timeline the primary one.",
+        "properties": {
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          }
+        },
+        "required": [
+          "timeline"
+        ],
+        "title": "TimelineSetPrimary",
+        "type": "object"
+      },
+      "name": "timeline.set_primary",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A timeline after a change.",
+        "properties": {
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Its length."
+          },
+          "name": {
+            "description": "Its name.",
+            "type": "string"
+          },
+          "primary": {
+            "description": "True when it is the primary timeline.",
+            "type": "boolean"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "name",
+          "primary",
+          "duration"
+        ],
+        "title": "TimelineReport",
+        "type": "object"
+      },
+      "summary": "Make a timeline the primary one: the timeline the app shows and commands, frames and exports use when given no timeline."
     },
     {
       "input_schema": {
@@ -13773,6 +14636,16 @@
       "meaning": "The asset does not exist."
     },
     {
+      "code": "fosscut.asset.in_use",
+      "hint": "Remove the clips in the error's details first, or pass remove_clips: true with allow_destructive.",
+      "meaning": "Clips show the asset, so it cannot be removed alone."
+    },
+    {
+      "code": "fosscut.asset.identity_mismatch",
+      "hint": "Find the original file, or import the new one and swap it in with media.replace.",
+      "meaning": "The file is not the asset's media: its size or content differs."
+    },
+    {
       "code": "fosscut.media.incomplete_info",
       "hint": "Import the file with a front end that probes it (fosscut media import).",
       "meaning": "Media information is missing for this kind of asset."
@@ -13868,7 +14741,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.8.0",
+  "format_version": "0.9.0",
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",

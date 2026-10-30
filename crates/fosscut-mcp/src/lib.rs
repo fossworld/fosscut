@@ -394,7 +394,7 @@ impl FosscutServer {
 
     /// Imports media files.
     #[tool(
-        description = "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset.",
+        description = "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files).",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn media_import(
@@ -408,6 +408,7 @@ impl FosscutServer {
             Err(error) => return Ok(failure(&error)),
         };
         let files = args.files;
+        let relink = args.relink;
         let state = Arc::clone(&self.state);
         let envelope = (
             args.expected_revision,
@@ -416,17 +417,38 @@ impl FosscutServer {
             args.reason,
         );
         let result = blocking(move || {
-            let commands = files
-                .iter()
-                .map(|file| {
-                    fosscut_engine::import::media_add_args(Path::new(file), None, &bundle).map(
-                        |args| CommandCall {
-                            command: "media.add".into(),
-                            args,
-                        },
-                    )
-                })
-                .collect::<Result<Vec<_>, ApiError>>()?;
+            let commands = match relink {
+                Some(asset) => {
+                    let [file] = files.as_slice() else {
+                        return Err(ApiError::new(
+                            codes::INVALID_ARGUMENTS,
+                            "media_import: relink takes exactly one file",
+                        ));
+                    };
+                    let asset = asset.parse().map_err(|e| {
+                        ApiError::new(codes::INVALID_ARGUMENTS, format!("relink: {e}"))
+                    })?;
+                    vec![CommandCall {
+                        command: "media.relink".into(),
+                        args: fosscut_engine::import::media_relink_args(
+                            &asset,
+                            Path::new(file),
+                            &bundle,
+                        )?,
+                    }]
+                }
+                None => files
+                    .iter()
+                    .map(|file| {
+                        fosscut_engine::import::media_add_args(Path::new(file), None, &bundle).map(
+                            |args| CommandCall {
+                                command: "media.add".into(),
+                                args,
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, ApiError>>()?,
+            };
             let (expected_revision, dry_run, request_id, reason) = envelope;
             let request = request(
                 commands,
@@ -447,14 +469,21 @@ impl FosscutServer {
 
     /// Lists media.
     #[tool(
-        description = "List the project's media: asset ids, names, kinds, durations and stream details.",
+        description = "List the project's media: asset ids, names, kinds, durations, stream details, bin folders, the clips that use each asset, and missing: true for files that cannot be found (relink them with media_import).",
         annotations(read_only_hint = true)
     )]
     async fn media_list(
         &self,
         params: Parameters<ProjectArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        reply(self.read(params.0.project, "media.list", Value::Null).await)
+        let bundle = self.bundle(params.0.project.clone());
+        let listed = self.read(params.0.project, "media.list", Value::Null).await;
+        reply(listed.map(|mut listing| {
+            if let Ok(bundle) = bundle {
+                fosscut_engine::import::mark_missing(&mut listing, &bundle);
+            }
+            listing
+        }))
     }
 
     /// Analyzes media.

@@ -5,12 +5,14 @@
 import type { EngineClient, Rect, Unsubscribe } from "../engine/client";
 import {
   type ApiError,
+  type AssetView,
   type Catalog,
   type Client,
   type CommandCall,
   type EditRequest,
   type History,
   type LogEntry,
+  type MediaListing,
   type Opened,
   type TimelineView,
   isApiError,
@@ -41,6 +43,9 @@ export interface EditorState {
   catalog: Catalog | null;
   /** LUT assets in the media table, for `color.lut` effects. */
   luts: { id: string; name: string }[];
+  /** The media bin: every asset, and its folders. */
+  media: AssetView[];
+  folders: string[];
   /** Drawing a path or painting a brush mask on the preview, when not null. */
   maskTool: MaskTool | null;
   /** More selected clips, shift-clicked after the first (for grouping). */
@@ -117,6 +122,8 @@ const EMPTY: EditorState = {
   notice: null,
   catalog: null,
   luts: [],
+  media: [],
+  folders: [],
   maskTool: null,
 };
 
@@ -282,11 +289,19 @@ export class Editor {
       ]);
       const selection =
         this.state.selection && findClip(timeline, this.state.selection) ? this.state.selection : null;
-      const luts = await this.engine
-        .query<{ assets: { id: string; name: string; kind: string }[] }>("media.list")
-        .then((media) => media.assets.filter((a) => a.kind === "lut").map(({ id, name }) => ({ id, name })))
-        .catch(() => this.state.luts);
-      this.set({ opened: { ...opened, info }, timeline, history: history.entries, selection, luts });
+      const listing = await this.engine
+        .query<MediaListing>("media.list")
+        .catch(() => ({ assets: this.state.media, folders: this.state.folders }));
+      const luts = listing.assets.filter((a) => a.kind === "lut").map(({ id, name }) => ({ id, name }));
+      this.set({
+        opened: { ...opened, info },
+        timeline,
+        history: history.entries,
+        selection,
+        luts,
+        media: listing.assets,
+        folders: listing.folders ?? [],
+      });
     } catch (error) {
       this.notify(error);
     }
@@ -731,6 +746,73 @@ export class Editor {
         args: { clip, at: { flicks: this.getState().playhead }, duration: { seconds: String(seconds) } },
       },
     ]);
+  }
+
+  // ---- Media bin and timelines ----
+
+  async renameAsset(asset: string, name: string): Promise<void> {
+    if (name.trim()) await this.edit([{ command: "media.rename", args: { asset, name } }]);
+  }
+
+  /** Removes an asset; when clips show it, asks before removing them too. */
+  async removeAsset(asset: string): Promise<void> {
+    const used = this.state.media.find((a) => a.id === asset)?.used_by.length ?? 0;
+    await this.edit([{ command: "media.remove", args: used > 0 ? { asset, remove_clips: true } : { asset } }]);
+  }
+
+  /** Puts assets in a folder, or at the top level when `folder` is empty. */
+  async moveAssets(assets: string[], folder: string): Promise<void> {
+    if (assets.length === 0) return;
+    await this.edit([{ command: "media.move", args: folder ? { assets, folder } : { assets } }]);
+  }
+
+  async folder(action: "add" | "rename" | "remove", folder: string, to?: string): Promise<void> {
+    if (!folder.trim()) return;
+    await this.edit([{ command: "media.folder", args: to ? { action, folder, to } : { action, folder } }]);
+  }
+
+  async revealAsset(asset: string): Promise<void> {
+    try {
+      await this.engine.media.reveal(asset);
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /** Asks where a missing asset's file is now. */
+  async relinkAsset(asset: string): Promise<void> {
+    try {
+      if (await this.engine.media.relink(asset)) await this.refresh();
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /** Places an asset on the timeline at the playhead, on a track free there. */
+  async addToTimeline(asset: string): Promise<void> {
+    await this.edit([{ command: "clip.add", args: { asset, start: { flicks: this.state.playhead } } }]);
+  }
+
+  /** Adds a timeline (from `assets`, when given) and shows it. */
+  async addTimeline(assets: string[] = []): Promise<void> {
+    await this.edit([{ command: "timeline.add", args: assets.length > 0 ? { assets, primary: true } : { primary: true } }]);
+  }
+
+  /** Shows another timeline: it becomes the primary one. */
+  async showTimeline(timeline: string): Promise<void> {
+    if (timeline === this.state.opened?.info.primary_timeline) return;
+    if (await this.edit([{ command: "timeline.set_primary", args: { timeline } }])) {
+      this.set({ selection: null, also: [], playhead: 0 });
+      await this.engine.preview.show(0);
+    }
+  }
+
+  async renameTimeline(timeline: string, name: string): Promise<void> {
+    if (name.trim()) await this.edit([{ command: "timeline.rename", args: { timeline, name } }]);
+  }
+
+  async removeTimeline(timeline: string): Promise<void> {
+    await this.edit([{ command: "timeline.remove", args: { timeline } }]);
   }
 
   /** Sets the transition from a clip into the next, or removes it when `type` is empty. */

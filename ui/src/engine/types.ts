@@ -37,6 +37,28 @@ export interface ProjectInfo {
   assets: number;
 }
 
+/** One asset of `media.list`. */
+export interface AssetView {
+  id: string;
+  kind: "video" | "audio" | "image" | "lut";
+  name: string;
+  duration?: Moment | null;
+  video?: { width: number; height: number } | null;
+  audio?: unknown;
+  /** The clips that show it. */
+  used_by: string[];
+  /** Its bin folder; the top level when absent. */
+  folder?: string | null;
+  /** True when its file cannot be found (the desktop marks it). */
+  missing?: boolean;
+}
+
+/** `media.list`. */
+export interface MediaListing {
+  assets: AssetView[];
+  folders?: string[];
+}
+
 /** The project the app has open. */
 export interface Opened {
   bundle: string;

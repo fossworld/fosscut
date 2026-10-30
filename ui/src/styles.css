@@ -730,3 +730,103 @@ body.browser .preview-hole::after {
   color: var(--accent, #ff7a45);
   font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
+
+.media input[type="search"],
+.media .buttons input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.media .filters {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.media .filters select,
+.media .buttons select {
+  flex: 1;
+  min-width: 0;
+}
+
+.media .assets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.media .asset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.media .asset .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media .asset.missing .name {
+  color: #ff7a45;
+}
+
+.media .asset .actions button {
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+/* The timeline area: tabs over the canvas. */
+.timeline-area {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.timeline-area .timeline {
+  flex: 1;
+  min-height: 0;
+}
+
+.timeline-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px 8px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.timeline-tabs .tab {
+  display: inline-flex;
+}
+
+.timeline-tabs .tab button {
+  border-radius: 4px 4px 0 0;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.timeline-tabs .tab.active button {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.timeline-tabs .close {
+  padding: 2px 5px;
+}
+
+.app.fullscreen .timeline-area {
+  display: none;
+}

@@ -59,6 +59,12 @@ export interface EngineClient {
    * to apply with `execute` like any edit.
    */
   colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion>;
+  media: {
+    /** Shows an asset's file in the system's file manager. */
+    reveal(asset: string): Promise<void>;
+    /** Asks where an asset's file is now and relinks it; false when the user cancels. */
+    relink(asset: string): Promise<boolean>;
+  };
   preview: {
     viewport(rect: Rect): Promise<void>;
     show(flicks: number): Promise<void>;

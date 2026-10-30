@@ -49,6 +49,18 @@ impl ChangeSummary {
 /// a clip is reported for the clip only.
 fn objects(project: &Project) -> BTreeMap<String, serde_json::Value> {
     let mut map = BTreeMap::new();
+    // The project itself: its name and which timeline is primary.
+    map.insert(
+        project.manifest.id.to_string(),
+        serde_json::json!({
+            "name": project.manifest.name,
+            "primary_timeline": project.manifest.primary_timeline,
+        }),
+    );
+    // Media bin folders, by path.
+    for folder in &project.media.folders {
+        map.insert(format!("folder:{folder}"), serde_json::Value::Null);
+    }
     for asset in &project.media.assets {
         map.insert(
             asset.id.to_string(),

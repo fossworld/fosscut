@@ -306,8 +306,56 @@ pub enum MediaCommand {
         #[arg(long)]
         name: Option<String>,
     },
-    /// List imported media.
+    /// List imported media, marking files that cannot be found.
     List,
+    /// Rename an asset in the media bin (not the file).
+    Rename {
+        /// The asset.
+        asset: String,
+        /// Its new name.
+        name: String,
+    },
+    /// Remove an asset from the media bin (never the file).
+    Remove {
+        /// The asset.
+        asset: String,
+        /// Also remove the clips that show it.
+        #[arg(long)]
+        with_clips: bool,
+    },
+    /// Put assets in a bin folder such as `B-roll/Day 1`, or back at the top level.
+    Move {
+        /// The assets.
+        #[arg(required = true)]
+        assets: Vec<String>,
+        /// The folder; the top level when omitted.
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Add, rename or remove a bin folder.
+    Folder {
+        /// add, rename or remove.
+        action: String,
+        /// The folder.
+        folder: String,
+        /// For rename: the new path.
+        #[arg(long)]
+        to: Option<String>,
+    },
+    /// Point an asset at its file's new place, after the file was moved or renamed.
+    Relink {
+        /// The asset.
+        asset: String,
+        /// Where the file is now.
+        file: PathBuf,
+    },
+    /// Show another asset in every clip that shows this one.
+    Replace {
+        /// The asset to replace.
+        asset: String,
+        /// The asset that takes its place.
+        with: String,
+    },
     /// Measure an asset's loudness, silences and shot cuts on this machine. Results are
     /// cached by the file's content, so asking again is instant.
     Analyze {
@@ -1075,6 +1123,45 @@ pub enum TimelineCommand {
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+    /// Add a timeline: empty, or with media placed one after another.
+    Add {
+        /// Its name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Assets to place, in order.
+        #[arg(long = "asset")]
+        assets: Vec<String>,
+        /// Canvas width.
+        #[arg(long)]
+        width: Option<u32>,
+        /// Canvas height.
+        #[arg(long)]
+        height: Option<u32>,
+        /// Frame rate, such as 30 or 30000/1001.
+        #[arg(long)]
+        rate: Option<String>,
+        /// Make it the primary timeline.
+        #[arg(long)]
+        primary: bool,
+    },
+    /// Rename a timeline (the primary one unless --timeline names another).
+    Rename {
+        /// Its new name.
+        name: String,
+        /// The timeline.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Make a timeline the primary one.
+    Primary {
+        /// The timeline.
+        timeline: String,
+    },
+    /// Remove a timeline.
+    Remove {
+        /// The timeline.
+        timeline: String,
     },
     /// Split every clip under a time, on every unlocked track or the ones named.
     Split {

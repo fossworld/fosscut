@@ -56,6 +56,11 @@ export class TauriEngine implements EngineClient {
     return invoke("color_suggest", { clip, reference: reference ?? null });
   }
 
+  media = {
+    reveal: (asset: string): Promise<void> => invoke("media_reveal", { asset }),
+    relink: async (asset: string): Promise<boolean> => (await invoke("media_relink", { asset })) !== null,
+  };
+
   preview = {
     viewport: (rect: Rect): Promise<void> => invoke("preview_viewport", { ...rect }),
     show: (flicks: number): Promise<void> => invoke("preview_show", { flicks: Math.round(flicks) }),

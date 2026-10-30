@@ -20,6 +20,8 @@ fn main() {
         "preview_pause",
         "preview_shuttle",
         "window_fullscreen",
+        "media_reveal",
+        "media_relink",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

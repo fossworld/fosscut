@@ -434,6 +434,7 @@ mod tests {
         let mut project = Project::new(Id::new(fosscut_model::IdKind::Project, 1), "Plan", format);
         let asset = project.allocate_id(fosscut_model::IdKind::Asset);
         project.media.assets.push(Asset {
+            folder: None,
             id: asset.clone(),
             kind: AssetKind::Video,
             name: "clip.mp4".into(),

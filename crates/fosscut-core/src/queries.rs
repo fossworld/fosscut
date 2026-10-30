@@ -293,10 +293,11 @@ fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
                 "video": asset.info.video,
                 "audio": asset.info.audio,
                 "used_by": used_by,
+                "folder": asset.folder,
             })
         })
         .collect();
-    Ok(json!({ "assets": assets }))
+    Ok(json!({ "assets": assets, "folders": project.media.folders }))
 }
 
 fn clip_view(

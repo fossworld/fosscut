@@ -145,6 +145,10 @@ pub mod codes {
     pub const TRANSITION_NO_NEIGHBOR: &str = "fosscut.transition.no_neighbor";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
+    /// Clips show the asset, so it cannot be removed alone.
+    pub const ASSET_IN_USE: &str = "fosscut.asset.in_use";
+    /// The file is not the asset's media.
+    pub const ASSET_IDENTITY_MISMATCH: &str = "fosscut.asset.identity_mismatch";
     /// Media information is missing or inconsistent with the asset kind.
     pub const MEDIA_INCOMPLETE: &str = "fosscut.media.incomplete_info";
     /// Text is empty.
@@ -339,6 +343,16 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             ASSET_NOT_FOUND,
             "The asset does not exist.",
             "List assets with media.list.",
+        ),
+        entry(
+            ASSET_IN_USE,
+            "Clips show the asset, so it cannot be removed alone.",
+            "Remove the clips in the error's details first, or pass remove_clips: true with allow_destructive.",
+        ),
+        entry(
+            ASSET_IDENTITY_MISMATCH,
+            "The file is not the asset's media: its size or content differs.",
+            "Find the original file, or import the new one and swap it in with media.replace.",
         ),
         entry(
             MEDIA_INCOMPLETE,

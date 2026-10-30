@@ -93,6 +93,7 @@ pub fn project(relative: &str) -> Project {
     let mut project = Project::new(Id::new(IdKind::Project, 1), "Show", format);
     let asset = Id::new(IdKind::Asset, 1);
     project.media.assets.push(Asset {
+        folder: None,
         id: asset.clone(),
         kind: AssetKind::Video,
         name: "clip.mp4".into(),

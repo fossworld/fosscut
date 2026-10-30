@@ -193,8 +193,10 @@ impl Project {
             ordered.push(&DocumentKey::Manifest);
         }
         for key in ordered {
-            if let Some(value) = self.document_value(key) {
-                store.write_atomic(&key.path(), &to_document_bytes(&value))?;
+            match self.document_value(key) {
+                Some(value) => store.write_atomic(&key.path(), &to_document_bytes(&value))?,
+                // A removed timeline: its document goes too.
+                None => store.remove(&key.path())?,
             }
         }
         Ok(())

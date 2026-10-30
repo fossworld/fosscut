@@ -163,6 +163,31 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             }
         }
         "timeline.split" => json!({ "at": "4s" }),
+        "media.rename" => json!({ "asset": asset, "name": "Interview" }),
+        "media.move" => json!({ "assets": [asset], "folder": "B-roll/Day 1" }),
+        "media.folder" => json!({ "action": "add", "folder": "Music" }),
+        "media.relink" => {
+            let identity = test_pattern_args()["identity"].clone();
+            json!({ "asset": asset, "path": { "absolute": "/moved/test-pattern.mp4" }, "identity": identity })
+        }
+        "media.remove" | "media.replace" => {
+            let mut other = test_pattern_args();
+            other["identity"]["size"] = json!(11);
+            other["name"] = json!("other.mp4");
+            let added = run(&mut session, "media.add", other);
+            let other = added.results[0]["asset"].clone();
+            if command == "media.remove" {
+                json!({ "asset": other })
+            } else {
+                json!({ "asset": asset, "with": other })
+            }
+        }
+        "timeline.add" => json!({ "name": "From media", "assets": [asset] }),
+        "timeline.rename" => json!({ "name": "Main" }),
+        "timeline.set_primary" | "timeline.remove" => {
+            let added = run(&mut session, "timeline.add", json!({ "name": "Spare" }));
+            json!({ "timeline": added.results[0]["timeline"] })
+        }
         "animation.set" => {
             json!({ "clip": clip, "in": { "preset": "fade" }, "combo": { "preset": "pulse", "duration": "2s" } })
         }
