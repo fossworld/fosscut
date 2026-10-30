@@ -7,7 +7,7 @@ exclude = ["spikes"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/fossworld/fosscut"
 authors = ["The FossCut Contributors"]
@@ -32,8 +32,12 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 # Text shaping, layout and rasterization; system font discovery (fontconfig) is off so only
 # bundled fonts are used.
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
+# Operating-system randomness for live session keys and nonces (ADR-0022).
+getrandom = "0.4.3"
 half = "2.7.1"
 insta = { version = "1.49.0", features = ["json"] }
+# Windows named-pipe server with an owner-only access list for live sessions (ADR-0022).
+interprocess = { version = "2.4.7", default-features = false }
 png = "0.18.1"
 pollster = "1.0.1"
 proptest = "1.12.0"
@@ -41,6 +45,8 @@ proptest = "1.12.0"
 # (ADR-0002). Tests add the client and child-process features.
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "macros", "transport-io"] }
 # MIT-licensed FFmpeg 8 bindings, linked against system FFmpeg shared libraries (ADR-0009).
+# The effective user id, to refuse runtime directories owned by someone else (ADR-0022).
+rustix = { version = "1.1.6", default-features = false, features = ["std", "process"] }
 rsmpeg = { version = "0.18.0", default-features = false, features = ["ffmpeg8", "link_system_ffmpeg"] }
 schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -48,6 +54,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 sha2 = "0.10.9"
 thiserror = "2.0.21"
+# Wide strings for the Windows pipe access list (ADR-0022).
+widestring = "1.2.1"
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 wgpu = "30.0.1"
 # whisper.cpp (MIT) built from source with CMake: local speech recognition (ADR-0020).

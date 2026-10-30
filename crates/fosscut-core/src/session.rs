@@ -47,7 +47,19 @@ impl<S: ProjectStore> Session<S> {
     }
 
     /// Opens a project, completing a save that was interrupted after its log entry was written.
-    pub fn open(mut store: S) -> Result<Session<S>, ApiError> {
+    pub fn open(store: S) -> Result<Session<S>, ApiError> {
+        Session::load(store, true)
+    }
+
+    /// Opens a project to read it while another session may be writing it (ADR-0022): a
+    /// save that was interrupted, or is still in progress, is completed in memory only, and
+    /// nothing is written to the store.
+    pub fn open_read_only(store: S) -> Result<Session<S>, ApiError> {
+        Session::load(store, false)
+    }
+
+    fn load(mut store: S, repair: bool) -> Result<Session<S>, ApiError> {
+        let mut completed = None;
         let log = if store.exists(OPS_LOG_PATH) {
             parse_log(&store.read(OPS_LOG_PATH)?)?
         } else {
@@ -68,11 +80,19 @@ impl<S: ProjectStore> Session<S> {
                 for change in &last.documents {
                     recovered.set_document_value(&change.doc, change.after.clone())?;
                 }
-                let keys: Vec<DocumentKey> = last.documents.iter().map(|c| c.doc.clone()).collect();
-                recovered.save_documents(&mut store, &keys)?;
+                if repair {
+                    let keys: Vec<DocumentKey> =
+                        last.documents.iter().map(|c| c.doc.clone()).collect();
+                    recovered.save_documents(&mut store, &keys)?;
+                } else {
+                    completed = Some(recovered);
+                }
             }
         }
-        let project = Project::load(&store)?;
+        let project = match completed {
+            Some(project) => project,
+            None => Project::load(&store)?,
+        };
         Ok(Session {
             store,
             project,

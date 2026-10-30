@@ -153,6 +153,40 @@ fn print_timeline(v: &Value) {
     }
 }
 
+/// One line per `fosscut host` event: JSON with `--json`, a sentence otherwise. Flushed at
+/// once, since another program may be waiting for it.
+pub fn print_host_event(event: &Value, json: bool) {
+    use std::io::Write;
+    if json {
+        println!("{}", serde_json::to_string(event).unwrap_or_default());
+    } else {
+        match event["event"].as_str() {
+            Some("ready") => println!(
+                "Hosting {} at revision {}. Edits from the CLI and MCP now run here; press Ctrl-C to stop.",
+                s(&event["bundle"]),
+                event["revision"]
+            ),
+            Some("changed") => {
+                let commands: Vec<&str> = event["commands"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
+                println!(
+                    "revision {}: {} by {} ({})",
+                    event["revision"],
+                    s(&event["kind"]),
+                    s(&event["actor"]),
+                    commands.join(", ")
+                );
+            }
+            _ => println!("Stopped hosting at revision {}.", event["revision"]),
+        }
+    }
+    let _ = std::io::stdout().flush();
+}
+
 fn print_info(v: &Value) {
     println!(
         "{} ({})  revision {}  format {}",
@@ -165,6 +199,13 @@ fn print_info(v: &Value) {
         "assets: {}  can undo: {}  can redo: {}",
         v["assets"], v["can_undo"], v["can_redo"]
     );
+    if v["session"]["live"] == true {
+        println!(
+            "open live in {} {}: edits run there",
+            s(&v["session"]["host"]["name"]),
+            s(&v["session"]["host"]["version"])
+        );
+    }
     for t in v["timelines"].as_array().into_iter().flatten() {
         let primary = if t["id"] == v["primary_timeline"] {
             " (primary)"

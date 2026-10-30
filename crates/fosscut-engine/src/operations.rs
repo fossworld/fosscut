@@ -90,8 +90,9 @@ pub fn capabilities(
     bundle: Option<&Path>,
 ) -> Result<Value, ApiError> {
     let args = json!({ "detail": detail, "names": names });
-    let mut value = match bundle.map(project::open) {
-        Some(Ok(session)) => session.query("capabilities", args)?,
+    let mut value = match bundle.map(|bundle| project::query(bundle, "capabilities", args.clone()))
+    {
+        Some(Ok(value)) => value,
         _ => scratch_session()?.query("capabilities", args)?,
     };
     if !names.is_empty() {

@@ -799,3 +799,147 @@ async fn captions_import_export_and_explain_what_is_missing() {
     client.cancel().await.unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A short runtime directory for live sessions: Unix socket paths are limited to about
+/// 100 bytes.
+fn runtime(name: &str) -> PathBuf {
+    let base = if cfg!(unix) {
+        PathBuf::from("/tmp")
+    } else {
+        std::env::temp_dir()
+    };
+    let dir = base.join(format!("fcm-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+/// The milestone 5 exit check without the app (ADR-0002 Validation, ADR-0022): with the
+/// project hosted, an agent's round 1 sequence runs in the host's session, each change
+/// reaches the host's subscribers as it commits, and undo happens there too.
+#[tokio::test]
+async fn an_agents_edits_run_live_in_the_host_and_undo_there() {
+    use fosscut_engine::live::{Host, HostOptions};
+
+    let dir = workspace("live");
+    let runtime = runtime("live");
+    let bundle = dir.join("Live.fosscut");
+    let format = fosscut_model::TimelineFormat {
+        width: 320,
+        height: 180,
+        rate: fosscut_time::Rate::new(30, 1).unwrap(),
+        sample_rate: 48_000,
+    };
+    fosscut_engine::project::create(&bundle, "Live", format).unwrap();
+    let host = Host::start(
+        &bundle,
+        HostOptions::new("FossCut", "test").runtime(&runtime),
+    )
+    .unwrap();
+    let changes = host.subscribe();
+
+    let (server_io, client_io) = tokio::io::duplex(1 << 22);
+    let (cache, models) = (dir.join("cache"), dir.join("models"));
+    let (served, hosted) = (bundle.clone(), runtime.clone());
+    tokio::spawn(async move {
+        let server = FosscutServer::with_runtime(Some(served), cache, models, hosted)
+            .serve(server_io)
+            .await
+            .unwrap();
+        let _ = server.waiting().await;
+    });
+    let client = TestClient.serve(client_io).await.unwrap();
+
+    let info = ok(&client, "project_info", json!({})).await;
+    assert_eq!(info["session"]["live"], true);
+    assert_eq!(info["session"]["host"]["name"], "FossCut");
+    let mut expected = vec![];
+
+    if has_ffmpeg() {
+        let status = std::process::Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x180:rate=30:duration=2",
+            ])
+            .args(["-c:v", "mpeg4", "pattern.mp4"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        ok(
+            &client,
+            "media_import",
+            json!({ "files": [dir.join("pattern.mp4")] }),
+        )
+        .await;
+        expected.push("media.add");
+    }
+    let title = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "text.add", "args": { "text": "Live", "start": "0f", "duration": { "seconds": "2" } } }] }),
+    )
+    .await;
+    let clip = title["results"][0]["clip"].clone();
+    ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "clip.split", "args": { "clip": clip, "at": { "seconds": "1" } } }] }),
+    )
+    .await;
+    expected.extend(["text.add", "clip.split"]);
+    let revision = host.revision();
+    ok(&client, "undo", json!({ "expected_revision": revision })).await;
+    expected.push("history.undo");
+
+    let seen: Vec<_> = std::iter::from_fn(|| changes.try_recv().ok()).collect();
+    let commands: Vec<&str> = seen.iter().map(|c| c.commands[0].as_str()).collect();
+    assert_eq!(
+        commands, expected,
+        "each change reached the host as it committed"
+    );
+    assert!(seen.iter().all(|c| c.actor == "agent:fosscut-test"));
+    assert_eq!(seen.last().unwrap().kind, fosscut_core::EntryKind::Undo);
+    let clients: Vec<String> = host.clients().into_iter().map(|c| c.name).collect();
+    assert_eq!(
+        clients,
+        ["agent:fosscut-test"],
+        "the agent shows as one connected client"
+    );
+    let read = ok(&client, "timeline_read", json!({})).await;
+    assert_eq!(read["revision"], host.revision());
+
+    if has_ffmpeg() && can_render() {
+        let grab = call_raw(
+            &client,
+            "frame_grab",
+            json!({ "time": { "seconds": "0.5" }, "width": 160 }),
+        )
+        .await;
+        assert_ne!(grab.is_error, Some(true), "{:?}", json_of(&grab));
+        assert_eq!(
+            png_size(&grab),
+            (160, 90),
+            "frames render from the host's snapshot"
+        );
+    }
+
+    let at = host.revision();
+    host.close();
+    let local = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "text.add", "args": { "text": "After", "start": { "seconds": "3" }, "duration": { "seconds": "1" } } }] }),
+    )
+    .await;
+    assert_eq!(
+        local["revision"],
+        at + 1,
+        "with the host gone, edits continue on disk"
+    );
+    let info = ok(&client, "project_info", json!({})).await;
+    assert_eq!(info["session"], json!({ "live": false }));
+}

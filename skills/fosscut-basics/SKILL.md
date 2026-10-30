@@ -33,7 +33,7 @@ The commands `edit` runs include `clip.add`, `clip.split`, `clip.move`, `clip.re
 
 ## The safe editing loop
 
-1. **Open.** `project_open` with the user's `.fosscut` bundle, or `project_new` (1920x1080 at 30 fps by default; 1080x1920 for vertical video). Media must be imported with `media_import` before clips can use it.
+1. **Open.** `project_open` with the user's `.fosscut` bundle, or `project_new` (1920x1080 at 30 fps by default; 1080x1920 for vertical video). Media must be imported with `media_import` before clips can use it. When the result's `session.live` is true, the user has the project open in FossCut and watches your edits arrive; they may edit too, so expect revision conflicts.
 2. **Read.** `timeline_read` before every change. Note its `revision` and the ids of the tracks and clips you will touch (`clip_0003`, `track_0002`). Look up the arguments of the commands you plan to use with `capabilities` and `names`.
 3. **Plan.** Turn the request into commands. For anything beyond one or two simple additions, run `edit` with `dry_run: true` and check the change summary. When a change moves or cuts much of the edit, tell the user the plan before applying it.
 4. **Apply.** `edit` with `expected_revision` set to the revision you read, a `request_id` that names this change (reuse it only to retry the same change after a timeout), and a short `reason`. Batch the commands of one logical change into one `edit`, so it is one undo step.
@@ -58,6 +58,7 @@ Errors arrive as `{"error": {"code", "message", "hint", "details"}}`. Follow the
 | Code | What to do |
 |---|---|
 | `fosscut.revision.conflict` | Someone else changed the project. Read the timeline again, re-plan, and apply with the new revision. Never just resend. |
+| `fosscut.session.unavailable` | The app holding the project closed or stopped answering. If `details.outcome` is `unknown`, read `history` to see whether the change landed before trying again. |
 | `fosscut.guard.destructive` | Ask the user; retry with `allow_destructive` only if they agree. |
 | `fosscut.clip.overlap` | The place is taken. Choose a free time, or add a track with `track.add`. |
 | `fosscut.time.out_of_range` | The time is past the end of the timeline; check `duration` in `timeline_read`. |

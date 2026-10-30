@@ -511,6 +511,31 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "Report it with details.report; the file is kept for inspection.",
         ),
         entry(
+            "fosscut.session.already_hosted",
+            "Another program already has this project open as its live host; details name it.",
+            "Edit through it: the CLI and MCP reach it on their own. Close it there to host the project here.",
+        ),
+        entry(
+            "fosscut.session.unauthorized",
+            "A live host or client could not prove it knows the session key.",
+            "Something other than FossCut answers at the project's endpoint. Close the app holding the project and open it again.",
+        ),
+        entry(
+            "fosscut.session.protocol",
+            "The live host speaks another protocol version, or a message broke the protocol.",
+            "Use the same FossCut version for the app and the CLI or MCP server.",
+        ),
+        entry(
+            "fosscut.session.unavailable",
+            "The live host could not be reached, or was lost during a request.",
+            "When details.outcome is unknown, read history before retrying; retry with the same request_id when there was one.",
+        ),
+        entry(
+            "fosscut.session.diverged",
+            "Files of the project changed outside FossCut while it was open, so the host stopped writing.",
+            "Close the project in the app and open it again; check what changed the files (a sync tool, version control).",
+        ),
+        entry(
             "fosscut.media.write_failed",
             "The output file could not be written or moved into place.",
             "Check the folder exists and is writable, and that no other program holds the file open.",
