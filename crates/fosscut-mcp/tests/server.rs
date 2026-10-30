@@ -1079,3 +1079,351 @@ async fn the_library_lists_without_a_project_and_places_sounds_on_free_tracks() 
     assert_eq!(badge["item"]["kind"], "sticker");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Runs FFmpeg in `dir` and checks it succeeded.
+fn ffmpeg_in(dir: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("ffmpeg")
+        .current_dir(dir)
+        .args(["-y", "-v", "error"])
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success(), "ffmpeg {args:?}");
+}
+
+#[tokio::test]
+async fn agents_steady_clips_and_cut_multicam_angles_synced_by_sound() {
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("auto-edit");
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:size=60x34:rate=30:duration=1,noise=alls=100:allf=0:all_seed=5,scale=480:270:flags=bicubic,eq=contrast=2",
+            "-frames:v",
+            "1",
+            "texture.png",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-loop",
+            "1",
+            "-framerate",
+            "30",
+            "-i",
+            "texture.png",
+            "-vf",
+            "crop=w=320:h=180:x='80+20*sin(2*PI*2*t)':y=45:exact=1,format=yuv420p",
+            "-t",
+            "1",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "2",
+            "shaky.mp4",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "anoisesrc=duration=5:color=pink:seed=11:sample_rate=48000",
+            "-af",
+            "volume='0.15+0.85*gt(sin(2*PI*1.1*t)*sin(2*PI*0.41*t+0.3),0.3)':eval=frame",
+            "-c:a",
+            "pcm_s16le",
+            "room.wav",
+        ],
+    );
+    for (file, picture, skip) in [
+        ("wide.mp4", "testsrc2=s=320x180:r=30:d=5", "0"),
+        ("close.mp4", "color=c=0x2040C0:s=320x180:r=30:d=4", "0.5"),
+    ] {
+        ffmpeg_in(
+            &dir,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                picture,
+                "-ss",
+                skip,
+                "-i",
+                "room.wav",
+                "-c:v",
+                "mpeg4",
+                "-c:a",
+                "aac",
+                "-shortest",
+                file,
+            ],
+        );
+    }
+    let client = connect(None).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Cams.fosscut"), "width": 320, "height": 180 }),
+    )
+    .await;
+    ok(
+        &client,
+        "media_import",
+        json!({ "files": [dir.join("shaky.mp4"), dir.join("wide.mp4"), dir.join("close.mp4")] }),
+    )
+    .await;
+    let placed = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "clip.add", "args": { "asset": "asset_0001" } }] }),
+    )
+    .await;
+    let clip = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    let revision = placed["revision"].as_u64().unwrap();
+
+    let planned = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "stabilize", "clip": clip, "strength": 1, "dry_run": true }),
+    )
+    .await;
+    assert_eq!(planned["dry_run"], true, "{planned}");
+    assert!(planned["motion"]["zoom"].as_f64().unwrap() > 1.0);
+    let steadied = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "stabilize", "clip": clip, "strength": 1, "expected_revision": revision }),
+    )
+    .await;
+    assert_eq!(steadied["revision"], revision + 1, "{steadied}");
+    let read = ok(&client, "timeline_read", json!({ "detail": "full" })).await;
+    let keyed = &read["tracks"][0]["clips"][0];
+    assert_eq!(
+        keyed["keyframes"]["transform.position"]
+            .as_array()
+            .map(Vec::len),
+        Some(30),
+        "{keyed}"
+    );
+    let stale = fails(
+        &client,
+        "auto_edit",
+        json!({ "action": "stabilize", "clip": clip, "expected_revision": revision }),
+    )
+    .await;
+    assert_eq!(stale["code"], "fosscut.revision.conflict");
+    for (args, code) in [
+        (
+            json!({ "action": "stabilize" }),
+            "fosscut.request.invalid_arguments",
+        ),
+        (
+            json!({ "action": "track", "clip": clip, "follow": clip }),
+            "fosscut.request.invalid_arguments",
+        ),
+        (
+            json!({ "action": "multicam", "angles": ["asset_0002"] }),
+            "fosscut.request.invalid_arguments",
+        ),
+    ] {
+        assert_eq!(fails(&client, "auto_edit", args).await["code"], code);
+    }
+
+    let synced = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "multicam_sync", "angles": ["asset_0002", "asset_0003"] }),
+    )
+    .await;
+    let offset = synced["sync"]["offsets"][1].as_i64().unwrap() as f64 / 705_600_000.0;
+    assert!((offset - 0.5).abs() < 0.005, "{synced}");
+    let made = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "multicam", "angles": ["asset_0002", "asset_0003"], "sound": 2, "start": "2s" }),
+    )
+    .await;
+    assert!(made["committed"].as_bool().unwrap(), "{made}");
+    assert!(made["sync"]["confidence"][1].as_f64().unwrap() > 0.3);
+    let created = &made["results"][0];
+    let multicam = created["clip"]["clip"].as_str().unwrap();
+    let switched = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "multicam.switch", "args": { "clip": multicam, "at": "3s", "angle": 2 } }] }),
+    )
+    .await;
+    assert_eq!(switched["results"][0]["angle"], created["angles"][1]);
+
+    // Given offsets are used as they are, without measuring.
+    let given = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "multicam", "angles": ["asset_0002", "asset_0003"], "offsets": ["0s", "0.5s"], "name": "Given", "start": "8s" }),
+    )
+    .await;
+    assert!(given.get("sync").is_none(), "{given}");
+    let inner = ok(
+        &client,
+        "timeline_read",
+        json!({ "timeline": given["results"][0]["timeline"], "detail": "full" }),
+    )
+    .await;
+    assert_eq!(
+        inner["tracks"][0]["clips"][0]["start"]["flicks"],
+        352_800_000
+    );
+
+    // The multicam clip's sound is levelled.
+    let leveled = ok(
+        &client,
+        "audio_normalize",
+        json!({ "clips": [multicam], "target_lufs": -16 }),
+    )
+    .await;
+    assert!(
+        leveled["normalization"]["clips"][0]["measured_lufs"].is_number(),
+        "{leveled}"
+    );
+
+    // A title follows the middle of the shaky picture, then the shots split at their cut.
+    let title = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "text.add", "args": { "text": "Here", "start": "0s", "duration": "1s" } }] }),
+    )
+    .await["results"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let followed = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "track", "clip": clip, "region": { "x": 0.5, "y": 0.5, "width": 0.25, "height": 0.25 }, "at": "0s", "follow": title }),
+    )
+    .await;
+    assert_eq!(followed["motion"]["clip"], title.as_str(), "{followed}");
+    assert!(followed["committed"].as_bool().unwrap());
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=30:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0xC02020:s=320x180:r=30:d=1",
+            "-filter_complex",
+            "[0][1]concat=n=2:v=1:a=0,format=yuv420p",
+            "-c:v",
+            "mpeg4",
+            "shots.mp4",
+        ],
+    );
+    let asset = ok(
+        &client,
+        "media_import",
+        json!({ "files": [dir.join("shots.mp4")] }),
+    )
+    .await["results"][0]["asset"]
+        .clone();
+    let shots = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "clip.add", "args": { "asset": asset, "start": "20s" } }] }),
+    )
+    .await["results"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let split = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "split_scenes", "clip": shots }),
+    )
+    .await;
+    assert_eq!(
+        split["scenes"]["cuts"],
+        json!([21 * 705_600_000_i64]),
+        "{split}"
+    );
+    assert!(split["committed"].as_bool().unwrap());
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test]
+async fn recordings_start_only_when_confirmed_and_stop_keeping_what_was_recorded() {
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("record");
+    let client = connect(None).await;
+    let listed = ok(&client, "record", json!({ "action": "devices" })).await;
+    assert!(listed["devices"].is_array(), "{listed}");
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Voice.fosscut") }),
+    )
+    .await;
+    let voice = json!({
+        "action": "start",
+        "what": "microphone",
+        "input": "lavfi:sine=frequency=440:sample_rate=48000",
+        "duration": "1s",
+    });
+    let refused = fails(&client, "record", voice.clone()).await;
+    assert_eq!(refused["code"], "fosscut.record.confirmation_required");
+    let mut confirmed = voice.clone();
+    confirmed["confirm"] = json!(true);
+    let started = ok(&client, "record", confirmed).await;
+    assert_eq!(started["kind"], "recording", "{started}");
+    let done = ok(
+        &client,
+        "job_status",
+        json!({ "job": started["job"], "wait_seconds": 30 }),
+    )
+    .await;
+    assert_eq!(done["state"], "succeeded", "{done}");
+    let output = done["recording"]["output"].as_str().unwrap().to_string();
+    assert!(output.contains("recordings"), "{output}");
+    assert_eq!(done["recording"]["duration"], 705_600_000);
+    let imported = ok(&client, "media_import", json!({ "files": [output] })).await;
+    assert_eq!(imported["results"][0]["asset"], "asset_0001", "{imported}");
+
+    // An open-ended recording stops on job_cancel and keeps what it recorded.
+    let open = ok(
+        &client,
+        "record",
+        json!({ "action": "start", "what": "microphone", "input": "lavfi:sine=frequency=220:sample_rate=48000", "confirm": true }),
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let stopped = ok(
+        &client,
+        "job_cancel",
+        json!({ "job": open["job"], "wait_seconds": 30 }),
+    )
+    .await;
+    assert_eq!(stopped["state"], "succeeded", "{stopped}");
+    assert_eq!(stopped["recording"]["stopped"], true);
+    assert!(std::path::Path::new(stopped["recording"]["output"].as_str().unwrap()).is_file());
+    let wrong = fails(
+        &client,
+        "record",
+        json!({ "action": "start", "what": "radio", "confirm": true }),
+    )
+    .await;
+    assert_eq!(wrong["code"], "fosscut.request.invalid_arguments");
+    client.cancel().await.unwrap();
+}

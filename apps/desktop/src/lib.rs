@@ -6,8 +6,11 @@
 //! - [`workspace`]: the open project, hosted live, and recent projects.
 //! - [`preview`] and [`surface`]: the preview thread and the window's GPU surface;
 //!   [`audio`]: the sound playback follows.
-//! - [`commands`]: what the UI may ask, including the built-in library and exports run as
-//!   background jobs; the engine client in `ui/` is the only caller.
+//! - [`recording`]: recordings from a microphone, camera or screen, imported and placed
+//!   once they succeed.
+//! - [`commands`]: what the UI may ask, including the built-in library, exports run as
+//!   background jobs, and edits measured from media (scene cuts, stabilization, tracking
+//!   and multicam sync); the engine client in `ui/` is the only caller.
 
 #![forbid(unsafe_code)]
 
@@ -15,6 +18,7 @@ pub mod audio;
 pub mod commands;
 pub mod library;
 pub mod preview;
+pub mod recording;
 pub mod surface;
 pub mod workspace;
 
@@ -25,6 +29,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
 use crate::library::Library;
 use crate::preview::{Job, Preview, Scene};
+use crate::recording::Recordings;
 use crate::surface::Surface;
 use crate::workspace::Workspace;
 
@@ -36,8 +41,10 @@ pub struct AppState {
     pub preview: Preview,
     /// Recent projects' summaries and the trash.
     pub library: Arc<Library>,
-    /// Exports running in the background, followed by id.
+    /// Exports and recordings running in the background, followed by id.
     pub jobs: Arc<Jobs>,
+    /// Recordings started from the window, imported once they succeed.
+    pub recordings: Arc<Recordings>,
     /// The thread that forwards the open project's changes, while one is open.
     follower: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
@@ -133,6 +140,7 @@ pub fn run() {
                 preview,
                 library: Arc::new(Library::new(&data, &cache)),
                 jobs: Arc::new(Jobs::new()),
+                recordings: Arc::new(Recordings::default()),
                 follower: Mutex::new(None),
             });
             if let Some(path) = std::env::args_os().nth(1) {
@@ -157,6 +165,10 @@ pub fn run() {
             commands::clients,
             commands::color_suggest,
             commands::audio_normalize,
+            commands::scenes_split,
+            commands::clip_stabilize,
+            commands::clip_track,
+            commands::multicam_create,
             commands::preview_viewport,
             commands::preview_show,
             commands::preview_play,
@@ -177,6 +189,10 @@ pub fn run() {
             commands::export_start,
             commands::export_status,
             commands::export_cancel,
+            commands::record_devices,
+            commands::record_start,
+            commands::record_status,
+            commands::record_stop,
         ])
         .build(tauri::generate_context!());
     match app {

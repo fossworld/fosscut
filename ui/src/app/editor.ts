@@ -6,6 +6,7 @@ import type { EngineClient, Rect, Unsubscribe } from "../engine/client";
 import {
   type ApiError,
   type AssetView,
+  type CaptureDevice,
   type Catalog,
   type Client,
   type CommandCall,
@@ -19,15 +20,21 @@ import {
   type LibraryItem,
   type LogEntry,
   type MediaListing,
+  type MulticamRequest,
   type Normalization,
   type Opened,
   type ProjectSummary,
+  type RecordChoice,
+  type RecordState,
+  type Region,
   type TimelineView,
   type TrashEntry,
   isApiError,
 } from "../engine/types";
 import { clipsAt, findClip } from "../timeline/geometry";
 import { FLICKS_PER_SECOND, frameAt, frameStart, framesToFlicks, parseRate } from "../transport/time";
+import { multicamMade, splitAtScenes, stabilized, targetOf, tracked } from "./measure";
+import { multicamPartAt } from "./multicam";
 
 /** How many history entries the activity panel shows. */
 const HISTORY = 50;
@@ -94,6 +101,47 @@ export interface EditorState {
   library: LibraryItem[] | null;
   /** The export dialog and the export it started. */
   exporting: Exporting;
+  /** The edit measured from media that runs, or ran last, for the panel that started it. */
+  measurement: Measurement | null;
+  /** Drawing the region to track on the preview, and the region drawn. */
+  regionPick: RegionPick | null;
+  /** The record panel and the recording it started. */
+  recorder: Recorder;
+}
+
+/** The record panel: whether it shows, the devices, the recording and a refusal. */
+export interface Recorder {
+  open: boolean;
+  /** The cameras, screens and microphones; null until read. */
+  devices: CaptureDevice[] | null;
+  /** The recording started last, as its status was last read. */
+  job: RecordState | null;
+  /** Why the devices could not be read, or the recording could not start or be imported. */
+  error: ApiError | null;
+}
+
+/** An edit measured from media: stabilizing, splitting at scenes, tracking or multicam. */
+export interface Measurement {
+  kind: "stabilize" | "scenes" | "track" | "multicam";
+  /** The clip measured; null when making a multicam clip. */
+  clip: string | null;
+  /** True while the engine measures. */
+  busy: boolean;
+  /** What it did, in a sentence, once done. */
+  report: string | null;
+  /** Why it could not, once it failed. */
+  error: ApiError | null;
+}
+
+/** The region of a video clip to track, drawn over the preview. */
+export interface RegionPick {
+  clip: string;
+  /** True while a drag over the preview draws the region. */
+  drawing: boolean;
+  /** The region drawn; null until drawn. */
+  region: Region | null;
+  /** The timeline time it was drawn at, in flicks. */
+  at: number;
 }
 
 /** The export dialog: whether it shows, the presets, the job it started and a refusal. */
@@ -153,6 +201,9 @@ const EMPTY: EditorState = {
   chosen: [],
   library: null,
   exporting: { open: false, presets: null, job: null, error: null },
+  measurement: null,
+  regionPick: null,
+  recorder: { open: false, devices: null, job: null, error: null },
   notice: null,
   catalog: null,
   luts: [],
@@ -401,6 +452,8 @@ export class Editor {
       ]);
       const selection =
         this.state.selection && findClip(timeline, this.state.selection) ? this.state.selection : null;
+      const pick = this.state.regionPick;
+      const regionPick = pick && findClip(timeline, pick.clip) ? pick : null;
       const listing = await this.engine
         .query<MediaListing>("media.list")
         .catch(() => ({ assets: this.state.media, folders: this.state.folders }));
@@ -410,6 +463,7 @@ export class Editor {
         timeline,
         history: history.entries,
         selection,
+        regionPick,
         luts,
         media: listing.assets,
         folders: listing.folders ?? [],
@@ -547,7 +601,8 @@ export class Editor {
   }
 
   select(clip: string | null): void {
-    this.set({ selection: clip, also: [] });
+    const pick = this.state.regionPick;
+    this.set({ selection: clip, also: [], regionPick: pick && pick.clip === clip ? pick : null });
   }
 
   /** Adds a clip to the selection, or takes it out (shift-click). */
@@ -1032,6 +1087,228 @@ export class Editor {
     }
     if (normalization.commands.length > 0 && !(await this.edit(normalization.commands, "Normalize loudness"))) return;
     this.set({ notice: { kind: "info", text: levelled(normalization) } });
+  }
+
+  // ---- Measured edits ----
+
+  /**
+   * Runs an edit the engine measures from media and applies as one undoable step against
+   * the revision on screen: busy while it measures, then what it did, or its error with
+   * the hint. One runs at a time. A stale revision reloads and says so, as any edit.
+   */
+  private async measure<T>(
+    kind: Measurement["kind"],
+    clip: string | null,
+    run: (revision: number) => Promise<T>,
+    report: (result: T) => string,
+  ): Promise<T | null> {
+    const timeline = this.state.timeline;
+    if (!timeline) return null;
+    if (this.state.measurement?.busy) {
+      this.set({ notice: { kind: "info", text: "Another measurement is running; try again when it is done." } });
+      return null;
+    }
+    this.set({ measurement: { kind, clip, busy: true, report: null, error: null } });
+    let result: T;
+    try {
+      result = await run(timeline.revision);
+    } catch (error) {
+      const api = asError(error);
+      if (api.code === "fosscut.revision.conflict") {
+        this.set({ measurement: null });
+        await this.refresh();
+        this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
+      } else {
+        this.set({ measurement: { kind, clip, busy: false, report: null, error: api } });
+      }
+      return null;
+    }
+    await this.refresh();
+    this.set({ measurement: { kind, clip, busy: false, report: report(result), error: null } });
+    return result;
+  }
+
+  /** Puts a finished measurement's report or error away. */
+  dismissMeasurement(): void {
+    if (!this.state.measurement?.busy) this.set({ measurement: null });
+  }
+
+  /** Steadies a video clip's camera shake: `strength` from 0 (none) to 1 (very smooth). */
+  async stabilize(clip: string, strength = 0.5): Promise<void> {
+    await this.measure("stabilize", clip, (revision) => this.engine.measure.stabilize(clip, strength, revision), stabilized);
+  }
+
+  /** Splits a video clip at its shot cuts, so each shot is a clip of its own. */
+  async splitAtScenes(clip: string): Promise<void> {
+    const rate = this.rate();
+    await this.measure("scenes", clip, (revision) => this.engine.measure.scenes(clip, revision), (r) => splitAtScenes(r, rate));
+  }
+
+  /**
+   * Starts drawing the region of a video clip to track, on the frame at the playhead; the
+   * playhead moves to the clip's start when it is outside the clip.
+   */
+  async pickRegion(clip: string): Promise<void> {
+    const view = this.state.timeline ? findClip(this.state.timeline, clip) : null;
+    if (!view) return;
+    const playhead = this.state.playhead;
+    if (playhead < view.start.flicks || playhead >= view.end.flicks) await this.seek(view.start.flicks);
+    this.set({ regionPick: { clip, drawing: true, region: null, at: this.state.playhead }, maskTool: null });
+  }
+
+  /** The region drawn over the preview, on the frame at the playhead. */
+  setRegion(region: Region): void {
+    const pick = this.state.regionPick;
+    if (pick) this.set({ regionPick: { ...pick, drawing: false, region, at: this.state.playhead } });
+  }
+
+  /** Stops drawing the region, or forgets the one drawn. */
+  cancelRegion(): void {
+    this.set({ regionPick: null });
+  }
+
+  /**
+   * Follows the region drawn from the time it was drawn at to the clip's end, and keys
+   * `target` to it: `mask:<id>` (a mask of the clip) or `clip:<id>` (another clip).
+   */
+  async track(target: string): Promise<void> {
+    const pick = this.state.regionPick;
+    const which = targetOf(target);
+    const region = pick?.region;
+    if (!pick || !region || !which) {
+      this.set({ notice: { kind: "info", text: "Draw the region to follow on the preview, then choose what follows it." } });
+      return;
+    }
+    const rate = this.rate();
+    const request = { clip: pick.clip, region, at: pick.at, ...which };
+    const done = await this.measure(
+      "track",
+      pick.clip,
+      (revision) => this.engine.measure.track({ ...request, expected_revision: revision }),
+      (r) => tracked(r, rate),
+    );
+    if (done) this.set({ regionPick: null });
+  }
+
+  /** Makes a multicam clip of video assets and selects it; true when it was made. */
+  async createMulticam(request: MulticamRequest): Promise<boolean> {
+    const result = await this.measure(
+      "multicam",
+      null,
+      (revision) => this.engine.measure.multicam({ ...request, expected_revision: revision }),
+      (r) => multicamMade(r, request.angles.length),
+    );
+    const made = result?.response.results[0] as { clip?: { clip?: string } } | undefined;
+    if (made?.clip?.clip) this.set({ selection: made.clip.clip, also: [] });
+    return result !== null;
+  }
+
+  /**
+   * Cuts the selected multicam clip to angle `angle` (from 1) at the playhead: the part
+   * under the playhead splits there and shows the angle from then on, and becomes the
+   * selection, so the next cut follows on. A part already showing it is left alone.
+   */
+  async switchAngle(angle: number): Promise<void> {
+    const timeline = this.state.timeline;
+    if (!timeline) return;
+    const at = this.state.playhead;
+    const part = multicamPartAt(timeline, this.state.selection, at);
+    if (!part?.angles) {
+      this.set({ notice: { kind: "info", text: "Select a multicam clip and put the playhead inside it to cut between angles." } });
+      return;
+    }
+    const chosen = part.angles[angle - 1];
+    if (!chosen) {
+      this.set({ notice: { kind: "info", text: `This multicam clip has ${part.angles.length} angles.` } });
+      return;
+    }
+    if (part.angle === chosen.id) {
+      if (part.id !== this.state.selection) this.set({ selection: part.id, also: [] });
+      return;
+    }
+    const response = await this.apply(
+      [{ command: "multicam.switch", args: { clip: part.id, at: { flicks: at }, angle } }],
+      `Cut to angle ${angle}`,
+    );
+    const switched = response?.results[0] as { clip?: { clip?: string } } | undefined;
+    if (switched?.clip?.clip) this.set({ selection: switched.clip.clip, also: [] });
+  }
+
+  // ---- Recording ----
+
+  private setRecorder(patch: Partial<Recorder>): void {
+    this.set({ recorder: { ...this.state.recorder, ...patch } });
+  }
+
+  /** Opens the record panel and reads the devices again, as they come and go. */
+  async openRecorder(): Promise<void> {
+    this.setRecorder({ open: true, error: null });
+    try {
+      this.setRecorder({ devices: await this.engine.record.devices() });
+    } catch (error) {
+      this.setRecorder({ devices: this.state.recorder.devices ?? [], error: asError(error) });
+    }
+  }
+
+  /** Closes the record panel; a recording that is running goes on. */
+  closeRecorder(): void {
+    this.setRecorder({ open: false });
+  }
+
+  /** Starts recording; it is placed where the playhead is now once it is stopped. */
+  async startRecording(choice: Omit<RecordChoice, "at">): Promise<boolean> {
+    if (!this.state.opened || this.state.recorder.job?.state === "running") return false;
+    this.setRecorder({ error: null });
+    try {
+      this.setRecorder({ job: await this.engine.record.start({ ...choice, at: this.state.playhead }) });
+      return true;
+    } catch (error) {
+      this.setRecorder({ error: asError(error) });
+      return false;
+    }
+  }
+
+  /** Reads the running recording's time again; the panel asks four times a second. */
+  async pollRecording(): Promise<void> {
+    const job = this.state.recorder.job;
+    if (job?.state !== "running") return;
+    try {
+      await this.recorded(await this.engine.record.status(job.job));
+    } catch (error) {
+      this.setRecorder({ error: asError(error) });
+    }
+  }
+
+  /** Stops the recording, keeping what it recorded. */
+  async stopRecording(): Promise<void> {
+    const job = this.state.recorder.job;
+    if (job?.state !== "running") return;
+    try {
+      await this.recorded(await this.engine.record.stop(job.job));
+    } catch (error) {
+      this.setRecorder({ error: asError(error) });
+    }
+  }
+
+  /**
+   * A recording's new status. The first time it shows finished, the project is read again
+   * and the clip it became is selected (the engine imports and places it once); a failure,
+   * or a file that could not be imported, shows in the panel.
+   */
+  private async recorded(status: RecordState): Promise<void> {
+    const before = this.state.recorder.job;
+    // An answer for a recording the panel has left behind changes nothing.
+    if (before?.job !== status.job) return;
+    this.setRecorder({ job: status });
+    if (before.state !== "running" || status.state === "running") return;
+    const error = status.state === "failed" ? status.error : status.import_error;
+    if (error) this.setRecorder({ error });
+    if (status.state !== "succeeded") return;
+    await this.refresh();
+    if (status.clip) this.set({ selection: status.clip, also: [] });
+    if (!this.state.recorder.open && !error) {
+      this.set({ notice: { kind: "info", text: "The recording is in the project, at the playhead where it started." } });
+    }
   }
 
   // ---- Library ----

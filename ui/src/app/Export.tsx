@@ -25,7 +25,8 @@ import {
 /** How often a running export's progress is read while the dialog shows, in milliseconds. */
 const POLL = 500;
 
-function Problem({ error }: { error: ApiError }) {
+/** A FossCut error with its hint, as panels show one. */
+export function Problem({ error }: { error: ApiError }) {
   return (
     <p className="problem" role="alert">
       {error.message}

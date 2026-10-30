@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
+import { isMulticam } from "../app/multicam";
+import { angleKey, isTyping } from "../keyboard";
 import { drawTimeline } from "./draw";
 import { parseRate } from "../transport/time";
 import {
@@ -8,6 +10,7 @@ import {
   type DragTarget,
   type View,
   dragTarget,
+  findClip,
   grabAt,
   hitTest,
   onRuler,
@@ -27,7 +30,8 @@ interface Props {
 /** The timeline: click a clip to select it (or split it, with the blade), drag it to move
  * it, drag its edges to trim it, drag on the ruler to move the playhead, scroll to move
  * along it, and pinch or Mod+scroll to zoom. Dragged edges snap when snapping is on, and
- * hovering shows the frame there when skimming is on. */
+ * hovering shows the frame there when skimming is on. With a multicam clip selected and
+ * the timeline focused, 1 to 9 cut to that angle at the playhead. */
 export function Timeline({ editor, state }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -121,7 +125,26 @@ export function Timeline({ editor, state }: Props) {
   };
 
   return (
-    <div className="timeline" ref={box}>
+    <div
+      className="timeline"
+      ref={box}
+      tabIndex={0}
+      aria-label="Timeline"
+      onKeyDown={(event) => {
+        const angle = angleKey({
+          key: event.key,
+          metaKey: event.metaKey,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+          typing: isTyping(event.target),
+        });
+        const selected = timeline && state.selection ? findClip(timeline, state.selection) : null;
+        if (angle === null || !isMulticam(selected)) return;
+        event.preventDefault();
+        void editor.switchAngle(angle);
+      }}
+    >
       <canvas
         ref={canvas}
         style={{ width: size.width, height: size.height }}

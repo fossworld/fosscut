@@ -17,6 +17,10 @@
     "allow-clients",
     "allow-color-suggest",
     "allow-audio-normalize",
+    "allow-scenes-split",
+    "allow-clip-stabilize",
+    "allow-clip-track",
+    "allow-multicam-create",
     "allow-preview-viewport",
     "allow-preview-show",
     "allow-preview-play",
@@ -36,6 +40,10 @@
     "allow-export-pick",
     "allow-export-start",
     "allow-export-status",
-    "allow-export-cancel"
+    "allow-export-cancel",
+    "allow-record-devices",
+    "allow-record-start",
+    "allow-record-status",
+    "allow-record-stop"
   ]
 }

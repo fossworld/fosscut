@@ -755,6 +755,17 @@
         }
       ],
       "properties": {
+        "angle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A compound clip's angle: the one track of its timeline whose picture shows, for\nmulticam editing (ADR-0029); every track shows when omitted."
+        },
         "animations": {
           "$ref": "#/$defs/ClipAnimations",
           "description": "How the clip moves in, out and while it shows."

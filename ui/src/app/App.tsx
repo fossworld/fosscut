@@ -5,16 +5,19 @@ import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
 import { Library } from "../panels/Library";
 import { Media } from "../panels/Media";
+import { Record } from "../panels/Record";
 import { who } from "../panels/runs";
 import { Guides } from "../preview/Guides";
 import { MaskOverlay } from "../preview/MaskOverlay";
 import { PreviewHole } from "../preview/PreviewHole";
+import { RegionOverlay } from "../preview/RegionOverlay";
 import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
 import { TimelineTabs } from "../timeline/TimelineTabs";
 import { Transport } from "../transport/Transport";
 import type { Editor } from "./editor";
 import { Export } from "./Export";
+import { recordedTime } from "./recorder";
 import { Start } from "./Start";
 
 /** How often the list of connected agents is read, in milliseconds. */
@@ -86,8 +89,9 @@ export function App({ editor }: { editor: Editor }) {
     void editor.refreshClients();
     const timer = window.setInterval(() => {
       void editor.refreshClients();
-      // The export dialog reads a running export faster while it shows.
+      // The export dialog and the record panel read their jobs faster while they show.
       if (!editor.getState().exporting.open) void editor.pollExport();
+      if (!editor.getState().recorder.open) void editor.pollRecording();
     }, CLIENTS_POLL);
     return () => window.clearInterval(timer);
   }, [editor, open]);
@@ -155,6 +159,14 @@ export function App({ editor }: { editor: Editor }) {
               Full screen
             </button>
             <button
+              className={state.recorder.job?.state === "running" ? "recording" : ""}
+              aria-pressed={state.recorder.open}
+              onClick={() => (state.recorder.open ? editor.closeRecorder() : void editor.openRecorder())}
+              title="Record a voiceover, a camera or the screen into the project, at the playhead"
+            >
+              {state.recorder.job?.state === "running" ? `Recording ${recordedTime(state.recorder.job)}` : "Record"}
+            </button>
+            <button
               className="primary"
               onClick={() => void editor.openExport()}
               disabled={!state.timeline}
@@ -169,9 +181,11 @@ export function App({ editor }: { editor: Editor }) {
             <button onClick={() => void editor.close()}>Close</button>
           </header>
           <main>
+            {state.recorder.open && <Record editor={editor} state={state} />}
             <PreviewHole editor={editor}>
               <MaskOverlay editor={editor} state={state} />
               <Guides editor={editor} state={state} />
+              <RegionOverlay editor={editor} state={state} />
             </PreviewHole>
             <aside className="activity">
               {selected && (

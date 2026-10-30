@@ -18,6 +18,7 @@ blake3.workspace = true
 fosscut-media = { workspace = true, features = ["ffmpeg"] }
 fosscut-model.workspace = true
 fosscut-time.workspace = true
+rustfft.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -84,14 +84,14 @@ pub use validate::{Issue, shape_issues, text_issues, text_style_issues, validate
 /// 0.9.0 added media folders; 0.10.0 added compound clips (ADR-0025); 0.11.0 added text
 /// spans, reveals, spacing, outlines, boxes, shadows and glows, text presets and font assets
 /// (ADR-0027), audio effects (ADR-0026) and caption translations; 0.12.0 added shape clips
-/// (ADR-0028).
-pub const FORMAT_VERSION: &str = "0.12.0";
+/// (ADR-0028); 0.13.0 added multicam angles on compound clips (ADR-0029).
+pub const FORMAT_VERSION: &str = "0.13.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
 pub const READABLE_VERSIONS: &[&str] = &[
     "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-    "0.11.0",
+    "0.11.0", "0.12.0",
 ];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.

@@ -61,6 +61,41 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut color match --clip ID --reference ID",
         ),
         (
+            "audio.normalize",
+            "Measure clips' loudness as they play (ITU-R BS.1770) and set their volumes to reach a target with peaks under a ceiling, adding an audio.limiter where needed; one undoable step.",
+            "fosscut audio normalize --clip ID [--clip ID ...] [--target LUFS] [--ceiling DBFS]",
+        ),
+        (
+            "library.add",
+            "Add an item of FossCut's own library: a sound or music loop (written into the bundle and imported), a shape, sticker, background, title or project template, a text or caption style, or a look; one undoable step.",
+            "fosscut library add <name> [--at TIME] [--clip ID] [--line TEXT] [--media ID]",
+        ),
+        (
+            "clip.split_scenes",
+            "Measure the shot cuts in a video clip's media (cached by content) and split the clip at them, so each shot is a clip of its own; one undoable step.",
+            "fosscut clip split-scenes --clip ID",
+        ),
+        (
+            "clip.stabilize",
+            "Measure how the camera moved in a video clip and key its position, rotation and scale to cancel the shake, with one zoom up to 1.5 that hides the moving edges; one undoable step.",
+            "fosscut clip stabilize --clip ID [--strength 0..3]",
+        ),
+        (
+            "clip.track",
+            "Follow a region of a video clip's picture from a time on and key one of its masks, or another clip such as a title or sticker, to move with it; one undoable step.",
+            "fosscut clip track --clip ID --region X,Y,W,H [--at TIME] (--mask ID | --follow ID)",
+        ),
+        (
+            "multicam.sync",
+            "Measure how far apart angles recorded at the same time started, from their sound, as the offsets of multicam.create (which multicam create measures itself unless given offsets).",
+            "fosscut multicam sync <asset> <asset> ... [--max-offset SECONDS]",
+        ),
+        (
+            "record.start",
+            "Record a voiceover (48 kHz WAV), a camera or the screen into the bundle's recordings folder through the same encoders and checks as exports, then import it; stops after a duration or when asked, keeping what was recorded.",
+            "fosscut record microphone|camera|screen [--device NAME] [--microphone NAME] [--duration TIME] [--at TIME] [--list]",
+        ),
+        (
             "models.install",
             "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",

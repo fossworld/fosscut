@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.12.0
+Demo (project_<random>)  revision 0  format 0.13.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.12.0
+Demo (project_<random>)  revision 8  format 0.13.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.12.0
+API 0.1.0  project format 0.13.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -132,6 +132,7 @@ commands:
   history.undo   Undo the most recent committed transaction. Must be the only command in its request.
   keyframe.remove Remove a keyframe of a clip property at a time, or all of its keyframes (all: true), which stops the animation; with all and a time, the property keeps the value it had then.
   keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, numeric effect parameters as effects.<id>.<param>, and mask placement as masks.<id>.<property>.
+  keyframe.set_all Replace every keyframe of a clip property with a list of offsets from the clip's start and values, in one step: for motion measured by stabilization or tracking, or any animation planned whole.
   look.apply     Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards.
   marker.add     Add a marker to a timeline at a time, with an optional name and color: a beat, a cue, a note to come back to.
   marker.remove  Remove a marker.
@@ -146,6 +147,8 @@ commands:
   media.remove   Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too.
   media.rename   Rename an asset in the media bin. Only the display name changes, not the file.
   media.replace  Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin.
+  multicam.create Make a multicam clip from angles recorded at the same time: a compound clip whose timeline holds each angle on its own track, lined up by their offsets, with one angle's sound. Cut between angles with multicam.switch.
+  multicam.switch Cut a multicam clip to another angle from a time on: it splits there and the part after shows the angle (by number or track id).
   shape.add      Draw a shape (rectangle, ellipse, star, heart, a pen path), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill, gradient, outline and label. Backgrounds go below the footage, other shapes above it.
   shape.set      Change a shape clip's outline, size, roundness, fill, gradient, outline or label by a merge patch.
   template.apply Build a new timeline from a project template (vertical-promo, quote-card, photo-montage, product-reveal, talking-head-intro) with your media in its slots and your lines in its titles; everything it adds stays editable.
@@ -179,6 +182,13 @@ operations:
   captions.export      Write a caption track to an SRT subtitle file, one cue per page.
   color.auto           Measure a video or image clip's picture and add a color.adjust effect that corrects its white balance, brightness and levels; one undoable step.
   color.match          Measure two clips and add a color.adjust effect to the first that brings its balance, brightness, contrast and saturation close to the second; one undoable step.
+  audio.normalize      Measure clips' loudness as they play (ITU-R BS.1770) and set their volumes to reach a target with peaks under a ceiling, adding an audio.limiter where needed; one undoable step.
+  library.add          Add an item of FossCut's own library: a sound or music loop (written into the bundle and imported), a shape, sticker, background, title or project template, a text or caption style, or a look; one undoable step.
+  clip.split_scenes    Measure the shot cuts in a video clip's media (cached by content) and split the clip at them, so each shot is a clip of its own; one undoable step.
+  clip.stabilize       Measure how the camera moved in a video clip and key its position, rotation and scale to cancel the shake, with one zoom up to 1.5 that hides the moving edges; one undoable step.
+  clip.track           Follow a region of a video clip's picture from a time on and key one of its masks, or another clip such as a title or sticker, to move with it; one undoable step.
+  multicam.sync        Measure how far apart angles recorded at the same time started, from their sound, as the offsets of multicam.create (which multicam create measures itself unless given offsets).
+  record.start         Record a voiceover (48 kHz WAV), a camera or the screen into the bundle's recordings folder through the same encoders and checks as exports, then import it; stops after a duration or when asked, keeping what was recorded.
   models.install       Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.

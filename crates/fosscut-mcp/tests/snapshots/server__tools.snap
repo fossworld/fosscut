@@ -83,6 +83,308 @@ expression: listing
     "read_only": false
   },
   {
+    "description": "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Returns the measurement and the response; check with frame_grab or contact_sheet.",
+    "input": {
+      "$defs": {
+        "AutoEditAction": {
+          "description": "What the `auto_edit` tool does.",
+          "oneOf": [
+            {
+              "const": "split_scenes",
+              "description": "Split a video clip at its scene changes.",
+              "type": "string"
+            },
+            {
+              "const": "stabilize",
+              "description": "Steady a shaky video clip.",
+              "type": "string"
+            },
+            {
+              "const": "track",
+              "description": "Make a mask or another clip follow a region of a video clip's picture.",
+              "type": "string"
+            },
+            {
+              "const": "multicam",
+              "description": "Make a multicam clip from angles recorded at the same time, lined up by their sound.",
+              "type": "string"
+            },
+            {
+              "const": "multicam_sync",
+              "description": "Only measure how far apart angles recorded at the same time started.",
+              "type": "string"
+            }
+          ]
+        },
+        "RegionArg": {
+          "description": "A region of a picture: its centre and size as fractions of the picture.",
+          "properties": {
+            "height": {
+              "description": "The height, 0 to 1.",
+              "format": "double",
+              "type": "number"
+            },
+            "width": {
+              "description": "The width, 0 to 1.",
+              "format": "double",
+              "type": "number"
+            },
+            "x": {
+              "description": "The centre's distance from the left edge, 0 to 1.",
+              "format": "double",
+              "type": "number"
+            },
+            "y": {
+              "description": "The centre's distance from the top edge, 0 to 1.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/AutoEditAction",
+          "description": "`split_scenes`, `stabilize`, `track`, `multicam` or `multicam_sync`."
+        },
+        "angles": {
+          "default": [],
+          "description": "multicam, multicam_sync: the angles' video asset ids, at least two, in order; the\nfirst shows at the start.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "track: the timeline time where `region` is given; the clip's start when omitted."
+        },
+        "clip": {
+          "description": "split_scenes, stabilize, track: the video clip to measure.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Report what would change without committing it.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "follow": {
+          "description": "track: another clip, such as a title or sticker, that moves as the region does from\nwhere it is (motion tracking).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mask": {
+          "description": "track: a mask of the clip whose centre follows the region (mask tracking).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_offset_seconds": {
+          "description": "multicam, multicam_sync: look at most this many seconds either way; any offset when\nomitted.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "multicam: the multicam timeline's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "offsets": {
+          "default": [],
+          "description": "multicam: each angle's start in the scene, in order; measured from their sound when\nomitted, unless sync is false.",
+          "items": {
+            "$ref": "#/$defs/TimeInput"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegionArg"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "track: the region to follow at `at`, in the picture as it shows (find it with\nframe_grab)."
+        },
+        "request_id": {
+          "description": "Retry key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sound": {
+          "description": "multicam: which angle's sound plays, by number from 1; the first when omitted.",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "multicam: where the multicam clip starts; appended when omitted."
+        },
+        "strength": {
+          "description": "stabilize: how much motion to remove, 0 (none) to 1 (very smooth), up to 3 for a\nlocked-off look; 0.5 when omitted.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sync": {
+          "description": "multicam: false lines the angles up at their starts instead of measuring offsets.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "timeline": {
+          "description": "multicam: timeline for the multicam clip; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "track": {
+          "description": "multicam: track for the multicam clip.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "auto_edit",
+    "read_only": false
+  },
+  {
     "description": "List what FossCut can do: every editing command and query with a summary, the engine operations, the analyzers, the models and whether each is installed, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
     "input": {
       "$defs": {
@@ -854,7 +1156,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Cancel a running export job; nothing is written. A finished job is not affected. wait_seconds (up to 60) waits for it to stop.",
+    "description": "Cancel a running export or analysis job (nothing is written), or stop a recording (what was recorded is kept and the job succeeds). A finished job is not affected. wait_seconds (up to 60) waits for it to stop.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -881,7 +1183,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "The state of an export job (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
+    "description": "The state of a job from export, media_analyze or record (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis or the recording; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -1508,6 +1810,175 @@ expression: listing
     },
     "name": "query",
     "read_only": true
+  },
+  {
+    "description": "Record a voiceover, a camera or the screen of this machine into the project's recordings folder. Only when the user asked you to record: start needs confirm true. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes.",
+    "input": {
+      "$defs": {
+        "RecordAction": {
+          "description": "What the `record` tool does.",
+          "oneOf": [
+            {
+              "const": "devices",
+              "description": "List the microphones, cameras and screens of this machine.",
+              "type": "string"
+            },
+            {
+              "const": "start",
+              "description": "Start recording as a background job.",
+              "type": "string"
+            }
+          ]
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/RecordAction",
+          "description": "`devices` or `start`."
+        },
+        "confirm": {
+          "default": false,
+          "description": "start: `true` only when the user asked you to record. Recording uses their\nmicrophone, camera or screen.",
+          "type": "boolean"
+        },
+        "device": {
+          "description": "start: the device by name, a part of its name, or its number from 1 among its kind\nin `devices`; the first of its kind when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "start: stop after this long; until job_cancel when omitted."
+        },
+        "fps": {
+          "description": "start: frame rate such as 30 or 60; 30 when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input": {
+          "description": "start: an FFmpeg input as FORMAT:INPUT instead of a device (for example\n`lavfi:sine=frequency=440`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "microphone": {
+          "description": "start, for camera and screen: the microphone to record with it, chosen the same way,\nor `none`. A camera takes the first microphone and a screen none when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "description": "start: picture size as [width, height]; 1920x1080 for a screen and 1280x720 for a\ncamera when omitted.",
+          "items": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "what": {
+          "description": "start: `microphone` (a voiceover), `camera` or `screen`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "record",
+    "read_only": false
   },
   {
     "description": "Redo the most recently undone change. Returns the new revision.",

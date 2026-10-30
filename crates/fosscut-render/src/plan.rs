@@ -322,7 +322,7 @@ fn layer_for(
                 .unwrap_or(Flicks::ZERO)
                 .max(Flicks::ZERO)
                 .min(last);
-            let nested = plan_frame(project, timeline, at).ok()?;
+            let nested = plan_tracks(project, timeline, at, clip.angle.as_ref()).ok()?;
             return Some(placed(LayerSource::Nested(Box::new(nested)), 0));
         }
         (ClipContent::Caption(caption), _) => {
@@ -401,6 +401,17 @@ pub fn plan_frame(
     timeline: &Id,
     time: Flicks,
 ) -> Result<RenderPlan, RenderError> {
+    plan_tracks(project, timeline, time, None)
+}
+
+/// [`plan_frame`] showing only the video track `only`, and the tracks of other kinds, when
+/// it is given: a multicam clip's angle (ADR-0029).
+fn plan_tracks(
+    project: &Project,
+    timeline: &Id,
+    time: Flicks,
+    only: Option<&Id>,
+) -> Result<RenderPlan, RenderError> {
     let doc = project
         .timelines
         .get(timeline)
@@ -408,7 +419,9 @@ pub fn plan_frame(
             timeline: timeline.to_string(),
         })?;
     let mut plan = RenderPlan::empty((doc.format.width, doc.format.height));
-    for track in doc.tracks.iter().filter(|t| !t.hidden) {
+    let shown =
+        |t: &&Track| !t.hidden && only.is_none_or(|id| t.kind != TrackKind::Video || &t.id == id);
+    for track in doc.tracks.iter().filter(shown) {
         if let Some((out, into, progress)) = transition_at(track, time) {
             let (Some(outgoing), Some(incoming)) = (
                 layer_for(project, &doc.format, track, out, time),
@@ -884,5 +897,59 @@ mod tests {
             "frame 15 inside, 30 frames into its media"
         );
         assert_eq!(plan.layers[0].flattened().len(), 1, "the inner layer");
+    }
+
+    #[test]
+    fn a_multicam_angle_shows_only_its_track() {
+        let (mut project, timeline) = project();
+        let inner_id = project.allocate_id(fosscut_model::IdKind::Timeline);
+        let mut inner = project.timelines[&timeline].clone();
+        inner.id = inner_id.clone();
+        inner.tracks.truncate(1);
+        // A second angle: the same picture on a track of its own.
+        let mut second = inner.tracks[0].clone();
+        second.id = project.allocate_id(fosscut_model::IdKind::Track);
+        for clip in &mut second.clips {
+            clip.id = project.allocate_id(fosscut_model::IdKind::Clip);
+        }
+        let angle = second.id.clone();
+        inner.tracks.push(second);
+        project
+            .manifest
+            .timelines
+            .push(fosscut_model::TimelineEntry {
+                id: inner_id.clone(),
+                name: "Angles".into(),
+                role: fosscut_model::TimelineRole::Compound,
+            });
+        project.timelines.insert(inner_id.clone(), inner);
+        let mut multicam = clip(
+            &mut project,
+            0,
+            50,
+            ClipContent::Timeline {
+                timeline: inner_id,
+                source_in: Flicks::ZERO,
+            },
+        );
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks.truncate(1);
+        doc.tracks[0].clips = vec![multicam.clone()];
+        let nested_layers = |project: &Project| {
+            let plan = plan_frame(project, &timeline, frames(5)).unwrap();
+            let LayerSource::Nested(nested) = &plan.layers[0].source else {
+                panic!("a nested plan");
+            };
+            nested.layers.len()
+        };
+        assert_eq!(nested_layers(&project), 2, "both angles without a choice");
+        multicam.angle = Some(angle);
+        project.timelines.get_mut(&timeline).unwrap().tracks[0].clips = vec![multicam];
+        let angle_issues: Vec<_> = fosscut_model::validate(&project)
+            .into_iter()
+            .filter(|i| i.code == "fosscut.model.angle")
+            .collect();
+        assert!(angle_issues.is_empty(), "{angle_issues:?}");
+        assert_eq!(nested_layers(&project), 1, "only the chosen angle");
     }
 }

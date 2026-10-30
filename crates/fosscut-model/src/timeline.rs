@@ -201,6 +201,10 @@ pub struct Clip {
     /// The group of clips this one edits together with (`group_…`, ADR-0024).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<Id>,
+    /// A compound clip's angle: the one track of its timeline whose picture shows, for
+    /// multicam editing (ADR-0029); every track shows when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<Id>,
     /// How a video or audio clip plays its source: faster, slower, along a curve,
     /// backwards or frozen (ADR-0023). Absent, it plays one to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,6 +237,7 @@ impl Clip {
             animations: ClipAnimations::default(),
             speed: None,
             group: None,
+            angle: None,
             keyframes: BTreeMap::new(),
         }
     }

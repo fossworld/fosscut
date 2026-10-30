@@ -37,9 +37,11 @@ fn property_of(command: &str, clip: &Clip, path: &str) -> Result<Property, ApiEr
             .with_details(json!({ "unknown": path }))
     })?;
     let picture = !matches!(clip.content, ClipContent::Audio { .. });
+    // A compound clip sounds like its timeline's mix (ADR-0025), so it has a volume,
+    // fades and pan like the clips it holds.
     let sound = matches!(
         clip.content,
-        ClipContent::Audio { .. } | ClipContent::Video { .. }
+        ClipContent::Audio { .. } | ClipContent::Video { .. } | ClipContent::Timeline { .. }
     );
     let has = match property.applies {
         Applies::Picture => picture,
@@ -750,6 +752,81 @@ impl Command for KeyframeSet {
                         interpolation: easing.unwrap_or_default(),
                     },
                 ),
+            }
+            Ok(())
+        })?;
+        Ok(KeyframesChanged {
+            property: self.property,
+            clip: properties,
+        })
+    }
+}
+
+/// One keyframe of `keyframe.set_all`.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KeyInput {
+    /// Position from the clip's start.
+    pub offset: TimeInput,
+    /// The value: a number, or `[x, y]` for pairs.
+    pub value: Value,
+    /// How the value moves to the next keyframe; linear when omitted.
+    #[serde(default)]
+    pub easing: Option<Easing>,
+}
+
+/// Replaces every keyframe of a clip property at once: how measured motion (stabilization,
+/// tracking) lands on a clip, one undo step however many keyframes it has.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KeyframeSetAll {
+    /// The clip.
+    pub clip: Id,
+    /// The property, as `keyframe.set` takes it.
+    pub property: String,
+    /// The keyframes, at different offsets; an empty list removes them all.
+    pub keys: Vec<KeyInput>,
+}
+
+impl Command for KeyframeSetAll {
+    const NAME: &'static str = "keyframe.set_all";
+    const SUMMARY: &'static str = "Replace every keyframe of a clip property with a list of offsets from the clip's start and values, in one step: for motion measured by stabilization or tracking, or any animation planned whole.";
+    type Output = KeyframesChanged;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<KeyframesChanged, ApiError> {
+        let path = self.property.clone();
+        let (_, properties) = with_clip(ctx, &self.clip, |clip, rate| {
+            let target = Target::of(Self::NAME, clip, &path)?;
+            if !target.animatable() {
+                return Err(invalid(format!(
+                    "keyframe.set_all: {path} does not take keyframes; set it with clip.set or effect.set"
+                )));
+            }
+            let mut keys: Vec<Keyframe> = Vec::with_capacity(self.keys.len());
+            for key in &self.keys {
+                let offset = key_offset(Self::NAME, clip, None, Some(&key.offset), rate)?;
+                keys.push(Keyframe {
+                    time: offset,
+                    value: target.parse(Self::NAME, &key.value)?,
+                    interpolation: key
+                        .easing
+                        .as_ref()
+                        .map(Easing::interpolation)
+                        .transpose()?
+                        .unwrap_or_default(),
+                });
+            }
+            keys.sort_by_key(|k| k.time);
+            if keys.windows(2).any(|w| w[0].time == w[1].time) {
+                return Err(invalid(
+                    "keyframe.set_all: two keyframes fall on the same frame",
+                ));
+            }
+            let store = target.keys(clip);
+            if keys.is_empty() {
+                store.remove(&target.key_name());
+            } else {
+                store.insert(target.key_name(), keys);
             }
             Ok(())
         })?;

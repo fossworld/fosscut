@@ -221,13 +221,16 @@ async fn every_skill_is_well_formed() {
     assert!(!skills.is_empty(), "skills/ has no skills");
     let dir = workspace("skills-form");
     let client = start(&dir, "fosscut-eval").await;
-    let tools: Vec<String> = client
-        .list_all_tools()
-        .await
-        .unwrap()
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
+    let listed = client.list_all_tools().await.unwrap();
+    let tools: Vec<String> = listed.iter().map(|t| t.name.to_string()).collect();
+    // The arguments and the values they take, from the tools' own input schemas.
+    let mut words = std::collections::BTreeSet::new();
+    for tool in &listed {
+        schema_words(
+            &Value::Object(tool.input_schema.as_ref().clone()),
+            &mut words,
+        );
+    }
     for (name, path) in &skills {
         // SKILL.md: frontmatter whose name is the folder, and a description agents can match.
         let text = std::fs::read_to_string(path.join("SKILL.md")).unwrap();
@@ -263,6 +266,7 @@ async fn every_skill_is_well_formed() {
         for tool in text.split('`').skip(1).step_by(2) {
             if tool.contains('_') && tool.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
                 let known = tools.iter().any(|t| t == tool)
+                    || words.contains(tool)
                     || [
                         "expected_revision",
                         "request_id",
@@ -340,4 +344,31 @@ fn paths_substitutions_and_matchers_work() {
         &serde_json::json!({ "a": 1 }),
         &serde_json::json!({ "a": 1 })
     ));
+}
+
+/// Adds the property names and the enumerated or constant string values of a JSON Schema
+/// to `words`.
+fn schema_words(schema: &Value, words: &mut std::collections::BTreeSet<String>) {
+    match schema {
+        Value::Object(map) => {
+            if let Some(Value::Object(properties)) = map.get("properties") {
+                words.extend(properties.keys().cloned());
+            }
+            if let Some(Value::Array(values)) = map.get("enum") {
+                words.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
+            }
+            if let Some(Value::String(value)) = map.get("const") {
+                words.insert(value.clone());
+            }
+            for value in map.values() {
+                schema_words(value, words);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                schema_words(value, words);
+            }
+        }
+        _ => {}
+    }
 }

@@ -540,6 +540,26 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "The output file could not be written or moved into place.",
             "Check the folder exists and is writable, and that no other program holds the file open.",
         ),
+        entry(
+            "fosscut.media.device_unavailable",
+            "The microphone, camera or screen cannot be opened: there is none of that kind, it is in use, or the system has not allowed FossCut to use it.",
+            "List the devices (fosscut record --list), choose another, or allow FossCut in the system's privacy settings for the microphone, camera or screen recording.",
+        ),
+        entry(
+            "fosscut.media.input_format_unavailable",
+            "This FFmpeg build has no capture input of the requested kind, such as avfoundation or dshow.",
+            "Use one of the input formats in details.available, or an FFmpeg build with device support.",
+        ),
+        entry(
+            "fosscut.record.confirmation_required",
+            "Recording uses the user's microphone, camera or screen, so an agent's call must confirm that the user asked for it.",
+            "Record only when the user asked you to; then call again with confirm true.",
+        ),
+        entry(
+            "fosscut.media.nothing_recorded",
+            "The recording stopped before the device delivered anything, so no file was written.",
+            "Record for longer, or check that the device works and is allowed.",
+        ),
     ]
 }
 

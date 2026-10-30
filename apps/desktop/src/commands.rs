@@ -19,6 +19,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::AppState;
 use crate::library::{ProjectSummary, TrashEntry};
 use crate::preview::Job;
+use crate::recording::{RecordChoice, RecordState};
 use crate::workspace::{NewProject, Opened, Workspace};
 
 type Answer<T> = Result<T, ApiError>;
@@ -173,17 +174,19 @@ pub fn project_close(app: AppHandle, state: State<'_, AppState>) {
 #[tauri::command]
 pub async fn query(state: State<'_, AppState>, name: String, args: Option<Value>) -> Answer<Value> {
     let workspace: Arc<Workspace> = Arc::clone(&state.workspace);
-    blocking(move || {
-        let mut value = workspace.query(&name, args.unwrap_or(Value::Null))?;
-        // The window offers to relink media whose files are gone.
-        if name == "media.list"
-            && let Some((bundle, _, _)) = workspace.snapshot()
-        {
-            fosscut_engine::import::mark_missing(&mut value, &bundle);
-        }
-        Ok(value)
-    })
-    .await
+    blocking(move || read(&workspace, &name, args.unwrap_or(Value::Null))).await
+}
+
+/// What `query` answers for the project open in `workspace`, with what the window adds.
+fn read(workspace: &Workspace, name: &str, args: Value) -> Answer<Value> {
+    let mut value = workspace.query(name, args)?;
+    // The window offers to relink media whose files are gone.
+    if name == "media.list"
+        && let Some((bundle, _, _)) = workspace.snapshot()
+    {
+        fosscut_engine::import::mark_missing(&mut value, &bundle);
+    }
+    Ok(value)
 }
 
 /// Shows an asset's file in the system's file manager.
@@ -339,6 +342,328 @@ fn normalize(workspace: &Workspace, clips: &[String], target_lufs: Option<f64>) 
     )
     .map_err(ApiError::from)?;
     serde_json::to_value(normalization).map_err(|e| ApiError::new(codes::INTERNAL, e.to_string()))
+}
+
+/// An id the window sent, named `what` in the error when it is not one.
+fn parse_id(text: &str, what: &str) -> Answer<Id> {
+    Id::parse(text).map_err(|e| invalid(format!("{what}: {e}")))
+}
+
+/// Refuses before measuring when the project moved on from the revision the window shows,
+/// as the write that follows would.
+fn ensure_revision(project: &Project, expected: Option<u64>) -> Answer<()> {
+    let current = project.manifest.revision;
+    match expected {
+        Some(expected) if expected != current => Err(ApiError::new(
+            codes::REVISION_CONFLICT,
+            format!("the project is at revision {current}, not {expected}"),
+        )
+        .with_details(json!({ "expected_revision": expected, "current_revision": current }))),
+        _ => Ok(()),
+    }
+}
+
+/// Applies the calls a measurement proposed as the user's one undoable step, against the
+/// revision the window shows when it gives one; nothing when it proposed none.
+fn apply_measured(
+    workspace: &Workspace,
+    commands: Vec<Value>,
+    expected_revision: Option<u64>,
+    reason: &str,
+) -> Answer<Option<Response>> {
+    if commands.is_empty() {
+        return Ok(None);
+    }
+    let mut request: Request = serde_json::from_value(json!({ "commands": commands }))
+        .map_err(|e| ApiError::new(codes::INTERNAL, e.to_string()))?;
+    request.expected_revision = expected_revision;
+    request.reason = Some(reason.to_string());
+    workspace.execute(request).map(Some)
+}
+
+/// The measurements take no progress reports from the window; they run to the end.
+fn no_progress(_: fosscut_engine::Progress) -> bool {
+    true
+}
+
+/// Splits a video clip at its shot cuts (measured once, then cached) as one undoable
+/// step. Answers `{scenes: {clip, cuts}, response}`: the cuts in timeline flicks, and the
+/// response, null when the clip has no cuts.
+#[tauri::command]
+pub async fn scenes_split(
+    state: State<'_, AppState>,
+    clip: String,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || split_scenes(&workspace, &clip, expected_revision)).await
+}
+
+/// What `scenes_split` does for the project open in `workspace`.
+fn split_scenes(
+    workspace: &Workspace,
+    clip: &str,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let clip = parse_id(clip, "clip")?;
+    let (bundle, project, _) = open_project(workspace)?;
+    ensure_revision(&project, expected_revision)?;
+    let found = fosscut_engine::scenes::split_at_scenes(
+        &project,
+        bundle,
+        &clip,
+        fosscut_engine::cache_dir(),
+        fosscut_engine::models_dir(),
+        &mut no_progress,
+    )?;
+    let response = apply_measured(
+        workspace,
+        found.commands,
+        expected_revision,
+        "Split at scenes",
+    )?;
+    Ok(json!({
+        "scenes": { "clip": found.clip, "cuts": found.cuts },
+        "response": response,
+    }))
+}
+
+/// A motion plan without its calls, which the response shows applied.
+fn motion_report(plan: &fosscut_engine::motion::MotionPlan) -> Value {
+    let mut report = json!(plan);
+    if let Some(object) = report.as_object_mut() {
+        object.remove("commands");
+    }
+    report
+}
+
+/// Measures how the camera moved through a video clip and keys its position, rotation and
+/// scale to steady it, as one undoable step. `strength` runs from 0 (no change) to 1 (very
+/// smooth), 0.5 when omitted; up to 3 is taken for a locked-off look. Answers `{motion:
+/// {clip, frames, zoom}, response}`: the zoom that hides the moving edges, from 1 to 1.5.
+#[tauri::command]
+pub async fn clip_stabilize(
+    state: State<'_, AppState>,
+    clip: String,
+    strength: Option<f64>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || stabilize(&workspace, &clip, strength, expected_revision)).await
+}
+
+/// What `clip_stabilize` does for the project open in `workspace`.
+fn stabilize(
+    workspace: &Workspace,
+    clip: &str,
+    strength: Option<f64>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let clip = parse_id(clip, "clip")?;
+    let (bundle, project, _) = open_project(workspace)?;
+    ensure_revision(&project, expected_revision)?;
+    let plan = fosscut_engine::motion::stabilize(
+        &project,
+        &bundle,
+        &clip,
+        strength.unwrap_or(fosscut_engine::motion::DEFAULT_STRENGTH),
+        &mut no_progress,
+    )?;
+    let report = motion_report(&plan);
+    let response = apply_measured(workspace, plan.commands, expected_revision, "Stabilize")?;
+    Ok(json!({ "motion": report, "response": response }))
+}
+
+/// What to track and what follows it (`clip_track`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrackRequest {
+    /// The video clip whose picture is followed.
+    pub clip: String,
+    /// The region to follow: centre and size as fractions of the picture as displayed.
+    pub region: fosscut_engine::motion::Region,
+    /// The timeline time the region was drawn at, in flicks, inside the clip.
+    pub at: i64,
+    /// A mask of the clip, whose centre then follows the region.
+    #[serde(default)]
+    pub mask: Option<String>,
+    /// Another clip, such as a title or sticker, which then moves as the region does.
+    #[serde(default)]
+    pub follow: Option<String>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    #[serde(default)]
+    pub expected_revision: Option<u64>,
+}
+
+/// Follows a region of a video clip's picture from `at` to the clip's end and keys one of
+/// its masks, or another clip, to it as one undoable step. Answers `{motion: {clip,
+/// frames, lost}, response}`: `clip` is the one keyed, and `lost` the timeline ranges
+/// (start and end in flicks) where the region was lost and its last place held.
+#[tauri::command]
+pub async fn clip_track(state: State<'_, AppState>, request: TrackRequest) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || track(&workspace, &request)).await
+}
+
+/// What `clip_track` does for the project open in `workspace`.
+fn track(workspace: &Workspace, request: &TrackRequest) -> Answer<Value> {
+    use fosscut_engine::motion::TrackTarget;
+    let clip = parse_id(&request.clip, "clip")?;
+    let target = match (
+        given(request.mask.as_deref()),
+        given(request.follow.as_deref()),
+    ) {
+        (Some(mask), None) => TrackTarget::Mask(parse_id(mask, "mask")?),
+        (None, Some(other)) => TrackTarget::Clip(parse_id(other, "follow")?),
+        _ => {
+            return Err(invalid(
+                "tracking needs either a mask of the clip or another clip to follow the region",
+            )
+            .with_hint("Choose one of the clip's masks, or a title, sticker or clip to follow."));
+        }
+    };
+    let (bundle, project, _) = open_project(workspace)?;
+    ensure_revision(&project, request.expected_revision)?;
+    let plan = fosscut_engine::motion::track(
+        &project,
+        &bundle,
+        &clip,
+        request.region,
+        Flicks::new(request.at),
+        &target,
+        &mut no_progress,
+    )?;
+    let report = motion_report(&plan);
+    let response = apply_measured(workspace, plan.commands, request.expected_revision, "Track")?;
+    Ok(json!({ "motion": report, "response": response }))
+}
+
+/// Makes a multicam clip (ADR-0029) of `angles`, video assets recorded at the same time, as
+/// one undoable step: lined up by offsets measured from their sound unless `sync` is false
+/// (then they all start together), with angle `sound`'s sound (from 1; the first when
+/// omitted), named `name`, starting at `start` flicks (after the track's last clip when
+/// omitted). Answers `{sync: {offsets, confidence} | null, response}`: each angle's offset
+/// in flicks and how sure each match is, from 0 to 1 (below 0.3 is doubtful).
+#[tauri::command]
+pub async fn multicam_create(
+    state: State<'_, AppState>,
+    angles: Vec<String>,
+    sync: Option<bool>,
+    sound: Option<usize>,
+    name: Option<String>,
+    start: Option<i64>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let request = MulticamRequest {
+        angles,
+        sync: sync.unwrap_or(true),
+        sound,
+        name,
+        start,
+        expected_revision,
+    };
+    blocking(move || create_multicam(&workspace, &request)).await
+}
+
+/// What `multicam_create` is asked.
+#[derive(Clone, Debug, Default)]
+struct MulticamRequest {
+    angles: Vec<String>,
+    sync: bool,
+    sound: Option<usize>,
+    name: Option<String>,
+    start: Option<i64>,
+    expected_revision: Option<u64>,
+}
+
+/// What `multicam_create` does for the project open in `workspace`.
+fn create_multicam(workspace: &Workspace, request: &MulticamRequest) -> Answer<Value> {
+    let ids = request
+        .angles
+        .iter()
+        .map(|angle| parse_id(angle, "angle"))
+        .collect::<Answer<Vec<_>>>()?;
+    let (bundle, project, _) = open_project(workspace)?;
+    let mut args = json!({ "angles": ids });
+    if let Some(sound) = request.sound {
+        args["sound"] = json!(sound);
+    }
+    if let Some(name) = given(request.name.as_deref()) {
+        args["name"] = json!(name);
+    }
+    if let Some(start) = request.start {
+        args["start"] = json!({ "flicks": start });
+    }
+    let call = |args: &Value| json!({ "command": "multicam.create", "args": args });
+    // A dry run first: the core refuses what it would refuse (too few angles, assets that
+    // are not video, a stale revision, no room at the start) before any sound is read.
+    let mut check: Request = serde_json::from_value(json!({ "commands": [call(&args)] }))
+        .map_err(|e| ApiError::new(codes::INTERNAL, e.to_string()))?;
+    check.expected_revision = request.expected_revision;
+    check.dry_run = true;
+    workspace.execute(check)?;
+    let measured = if request.sync {
+        let found = fosscut_engine::motion::sync_offsets(&project, &bundle, &ids, 0.0)?;
+        args["offsets"] = found
+            .offsets
+            .iter()
+            .map(|offset| json!({ "flicks": offset.get() }))
+            .collect();
+        Some(found)
+    } else {
+        None
+    };
+    let response = apply_measured(
+        workspace,
+        vec![call(&args)],
+        request.expected_revision,
+        "Create multicam",
+    )?;
+    Ok(json!({ "sync": measured, "response": response }))
+}
+
+/// How long `record_stop` waits for the recording's file before answering.
+const RECORD_STOP_WAIT: Duration = Duration::from_secs(5);
+
+/// The capture devices on this machine: cameras, screens and microphones, each with its
+/// `kind`, `name`, input `format` and `input`.
+#[tauri::command]
+pub async fn record_devices() -> Answer<Vec<fosscut_engine::record::Device>> {
+    blocking(|| Ok(fosscut_engine::record::devices()?)).await
+}
+
+/// Starts recording a microphone, camera or screen into the open project's `recordings/`
+/// folder in the background, after choosing the devices and settings, and answers the
+/// job at once. Once it succeeds, `record_status` or `record_stop` imports the file and
+/// places it at `choice.at` (the playhead it started from), once.
+#[tauri::command]
+pub async fn record_start(state: State<'_, AppState>, choice: RecordChoice) -> Answer<RecordState> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    let recordings = Arc::clone(&state.recordings);
+    blocking(move || recordings.start(&workspace, &jobs, &choice)).await
+}
+
+/// A recording's status (`progress.done` is the whole seconds recorded) and, once it
+/// succeeded, the report in `recording` and the `asset` and `clip` it became.
+#[tauri::command]
+pub async fn record_status(state: State<'_, AppState>, job: String) -> Answer<RecordState> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    let recordings = Arc::clone(&state.recordings);
+    blocking(move || recordings.status(&workspace, &jobs, &job)).await
+}
+
+/// Stops a recording, keeping what it recorded: the job succeeds with its file, which is
+/// imported and placed as `record_status` does. Answers once the file is ready, or after
+/// a few seconds while it is still being finished.
+#[tauri::command]
+pub async fn record_stop(state: State<'_, AppState>, job: String) -> Answer<RecordState> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    let recordings = Arc::clone(&state.recordings);
+    blocking(move || recordings.stop(&workspace, &jobs, &job, RECORD_STOP_WAIT)).await
 }
 
 /// The agents and other front ends connected to the open project.
@@ -1210,6 +1535,456 @@ mod tests {
         assert!(jobs.list().is_empty(), "nothing started");
         assert!(!out.exists());
         done(workspace, runtime, work);
+    }
+
+    /// `media.add` arguments for a video with sound that is nowhere on disk.
+    fn unplayable_video(name: &str, size: u64) -> Value {
+        json!({
+            "name": name,
+            "kind": "video",
+            "path": { "absolute": format!("/nowhere/{name}") },
+            "identity": { "size": size, "sample_blake3": "ab".repeat(32) },
+            "info": {
+                "duration": 4 * SECOND,
+                "container": "mov,mp4,m4a,3gp,3g2,mj2",
+                "video": { "width": 320, "height": 180, "rate": "30", "codec": "h264" },
+                "audio": { "sample_rate": 48000, "channels": 1, "codec": "aac" }
+            }
+        })
+    }
+
+    /// Imports media as the user would and returns the asset's id.
+    fn import(workspace: &Workspace, args: Value) -> String {
+        let added = workspace
+            .execute(Request::single("media.add", args))
+            .unwrap();
+        added.results[0]["asset"].as_str().unwrap().to_string()
+    }
+
+    /// Places an asset at `seconds` and returns the clip's id.
+    fn place(workspace: &Workspace, asset: &str, seconds: i64) -> String {
+        let placed = workspace
+            .execute(Request::single(
+                "clip.add",
+                json!({ "asset": asset, "start": { "flicks": seconds * SECOND } }),
+            ))
+            .unwrap();
+        placed.results[0]["clip"].as_str().unwrap().to_string()
+    }
+
+    fn revision(workspace: &Workspace) -> u64 {
+        workspace.query("project.info", Value::Null).unwrap()["revision"]
+            .as_u64()
+            .unwrap()
+    }
+
+    fn last_edit(workspace: &Workspace) -> Value {
+        workspace
+            .query("history.list", json!({ "limit": 1 }))
+            .unwrap()["entries"][0]
+            .clone()
+    }
+
+    fn tracking(clip: &str, region: [f64; 4], at: i64) -> TrackRequest {
+        let [x, y, width, height] = region;
+        TrackRequest {
+            clip: clip.into(),
+            region: fosscut_engine::motion::Region {
+                x,
+                y,
+                width,
+                height,
+            },
+            at,
+            mask: None,
+            follow: None,
+            expected_revision: None,
+        }
+    }
+
+    fn multicam(angles: &[&str], sync: bool) -> MulticamRequest {
+        MulticamRequest {
+            angles: angles.iter().map(|a| a.to_string()).collect(),
+            sync,
+            ..MulticamRequest::default()
+        }
+    }
+
+    #[test]
+    fn measurements_refuse_what_they_cannot_measure_before_measuring() {
+        let (workspace, runtime, work) = workspace("measureno");
+        let closed = [
+            split_scenes(&workspace, "clip_0001", None).unwrap_err(),
+            stabilize(&workspace, "clip_0001", None, None).unwrap_err(),
+            track(
+                &workspace,
+                &TrackRequest {
+                    mask: Some("mask_0002".into()),
+                    ..tracking("clip_0001", [0.5, 0.5, 0.2, 0.2], 0)
+                },
+            )
+            .unwrap_err(),
+            create_multicam(&workspace, &multicam(&["asset_0001", "asset_0002"], true))
+                .unwrap_err(),
+        ];
+        for error in closed {
+            assert!(error.message.contains("no project"), "{error:?}");
+        }
+        open_new(&workspace, &work, 1280, 720);
+        let video = import(&workspace, unplayable_video("cam-a.mp4", 11));
+        let clip = place(&workspace, &video, 0);
+        let title = workspace
+            .execute(Request::single(
+                "text.add",
+                json!({ "text": "Hello", "duration": "2s" }),
+            ))
+            .unwrap()
+            .results[0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let before = revision(&workspace);
+
+        let text = stabilize(&workspace, &title, None, None).unwrap_err();
+        assert_eq!(text.code, codes::INVALID_ARGUMENTS);
+        assert!(
+            text.message.contains("text clip") && text.message.contains("video clips"),
+            "a title cannot be stabilized: {text:?}"
+        );
+        let scenes = split_scenes(&workspace, &title, None).unwrap_err();
+        assert!(scenes.message.contains("only video clips"), "{scenes:?}");
+        let strong = stabilize(&workspace, &clip, Some(5.0), None).unwrap_err();
+        assert!(strong.message.contains("outside 0 to 3"), "{strong:?}");
+        let unparsed = stabilize(&workspace, "not an id", None, None).unwrap_err();
+        assert_eq!(unparsed.code, codes::INVALID_ARGUMENTS);
+        assert!(unparsed.message.starts_with("clip:"), "{unparsed:?}");
+        // The revision is checked first, so a stale window measures nothing.
+        let stale = stabilize(&workspace, &clip, None, Some(before - 1)).unwrap_err();
+        assert_eq!(stale.code, codes::REVISION_CONFLICT);
+        assert_eq!(stale.details["current_revision"], before);
+        let stale = split_scenes(&workspace, &clip, Some(before + 1)).unwrap_err();
+        assert_eq!(stale.code, codes::REVISION_CONFLICT);
+
+        let region = [0.5, 0.5, 0.2, 0.2];
+        for (mask, follow) in [(None, None), (Some("mask_0009"), Some(title.as_str()))] {
+            let neither = track(
+                &workspace,
+                &TrackRequest {
+                    mask: mask.map(str::to_string),
+                    follow: follow.map(str::to_string),
+                    ..tracking(&clip, region, 0)
+                },
+            )
+            .unwrap_err();
+            assert_eq!(neither.code, codes::INVALID_ARGUMENTS);
+            assert!(
+                neither.message.contains("either a mask"),
+                "a mask or a follower, not {mask:?} and {follow:?}: {neither:?}"
+            );
+        }
+        let follows = |clip: &str, region: [f64; 4], at: i64, follow: &str| {
+            track(
+                &workspace,
+                &TrackRequest {
+                    follow: Some(follow.into()),
+                    ..tracking(clip, region, at)
+                },
+            )
+            .unwrap_err()
+        };
+        let text = follows(&title, region, 0, &clip);
+        assert!(text.message.contains("video clips"), "{text:?}");
+        let itself = follows(&clip, region, 0, &clip);
+        assert!(
+            itself.message.contains("cannot follow itself"),
+            "{itself:?}"
+        );
+        let flat = follows(&clip, [0.5, 0.5, 0.0, 0.2], 0, &title);
+        assert!(
+            flat.message.contains("fractions of the picture"),
+            "{flat:?}"
+        );
+        let outside = follows(&clip, region, 9 * SECOND, &title);
+        assert!(outside.message.contains("outside"), "{outside:?}");
+        let no_mask = track(
+            &workspace,
+            &TrackRequest {
+                mask: Some("mask_0009".into()),
+                ..tracking(&clip, region, 0)
+            },
+        )
+        .unwrap_err();
+        assert!(no_mask.message.contains("has no mask"), "{no_mask:?}");
+
+        // Multicam needs two video assets; the dry run refuses before any sound is read.
+        let sound = import(
+            &workspace,
+            json!({
+                "name": "voice.wav",
+                "kind": "audio",
+                "path": { "absolute": "/nowhere/voice.wav" },
+                "identity": { "size": 12, "sample_blake3": "cd".repeat(32) },
+                "info": { "duration": 4 * SECOND, "audio": { "sample_rate": 48000, "channels": 1 } }
+            }),
+        );
+        let after_import = revision(&workspace);
+        let one = create_multicam(&workspace, &multicam(&[&video], true)).unwrap_err();
+        assert_eq!(one.code, codes::MULTICAM_INVALID);
+        assert!(one.message.contains("at least two"), "{one:?}");
+        let audio = create_multicam(&workspace, &multicam(&[&video, &sound], true)).unwrap_err();
+        assert_eq!(audio.code, codes::MULTICAM_INVALID);
+        assert!(audio.message.contains("not a video asset"), "{audio:?}");
+        let missing =
+            create_multicam(&workspace, &multicam(&[&video, "asset_0099"], true)).unwrap_err();
+        assert_eq!(missing.code, codes::ASSET_NOT_FOUND);
+        let unparsed =
+            create_multicam(&workspace, &multicam(&[&video, "cam b"], false)).unwrap_err();
+        assert!(unparsed.message.starts_with("angle:"), "{unparsed:?}");
+        let stale = create_multicam(
+            &workspace,
+            &MulticamRequest {
+                expected_revision: Some(before),
+                ..multicam(&[&video, &video], true)
+            },
+        )
+        .unwrap_err();
+        assert_eq!(stale.code, codes::REVISION_CONFLICT);
+        assert_eq!(revision(&workspace), after_import, "nothing was applied");
+        done(workspace, runtime, work);
+    }
+
+    /// The clips of `timeline` (the primary one when null) as the window reads them.
+    fn window_clips(workspace: &Workspace, timeline: &Value) -> Vec<Value> {
+        let mut args = json!({ "detail": "full" });
+        if !timeline.is_null() {
+            args["timeline"] = timeline.clone();
+        }
+        let view = read(workspace, "timeline.read", args).unwrap();
+        view["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|t| t["clips"].as_array().unwrap().clone())
+            .collect()
+    }
+
+    #[test]
+    fn multicam_clips_show_their_angle_and_cut_between_angles_by_number() {
+        let (workspace, runtime, work) = workspace("multicam");
+        open_new(&workspace, &work, 1280, 720);
+        let a = import(&workspace, unplayable_video("cam-a.mp4", 21));
+        let b = import(&workspace, unplayable_video("cam-b.mp4", 22));
+        let shown = window_clips(&workspace, &Value::Null);
+        assert!(shown.is_empty());
+        let made = create_multicam(
+            &workspace,
+            &MulticamRequest {
+                sound: Some(2),
+                name: Some("Interview".into()),
+                start: Some(SECOND),
+                expected_revision: Some(revision(&workspace)),
+                ..multicam(&[&a, &b], false)
+            },
+        )
+        .unwrap();
+        assert_eq!(made["sync"], Value::Null, "nothing measured without sync");
+        let created = &made["response"]["results"][0];
+        let id = created["clip"]["clip"].clone();
+        let entry = last_edit(&workspace);
+        assert_eq!(entry["actor"], "human");
+        assert_eq!(entry["reason"], "Create multicam");
+
+        let clips = window_clips(&workspace, &Value::Null);
+        let placed = clip(&clips, &id);
+        assert_eq!(placed["kind"], "timeline");
+        assert_eq!(placed["start"]["flicks"], SECOND, "at the start asked");
+        assert_eq!(placed["timeline_name"], "Interview");
+        assert_eq!(
+            placed["angle"], created["angles"][0],
+            "a new multicam clip shows its first angle"
+        );
+        assert_eq!(
+            placed["angles"],
+            json!([
+                { "number": 1, "id": created["angles"][0], "name": "Angle 1: cam-a.mp4" },
+                { "number": 2, "id": created["angles"][1], "name": "Angle 2: cam-b.mp4" },
+            ]),
+            "numbered as multicam.switch numbers them"
+        );
+        let inner = window_clips(&workspace, &created["timeline"]);
+        assert!(
+            inner.iter().all(|c| c.get("angles").is_none()),
+            "only multicam clips are marked"
+        );
+
+        // Cutting to angle 2 at 3 s: the part after the cut shows it.
+        workspace
+            .execute(Request::single(
+                "multicam.switch",
+                json!({ "clip": id, "at": { "flicks": 3 * SECOND }, "angle": 2 }),
+            ))
+            .unwrap();
+        let clips = window_clips(&workspace, &Value::Null);
+        let parts: Vec<(i64, Value)> = clips
+            .iter()
+            .map(|c| (c["start"]["flicks"].as_i64().unwrap(), c["angle"].clone()))
+            .collect();
+        assert_eq!(
+            parts,
+            [
+                (SECOND, created["angles"][0].clone()),
+                (3 * SECOND, created["angles"][1].clone())
+            ]
+        );
+        assert!(
+            clips
+                .iter()
+                .all(|c| c["angles"].as_array().unwrap().len() == 2)
+        );
+        done(workspace, runtime, work);
+    }
+
+    /// True when the FFmpeg programs are here; in CI (`FOSSCUT_REQUIRE_FFMPEG`) they must be.
+    fn ffmpeg_programs() -> bool {
+        let runs = |program: &str| {
+            std::process::Command::new(program)
+                .arg("-version")
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        let found = runs("ffmpeg") && runs("ffprobe");
+        let required =
+            std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0");
+        assert!(
+            found || !required,
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg or ffprobe is missing"
+        );
+        found
+    }
+
+    fn ffmpeg(folder: &std::path::Path, args: &[&str]) {
+        let status = std::process::Command::new("ffmpeg")
+            .current_dir(folder)
+            .args(["-y", "-v", "error"])
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "ffmpeg {args:?}");
+    }
+
+    #[test]
+    fn stabilizing_and_multicam_sync_measure_generated_media() {
+        if !ffmpeg_programs() {
+            eprintln!("skipped: ffmpeg or ffprobe is missing");
+            return;
+        }
+        let (workspace, runtime, work) = workspace("measured");
+        // Two angles of one scene: a moving test picture over a noisy room, the second
+        // started recording a second after the first.
+        ffmpeg(
+            &work,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=160x90:rate=30:duration=4",
+                "-f",
+                "lavfi",
+                "-i",
+                "anoisesrc=duration=4:color=pink:seed=7:sample_rate=48000",
+                "-af",
+                "volume='0.15+0.85*gt(sin(2*PI*1.3*t)*sin(2*PI*0.37*t+0.5),0.3)':eval=frame",
+                "-c:v",
+                "mpeg4",
+                "-q:v",
+                "3",
+                "-c:a",
+                "pcm_s16le",
+                "-shortest",
+                "cam-a.mov",
+            ],
+        );
+        ffmpeg(
+            &work,
+            &[
+                "-ss",
+                "1",
+                "-i",
+                "cam-a.mov",
+                "-c:v",
+                "mpeg4",
+                "-q:v",
+                "3",
+                "-c:a",
+                "pcm_s16le",
+                "cam-b.mov",
+            ],
+        );
+        let opened = open_new(&workspace, &work, 320, 180);
+        let media = |file: &str| {
+            fosscut_engine::import::media_add_args(&work.join(file), None, &opened.bundle).unwrap()
+        };
+        let a = import(&workspace, media("cam-a.mov"));
+        let b = import(&workspace, media("cam-b.mov"));
+        let clip = place(&workspace, &a, 0);
+
+        let steady = stabilize(&workspace, &clip, Some(0.5), Some(revision(&workspace))).unwrap();
+        let zoom = steady["motion"]["zoom"].as_f64().unwrap();
+        assert!((1.0..=1.5).contains(&zoom), "zoom {zoom}");
+        assert!(steady["motion"]["frames"].as_u64().unwrap() >= 2);
+        assert!(
+            steady["motion"].get("commands").is_none(),
+            "the response shows them"
+        );
+        assert_eq!(steady["response"]["committed"], true);
+        let clips = window_clips(&workspace, &Value::Null);
+        let keyed = &clip_of(&clips, &clip)["keyframes"];
+        for property in [
+            "transform.position",
+            "transform.rotation",
+            "transform.scale",
+        ] {
+            assert!(
+                keyed[property]
+                    .as_array()
+                    .is_some_and(|keys| !keys.is_empty()),
+                "{property}: {keyed}"
+            );
+        }
+        let entry = last_edit(&workspace);
+        assert_eq!(
+            (entry["actor"].as_str(), entry["reason"].as_str()),
+            (Some("human"), Some("Stabilize"))
+        );
+
+        let made = create_multicam(
+            &workspace,
+            &MulticamRequest {
+                start: Some(10 * SECOND),
+                ..multicam(&[&a, &b], true)
+            },
+        )
+        .unwrap();
+        let offsets = made["sync"]["offsets"].as_array().unwrap();
+        assert_eq!(offsets[0], 0);
+        let later = offsets[1].as_i64().unwrap() as f64 / SECOND as f64;
+        assert!(
+            (later - 1.0).abs() < 0.01,
+            "the second angle started 1 s later: {later}"
+        );
+        assert!(made["sync"]["confidence"][1].as_f64().unwrap() > 0.3);
+        let created = &made["response"]["results"][0];
+        let inner = window_clips(&workspace, &created["timeline"]);
+        let starts: Vec<i64> = inner
+            .iter()
+            .map(|c| c["start"]["flicks"].as_i64().unwrap())
+            .collect();
+        assert_eq!(starts, [SECOND, 0], "angle 2 (the lower track) a second in");
+        done(workspace, runtime, work);
+    }
+
+    fn clip_of<'a>(clips: &'a [Value], id: &str) -> &'a Value {
+        clips.iter().find(|c| c["id"] == id).unwrap()
     }
 
     #[test]

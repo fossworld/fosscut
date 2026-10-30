@@ -36,7 +36,11 @@ pub fn split_at_scenes(
     let found = project
         .timelines
         .values()
-        .flat_map(|t| t.tracks.iter().flat_map(move |track| track.clips.iter().map(move |c| (t, c))))
+        .flat_map(|t| {
+            t.tracks
+                .iter()
+                .flat_map(move |track| track.clips.iter().map(move |c| (t, c)))
+        })
         .find(|(_, c)| &c.id == clip);
     let Some((timeline, found)) = found else {
         return Err(EngineError::InvalidArguments {

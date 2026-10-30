@@ -1,8 +1,10 @@
 import { useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
+import { multicamAngles } from "../app/multicam";
 import type { AssetView } from "../engine/types";
 import { ALL, type MediaFilter, type SortKey, shown } from "./mediaFilter";
+import { MulticamForm } from "./Multicam";
 
 const KINDS: [MediaFilter["kind"], string][] = [
   ["", "All kinds"],
@@ -97,6 +99,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
   const picked = state.chosen.filter((id) => ids.has(id));
   const update = (change: Partial<MediaFilter>) => setFilter({ ...filter, ...change });
   const compounds = (state.opened?.info.timelines ?? []).filter((t) => t.role === "compound");
+  const angles = multicamAngles(state.media, picked);
   return (
     <section className="media">
       <input
@@ -188,6 +191,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
           ))}
         </select>
       </div>
+      {angles.length >= 2 && <MulticamForm editor={editor} angles={angles} playhead={state.playhead} />}
       <div className="buttons">
         <input
           placeholder="New folder, such as B-roll/Day 1"

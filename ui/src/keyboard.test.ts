@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Keystroke, actionFor, isTyping } from "./keyboard";
+import { type Keystroke, actionFor, angleKey, isTyping } from "./keyboard";
 
 const key = (k: string, extra: Partial<Keystroke> = {}): Keystroke => ({
   key: k,
@@ -79,6 +79,19 @@ describe("keyboard", () => {
     expect(actionFor(key("x"), false)).toBeNull();
     expect(actionFor(key(" ", { altKey: true }), false)).toBeNull();
     expect(actionFor(key(" ", { ctrlKey: true }), true), "a stray modifier is no shortcut").toBeNull();
+  });
+
+  it("cuts to angles 1 to 9 with plain number keys", () => {
+    expect(["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => angleKey(key(k)))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(angleKey(key("0")), "there is no angle 0").toBeNull();
+    expect(angleKey(key("10")), "one key at a time").toBeNull();
+    expect(angleKey(key("a"))).toBeNull();
+    expect(angleKey(key("2", { metaKey: true })), "Mod+2 is not a cut").toBeNull();
+    expect(angleKey(key("2", { ctrlKey: true }))).toBeNull();
+    expect(angleKey(key("2", { altKey: true }))).toBeNull();
+    expect(angleKey(key("2", { shiftKey: true }))).toBeNull();
+    expect(angleKey(key("3", { typing: true })), "typing a number in a field").toBeNull();
+    expect(actionFor(key("3"), true), "number keys are no other shortcut").toBeNull();
   });
 
   it("leaves text fields alone", () => {

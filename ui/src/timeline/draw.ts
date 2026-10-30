@@ -2,6 +2,7 @@
 // timelines with thousands of clips stay smooth.
 
 import { keyTimes } from "../app/animation";
+import { angleNumber } from "../app/multicam";
 import { speedLabel } from "../app/speed";
 import type { ClipView, TimelineView } from "../engine/types";
 import { FLICKS_PER_SECOND } from "../transport/time";
@@ -71,10 +72,25 @@ function block(ctx: CanvasRenderingContext2D, clip: ClipView, x0: number, x1: nu
     ctx.beginPath();
     ctx.rect(x0 + 6, y, x1 - x0 - 12, ROW);
     ctx.clip();
+    ctx.textBaseline = "middle";
+    // A multicam part: the number of the angle it shows, in a small box before the label.
+    const angle = angleNumber(clip);
+    let text = x0 + 8;
+    if (angle !== null) {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+      ctx.beginPath();
+      ctx.roundRect(x0 + 6, y + ROW / 2 - 7, 14, 14, 3);
+      ctx.fill();
+      ctx.fillStyle = COLORS.text;
+      ctx.font = "600 10px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(String(angle), x0 + 13, y + ROW / 2 + 0.5);
+      ctx.textAlign = "left";
+      text += 16;
+    }
     ctx.fillStyle = COLORS.text;
     ctx.font = "12px system-ui, sans-serif";
-    ctx.textBaseline = "middle";
-    ctx.fillText(label(clip), x0 + 8, y + ROW / 2);
+    ctx.fillText(label(clip), text, y + ROW / 2);
     ctx.restore();
   }
 }

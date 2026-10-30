@@ -4,6 +4,7 @@
 
 import type {
   AppInfo,
+  CaptureDevice,
   Change,
   Client,
   ColorSuggestion,
@@ -14,10 +15,17 @@ import type {
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
+  MotionResult,
+  MulticamRequest,
+  MulticamResult,
   Normalization,
   Opened,
   Playhead,
   ProjectSummary,
+  RecordChoice,
+  RecordState,
+  SceneSplit,
+  TrackRequest,
   TrashEntry,
 } from "./types";
 
@@ -84,6 +92,20 @@ export interface EngineClient {
    */
   audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization>;
   /**
+   * Edits measured from media, each applied by the engine as the user's one undoable step
+   * against `expectedRevision` when given, answering what was measured with the response.
+   */
+  measure: {
+    /** Splits a video clip at its shot cuts, so each shot is a clip of its own. */
+    scenes(clip: string, expectedRevision?: number): Promise<SceneSplit>;
+    /** Keys a video clip's placement to cancel camera shake; `strength` 0 to 1, 0.5 by default. */
+    stabilize(clip: string, strength?: number, expectedRevision?: number): Promise<MotionResult>;
+    /** Follows a region of a video clip and keys one of its masks, or another clip, to it. */
+    track(request: TrackRequest): Promise<MotionResult>;
+    /** Makes a multicam clip of video assets, lined up by their sound unless told not to. */
+    multicam(request: MulticamRequest): Promise<MulticamResult>;
+  };
+  /**
    * The built-in library's items, of `kind` when given, with every word of `search` in
    * their name, title, description or tags.
    */
@@ -102,6 +124,19 @@ export interface EngineClient {
   exportStatus(job: string): Promise<JobStatus>;
   /** Stops an export; nothing is written. */
   exportCancel(job: string): Promise<JobStatus>;
+  /** Recording a microphone, camera or screen into the open project. */
+  record: {
+    /** The cameras, screens and microphones on this machine. */
+    devices(): Promise<CaptureDevice[]>;
+    /**
+     * Starts recording in the background; once it succeeds, the file is imported and placed
+     * at `choice.at` once, and the status says as which asset and clip.
+     */
+    start(choice: RecordChoice): Promise<RecordState>;
+    status(job: string): Promise<RecordState>;
+    /** Stops recording and keeps what was recorded. */
+    stop(job: string): Promise<RecordState>;
+  };
   media: {
     /** Shows an asset's file in the system's file manager. */
     reveal(asset: string): Promise<void>;

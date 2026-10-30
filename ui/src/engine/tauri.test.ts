@@ -40,6 +40,14 @@ describe("the Tauri engine client", () => {
     await engine.colorSuggest("clip_0003", "clip_0007");
     await engine.audioNormalize(["clip_0003", "clip_0008"]);
     await engine.audioNormalize(["clip_0008"], -16);
+    await engine.measure.scenes("clip_0003");
+    await engine.measure.scenes("clip_0003", 7);
+    await engine.measure.stabilize("clip_0003");
+    await engine.measure.stabilize("clip_0003", 0.8, 7);
+    const region = { x: 0.4, y: 0.5, width: 0.2, height: 0.1 };
+    await engine.measure.track({ clip: "clip_0003", region, at: 705_600_000, mask: "mask_0010", expected_revision: 7 });
+    await engine.measure.multicam({ angles: ["asset_0001", "asset_0002"], sync: true, start: 0 });
+    await engine.measure.multicam({ angles: ["asset_0001", "asset_0002"], sync: false, sound: 2, name: "Interview", expected_revision: 7 });
     await engine.preview.viewport({ x: 1, y: 2, width: 3, height: 4 });
     await engine.preview.show(1234.6);
     await engine.preview.play();
@@ -61,6 +69,10 @@ describe("the Tauri engine client", () => {
     await engine.exportStart({ output: "/work/Launch.mp4", preset: "mp4-h264", range_flicks: [0, 705_600_000] });
     await engine.exportStatus("job_0001");
     await engine.exportCancel("job_0001");
+    await engine.record.devices();
+    await engine.record.start({ what: "camera", device: "FaceTime HD Camera", microphone: "none", at: 705_600_000 });
+    await engine.record.status("job_0002");
+    await engine.record.stop("job_0002");
     invoke.mockResolvedValueOnce(null);
     expect(await engine.media.relink("asset_0001"), "a cancelled dialog").toBe(false);
     expect(invoke.mock.calls).toEqual([
@@ -80,6 +92,19 @@ describe("the Tauri engine client", () => {
       ["color_suggest", { clip: "clip_0003", reference: "clip_0007" }],
       ["audio_normalize", { clips: ["clip_0003", "clip_0008"], targetLufs: null }],
       ["audio_normalize", { clips: ["clip_0008"], targetLufs: -16 }],
+      ["scenes_split", { clip: "clip_0003", expectedRevision: null }],
+      ["scenes_split", { clip: "clip_0003", expectedRevision: 7 }],
+      ["clip_stabilize", { clip: "clip_0003", strength: null, expectedRevision: null }],
+      ["clip_stabilize", { clip: "clip_0003", strength: 0.8, expectedRevision: 7 }],
+      ["clip_track", { request: { clip: "clip_0003", region, at: 705_600_000, mask: "mask_0010", expected_revision: 7 } }],
+      [
+        "multicam_create",
+        { angles: ["asset_0001", "asset_0002"], sync: true, sound: null, name: null, start: 0, expectedRevision: null },
+      ],
+      [
+        "multicam_create",
+        { angles: ["asset_0001", "asset_0002"], sync: false, sound: 2, name: "Interview", start: null, expectedRevision: 7 },
+      ],
       ["preview_viewport", { x: 1, y: 2, width: 3, height: 4 }],
       ["preview_show", { flicks: 1235 }],
       ["preview_play"],
@@ -104,6 +129,10 @@ describe("the Tauri engine client", () => {
       ["export_start", { choice: { output: "/work/Launch.mp4", preset: "mp4-h264", range_flicks: [0, 705_600_000] } }],
       ["export_status", { job: "job_0001" }],
       ["export_cancel", { job: "job_0001" }],
+      ["record_devices"],
+      ["record_start", { choice: { what: "camera", device: "FaceTime HD Camera", microphone: "none", at: 705_600_000 } }],
+      ["record_status", { job: "job_0002" }],
+      ["record_stop", { job: "job_0002" }],
       ["media_relink", { asset: "asset_0001" }],
     ]);
   });

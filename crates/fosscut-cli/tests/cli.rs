@@ -3184,3 +3184,404 @@ fn library_items_and_export_choices_from_the_command_line() {
     );
     assert_eq!(bad["code"], "fosscut.export.invalid_settings", "{bad}");
 }
+
+/// Runs FFmpeg in `dir` and checks it succeeded.
+fn ffmpeg_in(dir: &Path, args: &[&str]) {
+    let status = Command::new("ffmpeg")
+        .current_dir(dir)
+        .args(["-y", "-v", "error"])
+        .args(args)
+        .status()
+        .unwrap();
+    assert!(status.success(), "ffmpeg {args:?}");
+}
+
+/// Every clip of the primary timeline, read in full.
+fn all_clips(timeline: &Value) -> Vec<Value> {
+    timeline["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["clips"].as_array().unwrap().clone())
+        .collect()
+}
+
+#[test]
+fn scenes_motion_and_multicam_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("motion");
+    // Two shots with a hard cut at 1 s.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=30:d=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0xC02020:s=320x180:r=30:d=1",
+            "-filter_complex",
+            "[0][1]concat=n=2:v=1:a=0,format=yuv420p",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "3",
+            "shots.mp4",
+        ],
+    );
+    // A shaky view of a textured still.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:size=60x34:rate=30:duration=1,noise=alls=100:allf=0:all_seed=5,scale=480:270:flags=bicubic,eq=contrast=2[coarse];color=c=gray:size=480x270:rate=30:duration=1,noise=alls=100:allf=0:all_seed=9,gblur=sigma=1.2[fine];[coarse][fine]blend=all_mode=average",
+            "-frames:v",
+            "1",
+            "texture.png",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-loop",
+            "1",
+            "-framerate",
+            "30",
+            "-i",
+            "texture.png",
+            "-vf",
+            "crop=w=320:h=180:x='80+24*sin(2*PI*2.5*t)':y='45+12*sin(2*PI*1.7*t+1)':exact=1,format=yuv420p",
+            "-t",
+            "2",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "2",
+            "shaky.mp4",
+        ],
+    );
+    // Two cameras in one room: the second started 1 s later.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "anoisesrc=duration=6:color=pink:seed=7:sample_rate=48000",
+            "-af",
+            "volume='0.15+0.85*gt(sin(2*PI*1.3*t)*sin(2*PI*0.37*t+0.5),0.3)':eval=frame",
+            "-c:a",
+            "pcm_s16le",
+            "room.wav",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=30:d=6",
+            "-i",
+            "room.wav",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "wide.mp4",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x2040C0:s=320x180:r=30:d=5",
+            "-ss",
+            "1",
+            "-i",
+            "room.wav",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "close.mp4",
+        ],
+    );
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Cams.fosscut",
+            "--width",
+            "320",
+            "--height",
+            "180",
+        ],
+    );
+    let p = ["-p", "Cams.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    for file in ["shots.mp4", "shaky.mp4", "wide.mp4", "close.mp4"] {
+        run(&["media", "import", file]);
+    }
+
+    // Scenes: the clip splits where the shot changes.
+    let shots = run(&["clip", "add", "--asset", "asset_0001"])["results"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let split = run(&["clip", "split-scenes", "--clip", &shots]);
+    let second = 705_600_000_i64;
+    assert_eq!(split["scenes"]["cuts"], json!([second]), "{split}");
+    assert!(split["response"]["committed"].as_bool().unwrap());
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let parts: Vec<Value> = all_clips(&read)
+        .into_iter()
+        .filter(|c| c["asset"] == "asset_0001")
+        .collect();
+    assert_eq!(parts.len(), 2, "{read}");
+
+    // Stabilization keys the shaky clip.
+    let shaky =
+        run(&["clip", "add", "--asset", "asset_0002", "--start", "3s"])["results"][0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let steady = run(&["clip", "stabilize", "--clip", &shaky, "--strength", "1"]);
+    let zoom = steady["motion"]["zoom"].as_f64().unwrap();
+    assert!(zoom > 1.0 && zoom <= 1.5, "{steady}");
+    assert!(steady["motion"].get("commands").is_none());
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let keyed = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == shaky.as_str())
+        .unwrap();
+    for property in [
+        "transform.position",
+        "transform.rotation",
+        "transform.scale",
+    ] {
+        assert_eq!(
+            keyed["keyframes"][property].as_array().map(Vec::len),
+            Some(60),
+            "{property}: {keyed}"
+        );
+    }
+
+    // A title follows the middle of the shaky picture.
+    let title =
+        run(&["text", "add", "Here", "--start", "3s", "--duration", "1s"])["results"][0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let followed = run(&[
+        "clip",
+        "track",
+        "--clip",
+        &shaky,
+        "--region",
+        "0.5,0.5,0.25,0.25",
+        "--follow",
+        &title,
+    ]);
+    assert_eq!(followed["motion"]["clip"], title.as_str(), "{followed}");
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let moved = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == title.as_str())
+        .unwrap();
+    assert_eq!(
+        moved["keyframes"]["transform.position"]
+            .as_array()
+            .map(Vec::len),
+        Some(30),
+        "{moved}"
+    );
+    let wrong = fails(
+        &dir,
+        &[&p[..], &["clip", "stabilize", "--clip", &title]].concat(),
+    );
+    assert_eq!(
+        wrong["code"], "fosscut.request.invalid_arguments",
+        "{wrong}"
+    );
+    let region = fails(
+        &dir,
+        &[
+            &p[..],
+            &[
+                "clip", "track", "--clip", &shaky, "--region", "0.5,0.5", "--follow", &title,
+            ],
+        ]
+        .concat(),
+    );
+    assert_eq!(region["code"], "fosscut.request.invalid_arguments");
+
+    // Multicam: the angles line up by their sound, then cut to the close angle.
+    let synced = run(&["multicam", "sync", "asset_0003", "asset_0004"]);
+    let offset = synced["offsets"][1].as_i64().unwrap() as f64 / second as f64;
+    assert!((offset - 1.0).abs() < 0.005, "{synced}");
+    let made = run(&[
+        "multicam",
+        "create",
+        "asset_0003",
+        "asset_0004",
+        "--name",
+        "Interview",
+        "--start",
+        "5s",
+    ]);
+    assert!(
+        made["sync"]["confidence"][1].as_f64().unwrap() > 0.3,
+        "{made}"
+    );
+    let created = &made["response"]["results"][0];
+    let multicam = created["clip"]["clip"].as_str().unwrap().to_string();
+    let inner = run(&[
+        "timeline",
+        "read",
+        "--detail",
+        "full",
+        "--timeline",
+        created["timeline"].as_str().unwrap(),
+    ]);
+    // The close angle starts where its sound says, to the flick: on the frame at or after
+    // the measured offset, skipping the rest at the start of its media.
+    let measured = made["sync"]["offsets"][1].as_i64().unwrap();
+    let placed: Vec<(i64, i64)> = inner["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| {
+            let clip = &t["clips"][0];
+            (
+                clip["start"]["flicks"].as_i64().unwrap(),
+                clip["source_in"]["flicks"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(placed[1], (0, 0), "wide is below, from its start: {inner}");
+    assert_eq!(placed[0].0 - placed[0].1, measured, "{inner}");
+    assert!(
+        (0..23_520_000).contains(&placed[0].1),
+        "less than a frame skipped"
+    );
+    let switched = run(&[
+        "multicam", "switch", "--clip", &multicam, "--at", "7s", "--angle", "2",
+    ]);
+    let part = switched["results"][0]["clip"]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_ne!(part, multicam);
+    assert_eq!(
+        switched["results"][0]["angle"], created["angles"][1],
+        "{switched}"
+    );
+    ok(
+        &dir,
+        &[&p[..], &["frame", "7.5s", "--out", "close.png"]].concat(),
+    );
+    assert_eq!(png_size(&dir.join("close.png")), (320, 180));
+    let one = fosscut(
+        &dir,
+        &[&p[..], &["multicam", "create", "asset_0003"]].concat(),
+    );
+    assert!(!one.status.success(), "one angle is refused");
+}
+
+#[test]
+fn recordings_go_into_the_project_and_onto_the_timeline() {
+    if !has_ffmpeg() {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+        );
+        return;
+    }
+    let dir = workspace("record");
+    ok(&dir, &["project", "new", "Voice.fosscut"]);
+    let p = ["-p", "Voice.fosscut"];
+    let listed = ok(&dir, &["record", "--list"]);
+    assert!(listed["devices"].is_array());
+    let recorded = ok(
+        &dir,
+        &[
+            &p[..],
+            &[
+                "record",
+                "microphone",
+                "--input",
+                "lavfi:sine=frequency=440:sample_rate=48000",
+                "--duration",
+                "1s",
+                "--at",
+                "2s",
+            ],
+        ]
+        .concat(),
+    );
+    let output = recorded["recording"]["output"].as_str().unwrap();
+    assert!(
+        output.starts_with("Voice.fosscut/recordings/Voiceover "),
+        "{output}"
+    );
+    assert!(output.ends_with(".wav"));
+    assert!(dir.join(output).is_file());
+    assert_eq!(recorded["recording"]["duration"], 705_600_000);
+    assert_eq!(recorded["import"]["results"][0]["asset"], "asset_0001");
+    let clip = recorded["placed"]["results"][0]["clip"].as_str().unwrap();
+    let read = ok(
+        &dir,
+        &[&p[..], &["timeline", "read", "--detail", "full"]].concat(),
+    );
+    let placed = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == clip)
+        .unwrap();
+    assert_eq!(placed["start"]["flicks"], 2 * 705_600_000_i64, "{placed}");
+    // A file elsewhere is written and not imported.
+    let loose = ok(
+        &dir,
+        &[
+            "record",
+            "microphone",
+            "--input",
+            "lavfi:sine",
+            "--duration",
+            "0.5s",
+            "--out",
+            "take.wav",
+            "--no-import",
+        ],
+    );
+    assert!(loose.get("import").is_none());
+    assert!(dir.join("take.wav").is_file());
+    let again = fails(
+        &dir,
+        &[
+            "record",
+            "microphone",
+            "--input",
+            "lavfi:sine",
+            "--duration",
+            "0.5s",
+            "--out",
+            "take.wav",
+            "--no-import",
+        ],
+    );
+    assert_eq!(again["code"], "fosscut.guard.destructive", "{again}");
+    let what = fails(&dir, &[&p[..], &["record", "radio"]].concat());
+    assert_eq!(what["code"], "fosscut.request.invalid_arguments");
+}

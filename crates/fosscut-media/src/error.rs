@@ -75,6 +75,31 @@ pub enum MediaError {
         /// What the backend reported.
         message: String,
     },
+    /// This FFmpeg build has no input format of this name, so it cannot record from it.
+    #[error("this FFmpeg build has no {format} input; its capture inputs are: {}", available.join(", "))]
+    InputFormatUnavailable {
+        /// The requested input format, for example `avfoundation`.
+        format: String,
+        /// The capture input formats this build has instead.
+        available: Vec<String>,
+    },
+    /// A capture device could not be opened or stopped delivering media: it does not
+    /// exist, is in use, or recording from it is not permitted.
+    #[error("cannot record from {input} ({format}): {message}")]
+    DeviceUnavailable {
+        /// The input format.
+        format: String,
+        /// What the format calls the device.
+        input: String,
+        /// What the backend reported.
+        message: String,
+    },
+    /// A recording ended before its devices delivered the media it needs.
+    #[error("nothing was recorded: {message}")]
+    NothingRecorded {
+        /// What was missing.
+        message: String,
+    },
     /// The requested time is after the last frame of the stream.
     #[error("no frame at {requested_flicks} flicks: the stream ends at {end_flicks} flicks")]
     EndOfStream {
@@ -101,6 +126,9 @@ impl MediaError {
             MediaError::Unsupported { .. } => "fosscut.media.unsupported",
             MediaError::WriteFailed { .. } => "fosscut.media.write_failed",
             MediaError::EncodeFailed { .. } => "fosscut.media.encode_failed",
+            MediaError::InputFormatUnavailable { .. } => "fosscut.media.input_format_unavailable",
+            MediaError::DeviceUnavailable { .. } => "fosscut.media.device_unavailable",
+            MediaError::NothingRecorded { .. } => "fosscut.media.nothing_recorded",
         }
     }
 }
