@@ -1,0 +1,67 @@
+import type { Editor, EditorState } from "../app/editor";
+import { frameAt, parseRate, timecode } from "./time";
+
+function Icon({ path }: { path: string }) {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d={path} fill="currentColor" />
+    </svg>
+  );
+}
+
+const PLAY = "M4 2.5v11l9-5.5z";
+const PAUSE = "M4 2.5h3v11H4zM9 2.5h3v11H9z";
+const START = "M3 2.5h2v11H3zM13 2.5v11L6 8z";
+const BACK = "M11 2.5v11L4 8z";
+const FORWARD = "M5 2.5v11l7-5.5z";
+const END = "M11 2.5h2v11h-2zM3 2.5v11L10 8z";
+
+/** Play, pause, frame steps and the playhead's timecode. */
+export function Transport({ editor, state }: { editor: Editor; state: EditorState }) {
+  const timeline = state.timeline;
+  const rate = parseRate(timeline?.format.rate ?? "30");
+  const now = timecode(frameAt(state.playhead, rate), rate);
+  return (
+    <div className="transport">
+      <button title="Start (Home)" onClick={() => void editor.seek(0)} disabled={!timeline}>
+        <Icon path={START} />
+      </button>
+      <button title="Previous frame (Left arrow)" onClick={() => void editor.step(-1)} disabled={!timeline}>
+        <Icon path={BACK} />
+      </button>
+      <button
+        className="play"
+        title={state.playing ? "Pause (Space)" : "Play (Space)"}
+        onClick={() => void editor.togglePlay()}
+        disabled={!timeline}
+      >
+        <Icon path={state.playing ? PAUSE : PLAY} />
+      </button>
+      <button title="Next frame (Right arrow)" onClick={() => void editor.step(1)} disabled={!timeline}>
+        <Icon path={FORWARD} />
+      </button>
+      <button title="End (End)" onClick={() => void editor.seekEnd()} disabled={!timeline}>
+        <Icon path={END} />
+      </button>
+      <span className="timecode">
+        {now}
+        <span className="muted"> / {timeline?.duration.timecode ?? "00:00:00:00"}</span>
+      </span>
+      <span className="spacer" />
+      <button
+        title="Split at the playhead (Mod+B)"
+        onClick={() => void editor.splitAtPlayhead()}
+        disabled={!timeline}
+      >
+        Split
+      </button>
+      <button
+        title="Delete the selected clip (Delete)"
+        onClick={() => void editor.deleteSelection()}
+        disabled={!state.selection}
+      >
+        Delete
+      </button>
+    </div>
+  );
+}

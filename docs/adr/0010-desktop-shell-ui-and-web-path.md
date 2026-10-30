@@ -29,6 +29,29 @@ The owner wants a desktop app first and possibly a web version later. Establishe
 - **Pure Rust UI (egui, Iced, Slint):** single language and good GPU integration; egui even runs on the web. Professional editor UX (complex panels, text layout, accessibility, theming) is harder, and the ecosystem for timeline-grade widgets is thinner. Kept as fallback if the preview spike fails for webviews.
 - **Electron:** consistent Chromium everywhere and good zero-copy precedent, but large bundles and memory, and a Node runtime the engine does not need.
 
+## Implementation notes
+
+- **First app** (milestone 5):
+  - **Crates:** `apps/desktop` is a workspace member, a thin Tauri crate. The preview lives in `fosscut_engine::preview` (a `Previewer` that keeps media open between frames, rendering byte for byte what frame grabs render) and is tested without a window.
+  - **Agents and the app:** the app hosts the project it opens (ADR-0022), so agents connected through `fosscut mcp` edit the session the window shows. Each commit reaches the preview and the UI as it lands.
+- **Webview access:** `build.rs` lists the app's commands, and the window may call only those (`capabilities/default.json`). The open and save dialogs run in Rust, so the webview has no file-system or dialog permission.
+- **Preview, path A as in the spike:**
+  - **Rendering:** the engine renders into an offscreen texture sized to fit the hole the page reports, then draws it into the window surface, letterboxed.
+  - **Pacing:** a render thread draws on demand and paces playback by the wall clock. Audio, and the audio clock, come next.
+  - **Minimized window:** nothing is presented.
+- **One engine client:**
+  - **The boundary:** `ui/src/engine` is the only code that imports Tauri, and ESLint enforces it. The UI's state and edits sit in `Editor`.
+    - **Revisions:** edits go against the revision on screen.
+    - **Conflicts:** a conflict reloads and says so.
+    - **Destructive guard:** it asks before retrying with consent.
+  - **Tests:** Vitest covers `Editor` against a stand-in engine, along with timeline geometry, time math (including drop-frame timecode), keyboard shortcuts and history grouping.
+- **Agent-aware UI** (item 5, first part):
+  - **Who is here:** the connected clients, polled every two seconds.
+  - **History:** grouped into runs by who made each change.
+  - **Undo:** of the newest change, whoever made it.
+  - **Later:** the diff view of `timeline.plan` results comes later.
+- **Releases** are not set up yet. Debug builds load the interface from the Vite server (`devUrl`). No crate feature may enable `tauri/custom-protocol`, because CI builds with `--all-features` and that feature needs the built interface.
+
 ## Validation
 
 Preview spike, on macOS (Apple silicon) and Windows: 1080p preview at 60 fps while scrubbing, under 50 ms from seek to displayed frame, UI timeline with 2,000 clips scrolling at 60 fps. The option that meets the targets with less platform code wins; if neither does in a webview, revisit the UI framework.

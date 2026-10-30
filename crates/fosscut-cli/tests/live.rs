@@ -83,16 +83,16 @@ struct Hosted {
 }
 
 impl Hosted {
+    /// Starts the host from another folder than the clients, which name the bundle
+    /// relative to their own: a relative path must reach the host as the same bundle.
     fn start(dir: &Path, runtime: &Path) -> Hosted {
-        let mut child = command(dir, runtime)
-            .args([
-                "-p",
-                "Demo.fosscut",
-                "host",
-                "--events",
-                "--exit-on-eof",
-                "--json",
-            ])
+        let elsewhere = dir.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let bundle = dir.join("Demo.fosscut");
+        let mut child = command(&elsewhere, runtime)
+            .arg("-p")
+            .arg(&bundle)
+            .args(["host", "--events", "--exit-on-eof", "--json"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

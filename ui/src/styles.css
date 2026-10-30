@@ -1,0 +1,335 @@
+/* The page stays transparent where the preview shows through (ADR-0010, path A); every
+   panel around it is opaque. */
+:root {
+  --bg: #121316;
+  --panel: #1b1c20;
+  --panel-raised: #23252b;
+  --line: #2c2e35;
+  --text: #e6e7ea;
+  --muted: #8d8f98;
+  --accent: #ff7a45;
+  --agent: #6fb3ff;
+  --error: #ff6b6b;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+code {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--panel-raised);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+button {
+  background: var(--panel-raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+button:hover:not(:disabled) {
+  border-color: #474a53;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1b0d06;
+  font-weight: 600;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto 240px;
+}
+
+.app.empty {
+  display: block;
+  background: var(--bg);
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.live {
+  color: var(--agent);
+  border: 1px solid #2f4b6b;
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 12px;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  min-height: 0;
+}
+
+/* The hole: nothing is drawn here, so the engine's frames show through. */
+.preview-hole {
+  background: transparent;
+  min-width: 0;
+  min-height: 0;
+}
+
+.activity {
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.activity h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 6px 0 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.activity section + section {
+  margin-top: 14px;
+}
+
+.clients {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.clients li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--agent);
+}
+
+.run {
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+  margin-bottom: 10px;
+}
+
+.run.agent {
+  border-left-color: var(--agent);
+}
+
+.run .who {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.run.agent .who {
+  color: var(--agent);
+}
+
+.run ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.run li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  padding: 2px 0;
+}
+
+.run li.undone {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.run .when {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run .reason {
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.transport .play {
+  padding: 4px 14px;
+}
+
+.timecode {
+  margin-left: 8px;
+  font: 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline {
+  background: #16171b;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.timeline canvas {
+  display: block;
+  cursor: default;
+}
+
+.notice {
+  position: fixed;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  max-width: 70%;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
+}
+
+.notice.error {
+  border-color: #6b2b2b;
+}
+
+.notice.error span {
+  color: var(--error);
+}
+
+.start {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.start .card {
+  width: min(560px, 90vw);
+  padding: 28px 32px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.start h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.start h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 22px 0 8px;
+}
+
+.start .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.recent li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+  min-width: 0;
+}
+
+.recent .path {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A plain browser (`pnpm dev` outside the app) has no native preview behind the page. */
+body.browser .preview-hole {
+  background: #050506;
+  display: grid;
+  place-items: center;
+}
+
+body.browser .preview-hole::after {
+  content: "The preview shows here in the desktop app";
+  color: var(--muted);
+}

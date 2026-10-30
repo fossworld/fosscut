@@ -18,6 +18,10 @@ ignore = [
     # bundled, checksummed Inter fonts, never system or user fonts. Remove this entry when
     # cosmic-text drops it; revisit before FossCut loads user-supplied fonts.
     { id = "RUSTSEC-2026-0192", reason = "unmaintained font parser that only reads FossCut's bundled fonts; no known vulnerability" },
+    # `proc-macro-error` is unmaintained, with no known vulnerability. It is a compile-time
+    # macro helper of `glib-macros`, part of the GTK 3 bindings Tauri uses for windows and
+    # menus on Linux (ADR-0010). Remove this entry when Tauri moves to newer GTK bindings.
+    { id = "RUSTSEC-2024-0370", reason = "unmaintained compile-time macro helper in Tauri's Linux GTK bindings; no known vulnerability" },
 ]
 
 [licenses]

@@ -4,7 +4,7 @@ An open source video editor, written in Rust, that you can drive with natural la
 
 Ask Claude Code, Codex, Cursor or any MCP client to "turn this interview into three 45-second vertical clips with animated captions and beat-synced cuts", watch the edit appear in the desktop app, and keep refining it by hand or by conversation. FossCut exposes one typed editing API through three front ends: a desktop app (a web version may follow), a CLI with JSON output, and an MCP server. Every agent edit is validated, reviewable and undoable.
 
-**Status:** early development. Milestone 1 is in place: the open project format, frame-exact time, the command layer with its agent safety contract, and the `fosscut` CLI. Milestone 2 is done on macOS: frame-exact video decoding (`fosscut-media`), a GPU compositor with a linear-light color pipeline (`fosscut-render`), and a preview spike that chose rendering into the window behind the webview ([results](docs/development/milestone-2-spike-results.md)). Milestone 3 renders a timeline to a video file: titles, the clips' audio, hardware H.264 or HEVC where the machine has it, ProRes, AV1 and VP9, each export verified by probing the written file. Milestone 4 adds the MCP server and the `fosscut-basics` skill, so agents can edit, check their work with frame grabs and contact sheets, and export. Milestone 6 adds local analysis (loudness, pauses, shot cuts and speech with word timings), word-timed, animated captions with SRT import and export, talking-head cleanup (cutting pauses, fillers and retakes across every track at once) and vertical reframing. Milestone 5, the desktop app, is under way: live sessions let one process hold a project open while the CLI and agents edit it, so their changes appear there as they happen ([milestones](docs/adr/README.md#suggested-first-milestones)). Contributions are welcome now, when they shape the project most.
+**Status:** early development. Milestone 1 is in place: the open project format, frame-exact time, the command layer with its agent safety contract, and the `fosscut` CLI. Milestone 2 is done on macOS: frame-exact video decoding (`fosscut-media`), a GPU compositor with a linear-light color pipeline (`fosscut-render`), and a preview spike that chose rendering into the window behind the webview ([results](docs/development/milestone-2-spike-results.md)). Milestone 3 renders a timeline to a video file: titles, the clips' audio, hardware H.264 or HEVC where the machine has it, ProRes, AV1 and VP9, each export verified by probing the written file. Milestone 4 adds the MCP server and the `fosscut-basics` skill, so agents can edit, check their work with frame grabs and contact sheets, and export. Milestone 6 adds local analysis (loudness, pauses, shot cuts and speech with word timings), word-timed, animated captions with SRT import and export, talking-head cleanup (cutting pauses, fillers and retakes across every track at once) and vertical reframing. Milestone 5, the desktop app, is under way: the app opens a project and shows a GPU preview, a timeline and who is editing; when an agent edits the same project through `fosscut mcp`, its changes appear in the app as they land, and you can undo them there ([milestones](docs/adr/README.md#suggested-first-milestones)). Contributions are welcome now, when they shape the project most.
 
 ## Try it
 
@@ -47,6 +47,24 @@ fosscut -p Demo.fosscut export Demo.mp4
 ```
 
 Every command accepts `--json` for agents, `--dry-run` to preview, `--expected-revision` to guard against stale edits and `--request-id` for safe retries; `fosscut undo` and `fosscut redo` work across sessions. `fosscut export` renders, encodes and then probes the file to check it matches what you asked for; `fosscut export --presets` lists the formats this machine can write. `fosscut frame 2s --out still.png` and `fosscut contact-sheet` render what the export will show, so you or your agent can check an edit first. `fosscut media analyze asset_0001` measures loudness, pauses and shot cuts on your machine and caches them; after `fosscut models install whisper-base.en --yes` (148 MB), `fosscut media analyze asset_0001 transcript` writes down the speech with a time for every word, filler words such as "um" and the pauses between words. `fosscut captions generate --preset highlight` turns that into animated captions, a few words at a time with the spoken word highlighted, and `fosscut captions export subs.srt` writes them as a subtitle file. `fosscut timeline remove-ranges 3.4s..4.1s --allow-destructive` cuts a pause out of every track and closes the gap, and `fosscut timeline duplicate --width 1080 --height 1920 --fill` starts a vertical version that `fosscut clip set --clip <id> --position 0.4,0` frames shot by shot. `fosscut capabilities` lists everything the editor can do, and `fosscut capabilities clip.split` shows a command's arguments. `fosscut host --events` keeps the project open as a live session until Ctrl-C: edits from other terminals and agents then run there in order and print as they happen, the way the desktop app will show them.
+
+### The desktop app
+
+The app is early: it opens and creates projects, previews them, and shows the timeline, the agents connected and every change by who made it, with play, split, delete, undo and redo. With [Node.js](https://nodejs.org) 24 and pnpm, run the interface's development server, then the app with the project to open:
+
+```bash
+pnpm --dir ui install
+```
+
+```bash
+pnpm --dir ui dev
+```
+
+```bash
+cargo run -p fosscut-desktop -- Demo.fosscut
+```
+
+While it is open, `fosscut` and `fosscut mcp` edit that project through the app, so changes from the command line or an agent appear in the window as they land.
 
 ## Use it from an agent
 

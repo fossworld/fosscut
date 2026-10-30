@@ -24,12 +24,31 @@ Thank you for helping build an open source video editor that people and AI agent
 | [rustup](https://rustup.rs) | Installs the toolchain pinned in `rust-toolchain.toml` automatically |
 | `cargo install cargo-nextest cargo-deny cargo-llvm-cov` | Test runner, dependency policy checks and coverage used by CI |
 | `rustup component add llvm-tools` | Needed by `cargo-llvm-cov` |
-| Node.js and pnpm | The shared UI in `ui/` (once it exists) |
+| Node.js 24 and pnpm 10 | The shared UI in `ui/` ([ADR-0010](docs/adr/0010-desktop-shell-ui-and-web-path.md)) |
+| On Linux: `libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev` | Building the desktop app, a member of the workspace; macOS and Windows need nothing more |
 | Python 3 | Repository check scripts |
 | FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` and the crates above it, including the CLI ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
 | `ffmpeg` and `ffprobe` command-line tools with libx264 | Generating test fixtures and the end-to-end CLI tests |
 | CMake and a C++ compiler | Building whisper.cpp for speech recognition, the default `speech` feature of `fosscut-analysis` ([ADR-0020](docs/adr/0020-speech-recognition-with-whisper-cpp.md)) |
 | `whisper-tiny.en` speech model (77.7 MB) | Speech tests: `cargo run -p fosscut-cli -- models install whisper-tiny.en --yes`, then set `FOSSCUT_MODELS_DIR` to the folder `fosscut models list` prints |
+
+### The desktop app
+
+The app in `apps/desktop` loads its interface from the Vite development server in debug builds. Start the server, then the app, optionally with a project to open:
+
+```bash
+pnpm --dir ui install
+```
+
+```bash
+pnpm --dir ui dev
+```
+
+```bash
+cargo run -p fosscut-desktop -- path/to/Project.fosscut
+```
+
+In a plain browser, `pnpm --dir ui dev` shows a sample project on a stand-in engine, for working on the interface without the app. The preview needs the app: it renders with wgpu behind the page.
 
 ### FFmpeg for development
 

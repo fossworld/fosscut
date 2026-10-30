@@ -8,7 +8,7 @@ use fosscut_media::DecoderOptions;
 use fosscut_media::ffmpeg::FfmpegVideoDecoder;
 use fosscut_model::{Id, Project, TimelineFormat};
 use fosscut_render::color::TransferFunction;
-use fosscut_render::plan::{LayerSource, plan_frame};
+use fosscut_render::plan::{LayerSource, RenderPlan, plan_frame};
 use fosscut_render::{DecoderFrames, Image, Renderer};
 use fosscut_time::{Flicks, TimeReport};
 use serde::{Deserialize, Serialize};
@@ -162,6 +162,42 @@ fn sheet_columns(count: u32, tile_width: u32, tile_height: u32) -> u32 {
     columns.clamp(1, count)
 }
 
+/// Decoders for the media a timeline shows, each opened on first use and kept. Assets never
+/// change once imported (ADR-0004), so decoders stay valid across edits.
+#[derive(Default)]
+pub(crate) struct Media {
+    decoders: DecoderFrames,
+    opened: HashSet<Id>,
+}
+
+impl Media {
+    /// Opens the media of every frame layer of `plan` not opened yet.
+    pub(crate) fn open_for(
+        &mut self,
+        project: &Project,
+        bundle: &Path,
+        plan: &RenderPlan,
+    ) -> Result<(), EngineError> {
+        for layer in &plan.layers {
+            if let LayerSource::Frame(source) = &layer.source
+                && !self.opened.contains(&source.asset)
+            {
+                let path = resolve(project, bundle, &source.asset)?;
+                let decoder = FfmpegVideoDecoder::open(&path, DecoderOptions::default())?;
+                self.decoders
+                    .insert(source.asset.clone(), Box::new(decoder));
+                self.opened.insert(source.asset.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// The decoders, as the renderer reads frames.
+    pub(crate) fn frames(&mut self) -> &mut DecoderFrames {
+        &mut self.decoders
+    }
+}
+
 /// Frames of one timeline, with each clip's media opened on first use.
 struct Frames<'a> {
     project: &'a Project,
@@ -169,8 +205,7 @@ struct Frames<'a> {
     timeline: &'a Id,
     format: TimelineFormat,
     duration: Flicks,
-    decoders: DecoderFrames,
-    opened: HashSet<Id>,
+    media: Media,
 }
 
 impl<'a> Frames<'a> {
@@ -195,8 +230,7 @@ impl<'a> Frames<'a> {
             timeline,
             format: doc.format.clone(),
             duration,
-            decoders: DecoderFrames::new(),
-            opened: HashSet::new(),
+            media: Media::default(),
         })
     }
 
@@ -223,18 +257,9 @@ impl<'a> Frames<'a> {
         let rate = self.format.rate;
         let start = rate.frames_to_flicks(rate.frame_at(time));
         let plan = plan_frame(self.project, self.timeline, start)?;
-        for layer in &plan.layers {
-            if let LayerSource::Frame(source) = &layer.source
-                && self.opened.insert(source.asset.clone())
-            {
-                let path = resolve(self.project, self.bundle, &source.asset)?;
-                let decoder = FfmpegVideoDecoder::open(&path, DecoderOptions::default())?;
-                self.decoders
-                    .insert(source.asset.clone(), Box::new(decoder));
-            }
-        }
+        self.media.open_for(self.project, self.bundle, &plan)?;
         let image =
-            renderer.render_image(&plan, &mut self.decoders, size, TransferFunction::Bt709)?;
+            renderer.render_image(&plan, self.media.frames(), size, TransferFunction::Bt709)?;
         Ok(Still {
             at: TimeReport::new(start, rate),
             image,

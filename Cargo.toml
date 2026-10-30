@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "xtask"]
+members = ["crates/*", "xtask", "apps/desktop"]
 # Throwaway prototypes are their own workspaces, outside the tests and coverage gates.
 exclude = ["spikes"]
 
@@ -53,6 +53,10 @@ serde = { version = "1.0.229", features = ["derive"] }
 # float_roundtrip: numbers read back from JSON (caches, records) equal what was written.
 serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
 sha2 = "0.10.9"
+# The desktop shell (ADR-0010): Tauri 2 on the system webview, with native file dialogs.
+tauri = "2.12.5"
+tauri-build = "2.7.4"
+tauri-plugin-dialog = "2.8.3"
 thiserror = "2.0.21"
 # Wide strings for the Windows pipe access list (ADR-0022).
 widestring = "1.2.1"

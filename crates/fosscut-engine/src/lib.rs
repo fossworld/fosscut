@@ -2,8 +2,9 @@
 //! locks projects ([`project`]), imports media ([`import`]), and drives work over the
 //! media, render and audio crates: export (render every frame of a timeline, mix its
 //! audio, encode it with a named [`Preset`] and verify the written file against the
-//! request, [`export`]), and frame grabs and contact sheets for checking an edit
-//! ([`frame`]). Long-lived hosts run exports in the background as [`jobs`].
+//! request, [`export`]), frame grabs and contact sheets for checking an edit
+//! ([`frame`]), and the desktop preview ([`preview`]). Long-lived hosts run exports in
+//! the background as [`jobs`], and serve projects live to other front ends ([`live`]).
 
 #![forbid(unsafe_code)]
 
@@ -18,6 +19,7 @@ pub mod jobs;
 pub mod live;
 mod operations;
 mod preset;
+pub mod preview;
 pub mod project;
 
 pub use cache::{cache_dir, models_dir};
