@@ -594,7 +594,11 @@ mod thread_tests {
         run.preview.send(Job::Scene(None));
         assert_eq!(run.shown.recv_timeout(WAIT).unwrap(), None, "nothing open");
         run.preview.send(Job::Viewport([0.0, 0.0, 320.0, 180.0]));
-        assert_eq!(run.shown.recv_timeout(WAIT).unwrap(), None, "a hole, but nothing open");
+        assert_eq!(
+            run.shown.recv_timeout(WAIT).unwrap(),
+            None,
+            "a hole, but nothing open"
+        );
         run.preview.send(Job::Scene(Some(missing_media("missing"))));
         let failure = run.failures.recv_timeout(WAIT).unwrap();
         assert!(failure.contains("is missing"), "{failure}");
