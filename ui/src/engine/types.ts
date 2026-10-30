@@ -105,6 +105,62 @@ export interface ClipView {
   enabled?: boolean;
   /** Keyframes by property path, when the clip has any. */
   keyframes?: Record<string, KeyframeView[]>;
+  /** Effects on the picture, in the order they apply. */
+  effects?: EffectView[];
+}
+
+/** An effect as `timeline.read` (detail full) reports it. */
+export interface EffectView {
+  id: string;
+  type: string;
+  /** False when bypassed; omitted when on. */
+  enabled?: boolean;
+  version?: number;
+  /** Parameters that differ from their defaults. */
+  params?: Record<string, unknown>;
+  /** Keyframes by parameter name, with timeline times. */
+  keyframes?: Record<string, KeyframeView[]>;
+}
+
+/** One parameter of an effect type, as `capabilities` describes it. */
+export interface ParamSpec {
+  name: string;
+  kind: "number" | "pair" | "bool" | "choice" | "curve" | "asset";
+  default: unknown;
+  min?: number;
+  max?: number;
+  unit?: string;
+  choices?: string[];
+  animatable: boolean;
+  meaning: string;
+}
+
+/** An effect type and its parameters. */
+export interface EffectSpec {
+  type: string;
+  version: number;
+  title: string;
+  category: string;
+  summary: string;
+  params: ParamSpec[];
+}
+
+/** A built-in look. */
+export interface LookView {
+  name: string;
+  title: string;
+  description: string;
+}
+
+/** What the UI needs from `capabilities` (detail full). */
+export interface Catalog {
+  effects: EffectSpec[];
+  looks: LookView[];
+}
+
+/** A color correction measured by the engine, ready for `effect.add`. */
+export interface ColorSuggestion {
+  effect_add: Record<string, unknown>;
 }
 
 export interface TrackView {

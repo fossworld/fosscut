@@ -34,6 +34,10 @@ export function demoEngine(): FakeEngine {
         clip("clip_0003", "video", 0, 8, { asset_name: "interview.mp4" }),
         clip("clip_0006", "video", 8, 15, {
           asset_name: "b-roll.mp4",
+          effects: [
+            { id: "effect_0013", type: "color.adjust", params: { temperature: 0.3, contrast: 0.2 } },
+            { id: "effect_0014", type: "color.curves", params: { master: [[0, 0], [0.3, 0.22], [0.7, 0.78], [1, 1]] } },
+          ],
           transform: { scale: 1.1 },
           blend: "normal",
           keyframes: {
@@ -61,6 +65,60 @@ export function demoEngine(): FakeEngine {
   });
   engine.answers["project.info"] = () => ({ ...engine.opened?.info, revision: engine.revision });
   engine.answers["timeline.read"] = timeline;
+  const amount = (name: string, meaning: string) => ({
+    name,
+    kind: "number" as const,
+    default: 0,
+    min: -1,
+    max: 1,
+    animatable: true,
+    meaning,
+  });
+  const curve = (name: string) => ({ name, kind: "curve" as const, default: "identity", min: 0, max: 1, animatable: false, meaning: name });
+  engine.answers["capabilities"] = {
+    effects: [
+      {
+        type: "color.adjust",
+        version: 1,
+        title: "Adjust",
+        category: "color",
+        summary: "Exposure, white balance, contrast and saturation.",
+        params: [
+          { ...amount("exposure", "stops"), min: -4, max: 4 },
+          amount("temperature", "cooler or warmer"),
+          amount("tint", "greener or more magenta"),
+          amount("contrast", "flatter or punchier"),
+          amount("saturation", "less or more color"),
+        ],
+      },
+      {
+        type: "color.curves",
+        version: 1,
+        title: "Curves",
+        category: "color",
+        summary: "Tone curves.",
+        params: [curve("master"), curve("red"), curve("green"), curve("blue")],
+      },
+      {
+        type: "color.vignette",
+        version: 1,
+        title: "Vignette",
+        category: "color",
+        summary: "Darker edges.",
+        params: [amount("amount", "edge darkness")],
+      },
+    ],
+    looks: [
+      { name: "warm", title: "Warm", description: "A gentle warm cast." },
+      { name: "noir", title: "Noir", description: "Contrasty black and white." },
+    ],
+  };
+  engine.answers["media.list"] = {
+    assets: [
+      { id: "asset_0001", name: "interview.mp4", kind: "video" },
+      { id: "asset_0015", name: "film.cube", kind: "lut" },
+    ],
+  };
   engine.answers["history.list"] = {
     entries: [
       entry(6, "agent:claude-code", ["captions.add"]),

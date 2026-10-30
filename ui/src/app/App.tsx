@@ -107,7 +107,18 @@ export function App({ editor }: { editor: Editor }) {
           <main>
             <PreviewHole editor={editor} />
             <aside className="activity">
-              {selected && <Inspector editor={editor} clip={selected} playhead={state.playhead} />}
+              {selected && (
+                <Inspector
+                  editor={editor}
+                  clip={selected}
+                  playhead={state.playhead}
+                  catalog={state.catalog}
+                  luts={state.luts}
+                  others={(state.timeline?.tracks ?? [])
+                    .flatMap((t) => t.clips)
+                    .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}
+                />
+              )}
               <Activity editor={editor} state={state} />
             </aside>
           </main>

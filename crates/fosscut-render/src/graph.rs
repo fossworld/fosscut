@@ -3,6 +3,7 @@
 //! in how they are driven (resolution, which frames, where the pixels go).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use fosscut_media::{VideoDecoder, VideoFrame};
 use fosscut_model::{Id, Project};
@@ -11,12 +12,20 @@ use fosscut_time::Flicks;
 use crate::RenderError;
 use crate::color::TransferFunction;
 use crate::gpu::{Image, Renderer};
+use crate::lut::Lut3d;
 use crate::plan::{SourceRef, plan_frame};
 
 /// Supplies the decoded frame a layer needs.
 pub trait FrameProvider {
     /// The frame of `source.asset` displayed at `source.time`.
     fn frame(&mut self, source: &SourceRef) -> Result<VideoFrame, RenderError>;
+
+    /// The table of a LUT asset, for `color.lut` effects. Providers without LUTs fail.
+    fn lut(&mut self, asset: &Id) -> Result<Arc<Lut3d>, RenderError> {
+        Err(RenderError::InvalidLut {
+            message: format!("no LUT is available for {asset}"),
+        })
+    }
 }
 
 /// Frames from one [`VideoDecoder`] per asset. Decoders must be `Send` so the provider can
@@ -24,6 +33,7 @@ pub trait FrameProvider {
 #[derive(Default)]
 pub struct DecoderFrames {
     decoders: HashMap<Id, Box<dyn VideoDecoder + Send>>,
+    luts: HashMap<Id, Arc<Lut3d>>,
 }
 
 impl DecoderFrames {
@@ -35,6 +45,16 @@ impl DecoderFrames {
     /// Uses `decoder` for `asset`'s frames.
     pub fn insert(&mut self, asset: Id, decoder: Box<dyn VideoDecoder + Send>) {
         self.decoders.insert(asset, decoder);
+    }
+
+    /// Uses `lut` as the table of LUT asset `asset`.
+    pub fn insert_lut(&mut self, asset: Id, lut: Arc<Lut3d>) {
+        self.luts.insert(asset, lut);
+    }
+
+    /// True when the table of `asset` is loaded.
+    pub fn has_lut(&self, asset: &Id) -> bool {
+        self.luts.contains_key(asset)
     }
 }
 
@@ -51,6 +71,15 @@ impl FrameProvider for DecoderFrames {
         decoder
             .frame_at(source.time)
             .map_err(|e| missing(format!("{e} ({})", e.code())))
+    }
+
+    fn lut(&mut self, asset: &Id) -> Result<Arc<Lut3d>, RenderError> {
+        self.luts
+            .get(asset)
+            .cloned()
+            .ok_or_else(|| RenderError::InvalidLut {
+                message: format!("the LUT of {asset} is not loaded"),
+            })
     }
 }
 

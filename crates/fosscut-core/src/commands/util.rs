@@ -90,7 +90,9 @@ pub(crate) fn ensure_unlocked(track: &Track) -> Result<(), ApiError> {
 /// The track kind a clip content needs.
 pub(crate) fn track_kind_for(content: &ClipContent) -> TrackKind {
     match content {
-        ClipContent::Video { .. } | ClipContent::Image { .. } => TrackKind::Video,
+        ClipContent::Video { .. } | ClipContent::Image { .. } | ClipContent::Adjustment => {
+            TrackKind::Video
+        }
         ClipContent::Audio { .. } => TrackKind::Audio,
         ClipContent::Text(_) => TrackKind::Text,
         ClipContent::Caption(_) => TrackKind::Caption,
@@ -195,4 +197,13 @@ pub(crate) fn find_or_create_track(
         clips: Vec::new(),
     });
     Ok(id)
+}
+
+/// Gives the effects of `clip` new ids, for a clip that copies another's effects (the
+/// right part of a split, a piece of a cut, a duplicate): effect ids are unique in a
+/// project.
+pub(crate) fn renew_effect_ids(project: &mut Project, clip: &mut Clip) {
+    for effect in &mut clip.effects {
+        effect.id = project.allocate_id(fosscut_model::IdKind::Effect);
+    }
 }

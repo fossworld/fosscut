@@ -116,6 +116,7 @@ pub fn project(relative: &str) -> Project {
                 channels: 1,
                 codec: None,
             }),
+            lut: None,
         },
     });
     project.manifest.next_id = 10;

@@ -149,6 +149,14 @@ pub fn export(
         }
         audio.paths.insert(asset.clone(), path.clone());
     }
+    if request.settings.video.is_some() {
+        for asset in crate::frame::timeline_luts(project, &request.timeline) {
+            frames.insert_lut(
+                asset.clone(),
+                crate::frame::load_lut(project, &request.bundle, &asset)?,
+            );
+        }
+    }
 
     let temporary = parent.join(format!(
         ".{}.partial",
@@ -268,6 +276,10 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
             Ok((asset, path))
         })
         .collect::<Result<Vec<_>, EngineError>>()?;
+    // LUT files must be there too, so a missing one fails before anything renders.
+    for asset in crate::frame::timeline_luts(project, &request.timeline) {
+        resolve(project, &request.bundle, &asset)?;
+    }
     let settings = &request.settings;
     let (frames, exported) = match &settings.video {
         // Every frame whose start is before the end of the timeline.

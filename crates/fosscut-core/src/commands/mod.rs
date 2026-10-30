@@ -2,6 +2,7 @@
 
 mod caption;
 mod clip;
+mod effect;
 mod keyframe;
 mod media;
 mod text;
@@ -16,10 +17,14 @@ pub use caption::{
 pub use clip::{
     ClipAdd, ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult, ClipTrim,
 };
-pub(crate) use keyframe::keyframe_reports;
+pub use effect::{
+    AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
+    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
+};
 pub use keyframe::{
     ClipProperties, ClipSet, Easing, KeyframeRemove, KeyframeReport, KeyframeSet, KeyframesChanged,
 };
+pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
 pub use media::{MediaAdd, MediaAdded};
 pub use text::TextAdd;
 pub use timeline::{
@@ -41,6 +46,13 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ClipSet>();
     registry.register::<KeyframeSet>();
     registry.register::<KeyframeRemove>();
+    registry.register::<EffectAdd>();
+    registry.register::<EffectSet>();
+    registry.register::<EffectRemove>();
+    registry.register::<EffectMove>();
+    registry.register::<EffectCopy>();
+    registry.register::<AdjustmentAdd>();
+    registry.register::<LookApply>();
     registry.register::<TextAdd>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();

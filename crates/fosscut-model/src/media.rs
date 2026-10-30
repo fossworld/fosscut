@@ -29,6 +29,8 @@ pub enum AssetKind {
     Audio,
     /// A still image.
     Image,
+    /// A 3D color lookup table (`.cube`), used by the `color.lut` effect.
+    Lut,
 }
 
 /// A source media file referenced by clips. Splitting a clip never copies an asset.
@@ -92,6 +94,16 @@ pub struct MediaInfo {
     /// Primary audio stream.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<AudioInfo>,
+    /// Size of a LUT asset's table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lut: Option<LutInfo>,
+}
+
+/// A LUT file's table.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LutInfo {
+    /// Entries per axis, for example 33.
+    pub size: u32,
 }
 
 /// Video stream properties.

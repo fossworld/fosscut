@@ -129,6 +129,12 @@ pub mod codes {
     pub const KEYFRAME_NOT_FOUND: &str = "fosscut.keyframe.not_found";
     /// A keyframe time lies outside its clip.
     pub const KEYFRAME_OUTSIDE: &str = "fosscut.keyframe.outside";
+    /// No effect type has this name.
+    pub const EFFECT_UNKNOWN_TYPE: &str = "fosscut.effect.unknown_type";
+    /// The clip has no effect with this id.
+    pub const EFFECT_NOT_FOUND: &str = "fosscut.effect.not_found";
+    /// No built-in look has this name.
+    pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
     /// Media information is missing or inconsistent with the asset kind.
@@ -285,6 +291,21 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             KEYFRAME_OUTSIDE,
             "The keyframe time is outside the clip.",
             "Use a time from the clip's start to its end.",
+        ),
+        entry(
+            EFFECT_UNKNOWN_TYPE,
+            "No effect type has this name.",
+            "List the effect types and their parameters with capabilities (under effects).",
+        ),
+        entry(
+            EFFECT_NOT_FOUND,
+            "The clip has no effect with this id.",
+            "Read the clip's effects with timeline.read; effect ids look like effect_0007.",
+        ),
+        entry(
+            LOOK_UNKNOWN,
+            "No built-in look has this name.",
+            "List the looks with capabilities (under looks).",
         ),
         entry(
             ASSET_NOT_FOUND,

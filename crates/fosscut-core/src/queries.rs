@@ -192,6 +192,29 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             })
             .collect();
         result["properties"] = json!(properties);
+        // Effect types with their parameter schemas (ADR-0011, item 1), and the looks.
+        let effects: Vec<Value> = fosscut_model::effect_types()
+            .iter()
+            .map(|e| {
+                if brief {
+                    json!({ "type": e.name, "title": e.title, "category": e.category, "summary": e.summary })
+                } else {
+                    json!(e)
+                }
+            })
+            .collect();
+        result["effects"] = json!(effects);
+        let looks: Vec<Value> = crate::looks::looks()
+            .into_iter()
+            .map(|l| {
+                if brief {
+                    json!({ "name": l.name, "title": l.title, "description": l.description })
+                } else {
+                    json!(l)
+                }
+            })
+            .collect();
+        result["looks"] = json!(looks);
     }
     Ok(result)
 }
@@ -297,6 +320,7 @@ fn clip_view(
                 view["style"] = json!(text.style);
             }
         }
+        ClipContent::Adjustment => {}
         ClipContent::Caption(caption) => {
             view["text"] = json!(caption.text());
             if detail == Detail::Full {
@@ -326,8 +350,32 @@ fn clip_view(
             }
         }
     }
+    if let ClipContent::Adjustment = clip.content {
+        view["text"] = json!("Adjustment");
+    }
     if !clip.enabled {
         view["enabled"] = json!(false);
+    }
+    if !clip.effects.is_empty() {
+        view["effects"] = clip
+            .effects
+            .iter()
+            .map(|e| {
+                let mut effect = json!({ "id": e.id, "type": e.effect_type });
+                if !e.enabled {
+                    effect["enabled"] = json!(false);
+                }
+                if detail == Detail::Full {
+                    effect["version"] = json!(e.version);
+                    effect["params"] = json!(e.params);
+                    if !e.keyframes.is_empty() {
+                        effect["keyframes"] =
+                            json!(crate::commands::effect_keyframe_reports(clip, e, rate));
+                    }
+                }
+                effect
+            })
+            .collect();
     }
     if detail == Detail::Full {
         view["transform"] = json!(clip.transform);

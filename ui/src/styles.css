@@ -476,3 +476,113 @@ body.browser .preview-hole::after {
 .keyframes .choice {
   margin: 0 0 0 auto;
 }
+
+.effects {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.effect {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 6px 0;
+}
+
+.effect.off .params {
+  opacity: 0.5;
+}
+
+.effect-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.effect-head .title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.effect-head button,
+.disclose {
+  padding: 0 6px;
+  min-width: 22px;
+}
+
+.params {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.param {
+  display: grid;
+  grid-template-columns: 14px 1fr 1.6fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.param .control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.param input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.param .value {
+  width: 38px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.effects .add {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.effects .add select,
+.effects .add button {
+  flex: 1;
+}
+
+.curves svg {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  touch-action: none;
+}
+
+.curves polyline {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.5;
+}
+
+.curves .red polyline {
+  stroke: #ff6b6b;
+}
+
+.curves .green polyline {
+  stroke: #6bd88b;
+}
+
+.curves .blue polyline {
+  stroke: #6ba8ff;
+}
+
+.curves .diagonal {
+  stroke: var(--line);
+}
+
+.curves circle {
+  fill: var(--accent, #ff7a45);
+  cursor: grab;
+}

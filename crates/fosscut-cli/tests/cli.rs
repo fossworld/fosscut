@@ -2029,3 +2029,197 @@ fn keyframes_flips_and_deactivation_show_in_frames() {
     );
     assert_eq!(bad["code"], json!("fosscut.request.invalid_arguments"));
 }
+
+/// The mean of one channel over a PNG.
+fn mean_channel(path: &Path, channel: usize) -> f64 {
+    let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+    let mut reader = decoder.read_info().unwrap();
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut pixels).unwrap();
+    let samples = info.color_type.samples();
+    let values: Vec<f64> = pixels[..info.buffer_size()]
+        .chunks(samples)
+        .map(|p| f64::from(p[channel]))
+        .collect();
+    values.iter().sum::<f64>() / values.len() as f64
+}
+
+#[test]
+fn effects_luts_adjustments_and_auto_color_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("effects");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("testsrc2=s=320x180:r=30:d=2,colorchannelmixer=rr=0.55:gg=0.75:bb=1.0")
+        .args(["-c:v", "mpeg4", "-q:v", "2", "blue.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let mut cube = String::from("LUT_3D_SIZE 2\n");
+    for b in [0.0, 1.0] {
+        for g in [0.0, 1.0] {
+            for r in [0.0, 1.0] {
+                // Swap red and blue.
+                cube.push_str(&format!("{b} {g} {r}\n"));
+            }
+        }
+    }
+    std::fs::write(dir.join("swap.cube"), cube).unwrap();
+    std::fs::write(dir.join("broken.cube"), "LUT_3D_SIZE 9\n0 0 0\n").unwrap();
+    let new = [
+        "project",
+        "new",
+        "Grade.fosscut",
+        "--width",
+        "320",
+        "--height",
+        "180",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "blue.mp4"]);
+    ok(&dir, &["media", "import", "swap.cube"]);
+    let media = ok(&dir, &["media", "list"]);
+    let kinds: Vec<&str> = media["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["video", "lut"]);
+    let broken = fails(&dir, &["media", "import", "broken.cube"]);
+    assert_eq!(broken["code"], json!("fosscut.media.probe_failed"));
+    let placed = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let clip = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    let grab = |out: &str| {
+        ok(&dir, &["frame", "1s", "--out", out, "--width", "160"]);
+        let path = dir.join(out);
+        (mean_channel(&path, 0), mean_channel(&path, 2))
+    };
+    let (plain_red, plain_blue) = grab("plain.png");
+    assert!(
+        plain_blue > plain_red + 20.0,
+        "blue to start with: {plain_red} {plain_blue}"
+    );
+
+    // The LUT swaps red and blue.
+    let lut = ok(
+        &dir,
+        &[
+            "effect",
+            "add",
+            "--clip",
+            &clip,
+            "--type",
+            "color.lut",
+            "--param",
+            "lut=\"asset_0002\"",
+        ],
+    );
+    let effect = lut["results"][0]["effect"].as_str().unwrap().to_string();
+    let (red, blue) = grab("lut.png");
+    assert!(red > blue + 20.0, "swapped: {red} {blue}");
+    ok(
+        &dir,
+        &[
+            "effect",
+            "set",
+            "--clip",
+            &clip,
+            "--effect",
+            &effect,
+            "--enabled",
+            "false",
+        ],
+    );
+    let (red, blue) = grab("bypassed.png");
+    assert!(blue > red + 20.0, "bypassed: {red} {blue}");
+    ok(
+        &dir,
+        &["effect", "remove", "--clip", &clip, "--effect", &effect],
+    );
+
+    // An adjustment layer turns everything below it gray; a look adds its effects.
+    let adjust = ok(
+        &dir,
+        &[
+            "adjustment",
+            "add",
+            "--start",
+            "0s",
+            "--duration",
+            "2s",
+            "--type",
+            "color.adjust",
+        ],
+    );
+    let layer = adjust["results"][0]["clip"].as_str().unwrap().to_string();
+    let grade = adjust["results"][0]["effects"][0]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(
+        &dir,
+        &[
+            "effect",
+            "set",
+            "--clip",
+            &layer,
+            "--effect",
+            &grade,
+            "--param",
+            "saturation=-1",
+        ],
+    );
+    let (red, blue) = grab("gray.png");
+    assert!(
+        (red - blue).abs() < 3.0,
+        "gray under the adjustment: {red} {blue}"
+    );
+    ok(
+        &dir,
+        &["look", "apply", "vintage", "--clip", &layer, "--replace"],
+    );
+    let view = ok(&dir, &["timeline", "read", "--detail", "full"]);
+    let effects = &view["tracks"][1]["clips"][0]["effects"];
+    assert_eq!(
+        effects.as_array().unwrap().len(),
+        3,
+        "replaced by the vintage look's three effects"
+    );
+    let unknown = fails(&dir, &["look", "apply", "sparkle", "--clip", &layer]);
+    assert_eq!(unknown["code"], json!("fosscut.look.unknown"));
+    ok(&dir, &["undo"]);
+
+    // Automatic color warms the blue picture.
+    ok(
+        &dir,
+        &["effect", "remove", "--clip", &layer, "--effect", &grade],
+    );
+    let auto = ok(&dir, &["color", "auto", "--clip", &clip]);
+    assert_eq!(
+        auto["results"][0]["effects"][0]["type"],
+        json!("color.adjust")
+    );
+    let temperature = auto["results"][0]["effects"][0]["params"]["temperature"]
+        .as_f64()
+        .unwrap();
+    assert!(temperature > 0.0, "warmer: {temperature}");
+    let (red_after, blue_after) = grab("auto.png");
+    assert!(
+        blue_after - red_after < (plain_blue - plain_red) / 2.0,
+        "closer to neutral: {plain_red} {plain_blue} became {red_after} {blue_after}"
+    );
+    let text = fails(
+        &dir,
+        &["color", "match", "--clip", &clip, "--reference", &clip],
+    );
+    assert_eq!(text["code"], json!("fosscut.request.invalid_arguments"));
+    let copy = ok(&dir, &["effect", "copy", "--from", &clip, "--to", &layer]);
+    assert_eq!(
+        copy["results"][0]["clips"][0]["effects"][0]["type"],
+        json!("color.adjust")
+    );
+}

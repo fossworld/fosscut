@@ -51,6 +51,16 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut captions export <file.srt> [--track ID]",
         ),
         (
+            "color.auto",
+            "Measure a video or image clip's picture and add a color.adjust effect that corrects its white balance, brightness and levels; one undoable step.",
+            "fosscut color auto --clip ID",
+        ),
+        (
+            "color.match",
+            "Measure two clips and add a color.adjust effect to the first that brings its balance, brightness, contrast and saturation close to the second; one undoable step.",
+            "fosscut color match --clip ID --reference ID",
+        ),
+        (
             "models.install",
             "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",

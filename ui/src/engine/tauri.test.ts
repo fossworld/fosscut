@@ -36,6 +36,8 @@ describe("the Tauri engine client", () => {
     await engine.query("project.info");
     await engine.execute({ commands: [{ command: "history.undo" }], expected_revision: 3 });
     await engine.clients();
+    await engine.colorSuggest("clip_0003");
+    await engine.colorSuggest("clip_0003", "clip_0007");
     await engine.preview.viewport({ x: 1, y: 2, width: 3, height: 4 });
     await engine.preview.show(1234.6);
     await engine.preview.play();
@@ -53,6 +55,8 @@ describe("the Tauri engine client", () => {
       ["query", { name: "project.info", args: null }],
       ["execute", { request: { commands: [{ command: "history.undo" }], expected_revision: 3 } }],
       ["clients"],
+      ["color_suggest", { clip: "clip_0003", reference: null }],
+      ["color_suggest", { clip: "clip_0003", reference: "clip_0007" }],
       ["preview_viewport", { x: 1, y: 2, width: 3, height: 4 }],
       ["preview_show", { flicks: 1235 }],
       ["preview_play"],

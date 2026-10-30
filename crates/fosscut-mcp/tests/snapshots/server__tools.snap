@@ -216,6 +216,88 @@ expression: listing
     "read_only": false
   },
   {
+    "description": "Automatic color for a video or image clip, measured from its frames on this machine. action auto adds a color.adjust effect (first in the clip's effects) that neutralizes the white balance, sets the brightness and stretches blacks and whites; action match adds one that brings the clip's balance, brightness, contrast and saturation close to the reference clip. One undoable step with expected_revision, dry_run and request_id; returns the measurements and the effect. Adjust the effect afterwards with edit (effect.set) and check frame_grab.",
+    "input": {
+      "$defs": {
+        "ColorAction": {
+          "description": "What the `color` tool does.",
+          "oneOf": [
+            {
+              "const": "auto",
+              "description": "Correct white balance, brightness and levels.",
+              "type": "string"
+            },
+            {
+              "const": "match",
+              "description": "Bring the clip close to a reference clip.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ColorAction",
+          "description": "`auto` or `match`."
+        },
+        "clip": {
+          "description": "The video or image clip to correct.",
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Report what would change without committing it.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reference": {
+          "description": "match: the clip whose look to match.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action",
+        "clip"
+      ],
+      "type": "object"
+    },
+    "name": "color",
+    "read_only": false
+  },
+  {
     "description": "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

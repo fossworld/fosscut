@@ -15,6 +15,7 @@
     "allow-query",
     "allow-execute",
     "allow-clients",
+    "allow-color-suggest",
     "allow-preview-viewport",
     "allow-preview-show",
     "allow-preview-play",

@@ -283,6 +283,7 @@ mod tests {
                     channels: 2,
                     codec: None,
                 }),
+                lut: None,
             },
         });
         id

@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.3.0
+Demo (project_<random>)  revision 0  format 0.4.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,13 +93,14 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.3.0
+Demo (project_<random>)  revision 8  format 0.4.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.3.0
+API 0.1.0  project format 0.4.0
 commands:
+  adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
@@ -109,10 +110,16 @@ commands:
   clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.
+  effect.add     Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it.
+  effect.copy    Apply one clip's effects (with their keyframes) to other clips, replacing theirs or, with append, after them: the way to grade every clip alike.
+  effect.move    Move an effect to another position in its clip's order; effects apply first to last.
+  effect.remove  Remove an effect and its keyframes from a clip.
+  effect.set     Change an effect's parameters, reset some to their defaults, or bypass it (enabled: false). Parameters with keyframes are set with keyframe.set as effects.<id>.<param>.
   history.redo   Redo the most recently undone transaction. Must be the only command in its request.
   history.undo   Undo the most recent committed transaction. Must be the only command in its request.
   keyframe.remove Remove a keyframe of a clip property at a time, or all of its keyframes (all: true), which stops the animation; with all and a time, the property keeps the value it had then.
-  keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan.
+  keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>.
+  look.apply     Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
@@ -130,6 +137,8 @@ operations:
   captions.generate    Caption the clips of a track word by word from their cached transcripts, as pages on a caption track with a preset look; one undoable step.
   captions.import      Add caption pages from an SRT subtitle file, one page per cue with its lines kept.
   captions.export      Write a caption track to an SRT subtitle file, one cue per page.
+  color.auto           Measure a video or image clip's picture and add a color.adjust effect that corrects its white balance, brightness and levels; one undoable step.
+  color.match          Measure two clips and add a color.adjust effect to the first that brings its balance, brightness, contrast and saturation close to the second; one undoable step.
   models.install       Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.

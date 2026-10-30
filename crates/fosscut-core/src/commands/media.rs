@@ -61,6 +61,7 @@ impl Command for MediaAdd {
                 info.audio.is_some() && info.duration.is_some_and(|d| d.is_positive())
             }
             AssetKind::Image => info.video.is_some(),
+            AssetKind::Lut => info.lut.is_some(),
         };
         if !complete {
             return Err(ApiError::new(

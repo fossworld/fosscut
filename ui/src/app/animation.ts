@@ -124,3 +124,63 @@ export function keyTimes(clip: ClipView): number[] {
   for (const keys of Object.values(clip.keyframes ?? {})) for (const key of keys) times.add(key.at.flicks);
   return [...times].sort((a, b) => a - b);
 }
+
+/**
+ * A curve through `points` sampled at `count` positions from 0 to 1, with the monotone
+ * cubic interpolation fosscut-render uses for `color.curves`: smooth, no overshoot, flat
+ * before the first point and after the last.
+ */
+export function sampleCurve(points: [number, number][], count = 256): number[] {
+  const out: number[] = [];
+  if (points.length < 2) {
+    for (let i = 0; i < count; i++) out.push(i / (count - 1));
+    return out;
+  }
+  const n = points.length;
+  const x = points.map((p) => p[0]);
+  const y = points.map((p) => p[1]);
+  const secants = x.slice(0, -1).map((xi, i) => (y[i + 1]! - y[i]!) / Math.max(x[i + 1]! - xi, 1e-9));
+  const tangents = new Array<number>(n).fill(0);
+  tangents[0] = secants[0]!;
+  tangents[n - 1] = secants[n - 2]!;
+  for (let i = 1; i < n - 1; i++) {
+    tangents[i] = secants[i - 1]! * secants[i]! <= 0 ? 0 : (secants[i - 1]! + secants[i]!) / 2;
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const s = secants[i]!;
+    if (s === 0) {
+      tangents[i] = 0;
+      tangents[i + 1] = 0;
+      continue;
+    }
+    const a = tangents[i]! / s;
+    const b = tangents[i + 1]! / s;
+    const r = a * a + b * b;
+    if (r > 9) {
+      const t = 3 / Math.sqrt(r);
+      tangents[i] = t * a * s;
+      tangents[i + 1] = t * b * s;
+    }
+  }
+  for (let index = 0; index < count; index++) {
+    const t = index / (count - 1);
+    let v: number;
+    if (t <= x[0]!) v = y[0]!;
+    else if (t >= x[n - 1]!) v = y[n - 1]!;
+    else {
+      let i = 0;
+      while (i < n - 2 && x[i + 1]! <= t) i++;
+      const h = x[i + 1]! - x[i]!;
+      const s = (t - x[i]!) / h;
+      const s2 = s * s;
+      const s3 = s2 * s;
+      v =
+        (2 * s3 - 3 * s2 + 1) * y[i]! +
+        (s3 - 2 * s2 + s) * h * tangents[i]! +
+        (-2 * s3 + 3 * s2) * y[i + 1]! +
+        (s3 - s2) * h * tangents[i + 1]!;
+    }
+    out.push(Math.min(Math.max(v, 0), 1));
+  }
+  return out;
+}

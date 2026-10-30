@@ -2,7 +2,7 @@
 // sends events when the test says so.
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
-import type { AppInfo, Client, EditRequest, EditResponse, Opened } from "./types";
+import type { AppInfo, Client, ColorSuggestion, EditRequest, EditResponse, Opened } from "./types";
 
 export interface Call {
   method: string;
@@ -87,6 +87,12 @@ export class FakeEngine implements EngineClient {
 
   async clients(): Promise<Client[]> {
     return this.connected;
+  }
+
+  async colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion> {
+    this.record("colorSuggest", clip, reference);
+    const params = reference ? { saturation: -0.1 } : { temperature: 0.2 };
+    return { effect_add: { clip, type: "color.adjust", params, index: 0 } };
   }
 
   preview = {

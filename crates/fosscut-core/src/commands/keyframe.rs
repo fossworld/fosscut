@@ -220,6 +220,30 @@ pub(crate) fn keyframe_reports(clip: &Clip, rate: Rate) -> BTreeMap<String, Vec<
         .collect()
 }
 
+/// Keyframes of every parameter of `effect` on `clip`, with timeline times.
+pub(crate) fn effect_keyframe_reports(
+    clip: &Clip,
+    effect: &fosscut_model::Effect,
+    rate: Rate,
+) -> BTreeMap<String, Vec<KeyframeReport>> {
+    effect
+        .keyframes
+        .iter()
+        .map(|(name, keys)| {
+            let reports = keys
+                .iter()
+                .map(|k| KeyframeReport {
+                    at: TimeReport::new(clip.start + k.time, rate),
+                    offset: TimeReport::new(k.time, rate),
+                    value: k.value,
+                    interpolation: k.interpolation,
+                })
+                .collect();
+            (name.clone(), reports)
+        })
+        .collect()
+}
+
 /// A clip's properties after `clip.set` or a keyframe change.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ClipProperties {
@@ -419,6 +443,139 @@ fn plain_value(clip: &Clip, path: &str) -> Option<KeyValue> {
     })
 }
 
+/// What a keyframe command animates: a clip property, or an effect parameter addressed
+/// as `effects.<id>.<param>`.
+enum Target {
+    Property(Property),
+    Effect {
+        index: usize,
+        param: fosscut_model::ParamSpec,
+    },
+}
+
+impl Target {
+    fn of(command: &str, clip: &Clip, path: &str) -> Result<Target, ApiError> {
+        let Some((effect, name)) = fosscut_model::effect_path(path) else {
+            return Ok(Target::Property(property_of(command, clip, path)?));
+        };
+        let index = clip
+            .effects
+            .iter()
+            .position(|e| e.id.as_str() == effect)
+            .ok_or_else(|| {
+                ApiError::new(
+                    codes::EFFECT_NOT_FOUND,
+                    format!("{command}: {} has no effect {effect}", clip.id),
+                )
+            })?;
+        let spec = super::effect::spec_of(command, &clip.effects[index].effect_type)?;
+        let param = spec.param(name).cloned().ok_or_else(|| {
+            let names: Vec<&str> = spec.params.iter().map(|p| p.name).collect();
+            invalid(format!("{command}: {} has no parameter {name}", spec.name))
+                .with_hint(format!("Parameters: {}.", names.join(", ")))
+        })?;
+        Ok(Target::Effect { index, param })
+    }
+
+    fn animatable(&self) -> bool {
+        match self {
+            Target::Property(p) => p.animatable,
+            Target::Effect { param, .. } => param.animatable,
+        }
+    }
+
+    /// The name keyframes are stored under, in the map [`Target::keys`] returns.
+    fn key_name(&self) -> String {
+        match self {
+            Target::Property(p) => p.path.to_string(),
+            Target::Effect { param, .. } => param.name.to_string(),
+        }
+    }
+
+    fn keys<'a>(&self, clip: &'a mut Clip) -> &'a mut BTreeMap<String, Vec<Keyframe>> {
+        match self {
+            Target::Property(_) => &mut clip.keyframes,
+            Target::Effect { index, .. } => &mut clip.effects[*index].keyframes,
+        }
+    }
+
+    fn keys_of<'a>(&self, clip: &'a Clip) -> Option<&'a Vec<Keyframe>> {
+        match self {
+            Target::Property(p) => clip.keyframes.get(p.path),
+            Target::Effect { index, param } => clip.effects[*index].keyframes.get(param.name),
+        }
+    }
+
+    fn parse(&self, command: &str, value: &Value) -> Result<KeyValue, ApiError> {
+        match self {
+            Target::Property(p) => key_value(command, p, value),
+            Target::Effect { param, .. } => {
+                let as_property = Property {
+                    path: param.name,
+                    kind: match param.kind {
+                        fosscut_model::ParamKind::Pair => PropertyKind::Pair,
+                        _ => PropertyKind::Number,
+                    },
+                    applies: Applies::Picture,
+                    animatable: true,
+                    min: param.min,
+                    max: param.max,
+                    choices: &[],
+                    meaning: param.meaning,
+                };
+                key_value(command, &as_property, value)
+            }
+        }
+    }
+
+    /// The value without keyframes.
+    fn plain(&self, clip: &Clip) -> Option<KeyValue> {
+        match self {
+            Target::Property(p) => plain_value(clip, p.path),
+            Target::Effect { index, param } => {
+                let effect = &clip.effects[*index];
+                match effect
+                    .params
+                    .get(param.name)
+                    .cloned()
+                    .unwrap_or_else(|| param.default.value())
+                {
+                    fosscut_model::ParamValue::Number(v) => Some(KeyValue::Number(v)),
+                    fosscut_model::ParamValue::Pair(v) => Some(KeyValue::Pair(v)),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// Makes `value` the plain value, once the keyframes are gone.
+    fn assign(
+        &self,
+        command: &str,
+        clip: &mut Clip,
+        value: KeyValue,
+        rate: Rate,
+    ) -> Result<(), ApiError> {
+        let json = match value {
+            KeyValue::Number(v) => json!(v),
+            KeyValue::Pair(v) => json!(v),
+        };
+        match self {
+            Target::Property(p) => assign(command, clip, p, &json, rate),
+            Target::Effect { index, param } => {
+                let value = fosscut_model::ParamValue::from(value);
+                let params = &mut clip.effects[*index].params;
+                if value == param.default.value() {
+                    params.remove(param.name);
+                } else {
+                    params.insert(param.name.to_string(), value);
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Adds a keyframe to a clip property, or replaces the one at that time.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -427,7 +584,8 @@ pub struct KeyframeSet {
     pub clip: Id,
     /// An animatable property: `transform.position`, `transform.scale`,
     /// `transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,
-    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`.
+    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`, or a numeric effect parameter as
+    /// `effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`).
     pub property: String,
     /// Timeline position of the keyframe, from the clip's start to its end; snapped to the
     /// nearest frame. Give this or `offset`.
@@ -459,7 +617,7 @@ pub struct KeyframesChanged {
 
 impl Command for KeyframeSet {
     const NAME: &'static str = "keyframe.set";
-    const SUMMARY: &'static str = "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan.";
+    const SUMMARY: &'static str = "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>.";
     type Output = KeyframesChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<KeyframesChanged, ApiError> {
@@ -470,10 +628,10 @@ impl Command for KeyframeSet {
             .transpose()?;
         let path = self.property.clone();
         let (_, properties) = with_clip(ctx, &self.clip, |clip, rate| {
-            let property = property_of(Self::NAME, clip, &path)?;
-            if !property.animatable {
+            let target = Target::of(Self::NAME, clip, &path)?;
+            if !target.animatable() {
                 return Err(invalid(format!(
-                    "keyframe.set: {path} does not take keyframes; set it with clip.set"
+                    "keyframe.set: {path} does not take keyframes; set it with clip.set or effect.set"
                 )));
             }
             let offset = key_offset(
@@ -484,13 +642,14 @@ impl Command for KeyframeSet {
                 rate,
             )?;
             let value = match &self.value {
-                Some(value) => key_value(Self::NAME, &property, value)?,
-                None => clip
-                    .keyed(&path, offset)
-                    .or_else(|| plain_value(clip, &path))
+                Some(value) => target.parse(Self::NAME, value)?,
+                None => target
+                    .keys_of(clip)
+                    .and_then(|keys| fosscut_model::evaluate(keys, offset))
+                    .or_else(|| target.plain(clip))
                     .ok_or_else(|| invalid(format!("keyframe.set: {path} has no value")))?,
             };
-            let keys = clip.keyframes.entry(path.clone()).or_default();
+            let keys = target.keys(clip).entry(target.key_name()).or_default();
             let index = keys.partition_point(|k| k.time < offset);
             match keys.get_mut(index).filter(|k| k.time == offset) {
                 Some(existing) => {
@@ -545,7 +704,7 @@ impl Command for KeyframeRemove {
     fn apply(self, ctx: &mut Context<'_>) -> Result<KeyframesChanged, ApiError> {
         let path = self.property.clone();
         let (_, properties) = with_clip(ctx, &self.clip, |clip, rate| {
-            let property = property_of(Self::NAME, clip, &path)?;
+            let target = Target::of(Self::NAME, clip, &path)?;
             let timed = self.at.is_some() || self.offset.is_some();
             let offset = if timed {
                 Some(key_offset(
@@ -562,7 +721,7 @@ impl Command for KeyframeRemove {
                     "keyframe.remove: give the keyframe's time (at or offset), or all: true",
                 ));
             };
-            let Some(keys) = clip.keyframes.get(&path) else {
+            let Some(keys) = target.keys_of(clip) else {
                 return Err(ApiError::new(
                     codes::KEYFRAME_NOT_FOUND,
                     format!("keyframe.remove: {path} of {} has no keyframes", clip.id),
@@ -570,18 +729,15 @@ impl Command for KeyframeRemove {
             };
             if self.all {
                 let keep = offset.and_then(|o| fosscut_model::evaluate(keys, o));
-                clip.keyframes.remove(&path);
+                target.keys(clip).remove(&target.key_name());
                 if let Some(value) = keep {
-                    let value = match value {
-                        KeyValue::Number(v) => json!(v),
-                        KeyValue::Pair(v) => json!(v),
-                    };
-                    assign(Self::NAME, clip, &property, &value, rate)?;
+                    target.assign(Self::NAME, clip, value, rate)?;
                 }
                 return Ok(());
             }
             let offset = offset.unwrap_or(Flicks::ZERO);
-            let keys = clip.keyframes.entry(path.clone()).or_default();
+            let name = target.key_name();
+            let keys = target.keys(clip).entry(name.clone()).or_default();
             let Some(index) = keys.iter().position(|k| k.time == offset) else {
                 return Err(ApiError::new(
                     codes::KEYFRAME_NOT_FOUND,
@@ -594,12 +750,8 @@ impl Command for KeyframeRemove {
             let removed = keys.remove(index);
             if keys.is_empty() {
                 // The last keyframe goes: the property keeps that value.
-                clip.keyframes.remove(&path);
-                let value = match removed.value {
-                    KeyValue::Number(v) => json!(v),
-                    KeyValue::Pair(v) => json!(v),
-                };
-                assign(Self::NAME, clip, &property, &value, rate)?;
+                target.keys(clip).remove(&name);
+                target.assign(Self::NAME, clip, removed.value, rate)?;
             }
             Ok(())
         })?;

@@ -13,6 +13,7 @@ fn main() {
         "query",
         "execute",
         "clients",
+        "color_suggest",
         "preview_viewport",
         "preview_show",
         "preview_play",

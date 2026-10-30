@@ -57,6 +57,11 @@ export function hasPicture(clip: ClipView): boolean {
   return clip.kind !== "audio";
 }
 
+/** True for clips placed on the canvas: an adjustment layer has no place of its own. */
+export function isPlaced(clip: ClipView): boolean {
+  return clip.kind !== "audio" && clip.kind !== "adjustment";
+}
+
 /** True for clips with sound. */
 export function hasSound(clip: ClipView): boolean {
   return clip.kind === "audio" || clip.kind === "video";
@@ -116,7 +121,10 @@ export function fieldsFor(clip: ClipView, viewing: Viewing): Field[] {
     };
   };
   const fields: Field[] = [];
-  if (hasPicture(clip)) {
+  if (clip.kind === "adjustment") {
+    fields.push(field("opacity", "Opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }));
+  }
+  if (isPlaced(clip)) {
     const [x, y] = v.position;
     fields.push(
       field("x", "Position X", "transform.position", x * 100, "%"),

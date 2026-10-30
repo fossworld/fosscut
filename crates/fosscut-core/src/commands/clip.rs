@@ -90,6 +90,15 @@ impl Command for ClipAdd {
                 asset: asset.id.clone(),
                 source_in,
             },
+            AssetKind::Lut => {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!(
+                        "clip.add: {} is a LUT; use it in a color.lut effect",
+                        asset.id
+                    ),
+                ));
+            }
             AssetKind::Image => {
                 if source_in != Flicks::ZERO {
                     return Err(ApiError::new(
@@ -170,6 +179,13 @@ impl Command for ClipSplit {
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipSplitResult, ApiError> {
         let location = locate_clip(ctx.project, &self.clip)?;
         let right_id = ctx.project.allocate_id(IdKind::Clip);
+        let effects = ctx.project.timelines[&location.timeline].tracks[location.track].clips
+            [location.clip]
+            .effects
+            .len();
+        let effect_ids: Vec<Id> = (0..effects)
+            .map(|_| ctx.project.allocate_id(IdKind::Effect))
+            .collect();
         let timeline = timeline_mut(ctx.project, &location.timeline)?;
         let rate = timeline.format.rate;
         let at = resolve(&self.at, rate)?;
@@ -215,7 +231,10 @@ impl Command for ClipSplit {
             ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
                 *source_in = *source_in + offset
             }
-            ClipContent::Image { .. } | ClipContent::Text(_) | ClipContent::Caption(_) => {}
+            ClipContent::Image { .. }
+            | ClipContent::Text(_)
+            | ClipContent::Caption(_)
+            | ClipContent::Adjustment => {}
         }
         if let Some((left, right_words)) = pages {
             right.content = ClipContent::Caption(right_words);
@@ -223,6 +242,15 @@ impl Command for ClipSplit {
         }
         // Keyframes keep their place on the content; fades stay at the outer edges.
         right.shift_keyframes(Flicks::ZERO - offset);
+        right.effects = right
+            .effects
+            .into_iter()
+            .zip(effect_ids)
+            .map(|(mut effect, id)| {
+                effect.id = id;
+                effect
+            })
+            .collect();
         right.audio.fade_in = Flicks::ZERO;
         track.clips[location.clip].audio.fade_out = Flicks::ZERO;
         track.clips[location.clip].duration = offset;
@@ -370,7 +398,7 @@ impl Command for ClipTrim {
                     .with_hint("Keep at least one word inside the clip, or remove the caption clip instead.")
                 })?;
             }
-            ClipContent::Image { .. } | ClipContent::Text(_) => {}
+            ClipContent::Image { .. } | ClipContent::Text(_) | ClipContent::Adjustment => {}
         }
         ensure_free(track, start, end, Some(&original.id), rate)?;
         track.clips.remove(location.clip);

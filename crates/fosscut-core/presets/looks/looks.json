@@ -1,0 +1,106 @@
+[
+  {
+    "name": "warm",
+    "title": "Warm",
+    "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",
+    "effects": [
+      { "type": "color.adjust", "params": { "temperature": 0.35, "tint": 0.05, "saturation": 0.1, "vibrance": 0.1 } }
+    ]
+  },
+  {
+    "name": "cool",
+    "title": "Cool",
+    "description": "A cooler, crisper picture with a touch more contrast.",
+    "effects": [
+      { "type": "color.adjust", "params": { "temperature": -0.35, "tint": -0.05, "contrast": 0.1 } }
+    ]
+  },
+  {
+    "name": "teal_orange",
+    "title": "Teal and orange",
+    "description": "Teal shadows and warm highlights that make skin tones stand out, a common cinematic grade.",
+    "effects": [
+      { "type": "color.adjust", "params": { "contrast": 0.15, "saturation": 0.15 } },
+      { "type": "color.wheels", "params": { "lift": [-0.22, -0.04], "gain": [0.16, 0.09] } }
+    ]
+  },
+  {
+    "name": "vintage",
+    "title": "Vintage",
+    "description": "Muted, warm and soft, with lifted blacks, a vignette and grain, like old film.",
+    "effects": [
+      { "type": "color.adjust", "params": { "saturation": -0.25, "contrast": -0.15, "temperature": 0.2, "blacks": 0.25 } },
+      { "type": "color.vignette", "params": { "amount": 0.3 } },
+      { "type": "stylize.grain", "params": { "amount": 0.25 } }
+    ]
+  },
+  {
+    "name": "noir",
+    "title": "Noir",
+    "description": "Contrasty black and white with a dark vignette.",
+    "effects": [
+      { "type": "color.adjust", "params": { "saturation": -1, "contrast": 0.35 } },
+      { "type": "color.vignette", "params": { "amount": 0.35 } },
+      { "type": "stylize.grain", "params": { "amount": 0.15 } }
+    ]
+  },
+  {
+    "name": "sepia",
+    "title": "Sepia",
+    "description": "Warm-toned monochrome.",
+    "effects": [
+      { "type": "color.adjust", "params": { "saturation": -1, "contrast": 0.1 } },
+      { "type": "color.wheels", "params": { "gamma": [0.2, 0.12], "gain": [0.12, 0.07] } }
+    ]
+  },
+  {
+    "name": "faded",
+    "title": "Faded",
+    "description": "Low contrast with milky blacks and softened highlights.",
+    "effects": [
+      { "type": "color.adjust", "params": { "blacks": 0.35, "contrast": -0.25, "saturation": -0.15, "highlights": -0.2 } }
+    ]
+  },
+  {
+    "name": "vivid",
+    "title": "Vivid",
+    "description": "Rich color and a little punch, for food, travel and product shots.",
+    "effects": [
+      { "type": "color.adjust", "params": { "saturation": 0.3, "vibrance": 0.3, "contrast": 0.15 } }
+    ]
+  },
+  {
+    "name": "golden_hour",
+    "title": "Golden hour",
+    "description": "Late-afternoon warmth with open shadows and a soft vignette.",
+    "effects": [
+      { "type": "color.adjust", "params": { "temperature": 0.5, "tint": 0.1, "highlights": -0.15, "shadows": 0.15, "saturation": 0.15 } },
+      { "type": "color.vignette", "params": { "amount": 0.15 } }
+    ]
+  },
+  {
+    "name": "moody",
+    "title": "Moody",
+    "description": "Darker, cooler and more contrasty, with deep shadows.",
+    "effects": [
+      { "type": "color.adjust", "params": { "exposure": -0.3, "contrast": 0.25, "saturation": -0.2, "temperature": -0.15, "shadows": -0.2 } },
+      { "type": "color.vignette", "params": { "amount": 0.3 } }
+    ]
+  },
+  {
+    "name": "pastel",
+    "title": "Pastel",
+    "description": "Bright, soft and gently colored.",
+    "effects": [
+      { "type": "color.adjust", "params": { "contrast": -0.3, "saturation": -0.1, "brightness": 0.2, "blacks": 0.2 } }
+    ]
+  },
+  {
+    "name": "bleach_bypass",
+    "title": "Bleach bypass",
+    "description": "Silvery and harsh: low saturation with strong contrast.",
+    "effects": [
+      { "type": "color.adjust", "params": { "saturation": -0.5, "contrast": 0.4, "whites": 0.1 } }
+    ]
+  }
+]

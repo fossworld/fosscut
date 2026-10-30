@@ -314,3 +314,35 @@ pub struct CaptionsArgs {
     /// Why, recorded in the project's history.
     pub reason: Option<String>,
 }
+
+/// What the `color` tool does.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorAction {
+    /// Correct white balance, brightness and levels.
+    Auto,
+    /// Bring the clip close to a reference clip.
+    Match,
+}
+
+/// Arguments of the `color` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct ColorArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// `auto` or `match`.
+    pub action: ColorAction,
+    /// The video or image clip to correct.
+    pub clip: String,
+    /// match: the clip whose look to match.
+    pub reference: Option<String>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+    /// Report what would change without committing it.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Retry key.
+    pub request_id: Option<String>,
+    /// Why, recorded in the project's history.
+    pub reason: Option<String>,
+}

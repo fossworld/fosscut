@@ -51,7 +51,8 @@ describe("editor", () => {
     expect(state.history.map((e) => e.seq)).toEqual([4, 3]);
     expect(state.recent).toEqual(["/work/Demo.fosscut"]);
     expect(fake.callsOf("preview.show")).toEqual([[0]]);
-    expect(fake.callsOf("query")[1]).toEqual(["timeline.read", { detail: "full", timeline: "timeline_0000" }]);
+    expect(fake.callsOf("query")).toContainEqual(["timeline.read", { detail: "full", timeline: "timeline_0000" }]);
+    expect(fake.callsOf("query"), "the effect catalog, once").toContainEqual(["capabilities", { detail: "full" }]);
   });
 
   it("starts empty when no project is open, and opens one by path or dialog", async () => {
@@ -100,7 +101,7 @@ describe("editor", () => {
     const { editor, fake } = await started();
     const before = fake.callsOf("query").length;
     await Promise.all([editor.refresh(), editor.refresh(), editor.refresh()]);
-    expect(fake.callsOf("query").length - before, "two reads of three queries").toBe(6);
+    expect(fake.callsOf("query").length - before, "two reads of four queries").toBe(8);
   });
 
   it("moves the playhead by frames and seconds within the timeline", async () => {
@@ -241,6 +242,53 @@ describe("editor", () => {
       { command: "clip.trim", args: { clip: "clip_0003", end: { flicks: 2 * FLICKS_PER_SECOND } } },
       { command: "clip.set", args: { clip: "clip_0003", set: { opacity: 0.5, "transform.scale": 2 } } },
     ]);
+  });
+
+  it("reads the effect catalog and LUTs, and adds effects, looks and adjustment layers", async () => {
+    const fake = engine();
+    fake.answers["capabilities"] = {
+      effects: [{ type: "color.adjust", version: 1, title: "Adjust", category: "color", summary: "", params: [] }],
+      looks: [{ name: "warm", title: "Warm", description: "" }],
+    };
+    fake.answers["media.list"] = {
+      assets: [
+        { id: "asset_0001", name: "clip.mp4", kind: "video" },
+        { id: "asset_0002", name: "film.cube", kind: "lut" },
+      ],
+    };
+    const { editor } = await started(fake);
+    expect(editor.getState().catalog?.looks[0]?.name).toBe("warm");
+    expect(editor.getState().luts).toEqual([{ id: "asset_0002", name: "film.cube" }]);
+    await editor.addEffect("clip_0003", "color.adjust");
+    await editor.applyLook("clip_0003", "warm");
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.addAdjustment();
+    await editor.autoColor("clip_0003");
+    await editor.autoColor("clip_0003", "clip_0009");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "effect.add", args: { clip: "clip_0003", type: "color.adjust" } },
+      { command: "look.apply", args: { clip: "clip_0003", look: "warm" } },
+      { command: "adjustment.add", args: { start: { flicks: FLICKS_PER_SECOND }, duration: { seconds: "3" } } },
+      { command: "effect.add", args: { clip: "clip_0003", type: "color.adjust", params: { temperature: 0.2 }, index: 0 } },
+      { command: "effect.add", args: { clip: "clip_0003", type: "color.adjust", params: { saturation: -0.1 }, index: 0 } },
+    ]);
+    expect(fake.callsOf("colorSuggest")).toEqual([
+      ["clip_0003", undefined],
+      ["clip_0003", "clip_0009"],
+    ]);
+  });
+
+  it("works without a catalog and shows color errors", async () => {
+    const fake = engine();
+    fake.colorSuggest = async () => {
+      throw { code: "fosscut.request.invalid_arguments", message: "a clip cannot be matched to itself" };
+    };
+    const { editor } = await started(fake);
+    expect(editor.getState().catalog).toBeNull();
+    await editor.autoColor("clip_0003", "clip_0003");
+    expect(editor.getState().notice?.text).toContain("matched to itself");
+    expect(fake.callsOf("execute")).toHaveLength(0);
   });
 
   it("deactivates the selected clip and activates it again", async () => {

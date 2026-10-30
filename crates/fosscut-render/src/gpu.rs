@@ -14,6 +14,9 @@ use wgpu::util::DeviceExt;
 
 use crate::caption::{CaptionLayer, CaptionRaster, PageLook, anchor, evaluate};
 use crate::color::{TransferFunction, yuv_to_rgb};
+use crate::effects::{
+    PIXEL_ENTRIES, Pass, PlannedEffect, SLOTS, blur_plan, curves_table, pack, pass_for,
+};
 use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
 use crate::plan::{LayerSource, MaskShape, RenderPlan, SourceRef};
@@ -93,6 +96,17 @@ enum Slot {
     Canvas(u8),
     /// A layer with a blend mode, drawn on its own before it is blended.
     Placed,
+    /// The two textures a layer's effects alternate between.
+    Effect {
+        layer: usize,
+        turn: u8,
+    },
+    /// The smaller texture between the two halves of a blur.
+    Blur(usize),
+    /// A blurred copy that sharpening compares against.
+    Blurred(usize),
+    /// A curves table.
+    Curves(usize),
     CanvasSamples,
     Readback,
 }
@@ -130,6 +144,9 @@ pub struct Renderer {
     mip: wgpu::RenderPipeline,
     composite: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
+    effect_layout: wgpu::BindGroupLayout,
+    effects: HashMap<&'static str, wgpu::RenderPipeline>,
+    blank: wgpu::Texture,
     encode_module: wgpu::ShaderModule,
     encoders: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     linear: wgpu::Sampler,
@@ -218,6 +235,95 @@ impl Renderer {
         let mip = full_screen(&mip_module, "mip", None);
         let blend = full_screen(&blend_module, "blend", None);
 
+        // Effect passes share one bind group layout, so every entry point takes the same
+        // bindings whether it uses them or not.
+        let effect_module = module("effects", include_str!("shaders/effects.wgsl"));
+        let texture_entry = |binding, dimension| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: dimension,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let effect_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effect"),
+            entries: &[
+                texture_entry(0, wgpu::TextureViewDimension::D2),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                texture_entry(2, wgpu::TextureViewDimension::D2),
+                texture_entry(3, wgpu::TextureViewDimension::D3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let effect_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("effect"),
+                bind_group_layouts: &[Some(&effect_layout)],
+                immediate_size: 0,
+            });
+        let effects = PIXEL_ENTRIES
+            .iter()
+            .map(|&entry_point| {
+                let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(entry_point),
+                    layout: Some(&effect_pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &effect_module,
+                        entry_point: Some("vs_main"),
+                        compilation_options: Default::default(),
+                        buffers: &[],
+                    },
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: &effect_module,
+                        entry_point: Some(entry_point),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: CANVAS_FORMAT,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                });
+                (entry_point, pipeline)
+            })
+            .collect();
+        let blank = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("blank"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: CANVAS_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
         let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x2];
         let composite = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("composite"),
@@ -271,6 +377,9 @@ impl Renderer {
             mip,
             composite,
             blend,
+            effect_layout,
+            effects,
+            blank,
             encode_module,
             encoders: HashMap::new(),
             linear,
@@ -426,13 +535,13 @@ impl Renderer {
         size: (u32, u32),
         transfer: TransferFunction,
     ) -> Result<(), RenderError> {
-        let mut draws = Vec::with_capacity(plan.layers.len());
+        let mut steps = Vec::with_capacity(plan.layers.len());
         for (index, layer) in plan.layers.iter().enumerate() {
             let mut opacity = layer.opacity;
-            let (layer_view, vertices) = match &layer.source {
+            let (texture, vertices) = match &layer.source {
                 LayerSource::Frame(source) => {
                     let frame = frames.frame(source)?;
-                    let view = self.convert_layer(encoder, index, &frame, source)?;
+                    let texture = self.convert_layer(encoder, index, &frame, source)?;
                     let vertices = layer_quad(
                         plan.canvas,
                         (frame.width, frame.height),
@@ -440,7 +549,7 @@ impl Renderer {
                         &layer.transform,
                         layer.crop,
                     );
-                    (view, vertices)
+                    (texture, vertices)
                 }
                 LayerSource::Text(content) => {
                     // Rasterize at the output resolution: output pixels per canvas pixel.
@@ -450,7 +559,7 @@ impl Renderer {
                         continue;
                     }
                     let color = linear_color(content.style.color.as_str());
-                    let view = self.upload_text(encoder, index, &raster, color);
+                    let texture = self.upload_text(encoder, index, &raster, color);
                     let scale = f64::from(scale);
                     let natural = (
                         f64::from(raster.width) / scale,
@@ -463,7 +572,7 @@ impl Renderer {
                         (y + h / 2.0 - f64::from(raster.height) / 2.0) / scale,
                     );
                     (
-                        view,
+                        texture,
                         placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
                     )
                 }
@@ -478,7 +587,7 @@ impl Renderer {
                         continue;
                     }
                     opacity *= look.alpha;
-                    let view = self.upload_caption(encoder, index, &raster);
+                    let texture = self.upload_caption(encoder, index, &raster);
                     let scale = f64::from(scale);
                     let natural = (
                         f64::from(raster.width) / scale,
@@ -497,10 +606,22 @@ impl Renderer {
                     placed.position[1] += (y - h / 2.0) / h;
                     placed.scale *= f64::from(look.scale);
                     (
-                        view,
+                        texture,
                         placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
                     )
                 }
+                LayerSource::Adjustment => {
+                    steps.push(Step::Adjust {
+                        layer: index,
+                        opacity,
+                    });
+                    continue;
+                }
+            };
+            let layer_view = if layer.effects.is_empty() {
+                texture.create_view(&Default::default())
+            } else {
+                self.apply_effects(encoder, index, &texture, &layer.effects, frames)?
             };
             let (mask_kind, mask) = match &layer.mask {
                 Some(mask) => (
@@ -551,37 +672,43 @@ impl Renderer {
                     contents: bytemuck::cast_slice(&vertices),
                     usage: wgpu::BufferUsages::VERTEX,
                 });
-            draws.push(Draw {
+            steps.push(Step::Layer(Draw {
                 bind_group,
                 vertex_buffer,
                 blend: layer.blend,
-            });
+            }));
         }
 
         // Runs of normal layers draw straight onto the canvas in one multisampled pass. A
         // layer with another blend mode is drawn alone, then a blend pass combines it with
-        // the canvas into the other canvas texture; the next run starts by copying that
-        // canvas back into the multisampled target.
+        // the canvas into the other canvas texture; an adjustment layer runs its effects on
+        // the canvas and mixes the result back by its opacity. The next run starts by
+        // copying that canvas back into the multisampled target.
         let samples = self.multisampled_canvas(size);
         let samples_view = samples.create_view(&Default::default());
-        let mut current: Option<wgpu::TextureView> = None;
+        let mut current: Option<wgpu::Texture> = None;
         let mut flip = 0u8;
         let mut index = 0;
+        let normal =
+            |step: &Step| matches!(step, Step::Layer(draw) if draw.blend == BlendMode::Normal);
         loop {
-            let run_end = draws[index..]
+            let run_end = steps[index..]
                 .iter()
-                .position(|d| d.blend != BlendMode::Normal)
-                .map_or(draws.len(), |p| index + p);
+                .position(|step| !normal(step))
+                .map_or(steps.len(), |p| index + p);
             if run_end > index || current.is_none() {
-                let target = self.canvas(Slot::Canvas(flip), size);
+                let target = self.canvas_texture(Slot::Canvas(flip), size);
+                let target_view = target.create_view(&Default::default());
                 flip ^= 1;
-                let copy = current.as_ref().map(|below| self.copy_draw(below));
+                let copy = current
+                    .as_ref()
+                    .map(|below| self.copy_draw(&below.create_view(&Default::default())));
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("composite"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &samples_view,
                         depth_slice: None,
-                        resolve_target: Some(&target),
+                        resolve_target: Some(&target_view),
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                             store: wgpu::StoreOp::Discard,
@@ -590,7 +717,11 @@ impl Renderer {
                     ..Default::default()
                 });
                 pass.set_pipeline(&self.composite);
-                for draw in copy.iter().chain(&draws[index..run_end]) {
+                let run = steps[index..run_end].iter().filter_map(|step| match step {
+                    Step::Layer(draw) => Some(draw),
+                    Step::Adjust { .. } => None,
+                });
+                for draw in copy.iter().chain(run) {
                     pass.set_bind_group(0, &draw.bind_group, &[]);
                     pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                     pass.draw(0..4, 0..1);
@@ -599,60 +730,80 @@ impl Renderer {
                 current = Some(target);
             }
             index = run_end;
-            let Some(draw) = draws.get(index) else {
+            let Some(step) = steps.get(index) else {
                 break;
             };
-            let placed = self.canvas(Slot::Placed, size);
-            {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("blended layer"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &samples_view,
-                        depth_slice: None,
-                        resolve_target: Some(&placed),
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: wgpu::StoreOp::Discard,
-                        },
-                    })],
-                    ..Default::default()
-                });
-                pass.set_pipeline(&self.composite);
-                pass.set_bind_group(0, &draw.bind_group, &[]);
-                pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
-                pass.draw(0..4, 0..1);
-            }
-            // The run above always leaves a canvas to blend onto.
+            // The run above always leaves a canvas to work on.
             let Some(below) = current.take() else {
                 break;
             };
-            let target = self.canvas(Slot::Canvas(flip), size);
+            let below_view = below.create_view(&Default::default());
+            let target = self.canvas_texture(Slot::Canvas(flip), size);
+            let target_view = target.create_view(&Default::default());
             flip ^= 1;
-            let mode = self.uniform(&[blend_index(draw.blend), 0, 0, 0]);
-            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("blend"),
-                layout: &self.blend.get_bind_group_layout(0),
-                entries: &[
-                    entry(0, wgpu::BindingResource::TextureView(&below)),
-                    entry(1, wgpu::BindingResource::TextureView(&placed)),
-                    entry(2, mode.as_entire_binding()),
-                ],
-            });
-            {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("blend"),
-                    color_attachments: &[Some(attachment(&target, None))],
-                    ..Default::default()
-                });
-                pass.set_pipeline(&self.blend);
-                pass.set_bind_group(0, &bind_group, &[]);
-                pass.draw(0..3, 0..1);
+            match step {
+                Step::Adjust { layer, opacity } => {
+                    // Effects on everything so far, mixed back in by the layer's opacity.
+                    let effects = &plan.layers[*layer].effects;
+                    let adjusted = self.apply_effects(encoder, *layer, &below, effects, frames)?;
+                    let mut p = [[0.0f32; 4]; SLOTS];
+                    p[0][0] = *opacity;
+                    self.effect_pass(
+                        encoder,
+                        "fs_mix",
+                        &adjusted,
+                        Some(&below_view),
+                        None,
+                        &p,
+                        &target_view,
+                    );
+                }
+                Step::Layer(draw) => {
+                    let placed = self.canvas(Slot::Placed, size);
+                    {
+                        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("blended layer"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &samples_view,
+                                depth_slice: None,
+                                resolve_target: Some(&placed),
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                    store: wgpu::StoreOp::Discard,
+                                },
+                            })],
+                            ..Default::default()
+                        });
+                        pass.set_pipeline(&self.composite);
+                        pass.set_bind_group(0, &draw.bind_group, &[]);
+                        pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                        pass.draw(0..4, 0..1);
+                    }
+                    let mode = self.uniform(&[blend_index(draw.blend), 0, 0, 0]);
+                    let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("blend"),
+                        layout: &self.blend.get_bind_group_layout(0),
+                        entries: &[
+                            entry(0, wgpu::BindingResource::TextureView(&below_view)),
+                            entry(1, wgpu::BindingResource::TextureView(&placed)),
+                            entry(2, mode.as_entire_binding()),
+                        ],
+                    });
+                    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("blend"),
+                        color_attachments: &[Some(attachment(&target_view, None))],
+                        ..Default::default()
+                    });
+                    pass.set_pipeline(&self.blend);
+                    pass.set_bind_group(0, &bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                }
             }
             current = Some(target);
             index += 1;
         }
         let canvas_view = match current {
-            Some(view) => view,
+            Some(texture) => texture.create_view(&Default::default()),
             None => self.canvas(Slot::Canvas(flip), size),
         };
 
@@ -678,7 +829,7 @@ impl Renderer {
     }
 
     /// A canvas-sized linear texture for `slot` that passes render into and later sample.
-    fn canvas(&mut self, slot: Slot, size: (u32, u32)) -> wgpu::TextureView {
+    fn canvas_texture(&mut self, slot: Slot, size: (u32, u32)) -> wgpu::Texture {
         self.texture(
             slot,
             size,
@@ -686,7 +837,228 @@ impl Renderer {
             1,
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
         )
-        .create_view(&Default::default())
+    }
+
+    /// [`Renderer::canvas_texture`] as a view.
+    fn canvas(&mut self, slot: Slot, size: (u32, u32)) -> wgpu::TextureView {
+        self.canvas_texture(slot, size)
+            .create_view(&Default::default())
+    }
+
+    /// Runs one effect entry point from `input` into `target`, a single mip level.
+    #[allow(clippy::too_many_arguments)]
+    fn effect_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        entry_point: &str,
+        input: &wgpu::TextureView,
+        aux: Option<&wgpu::TextureView>,
+        lut: Option<&wgpu::TextureView>,
+        params: &[[f32; 4]; SLOTS],
+        target: &wgpu::TextureView,
+    ) {
+        let Some(pipeline) = self.effects.get(entry_point) else {
+            return;
+        };
+        let blank = self.blank.create_view(&Default::default());
+        let no_lut = self.no_lut.create_view(&Default::default());
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("effect"),
+            layout: &self.effect_layout,
+            entries: &[
+                entry(0, wgpu::BindingResource::TextureView(input)),
+                entry(1, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(2, wgpu::BindingResource::TextureView(aux.unwrap_or(&blank))),
+                entry(
+                    3,
+                    wgpu::BindingResource::TextureView(lut.unwrap_or(&no_lut)),
+                ),
+                entry(4, self.uniform(params).as_entire_binding()),
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(entry_point),
+            color_attachments: &[Some(attachment(target, None))],
+            ..Default::default()
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    /// Blurs `input` (whose mips are generated) with standard deviation `sigma` pixels into
+    /// `target`: a horizontal pass at the mip level that needs few taps, then a vertical
+    /// pass back at full size.
+    fn blur_into(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        layer: usize,
+        input: &wgpu::Texture,
+        sigma: f32,
+        target: &wgpu::TextureView,
+    ) {
+        let size = (input.width(), input.height());
+        let (lod, scaled, taps, level) = blur_plan(sigma, size, input.mip_level_count());
+        let middle = self.canvas_texture(Slot::Blur(layer), level);
+        let texel = [1.0 / level.0 as f32, 1.0 / level.1 as f32];
+        let mut p = [[0.0f32; 4]; SLOTS];
+        p[0] = [1.0, 0.0, scaled, lod as f32];
+        p[1] = [taps as f32, level.0 as f32, level.1 as f32, 0.0];
+        p[2] = [texel[0], texel[1], 0.0, 0.0];
+        let input_view = input.create_view(&Default::default());
+        let middle_view = middle.create_view(&Default::default());
+        self.effect_pass(
+            encoder,
+            "fs_blur",
+            &input_view,
+            None,
+            None,
+            &p,
+            &middle_view,
+        );
+        p[0] = [0.0, 1.0, scaled, 0.0];
+        p[1] = [taps as f32, size.0 as f32, size.1 as f32, 0.0];
+        self.effect_pass(encoder, "fs_blur", &middle_view, None, None, &p, target);
+    }
+
+    /// Applies `effects` in order to `input` (a layer's picture, or the canvas under an
+    /// adjustment layer) and returns the result, mipmapped for compositing.
+    fn apply_effects(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        layer: usize,
+        input: &wgpu::Texture,
+        effects: &[PlannedEffect],
+        frames: &mut dyn FrameProvider,
+    ) -> Result<wgpu::TextureView, RenderError> {
+        let size = (input.width(), input.height());
+        let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
+        let usage = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let level_zero = |texture: &wgpu::Texture| {
+            texture.create_view(&wgpu::TextureViewDescriptor {
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                ..Default::default()
+            })
+        };
+        let mut current = input.clone();
+        // Layer textures arrive mipmapped; effect outputs are not until mips are made.
+        let mut mipped = input.mip_level_count() > 1;
+        let mut turn = 0u8;
+        for effect in effects {
+            let Some(pass) = pass_for(&effect.effect_type) else {
+                continue;
+            };
+            let needs_mips = matches!(pass, Pass::Blur | Pass::Sharpen);
+            if needs_mips && !mipped {
+                if current.mip_level_count() == 1 {
+                    let copy = self.texture(
+                        Slot::Effect { layer, turn },
+                        size,
+                        CANVAS_FORMAT,
+                        mips,
+                        usage,
+                    );
+                    turn ^= 1;
+                    let params = [[0.0f32; 4]; SLOTS];
+                    let view = current.create_view(&Default::default());
+                    self.effect_pass(
+                        encoder,
+                        "fs_copy",
+                        &view,
+                        None,
+                        None,
+                        &params,
+                        &level_zero(&copy),
+                    );
+                    current = copy;
+                }
+                self.generate_mips(encoder, &current, current.mip_level_count());
+            }
+            let out = self.texture(
+                Slot::Effect { layer, turn },
+                size,
+                CANVAS_FORMAT,
+                mips,
+                usage,
+            );
+            turn ^= 1;
+            let target = level_zero(&out);
+            let input_view = current.create_view(&Default::default());
+            let height = size.1 as f32;
+            match pass {
+                Pass::Pixel(entry_point) => {
+                    let mut lut_size = 0;
+                    let mut lut_view = None;
+                    if let Some(asset) = effect.asset("lut") {
+                        let lut = frames.lut(asset)?;
+                        lut_size = lut.size;
+                        lut_view = Some(self.lut_view(&lut));
+                    }
+                    let curves = (effect.effect_type == "color.curves").then(|| {
+                        let table = self.texture(
+                            Slot::Curves(layer),
+                            (256, 1),
+                            CANVAS_FORMAT,
+                            1,
+                            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                        );
+                        let texels: Vec<u16> = curves_table(effect)
+                            .iter()
+                            .flatten()
+                            .map(|&v| half::f16::from_f32(v).to_bits())
+                            .collect();
+                        self.queue.write_texture(
+                            table.as_image_copy(),
+                            bytemuck::cast_slice(&texels),
+                            wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(256 * 8),
+                                rows_per_image: Some(1),
+                            },
+                            table.size(),
+                        );
+                        table.create_view(&Default::default())
+                    });
+                    let params = pack(effect, size, lut_size);
+                    self.effect_pass(
+                        encoder,
+                        entry_point,
+                        &input_view,
+                        curves.as_ref(),
+                        lut_view.as_ref(),
+                        &params,
+                        &target,
+                    );
+                }
+                Pass::Blur => {
+                    let sigma = effect.number("radius") * height;
+                    self.blur_into(encoder, layer, &current, sigma, &target);
+                }
+                Pass::Sharpen => {
+                    let blurred = self.canvas_texture(Slot::Blurred(layer), size);
+                    let blurred_view = blurred.create_view(&Default::default());
+                    let sigma = effect.number("radius") * height;
+                    self.blur_into(encoder, layer, &current, sigma, &blurred_view);
+                    let params = pack(effect, size, 0);
+                    self.effect_pass(
+                        encoder,
+                        "fs_sharpen",
+                        &level_zero(&current),
+                        Some(&blurred_view),
+                        None,
+                        &params,
+                        &target,
+                    );
+                }
+            }
+            current = out;
+            mipped = false;
+        }
+        if !mipped && current.mip_level_count() > 1 {
+            self.generate_mips(encoder, &current, current.mip_level_count());
+        }
+        Ok(current.create_view(&Default::default()))
     }
 
     /// A draw that copies `canvas` over the whole target, to continue compositing on it.
@@ -740,7 +1112,7 @@ impl Renderer {
         index: usize,
         frame: &VideoFrame,
         source: &SourceRef,
-    ) -> Result<wgpu::TextureView, RenderError> {
+    ) -> Result<wgpu::Texture, RenderError> {
         let matrix = yuv_to_rgb(&frame.color)?;
         let transfer = TransferFunction::for_source(frame.color.transfer)?;
         if frame.planes.len() != frame.format.plane_count() || frame.width == 0 || frame.height == 0
@@ -830,7 +1202,7 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
         self.generate_mips(encoder, &layer, mips);
-        Ok(layer.create_view(&Default::default()))
+        Ok(layer)
     }
 
     /// Fills mip levels 1.. of `texture` from level 0 with the box-filter pass.
@@ -921,7 +1293,7 @@ impl Renderer {
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
         raster: &CaptionRaster,
-    ) -> wgpu::TextureView {
+    ) -> wgpu::Texture {
         let texels: Vec<u16> = raster
             .pixels
             .iter()
@@ -938,7 +1310,7 @@ impl Renderer {
         index: usize,
         raster: &TextRaster,
         color: [f32; 4],
-    ) -> wgpu::TextureView {
+    ) -> wgpu::Texture {
         let texels: Vec<u16> = raster
             .coverage
             .iter()
@@ -959,7 +1331,7 @@ impl Renderer {
         index: usize,
         (width, height): (u32, u32),
         texels: &[u16],
-    ) -> wgpu::TextureView {
+    ) -> wgpu::Texture {
         let mips = (width.max(height) as f32).log2().floor() as u32 + 1;
         let texture = self.texture(
             Slot::Text(index),
@@ -985,7 +1357,7 @@ impl Renderer {
             },
         );
         self.generate_mips(encoder, &texture, mips);
-        texture.create_view(&Default::default())
+        texture
     }
 
     fn texture(
@@ -1113,6 +1485,12 @@ impl Renderer {
             })
             .clone()
     }
+}
+
+/// What compositing does for one layer: draw it, or adjust the canvas below it.
+enum Step {
+    Layer(Draw),
+    Adjust { layer: usize, opacity: f32 },
 }
 
 /// One layer ready to draw.

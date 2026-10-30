@@ -6,8 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Animator, AssetKind, CaptionContent, CaptionStyle, Clip, ClipContent, Id, IdKind, KeyValue,
-    Project, PropertyKind, Track, TrackKind, clip_property,
+    Animator, AssetKind, CaptionContent, CaptionStyle, Clip, ClipContent, Effect, Id, IdKind,
+    KeyValue, ParamKind, ParamValue, Project, PropertyKind, Track, TrackKind, clip_property,
+    effect_type,
 };
 
 /// One rule violation found by [`validate`].
@@ -89,7 +90,15 @@ pub fn validate(project: &Project) -> Vec<Issue> {
         let path = asset.id.to_string();
         expect_kind(&mut issues, &asset.id, IdKind::Asset, &path);
         unique(&mut issues, &asset.id, &path);
-        if asset.kind != AssetKind::Image && asset.info.duration.is_none_or(|d| !d.is_positive()) {
+        let timed = matches!(asset.kind, AssetKind::Video | AssetKind::Audio);
+        if asset.kind == AssetKind::Lut && asset.info.lut.as_ref().is_none_or(|l| l.size < 2) {
+            issues.push(
+                &path,
+                "fosscut.model.asset_lut",
+                "LUT assets need a table of at least 2 entries per axis",
+            );
+        }
+        if timed && asset.info.duration.is_none_or(|d| !d.is_positive()) {
             issues.push(
                 &path,
                 "fosscut.model.asset_duration",
@@ -165,6 +174,19 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                     );
                 }
                 check_properties(&mut issues, clip, &clip_path);
+                if matches!(clip.content, ClipContent::Audio { .. }) && !clip.effects.is_empty() {
+                    issues.push(
+                        &clip_path,
+                        "fosscut.model.effect_target",
+                        "audio clips have no picture for effects",
+                    );
+                }
+                for effect in &clip.effects {
+                    let effect_path = format!("{clip_path}/{}", effect.id);
+                    expect_kind(&mut issues, &effect.id, IdKind::Effect, &effect_path);
+                    unique(&mut issues, &effect.id, &effect_path);
+                    check_effect(&mut issues, project, effect, &effect_path);
+                }
                 check_content(
                     &mut issues,
                     project,
@@ -278,6 +300,116 @@ fn check_properties(issues: &mut Issues, clip: &Clip, path: &str) {
     }
 }
 
+/// An effect must be a known type and version, with parameters of the right kind and
+/// range, existing LUT assets, and keyframes only on animatable parameters (ADR-0011,
+/// item 2).
+fn check_effect(issues: &mut Issues, project: &Project, effect: &Effect, path: &str) {
+    let mut bad = |code: &str, message: String| issues.push(path, code, message);
+    let Some(spec) = effect_type(&effect.effect_type) else {
+        bad(
+            "fosscut.model.effect_type",
+            format!(
+                "{} is not an effect type this build knows",
+                effect.effect_type
+            ),
+        );
+        return;
+    };
+    if effect.version == 0 || effect.version > spec.version {
+        bad(
+            "fosscut.model.effect_version",
+            format!(
+                "{} version {} is not supported; this build reads versions 1 to {}",
+                spec.name, effect.version, spec.version
+            ),
+        );
+    }
+    let finite = |v: f64| v.is_finite();
+    let within = |p: &crate::ParamSpec, v: f64| {
+        finite(v) && p.min.is_none_or(|m| v >= m) && p.max.is_none_or(|m| v <= m)
+    };
+    for param in &spec.params {
+        let value = effect.params.get(param.name);
+        if value.is_none()
+            && matches!(param.default, crate::ParamDefault::Required(_))
+            && !effect.keyframes.contains_key(param.name)
+        {
+            bad(
+                "fosscut.model.effect_param",
+                format!("{} needs {}", spec.name, param.name),
+            );
+        }
+    }
+    for (name, value) in &effect.params {
+        let Some(param) = spec.param(name) else {
+            bad(
+                "fosscut.model.effect_param",
+                format!("{} has no parameter {name}", spec.name),
+            );
+            continue;
+        };
+        let ok = match (param.kind, value) {
+            (ParamKind::Number, ParamValue::Number(v)) => within(param, *v),
+            (ParamKind::Pair, ParamValue::Pair(v)) => v.iter().all(|x| within(param, *x)),
+            (ParamKind::Bool, ParamValue::Flag(_)) => true,
+            (ParamKind::Choice, ParamValue::Name(n)) => param.choices.contains(&n.as_str()),
+            (ParamKind::Curve, ParamValue::Points(points)) => {
+                points.len() >= 2
+                    && points.iter().all(|p| p.iter().all(|x| within(param, *x)))
+                    && points.windows(2).all(|w| w[1][0] > w[0][0])
+            }
+            (ParamKind::Asset, ParamValue::Asset(reference)) => {
+                let wanted = param.choices.first().copied();
+                match project.media.get(&reference.asset) {
+                    Some(asset) => wanted != Some("lut") || asset.kind == AssetKind::Lut,
+                    None => false,
+                }
+            }
+            _ => false,
+        };
+        if !ok {
+            bad(
+                "fosscut.model.effect_param",
+                format!("{}.{name} has an invalid value {value:?}", spec.name),
+            );
+        }
+    }
+    for (name, keys) in &effect.keyframes {
+        let Some(param) = spec.param(name).filter(|p| p.animatable) else {
+            bad(
+                "fosscut.model.keyframe_path",
+                format!("{}.{name} does not take keyframes", spec.name),
+            );
+            continue;
+        };
+        if keys.is_empty() || keys.windows(2).any(|w| w[1].time <= w[0].time) {
+            bad(
+                "fosscut.model.keyframes",
+                format!(
+                    "{}.{name} keyframes must be in time order, one per time",
+                    spec.name
+                ),
+            );
+        }
+        for key in keys {
+            let ok = match (param.kind, key.value) {
+                (ParamKind::Number, KeyValue::Number(v)) => within(param, v),
+                (ParamKind::Pair, KeyValue::Pair(v)) => v.iter().all(|x| within(param, *x)),
+                _ => false,
+            };
+            if !ok {
+                bad(
+                    "fosscut.model.keyframe_value",
+                    format!(
+                        "{}.{name} keyframe value {:?} is invalid",
+                        spec.name, key.value
+                    ),
+                );
+            }
+        }
+    }
+}
+
 fn check_content(
     issues: &mut Issues,
     project: &Project,
@@ -287,7 +419,9 @@ fn check_content(
     path: &str,
 ) {
     let allowed = match content {
-        ClipContent::Video { .. } | ClipContent::Image { .. } => track_kind == TrackKind::Video,
+        ClipContent::Video { .. } | ClipContent::Image { .. } | ClipContent::Adjustment => {
+            track_kind == TrackKind::Video
+        }
         ClipContent::Audio { .. } => track_kind == TrackKind::Audio,
         ClipContent::Text(_) => track_kind == TrackKind::Text,
         ClipContent::Caption(_) => track_kind == TrackKind::Caption,
@@ -326,7 +460,7 @@ fn check_content(
         ClipContent::Video { .. } => asset.kind == AssetKind::Video,
         ClipContent::Audio { .. } => asset.has_audio(),
         ClipContent::Image { .. } => asset.kind == AssetKind::Image,
-        ClipContent::Text(_) | ClipContent::Caption(_) => true,
+        ClipContent::Text(_) | ClipContent::Caption(_) | ClipContent::Adjustment => true,
     };
     if !kind_ok {
         issues.push(

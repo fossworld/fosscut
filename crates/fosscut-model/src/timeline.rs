@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
+use crate::effect::Effect;
 use crate::{Id, is_default};
 
 /// A timeline document (`timelines/<id>.json`).
@@ -158,6 +159,10 @@ pub struct Clip {
     /// False deactivates the clip: it keeps its place but is neither drawn nor heard.
     #[serde(default = "yes", skip_serializing_if = "is_yes")]
     pub enabled: bool,
+    /// Effects on the clip's picture, applied in order before placement. On an adjustment
+    /// clip they apply to everything below it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<Effect>,
     /// Keyframes by property path (`transform.position`, `opacity`, ...), each list sorted
     /// by time with at most one keyframe per time. A property with keyframes takes its
     /// value from them, not from its field.
@@ -180,8 +185,14 @@ impl Clip {
             volume: 1.0,
             audio: ClipAudio::default(),
             enabled: true,
+            effects: Vec::new(),
             keyframes: BTreeMap::new(),
         }
+    }
+
+    /// The effect with this id.
+    pub fn effect(&self, id: &Id) -> Option<&Effect> {
+        self.effects.iter().find(|e| &e.id == id)
     }
 
     /// Timeline position just after the last frame.
@@ -272,6 +283,9 @@ impl Clip {
                 key.time = key.time + delta;
             }
         }
+        for effect in &mut self.effects {
+            effect.shift_keyframes(delta);
+        }
     }
 }
 
@@ -320,6 +334,8 @@ pub enum ClipContent {
     Text(TextContent),
     /// A caption page: lines of timed words (ADR-0021).
     Caption(CaptionContent),
+    /// An adjustment layer: its effects apply to everything below it while it lasts.
+    Adjustment,
 }
 
 impl ClipContent {
@@ -329,7 +345,7 @@ impl ClipContent {
             ClipContent::Video { asset, .. }
             | ClipContent::Audio { asset, .. }
             | ClipContent::Image { asset } => Some(asset),
-            ClipContent::Text(_) | ClipContent::Caption(_) => None,
+            ClipContent::Text(_) | ClipContent::Caption(_) | ClipContent::Adjustment => None,
         }
     }
 
@@ -351,6 +367,7 @@ impl ClipContent {
             ClipContent::Image { .. } => "image",
             ClipContent::Text(_) => "text",
             ClipContent::Caption(_) => "caption",
+            ClipContent::Adjustment => "adjustment",
         }
     }
 }
