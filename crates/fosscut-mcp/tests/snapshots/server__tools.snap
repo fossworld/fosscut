@@ -520,12 +520,119 @@ expression: listing
   {
     "description": "Export the timeline to a video or audio file in the background and return a job id at once; then call job_status with wait_seconds until the job succeeds. The file is probed and checked against the request (codec, size, rate, frame count, duration, audio); a codec this machine cannot encode fails with the codecs that work instead, never a substitute. dry_run: true checks everything and reports frames, duration and encoders without writing.",
     "input": {
+      "$defs": {
+        "RangeArgs": {
+          "description": "A part of a timeline.",
+          "properties": {
+            "end": {
+              "$ref": "#/$defs/TimeInput",
+              "description": "Where it ends."
+            },
+            "start": {
+              "$ref": "#/$defs/TimeInput",
+              "description": "Where it starts."
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "type": "object"
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
         "allow_destructive": {
           "default": false,
           "description": "Replace the output if it exists. Ask the user first.",
           "type": "boolean"
+        },
+        "audio_bitrate": {
+          "description": "Audio bit rate such as `192k`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bitrate": {
+          "description": "Video bit rate such as `8M`; the encoder's choice for the size when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cover": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Write a cover image (PNG) of the frame at this time of the export beside the file."
         },
         "dry_run": {
           "default": false,
@@ -541,12 +648,19 @@ expression: listing
             "null"
           ]
         },
+        "fps": {
+          "description": "Frame rate such as `24`, `25`, `29.97`, `30`, `50`, `59.94`, `60` or `120`; the\ntimeline's when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "output": {
           "description": "File to write, for example `Promo.mp4`.",
           "type": "string"
         },
         "preset": {
-          "description": "`mp4-h264`, `mp4-hevc`, `mp4-av1`, `mov-prores`, `webm-vp9` or `m4a-aac`. When\nomitted the extension decides: `.mov` ProRes, `.webm` VP9, `.m4a` audio only, and\nanything else the most compatible video preset this machine can encode.",
+          "description": "A preset from `capabilities` (`export_presets`), for example `mp4-h264`,\n`mov-prores-hq`, `gif`, `wav` or `mp3`. When omitted the extension decides (`.mov`\nProRes, `.webm` VP9, `.gif`, `.m4a`, `.wav`, `.flac` and `.mp3` audio), and anything\nelse the most compatible video preset this machine can encode.",
           "type": [
             "string",
             "null"
@@ -559,8 +673,33 @@ expression: listing
             "null"
           ]
         },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeArgs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this part of the timeline: `{\"start\": {\"seconds\": \"2\"}, \"end\": {\"seconds\": \"10\"}}`."
+        },
         "request_id": {
           "description": "Retry key: repeating it returns the running or finished export.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolution": {
+          "description": "The shorter side: `480p`, `720p`, `1080p`, `2k`, `4k`, `8k` or a number of pixels;\nthe canvas's when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subtitles": {
+          "description": "Write the captions beside the file as `srt` or `vtt` subtitles.",
           "type": [
             "string",
             "null"
@@ -767,6 +906,211 @@ expression: listing
     },
     "name": "job_status",
     "read_only": true
+  },
+  {
+    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project: sounds and music are imported and placed at start, shapes, stickers and backgrounds drawn, titles and templates added with lines and media, styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (sounds are imported in a step of their own first).",
+    "input": {
+      "$defs": {
+        "LibraryAction": {
+          "description": "What the `library` tool does.",
+          "oneOf": [
+            {
+              "const": "list",
+              "description": "List or search the library.",
+              "type": "string"
+            },
+            {
+              "const": "add",
+              "description": "Add an item to the project.",
+              "type": "string"
+            }
+          ]
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/LibraryAction",
+          "description": "`list` (with `kind` and `search`) or `add` (with `name`)."
+        },
+        "clip": {
+          "description": "add: the clip a look applies to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Report what would change without committing it.",
+          "type": "boolean"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "add: how long it lasts."
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "Only, or the item's, kind: shape, sticker, background, template, title,\ntext_style, caption_style, look, sound or music.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lines": {
+          "default": [],
+          "description": "add: lines for titles and templates; the text of a text style's clip.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "media": {
+          "default": [],
+          "description": "add: assets for a template's slots.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "add: the item's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "search": {
+          "description": "list: words to find in names, descriptions and tags.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "add: where it starts."
+        },
+        "track": {
+          "description": "add: the track.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "library",
+    "read_only": false
   },
   {
     "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",

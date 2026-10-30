@@ -6,7 +6,8 @@
 //! - [`workspace`]: the open project, hosted live, and recent projects.
 //! - [`preview`] and [`surface`]: the preview thread and the window's GPU surface;
 //!   [`audio`]: the sound playback follows.
-//! - [`commands`]: what the UI may ask; the engine client in `ui/` is the only caller.
+//! - [`commands`]: what the UI may ask, including the built-in library and exports run as
+//!   background jobs; the engine client in `ui/` is the only caller.
 
 #![forbid(unsafe_code)]
 
@@ -19,6 +20,7 @@ pub mod workspace;
 
 use std::sync::{Arc, Mutex};
 
+use fosscut_engine::jobs::Jobs;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
 use crate::library::Library;
@@ -34,6 +36,8 @@ pub struct AppState {
     pub preview: Preview,
     /// Recent projects' summaries and the trash.
     pub library: Arc<Library>,
+    /// Exports running in the background, followed by id.
+    pub jobs: Arc<Jobs>,
     /// The thread that forwards the open project's changes, while one is open.
     follower: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
@@ -128,6 +132,7 @@ pub fn run() {
                 workspace: Arc::clone(&workspace),
                 preview,
                 library: Arc::new(Library::new(&data, &cache)),
+                jobs: Arc::new(Jobs::new()),
                 follower: Mutex::new(None),
             });
             if let Some(path) = std::env::args_os().nth(1) {
@@ -165,6 +170,13 @@ pub fn run() {
             commands::trash_list,
             commands::trash_restore,
             commands::trash_delete,
+            commands::library_list,
+            commands::library_add,
+            commands::export_presets,
+            commands::export_pick,
+            commands::export_start,
+            commands::export_status,
+            commands::export_cancel,
         ])
         .build(tauri::generate_context!());
     match app {

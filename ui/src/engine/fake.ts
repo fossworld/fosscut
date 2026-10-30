@@ -3,11 +3,18 @@
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
 import type {
+  ApiError,
   AppInfo,
   Client,
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  ExportChoice,
+  ExportPresets,
+  ExportReport,
+  JobStatus,
+  LibraryAddRequest,
+  LibraryItem,
   Normalization,
   Opened,
   ProjectSummary,
@@ -157,6 +164,102 @@ export class FakeEngine implements EngineClient {
     };
   }
 
+  /** The library `libraryList` searches as the engine does. */
+  library: LibraryItem[] = [];
+
+  async libraryList(kind?: string, search?: string): Promise<LibraryItem[]> {
+    this.record("libraryList", kind, search);
+    const words = (search ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+    return this.library.filter((item) => {
+      const text = `${item.name} ${item.title} ${item.description} ${item.tags.join(" ")}`.toLowerCase();
+      return (!kind || item.kind === kind) && words.every((word) => text.includes(word));
+    });
+  }
+
+  /** How `libraryAdd` answers; by default it commits a clip and counts revisions up. */
+  onLibraryAdd: (request: LibraryAddRequest) => EditResponse | Promise<EditResponse> = () => {
+    this.revision += 1;
+    const results = [{ clip: `clip_${String(100 + this.revision).padStart(4, "0")}` }];
+    return { committed: true, dry_run: false, replayed: false, revision: this.revision, results };
+  };
+
+  async libraryAdd(request: LibraryAddRequest): Promise<EditResponse> {
+    this.record("libraryAdd", request);
+    return this.onLibraryAdd(request);
+  }
+
+  exportListing: ExportPresets = { presets: [], resolutions: [] };
+  /** What the save dialog answers; null for a cancel. */
+  exportPicks: string | null = "/work/Export.mp4";
+  /** What `exportStart` throws instead of starting, when set. */
+  exportRefusal: ApiError | null = null;
+  /** Frames every export renders, and how many more each status read finds done. */
+  exportFrames = 90;
+  exportStep = 30;
+  /** What a status read throws, when set. */
+  exportFailure: ApiError | null = null;
+  jobs = new Map<string, { status: JobStatus; choice: ExportChoice }>();
+
+  async exportPresets(): Promise<ExportPresets> {
+    this.record("exportPresets");
+    return this.exportListing;
+  }
+
+  async exportPick(name: string, extension?: string): Promise<string | null> {
+    this.record("exportPick", name, extension);
+    return this.exportPicks;
+  }
+
+  async exportStart(choice: ExportChoice): Promise<JobStatus> {
+    this.record("exportStart", choice);
+    if (this.exportRefusal) throw this.exportRefusal;
+    const job = `job_${String(this.jobs.size + 1).padStart(4, "0")}`;
+    const status: JobStatus = {
+      job,
+      kind: "export",
+      state: "running",
+      progress: { done: 0, total: 0 },
+      elapsed_ms: 0,
+      output: choice.output,
+    };
+    this.jobs.set(job, { status, choice });
+    return status;
+  }
+
+  /** A running job renders `exportStep` more frames per read, then succeeds with a report. */
+  async exportStatus(job: string): Promise<JobStatus> {
+    this.record("exportStatus", job);
+    const entry = this.jobs.get(job);
+    if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` };
+    const { status, choice } = entry;
+    if (status.state !== "running") return status;
+    if (this.exportFailure) {
+      entry.status = { ...status, state: "failed", error: this.exportFailure };
+      return entry.status;
+    }
+    const done = Math.min(this.exportFrames, status.progress.done + this.exportStep);
+    entry.status = { ...status, progress: { done, total: this.exportFrames }, elapsed_ms: status.elapsed_ms + 500 };
+    if (done >= this.exportFrames) {
+      const report = { ...fakeReport(choice, this.exportFrames), elapsed_ms: entry.status.elapsed_ms };
+      entry.status = { ...entry.status, state: "succeeded", report };
+    }
+    return entry.status;
+  }
+
+  async exportCancel(job: string): Promise<JobStatus> {
+    this.record("exportCancel", job);
+    const entry = this.jobs.get(job);
+    if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` };
+    if (entry.status.state === "running") {
+      entry.status = {
+        ...entry.status,
+        state: "cancelled",
+        error: { code: "fosscut.export.cancelled", message: "the export was cancelled" },
+      };
+    }
+    return entry.status;
+  }
+
   /** What relinking answers: true for a file chosen, false for a cancel. */
   relinkChooses = true;
 
@@ -186,4 +289,35 @@ export class FakeEngine implements EngineClient {
     this.handlers.set(event, set);
     return () => set.delete(handler as Handler);
   }
+}
+
+/** The report of a fake 1080p30 export of `frames` frames. */
+function fakeReport(choice: ExportChoice, frames: number): ExportReport {
+  const duration = Math.round((frames / 30) * 705_600_000);
+  const stem = choice.output.replace(/\.[^./]*$/, "");
+  const report: ExportReport = {
+    output: choice.output,
+    settings: {
+      container: "mp4",
+      video: { codec: "h264", width: 1920, height: 1080, rate: "30" },
+      audio: { codec: "aac", sample_rate: 48_000, channels: 2, bit_rate: 192_000 },
+    },
+    frames,
+    duration,
+    encoders: { video: "h264_videotoolbox", audio: "aac" },
+    verified: {
+      container: "mov,mp4,m4a,3gp,3g2,mj2",
+      size_bytes: frames * 41_000,
+      duration,
+      video: { codec: "h264", width: 1920, height: 1080, rate: "30" },
+      audio: { codec: "aac", sample_rate: 48_000, channels: 2 },
+    },
+    elapsed_ms: 1_500,
+    rights: [
+      { asset: "asset_0003", name: "music.m4a", origin: "yours", note: "Brought in by you: make sure you may publish it." },
+    ],
+  };
+  if (choice.cover_flicks !== undefined) report.cover = `${stem}.cover.png`;
+  if (choice.subtitles) report.subtitles = `${stem}.${choice.subtitles}`;
+  return report;
 }

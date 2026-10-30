@@ -32,6 +32,8 @@ pub enum LayerSource {
     Frame(SourceRef),
     /// Styled text at one moment, composed at the output resolution.
     Text(Box<TextLayer>),
+    /// A drawn shape, background or sticker (ADR-0028), composed at the output resolution.
+    Shape(Box<fosscut_model::ShapeContent>),
     /// A caption page at one moment (ADR-0021), composed at the output resolution.
     Caption(Box<CaptionLayer>),
     /// An adjustment layer: its effects apply to everything below it, mixed by its
@@ -139,6 +141,12 @@ impl Layer {
     }
 
     /// A full-opacity text layer, centred on the canvas.
+    /// A layer drawing `shape`.
+    pub fn shape(shape: fosscut_model::ShapeContent) -> Layer {
+        Layer::with_source(LayerSource::Shape(Box::new(shape)))
+    }
+
+    /// A layer showing `content` as text that does not change over time.
     pub fn text(content: TextContent) -> Layer {
         Layer::with_source(LayerSource::Text(Box::new(TextLayer::still(content))))
     }
@@ -298,6 +306,9 @@ fn layer_for(
                 duration: clip.duration,
             };
             return Some(placed(LayerSource::Text(Box::new(layer)), 0));
+        }
+        (ClipContent::Shape(shape), TrackKind::Video) => {
+            return Some(placed(LayerSource::Shape(shape.clone()), 0));
         }
         (ClipContent::Adjustment, TrackKind::Video) => {
             return (!effects.is_empty()).then(|| placed(LayerSource::Adjustment, 0));

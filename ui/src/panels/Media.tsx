@@ -87,19 +87,18 @@ function Row({
 }
 
 /** The media bin: search, filter by kind and folder, sort, add to the timeline, rename,
- * file in folders, relink missing files, and start a timeline from chosen media. */
+ * file in folders, relink missing files, and start a timeline (or a library template)
+ * from chosen media. */
 export function Media({ editor, state }: { editor: Editor; state: EditorState }) {
   const [filter, setFilter] = useState<MediaFilter>(ALL);
-  const [chosen, setChosen] = useState<string[]>([]);
   const [newFolder, setNewFolder] = useState("");
   const assets = shown(state.media, filter);
   const ids = new Set(state.media.map((a) => a.id));
-  const picked = chosen.filter((id) => ids.has(id));
+  const picked = state.chosen.filter((id) => ids.has(id));
   const update = (change: Partial<MediaFilter>) => setFilter({ ...filter, ...change });
   const compounds = (state.opened?.info.timelines ?? []).filter((t) => t.role === "compound");
   return (
     <section className="media">
-      <h2>Media</h2>
       <input
         type="search"
         placeholder="Search media"
@@ -141,7 +140,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
             editor={editor}
             asset={asset}
             chosen={picked.includes(asset.id)}
-            onChoose={(on) => setChosen(on ? [...picked, asset.id] : picked.filter((id) => id !== asset.id))}
+            onChoose={(on) => editor.chooseMedia(asset.id, on)}
           />
         ))}
         {assets.length === 0 && <li className="muted">{state.media.length === 0 ? "No media yet." : "Nothing matches."}</li>}

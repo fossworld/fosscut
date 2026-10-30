@@ -11,6 +11,8 @@ mod color;
 mod error;
 mod frame;
 mod output;
+#[cfg(feature = "ffmpeg")]
+mod palette;
 pub mod timebase;
 
 #[cfg(feature = "ffmpeg")]

@@ -11,7 +11,12 @@ import {
   type CommandCall,
   type EditRequest,
   type EditResponse,
+  type ExportChoice,
+  type ExportPresets,
   type History,
+  type JobStatus,
+  type LibraryAddRequest,
+  type LibraryItem,
   type LogEntry,
   type MediaListing,
   type Normalization,
@@ -83,6 +88,23 @@ export interface EditorState {
   guides: Guide[];
   /** A zoom asked of the timeline, applied by it; seq tells repeats apart. */
   zoomRequest: { kind: "in" | "out" | "fit"; seq: number } | null;
+  /** Media chosen in the bin, in the order chosen: for new timelines and templates. */
+  chosen: string[];
+  /** The built-in library (ADR-0028), read once; null until read. */
+  library: LibraryItem[] | null;
+  /** The export dialog and the export it started. */
+  exporting: Exporting;
+}
+
+/** The export dialog: whether it shows, the presets, the job it started and a refusal. */
+export interface Exporting {
+  open: boolean;
+  /** The presets this machine has; null until read. */
+  presets: ExportPresets | null;
+  /** The export started last, as its status was last read. */
+  job: JobStatus | null;
+  /** Why the presets could not be read or the export could not start. */
+  error: ApiError | null;
 }
 
 /** A guide line on the preview. */
@@ -128,6 +150,9 @@ const EMPTY: EditorState = {
   rulers: false,
   guides: [],
   zoomRequest: null,
+  chosen: [],
+  library: null,
+  exporting: { open: false, presets: null, job: null, error: null },
   notice: null,
   catalog: null,
   luts: [],
@@ -156,6 +181,14 @@ export function levelled(normalization: Normalization): string {
   const silent = normalization.clips.length - measured.length;
   if (silent > 0) parts.push(`${count(silent, "silent clip")} left alone`);
   return `${parts.join("; ")}.`;
+}
+
+/** What an export that finished out of sight did, in a sentence. */
+export function finished(status: JobStatus): Notice {
+  const file = status.output ?? status.job;
+  if (status.state === "succeeded") return { kind: "info", text: `Exported ${file}.` };
+  if (status.state === "cancelled") return { kind: "info", text: `The export to ${file} was cancelled.` };
+  return { kind: "error", text: `The export to ${file} failed: ${status.error?.message ?? "no reason given"}.` };
 }
 
 /** Asks the user a yes-or-no question; the app passes `window.confirm`. */
@@ -890,6 +923,12 @@ export class Editor {
     }
   }
 
+  /** Chooses an asset in the bin, or takes it out of the choice. */
+  chooseMedia(asset: string, on: boolean): void {
+    const rest = this.state.chosen.filter((id) => id !== asset);
+    this.set({ chosen: on ? [...rest, asset] : rest });
+  }
+
   /** Places an asset on the timeline at the playhead, on a track free there. */
   async addToTimeline(asset: string): Promise<void> {
     await this.edit([{ command: "clip.add", args: { asset, start: { flicks: this.state.playhead } } }]);
@@ -993,6 +1032,138 @@ export class Editor {
     }
     if (normalization.commands.length > 0 && !(await this.edit(normalization.commands, "Normalize loudness"))) return;
     this.set({ notice: { kind: "info", text: levelled(normalization) } });
+  }
+
+  // ---- Library ----
+
+  /** Reads the built-in library once; it is the same for every project. */
+  async loadLibrary(): Promise<void> {
+    if (this.state.library) return;
+    try {
+      this.set({ library: await this.engine.libraryList() });
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /**
+   * Adds a library item against the revision on screen and selects the clip it placed; a
+   * template's new timeline shows from its start. A stale revision reloads and says so.
+   */
+  async addFromLibrary(request: Omit<LibraryAddRequest, "expected_revision">): Promise<boolean> {
+    const timeline = this.state.timeline;
+    if (!timeline) return false;
+    let response: EditResponse;
+    try {
+      response = await this.engine.libraryAdd({ ...request, expected_revision: timeline.revision });
+    } catch (error) {
+      // A sound may have been imported before its placement failed.
+      await this.refresh();
+      const api = asError(error);
+      if (api.code === "fosscut.revision.conflict") {
+        this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
+      } else {
+        this.notify(api);
+      }
+      return false;
+    }
+    await this.refresh();
+    const result = response.results[0] as { clip?: string; timeline?: string } | undefined;
+    if (result?.timeline) {
+      this.set({ selection: null, also: [], playhead: 0 });
+      await this.engine.preview.show(0);
+    } else if (result?.clip && request.kind !== "look") {
+      this.set({ selection: result.clip, also: [] });
+    }
+    return true;
+  }
+
+  // ---- Shapes ----
+
+  /** Changes a shape clip with one `shape.set` merge patch. */
+  async setShape(clip: string, patch: Record<string, unknown> | null): Promise<void> {
+    if (!patch || Object.keys(patch).length === 0) return;
+    await this.edit([{ command: "shape.set", args: { clip, set: patch } }]);
+  }
+
+  // ---- Export ----
+
+  private setExporting(patch: Partial<Exporting>): void {
+    this.set({ exporting: { ...this.state.exporting, ...patch } });
+  }
+
+  /** Opens the export dialog, reading the presets the first time. */
+  async openExport(): Promise<void> {
+    this.setExporting({ open: true, error: null });
+    if (this.state.exporting.presets) return;
+    try {
+      this.setExporting({ presets: await this.engine.exportPresets() });
+    } catch (error) {
+      this.setExporting({ error: asError(error) });
+    }
+  }
+
+  /** Closes the dialog; an export that is running goes on. */
+  closeExport(): void {
+    this.setExporting({ open: false });
+  }
+
+  /** Asks where to save the export; null when the user cancels. */
+  async pickExportPath(name: string, extension?: string): Promise<string | null> {
+    try {
+      return await this.engine.exportPick(name, extension);
+    } catch (error) {
+      this.setExporting({ error: asError(error) });
+      return null;
+    }
+  }
+
+  /** Starts an export; a file already there is replaced only after asking. */
+  async startExport(choice: ExportChoice): Promise<boolean> {
+    this.setExporting({ error: null });
+    try {
+      this.setExporting({ job: await this.engine.exportStart(choice) });
+      return true;
+    } catch (error) {
+      const api = asError(error);
+      if (api.code === "fosscut.guard.destructive" && !choice.overwrite) {
+        if (this.confirm(`${api.message}. Replace it?`)) return this.startExport({ ...choice, overwrite: true });
+        return false;
+      }
+      this.setExporting({ error: api });
+      return false;
+    }
+  }
+
+  /** Reads the running export's progress again; the dialog asks twice a second. */
+  async pollExport(): Promise<void> {
+    const job = this.state.exporting.job;
+    if (job?.state !== "running") return;
+    try {
+      const status = await this.engine.exportStatus(job.job);
+      // An answer for an export the dialog has left behind changes nothing.
+      if (this.state.exporting.job?.job !== status.job) return;
+      this.setExporting({ job: status });
+      if (status.state !== "running" && !this.state.exporting.open) this.set({ notice: finished(status) });
+    } catch (error) {
+      this.setExporting({ error: asError(error) });
+    }
+  }
+
+  /** Stops the running export; nothing is written. */
+  async cancelExport(): Promise<void> {
+    const job = this.state.exporting.job;
+    if (job?.state !== "running") return;
+    try {
+      this.setExporting({ job: await this.engine.exportCancel(job.job) });
+    } catch (error) {
+      this.setExporting({ error: asError(error) });
+    }
+  }
+
+  /** Puts a finished export aside, to make another. */
+  clearExport(): void {
+    this.setExporting({ job: null, error: null });
   }
 
   // ---- Text ----

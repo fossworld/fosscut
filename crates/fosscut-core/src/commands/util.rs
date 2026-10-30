@@ -93,6 +93,7 @@ pub(crate) fn track_kind_for(content: &ClipContent) -> TrackKind {
         ClipContent::Video { .. }
         | ClipContent::Image { .. }
         | ClipContent::Adjustment
+        | ClipContent::Shape(_)
         | ClipContent::Timeline { .. } => TrackKind::Video,
         ClipContent::Audio { .. } => TrackKind::Audio,
         ClipContent::Text(_) => TrackKind::Text,
@@ -197,6 +198,39 @@ pub(crate) fn find_or_create_track(
         caption_style: None,
         clips: Vec::new(),
     });
+    Ok(id)
+}
+
+/// The first unlocked track of `kind` with nothing between `start` and `end`, or a new one
+/// added after the tracks of that kind.
+pub(crate) fn free_track(
+    project: &mut Project,
+    timeline: &Id,
+    kind: TrackKind,
+    (start, end): (Flicks, Flicks),
+) -> Result<Id, ApiError> {
+    let doc = timeline_mut(project, timeline)?;
+    if let Some(track) = doc.tracks.iter().find(|t| {
+        t.kind == kind && !t.locked && t.clips.iter().all(|c| c.end() <= start || c.start >= end)
+    }) {
+        return Ok(track.id.clone());
+    }
+    let after = doc.tracks.iter().rposition(|t| t.kind == kind);
+    let id = project.allocate_id(IdKind::Track);
+    let doc = timeline_mut(project, timeline)?;
+    doc.tracks.insert(
+        after.map_or(doc.tracks.len(), |i| i + 1),
+        Track {
+            id: id.clone(),
+            kind,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: Vec::new(),
+        },
+    );
     Ok(id)
 }
 

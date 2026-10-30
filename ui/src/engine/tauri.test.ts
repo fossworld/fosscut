@@ -52,6 +52,15 @@ describe("the Tauri engine client", () => {
     await engine.trash.list();
     await engine.trash.restore("t1");
     await engine.trash.remove("t1");
+    await engine.libraryList();
+    await engine.libraryList("sound", "whoosh");
+    await engine.libraryAdd({ name: "badge-sale", kind: "sticker", start_flicks: 705_600_000, expected_revision: 4 });
+    await engine.exportPresets();
+    await engine.exportPick("Launch.mp4", "mp4");
+    await engine.exportPick("Launch");
+    await engine.exportStart({ output: "/work/Launch.mp4", preset: "mp4-h264", range_flicks: [0, 705_600_000] });
+    await engine.exportStatus("job_0001");
+    await engine.exportCancel("job_0001");
     invoke.mockResolvedValueOnce(null);
     expect(await engine.media.relink("asset_0001"), "a cancelled dialog").toBe(false);
     expect(invoke.mock.calls).toEqual([
@@ -83,6 +92,18 @@ describe("the Tauri engine client", () => {
       ["trash_list"],
       ["trash_restore", { id: "t1" }],
       ["trash_delete", { id: "t1" }],
+      ["library_list", { kind: null, search: null }],
+      ["library_list", { kind: "sound", search: "whoosh" }],
+      [
+        "library_add",
+        { request: { name: "badge-sale", kind: "sticker", start_flicks: 705_600_000, expected_revision: 4 } },
+      ],
+      ["export_presets"],
+      ["export_pick", { name: "Launch.mp4", extension: "mp4" }],
+      ["export_pick", { name: "Launch", extension: null }],
+      ["export_start", { choice: { output: "/work/Launch.mp4", preset: "mp4-h264", range_flicks: [0, 705_600_000] } }],
+      ["export_status", { job: "job_0001" }],
+      ["export_cancel", { job: "job_0001" }],
       ["media_relink", { asset: "asset_0001" }],
     ]);
   });

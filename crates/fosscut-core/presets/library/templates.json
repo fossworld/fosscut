@@ -1,0 +1,57 @@
+[
+  {
+    "name": "vertical-promo",
+    "description": "A 9:16 promo: a headline over the first shot, your shots in sequence with dissolves, and an end card on a gradient.",
+    "canvas": { "width": 1080, "height": 1920 },
+    "slots": [2500, 2500, 2500],
+    "transition": "dissolve",
+    "elements": [
+      { "title": "headline", "lines": ["Big news", "Something new is here"], "at": 0, "length": 2500 },
+      { "background": "sunset", "after_slots": true, "length": 2500 },
+      { "title": "end-card", "lines": ["Thanks for watching", "Follow for more"], "after_slots": true, "length": 2500 }
+    ]
+  },
+  {
+    "name": "quote-card",
+    "description": "A quotation typed out on a dark gradient, with its author: square, for feeds.",
+    "canvas": { "width": 1080, "height": 1080 },
+    "slots": [],
+    "elements": [
+      { "background": "night", "at": 0, "length": 6000 },
+      { "title": "quote", "lines": ["Simple things done well.", "Someone wise"], "at": 300, "length": 5700 }
+    ]
+  },
+  {
+    "name": "photo-montage",
+    "description": "A 16:9 montage: up to six photos or clips of two seconds with dissolves, and a chapter title first.",
+    "canvas": { "width": 1920, "height": 1080 },
+    "slots": [2000, 2000, 2000, 2000, 2000, 2000],
+    "transition": "dissolve",
+    "elements": [
+      { "title": "chapter", "lines": ["Our summer", "A look back"], "at": 0, "length": 2000 }
+    ]
+  },
+  {
+    "name": "product-reveal",
+    "description": "A 9:16 reveal: a callout on the first shot, a lower third with the product's name, a sale badge and a subscribe button at the end.",
+    "canvas": { "width": 1080, "height": 1920 },
+    "slots": [3000, 3000],
+    "transition": "push",
+    "elements": [
+      { "title": "callout", "lines": ["Watch this"], "at": 0, "length": 1500 },
+      { "title": "lower-third", "lines": ["The product", "Now available"], "at": 1500, "length": 3000 },
+      { "sticker": "badge-sale", "at": 3000, "length": 3000, "position": [0.28, -0.3] },
+      { "sticker": "subscribe", "at": 4500, "length": 1500, "position": [0.0, 0.3] }
+    ]
+  },
+  {
+    "name": "talking-head-intro",
+    "description": "A 16:9 interview opening: the speaker's clip with a lower third, then a live badge in the corner.",
+    "canvas": { "width": 1920, "height": 1080 },
+    "slots": [8000],
+    "elements": [
+      { "title": "lower-third", "lines": ["Speaker name", "Their role"], "at": 500, "length": 4000 },
+      { "sticker": "badge-live", "at": 0, "length": 8000, "position": [0.42, -0.42] }
+    ]
+  }
+]

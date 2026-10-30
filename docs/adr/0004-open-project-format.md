@@ -79,6 +79,8 @@ Illustrative clip (not normative; the generated schema is):
   - **Project additions:** `project.json` holds the project's saved `text_presets`, and fonts import as `font` assets with their families.
   - **Sound and captions:** sound effects share the clips' `effects` list ([ADR-0026](0026-sound-effects-in-the-effect-registry.md)), and caption pages gain a `translation`.
 
+- **Shape clips** (format 0.12.0): shapes, stickers and backgrounds are clips of kind `shape`, as decided in [ADR-0028](0028-a-built-in-library-made-by-fosscut.md). Library sounds are WAV files written into the bundle's `library/` folder and imported as ordinary audio assets.
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.

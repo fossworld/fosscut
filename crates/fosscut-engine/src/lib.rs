@@ -17,6 +17,7 @@ mod export;
 pub mod frame;
 pub mod import;
 pub mod jobs;
+pub mod library;
 pub mod live;
 pub mod loudness;
 mod operations;
@@ -27,7 +28,9 @@ pub mod project;
 pub use cache::{cache_dir, models_dir};
 pub use error::{EngineError, engine_error_catalogue};
 pub use export::{
-    Encoders, ExportPlan, ExportReport, ExportRequest, Progress, compare, export, plan,
+    Encoders, ExportOptions, ExportPlan, ExportReport, ExportRequest, Progress, RESOLUTIONS,
+    RightsNote, SettingsChoice, SubtitleFormat, bit_rate, compare, export, frame_rate, plan,
+    resolution, settings_for,
 };
 pub use operations::{OperationInfo, capabilities, operations};
 pub use preset::{Preset, PresetInfo, presets};

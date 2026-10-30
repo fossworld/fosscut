@@ -8,6 +8,7 @@ use crate::animation::{KeyValue, Keyframe, evaluate};
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
 use crate::mask::Mask;
+use crate::shape::ShapeContent;
 use crate::speed::Speed;
 use crate::text::TextContent;
 use crate::transition::{ClipAnimations, Transition};
@@ -443,6 +444,8 @@ pub enum ClipContent {
     Caption(CaptionContent),
     /// An adjustment layer: its effects apply to everything below it while it lasts.
     Adjustment,
+    /// A drawn shape, background or sticker (ADR-0028).
+    Shape(Box<ShapeContent>),
     /// A compound clip: another timeline of the project, shown from `source_in`
     /// (ADR-0025).
     Timeline {
@@ -464,6 +467,7 @@ impl ClipContent {
             ClipContent::Text(_)
             | ClipContent::Caption(_)
             | ClipContent::Adjustment
+            | ClipContent::Shape(_)
             | ClipContent::Timeline { .. } => None,
         }
     }
@@ -495,6 +499,7 @@ impl ClipContent {
             ClipContent::Text(_) => "text",
             ClipContent::Caption(_) => "caption",
             ClipContent::Adjustment => "adjustment",
+            ClipContent::Shape(_) => "shape",
             ClipContent::Timeline { .. } => "timeline",
         }
     }

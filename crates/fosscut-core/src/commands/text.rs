@@ -459,8 +459,8 @@ impl Command for TextPresetRemove {
 pub struct TextTemplate {
     /// The template (`capabilities` lists them under text.templates).
     pub template: String,
-    /// The text of each line, in order; lines left out show the template's placeholder,
-    /// and empty strings drop a line.
+    /// The text of each line, in order. With none, the template's placeholders show; once
+    /// you give any, the lines you leave out (and empty strings) are dropped.
     #[serde(default)]
     pub lines: Vec<String>,
     /// Target text track; the first text track (created on top if needed) when omitted.
@@ -504,8 +504,15 @@ impl Command for TextTemplate {
         // Lines joined by `\n`, each restyled by its span.
         let mut text = String::new();
         let mut spans = Vec::new();
+        // Lines you give replace the placeholders; once you give any, the lines you leave
+        // out are dropped rather than showing a placeholder you did not write.
+        let blank = String::new();
         for (index, line) in template.lines.iter().enumerate() {
-            let words = self.lines.get(index).unwrap_or(&line.placeholder);
+            let words = match self.lines.get(index) {
+                Some(given) => given,
+                None if self.lines.is_empty() => &line.placeholder,
+                None => &blank,
+            };
             if words.trim().is_empty() {
                 continue;
             }

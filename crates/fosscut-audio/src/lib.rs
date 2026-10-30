@@ -12,6 +12,8 @@
 
 pub mod effects;
 mod stretch;
+pub mod synth;
+pub mod wav;
 
 use fosscut_media::AudioBuffer;
 use fosscut_model::{

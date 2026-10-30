@@ -29,6 +29,13 @@
     "allow-project-trash",
     "allow-trash-list",
     "allow-trash-restore",
-    "allow-trash-delete"
+    "allow-trash-delete",
+    "allow-library-list",
+    "allow-library-add",
+    "allow-export-presets",
+    "allow-export-pick",
+    "allow-export-start",
+    "allow-export-status",
+    "allow-export-cancel"
   ]
 }

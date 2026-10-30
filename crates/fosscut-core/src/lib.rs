@@ -62,14 +62,16 @@ pub use commands::{
     RevealInput, TextAdd, TextChanged, TextPresetRemove, TextPresetSave, TextPresets, TextSet,
     TextTemplate,
 };
+pub use commands::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateApply};
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};
 pub use looks::{Look, LookEffect, look, looks};
 pub use presets::{
-    CaptionPreset, LineLook, TemplateLine, TemplateReveal, TextStylePreset, TitleTemplate,
-    caption_animators, caption_preset, caption_presets, text_style_preset, text_style_presets,
-    text_template, text_templates,
+    CaptionPreset, LibraryVisual, LineLook, ProjectTemplate, TemplateCanvas, TemplateElement,
+    TemplateLine, TemplateReveal, TextStylePreset, TitleTemplate, VisualKind, caption_animators,
+    caption_preset, caption_presets, project_template, project_templates, text_style_preset,
+    text_style_presets, text_template, text_templates, visual, visuals,
 };
 pub use session::Session;
 

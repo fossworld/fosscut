@@ -464,6 +464,66 @@ pub fn export_srt(
     Ok(out)
 }
 
+/// The caption pages of the timeline's first caption track that show within `range`, as
+/// SRT or WebVTT with times from the range's start, cut to it: subtitles for an export of
+/// that part (CC-174).
+pub fn subtitles(
+    project: &Project,
+    timeline: Option<&Id>,
+    range: (Flicks, Flicks),
+    format: crate::export::SubtitleFormat,
+) -> Result<String, EngineError> {
+    let timeline_id = timeline
+        .cloned()
+        .unwrap_or_else(|| project.manifest.primary_timeline.clone());
+    let doc = project
+        .timelines
+        .get(&timeline_id)
+        .ok_or_else(|| EngineError::TimelineNotFound {
+            timeline: timeline_id.to_string(),
+        })?;
+    let track = doc
+        .tracks
+        .iter()
+        .find(|t| t.kind == TrackKind::Caption)
+        .ok_or_else(|| EngineError::NoCaptions {
+            timeline: timeline_id.to_string(),
+        })?;
+    let vtt = format == crate::export::SubtitleFormat::Vtt;
+    let mut out = if vtt {
+        String::from("WEBVTT\n\n")
+    } else {
+        String::new()
+    };
+    let mut number = 0;
+    for clip in &track.clips {
+        let ClipContent::Caption(caption) = &clip.content else {
+            continue;
+        };
+        let (from, to) = (clip.start.max(range.0), clip.end().min(range.1));
+        if from >= to {
+            continue;
+        }
+        number += 1;
+        let (a, b) = (srt_clock(from - range.0), srt_clock(to - range.0));
+        let (a, b) = if vtt {
+            (a.replace(',', "."), b.replace(',', "."))
+        } else {
+            (a, b)
+        };
+        if !vtt {
+            out.push_str(&format!("{number}\n"));
+        }
+        out.push_str(&format!("{a} --> {b}\n{}\n\n", caption.text()));
+    }
+    if number == 0 {
+        return Err(EngineError::NoCaptions {
+            timeline: timeline_id.to_string(),
+        });
+    }
+    Ok(out)
+}
+
 /// The first `cues` cues of an SRT text, so a caller without file access can check what was
 /// written.
 pub fn srt_preview(srt: &str, cues: usize) -> String {

@@ -43,7 +43,8 @@ export function frameStart(flicks: number, rate: Rate): number {
   return framesToFlicks(frameAt(flicks, rate), rate);
 }
 
-function isDropFrame(rate: Rate): boolean {
+/** True at 29.97 and 59.94, whose timecode drops frame numbers to keep to the clock. */
+export function isDropFrame(rate: Rate): boolean {
   return rate.den === 1001 && (rate.num === 30000 || rate.num === 60000);
 }
 

@@ -2,7 +2,8 @@
 //! and a writer that encodes video and audio and muxes them.
 //!
 //! GPL encoders (`libx264`, `libx265`) are never used, even when the linked FFmpeg has
-//! them: H.264 and HEVC come only from hardware encoders.
+//! them: H.264 and HEVC come only from hardware encoders. MP3 uses LAME (LGPL) when the
+//! build has it and is reported unavailable otherwise, never replaced by another codec.
 
 use std::ffi::CString;
 use std::path::Path;
@@ -15,6 +16,7 @@ use rsmpeg::error::RsmpegError;
 use rsmpeg::ffi;
 use rsmpeg::swscale::SwsContext;
 
+use crate::palette::Quantizer;
 use crate::{
     AudioBuffer, AudioCodec, AudioSettings, Container, EncoderCapabilities, EncoderInfo,
     MediaError, OutputSettings, PixelFormat, RgbaFrame, VideoCodec, VideoFrame, VideoSettings,
@@ -38,13 +40,18 @@ fn video_candidates(codec: VideoCodec) -> &'static [(&'static str, bool)] {
             ("hevc_amf", true),
             ("hevc_mf", false),
         ],
-        VideoCodec::ProRes422 => &[("prores_ks", false)],
+        VideoCodec::ProRes422
+        | VideoCodec::ProResProxy
+        | VideoCodec::ProResLt
+        | VideoCodec::ProResHq
+        | VideoCodec::ProRes4444 => &[("prores_ks", false)],
         VideoCodec::Av1 => &[
             ("libsvtav1", false),
             ("libaom-av1", false),
             ("librav1e", false),
         ],
         VideoCodec::Vp9 => &[("libvpx-vp9", false)],
+        VideoCodec::Gif => &[("gif", false)],
     }
 }
 
@@ -52,6 +59,10 @@ fn audio_candidates(codec: AudioCodec) -> &'static [&'static str] {
     match codec {
         AudioCodec::Aac => &["aac"],
         AudioCodec::Opus => &["libopus"],
+        AudioCodec::Pcm16 => &["pcm_s16le"],
+        AudioCodec::Pcm24 => &["pcm_s24le"],
+        AudioCodec::Flac => &["flac"],
+        AudioCodec::Mp3 => &["libmp3lame"],
     }
 }
 
@@ -66,11 +77,18 @@ fn rational(num: u32, den: u32) -> ffi::AVRational {
     }
 }
 
-/// The pixel format an encoder gets: 10-bit 4:2:2 for ProRes, otherwise NV12 when the
+/// The pixel format an encoder gets: 10-bit 4:4:4 with alpha for ProRes 4444, 10-bit
+/// 4:2:2 for the other ProRes profiles, palette frames for GIF, otherwise NV12 when the
 /// encoder takes it (hardware encoders prefer it) or planar 4:2:0.
 fn pixel_format_for(codec: VideoCodec, encoder: &AVCodec) -> i32 {
-    if codec == VideoCodec::ProRes422 {
-        return ffi::AV_PIX_FMT_YUV422P10LE;
+    match codec {
+        VideoCodec::ProRes4444 => return ffi::AV_PIX_FMT_YUVA444P10LE,
+        VideoCodec::ProRes422
+        | VideoCodec::ProResProxy
+        | VideoCodec::ProResLt
+        | VideoCodec::ProResHq => return ffi::AV_PIX_FMT_YUV422P10LE,
+        VideoCodec::Gif => return ffi::AV_PIX_FMT_PAL8,
+        VideoCodec::H264 | VideoCodec::Hevc | VideoCodec::Av1 | VideoCodec::Vp9 => {}
     }
     let supported = encoder.pix_fmts().unwrap_or(&[]);
     if supported.contains(&ffi::AV_PIX_FMT_NV12) {
@@ -80,24 +98,44 @@ fn pixel_format_for(codec: VideoCodec, encoder: &AVCodec) -> i32 {
     }
 }
 
-/// Encoder-specific options: speed and quality settings, and for hardware encoders a
-/// refusal to fall back to software.
-fn encoder_options(name: &str) -> Option<AVDictionary> {
-    let pairs: &[(&str, &str)] = match name {
-        "h264_videotoolbox" => &[("allow_sw", "0"), ("profile", "high")],
-        "hevc_videotoolbox" => &[("allow_sw", "0"), ("profile", "main")],
-        "prores_ks" => &[("profile", "2"), ("vendor", "apl0")],
-        "libsvtav1" => &[("preset", "10"), ("crf", "35")],
-        "libaom-av1" => &[("cpu-used", "8"), ("crf", "35"), ("row-mt", "1")],
-        "librav1e" => &[("speed", "10"), ("qp", "100")],
-        "libvpx-vp9" => &[
-            ("deadline", "realtime"),
-            ("cpu-used", "8"),
-            ("crf", "32"),
-            ("b", "0"),
-        ],
-        _ => &[],
+/// The `prores_ks` profile for a ProRes codec.
+fn prores_profile(codec: VideoCodec) -> &'static str {
+    match codec {
+        VideoCodec::ProResProxy => "proxy",
+        VideoCodec::ProResLt => "lt",
+        VideoCodec::ProResHq => "hq",
+        VideoCodec::ProRes4444 => "4444",
+        _ => "standard",
+    }
+}
+
+/// Encoder-specific options: speed and quality settings, the ProRes profile, and for
+/// hardware encoders a refusal to fall back to software. The software encoders' constant
+/// quality settings apply only when no bit rate was asked for, since each of them would
+/// override the bit rate.
+fn encoder_options(
+    name: &str,
+    codec: VideoCodec,
+    bit_rate_requested: bool,
+) -> Option<AVDictionary> {
+    let mut pairs: Vec<(&str, &str)> = match name {
+        "h264_videotoolbox" => vec![("allow_sw", "0"), ("profile", "high")],
+        "hevc_videotoolbox" => vec![("allow_sw", "0"), ("profile", "main")],
+        "prores_ks" => vec![("profile", prores_profile(codec)), ("vendor", "apl0")],
+        "libsvtav1" => vec![("preset", "10")],
+        "libaom-av1" => vec![("cpu-used", "8"), ("row-mt", "1")],
+        "librav1e" => vec![("speed", "10")],
+        "libvpx-vp9" => vec![("deadline", "realtime"), ("cpu-used", "8")],
+        _ => Vec::new(),
     };
+    if !bit_rate_requested {
+        pairs.extend_from_slice(match name {
+            "libsvtav1" | "libaom-av1" => &[("crf", "35")][..],
+            "librav1e" => &[("qp", "100")],
+            "libvpx-vp9" => &[("crf", "32"), ("b", "0")],
+            _ => &[],
+        });
+    }
     let mut dict: Option<AVDictionary> = None;
     for (key, value) in pairs {
         dict = Some(match dict {
@@ -136,51 +174,112 @@ fn open_video_encoder(
     context.set_pix_fmt(format);
     context.set_time_base(rational(settings.rate.den(), settings.rate.num()));
     context.set_framerate(rational(settings.rate.num(), settings.rate.den()));
-    let bit_rate = settings
-        .bit_rate
-        .map_or_else(|| default_bit_rate(codec, settings), |b| b as i64);
-    if bit_rate > 0 {
-        context.set_bit_rate(bit_rate);
+    if codec.uses_bit_rate() {
+        let bit_rate = settings.bit_rate.map_or_else(
+            || default_bit_rate(codec, settings),
+            |b| i64::try_from(b).unwrap_or(i64::MAX),
+        );
+        if bit_rate > 0 {
+            context.set_bit_rate(bit_rate);
+        }
     }
     context.set_gop_size((settings.rate.nominal_fps() * 2).max(1) as i32);
     if global_header {
         context.set_flags(context.flags | ffi::AV_CODEC_FLAG_GLOBAL_HEADER as i32);
     }
-    // SAFETY: plain enum fields of a context we own that is not open yet.
-    unsafe {
-        use rsmpeg::UnsafeDerefMut;
-        let raw = context.deref_mut();
-        raw.color_range = ffi::AVCOL_RANGE_MPEG;
-        raw.colorspace = ffi::AVCOL_SPC_BT709;
-        raw.color_primaries = ffi::AVCOL_PRI_BT709;
-        raw.color_trc = ffi::AVCOL_TRC_BT709;
+    if format != ffi::AV_PIX_FMT_PAL8 {
+        // SAFETY: plain enum fields of a context we own that is not open yet.
+        unsafe {
+            use rsmpeg::UnsafeDerefMut;
+            let raw = context.deref_mut();
+            raw.color_range = ffi::AVCOL_RANGE_MPEG;
+            raw.colorspace = ffi::AVCOL_SPC_BT709;
+            raw.color_primaries = ffi::AVCOL_PRI_BT709;
+            raw.color_trc = ffi::AVCOL_TRC_BT709;
+        }
     }
     context
-        .open(encoder_options(name))
+        .open(encoder_options(name, codec, settings.bit_rate.is_some()))
         .map_err(|e| format!("{name} cannot open: {e}"))?;
     Ok((context, format))
 }
 
+/// How the writer stores samples in an audio encoder's frames.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SampleEncoding {
+    /// 32-bit floats, -1 to 1.
+    Float,
+    /// Signed 16-bit integers.
+    Int16,
+    /// Signed 32-bit integers whose top `bits` bits hold the sample, as FFmpeg feeds
+    /// 24-bit PCM.
+    Int32 {
+        /// Significant bits, 24 or 32.
+        bits: u32,
+    },
+}
+
+/// The sample format an audio encoder gets: the codec's own depth for PCM and FLAC,
+/// otherwise floats when the encoder takes them (planar first), then integers.
+fn sample_format_for(codec: AudioCodec, encoder: &AVCodec) -> Option<ffi::AVSampleFormat> {
+    let preference: &[ffi::AVSampleFormat] = match codec {
+        AudioCodec::Pcm16 | AudioCodec::Flac => &[ffi::AV_SAMPLE_FMT_S16, ffi::AV_SAMPLE_FMT_S16P],
+        AudioCodec::Pcm24 => &[ffi::AV_SAMPLE_FMT_S32, ffi::AV_SAMPLE_FMT_S32P],
+        AudioCodec::Aac | AudioCodec::Opus | AudioCodec::Mp3 => &[
+            ffi::AV_SAMPLE_FMT_FLTP,
+            ffi::AV_SAMPLE_FMT_FLT,
+            ffi::AV_SAMPLE_FMT_S32P,
+            ffi::AV_SAMPLE_FMT_S32,
+            ffi::AV_SAMPLE_FMT_S16P,
+            ffi::AV_SAMPLE_FMT_S16,
+        ],
+    };
+    let supported = encoder.sample_fmts().unwrap_or(&[]);
+    if supported.is_empty() {
+        return preference.first().copied();
+    }
+    preference.iter().copied().find(|f| supported.contains(f))
+}
+
+/// The encoding and planarity of one of the formats [`sample_format_for`] picks.
+fn sample_layout(format: ffi::AVSampleFormat, codec: AudioCodec) -> Option<(SampleEncoding, bool)> {
+    let bits = if codec == AudioCodec::Pcm24 { 24 } else { 32 };
+    Some(match format {
+        ffi::AV_SAMPLE_FMT_FLT => (SampleEncoding::Float, false),
+        ffi::AV_SAMPLE_FMT_FLTP => (SampleEncoding::Float, true),
+        ffi::AV_SAMPLE_FMT_S16 => (SampleEncoding::Int16, false),
+        ffi::AV_SAMPLE_FMT_S16P => (SampleEncoding::Int16, true),
+        ffi::AV_SAMPLE_FMT_S32 => (SampleEncoding::Int32 { bits }, false),
+        ffi::AV_SAMPLE_FMT_S32P => (SampleEncoding::Int32 { bits }, true),
+        _ => return None,
+    })
+}
+
 fn open_audio_encoder(
     name: &str,
+    codec: AudioCodec,
     settings: &AudioSettings,
     global_header: bool,
 ) -> Result<AVCodecContext, String> {
     let encoder = AVCodec::find_encoder_by_name(&c(name))
         .ok_or_else(|| format!("{name} is not in this FFmpeg build"))?;
-    let formats = encoder.sample_fmts().unwrap_or(&[]);
-    let format = if formats.contains(&ffi::AV_SAMPLE_FMT_FLTP) || formats.is_empty() {
-        ffi::AV_SAMPLE_FMT_FLTP
-    } else if formats.contains(&ffi::AV_SAMPLE_FMT_FLT) {
-        ffi::AV_SAMPLE_FMT_FLT
-    } else {
-        return Err(format!("{name} takes no floating-point samples"));
-    };
+    let format = sample_format_for(codec, &encoder)
+        .ok_or_else(|| format!("{name} takes none of the sample formats FossCut writes"))?;
     let mut context = AVCodecContext::new(&encoder);
     context.set_sample_fmt(format);
     context.set_sample_rate(settings.sample_rate as i32);
     context.set_time_base(rational(1, settings.sample_rate));
-    context.set_bit_rate(settings.bit_rate as i64);
+    // Lossless codecs have no bit rate to aim for; whatever was asked is ignored.
+    if !codec.is_lossless() {
+        context.set_bit_rate(i64::try_from(settings.bit_rate).unwrap_or(i64::MAX));
+    }
+    if codec == AudioCodec::Pcm24 {
+        // SAFETY: a plain integer field of a context we own that is not open yet.
+        unsafe {
+            use rsmpeg::UnsafeDerefMut;
+            context.deref_mut().bits_per_raw_sample = 24;
+        }
+    }
     context.set_ch_layout(super::channel_layout(settings.channels)?.into_inner());
     if global_header {
         context.set_flags(context.flags | ffi::AV_CODEC_FLAG_GLOBAL_HEADER as i32);
@@ -196,7 +295,8 @@ fn open_audio_encoder(
 /// hardware encoder in a virtual machine). Probed once per codec and process, only when
 /// asked, so an H.264 export never loads the AV1 encoders (whose libraries print banners).
 pub fn video_encoder(codec: VideoCodec) -> Option<&'static EncoderInfo> {
-    static PROBED: [OnceLock<Option<EncoderInfo>>; 5] = [const { OnceLock::new() }; 5];
+    static PROBED: [OnceLock<Option<EncoderInfo>>; VideoCodec::ALL.len()] =
+        [const { OnceLock::new() }; VideoCodec::ALL.len()];
     let index = VideoCodec::ALL.iter().position(|c| *c == codec)?;
     super::quiet();
     PROBED[index]
@@ -222,14 +322,17 @@ pub fn video_encoder(codec: VideoCodec) -> Option<&'static EncoderInfo> {
 /// The encoder this machine uses for an audio codec, if any; probed like
 /// [`video_encoder`].
 pub fn audio_encoder(codec: AudioCodec) -> Option<&'static EncoderInfo> {
-    static PROBED: [OnceLock<Option<EncoderInfo>>; 2] = [const { OnceLock::new() }; 2];
+    static PROBED: [OnceLock<Option<EncoderInfo>>; AudioCodec::ALL.len()] =
+        [const { OnceLock::new() }; AudioCodec::ALL.len()];
     let index = AudioCodec::ALL.iter().position(|c| *c == codec)?;
     super::quiet();
     PROBED[index]
         .get_or_init(|| {
             audio_candidates(codec)
                 .iter()
-                .find(|name| open_audio_encoder(name, &AudioSettings::stereo(codec), false).is_ok())
+                .find(|name| {
+                    open_audio_encoder(name, codec, &AudioSettings::stereo(codec), false).is_ok()
+                })
                 .map(|name| EncoderInfo {
                     encoder: (*name).to_string(),
                     hardware: false,
@@ -253,20 +356,28 @@ pub fn encoder_capabilities() -> &'static EncoderCapabilities {
     })
 }
 
+/// The codec names this machine can encode, each once (the ProRes profiles share one).
 fn available_names(capabilities: &EncoderCapabilities, audio: bool) -> Vec<String> {
-    if audio {
+    let names: Vec<&str> = if audio {
         capabilities
             .audio
             .iter()
-            .map(|(c, _)| c.probe_name().to_string())
+            .map(|(c, _)| c.probe_name())
             .collect()
     } else {
         capabilities
             .video
             .iter()
-            .map(|(c, _)| c.probe_name().to_string())
+            .map(|(c, _)| c.probe_name())
             .collect()
+    };
+    let mut unique: Vec<String> = Vec::new();
+    for name in names {
+        if !unique.iter().any(|n| n == name) {
+            unique.push(name.to_string());
+        }
     }
+    unique
 }
 
 struct VideoOut {
@@ -276,7 +387,11 @@ struct VideoOut {
     width: u32,
     height: u32,
     next_pts: i64,
+    /// Converts pushed frames, keyed by their format: to the encoder's format, or to RGBA
+    /// for GIF, whose frames are indexed by `quantizer`.
     scaler: Option<(i32, SwsContext)>,
+    /// Turns RGBA into palette frames for GIF.
+    quantizer: Option<Quantizer>,
 }
 
 struct AudioOut {
@@ -286,6 +401,8 @@ struct AudioOut {
     sample_rate: u32,
     frame_size: usize,
     small_last_frame: bool,
+    encoding: SampleEncoding,
+    planar: bool,
     pending: Vec<f32>,
     next_pts: i64,
 }
@@ -360,6 +477,10 @@ impl FfmpegWriter {
             Container::Mp4 => c"mp4",
             Container::Mov => c"mov",
             Container::Webm => c"webm",
+            Container::Gif => c"gif",
+            Container::Wav => c"wav",
+            Container::Flac => c"flac",
+            Container::Mp3 => c"mp3",
         };
         let mut output = AVFormatContextOutput::builder()
             .format_name(muxer)
@@ -386,12 +507,23 @@ impl FfmpegWriter {
                 height: settings.height,
                 next_pts: 0,
                 scaler: None,
+                quantizer: (settings.codec == VideoCodec::Gif).then(Quantizer::new),
             });
         }
         let mut audio = None;
         if let (Some(settings), Some(info)) = (&settings.audio, audio_encoder) {
-            let encoder = open_audio_encoder(&info.encoder, settings, global_header)
-                .map_err(|message| MediaError::EncodeFailed { message })?;
+            let encoder =
+                open_audio_encoder(&info.encoder, settings.codec, settings, global_header)
+                    .map_err(|message| MediaError::EncodeFailed { message })?;
+            let (encoding, planar) =
+                sample_layout(encoder.sample_fmt, settings.codec).ok_or_else(|| {
+                    MediaError::EncodeFailed {
+                        message: format!(
+                            "{} opened with an unexpected sample format",
+                            info.encoder
+                        ),
+                    }
+                })?;
             let mut stream = output.new_stream();
             stream.codecpar_mut().from_context(&encoder);
             stream.set_time_base(encoder.time_base);
@@ -411,12 +543,17 @@ impl FfmpegWriter {
                 sample_rate: settings.sample_rate,
                 frame_size,
                 small_last_frame,
+                encoding,
+                planar,
                 pending: Vec::new(),
                 next_pts: 0,
             });
         }
+        // GIFs loop forever: the muxer's default, set so the file never depends on it.
+        let mut header_options =
+            (settings.container == Container::Gif).then(|| AVDictionary::new(c"loop", c"0", 0));
         output
-            .write_header(&mut None)
+            .write_header(&mut header_options)
             .map_err(|e| write_failed(e.to_string()))?;
         Ok(FfmpegWriter {
             path: shown,
@@ -431,7 +568,8 @@ impl FfmpegWriter {
         self.video.as_ref().map_or(0, |v| v.next_pts as u64)
     }
 
-    /// Encodes the next video frame (NV12 or YUV 4:2:0, the output size).
+    /// Encodes the next video frame (NV12 or YUV 4:2:0, the output size). GIF outputs
+    /// convert it to RGBA first and index it like [`FfmpegWriter::push_rgba`].
     pub fn push_frame(&mut self, frame: &VideoFrame) -> Result<(), MediaError> {
         let source_format = match frame.format {
             PixelFormat::Nv12 => ffi::AV_PIX_FMT_NV12,
@@ -449,16 +587,53 @@ impl FfmpegWriter {
                 rows,
             );
         }
-        self.encode_video(&source, false)
+        if let Some(video) = &mut self.video
+            && video.quantizer.is_some()
+        {
+            let rgba = scale(&mut video.scaler, &source, ffi::AV_PIX_FMT_RGBA)?;
+            let (row_bytes, rows) = (frame.width as usize * 4, frame.height as usize);
+            let plane = super::copy_plane(&rgba, 0, row_bytes, rows)?;
+            return self.push_indexed(&plane.data, frame.width, frame.height);
+        }
+        self.encode_video(&source)
     }
 
     /// Encodes the next video frame from non-linear BT.709 RGBA, converting it to the
-    /// encoder's limited-range BT.709 Y'CbCr.
+    /// encoder's limited-range BT.709 Y'CbCr. ProRes 4444 keeps the alpha bytes as its
+    /// alpha channel; GIF indexes the colours with a palette per frame and ignores alpha.
     pub fn push_rgba(&mut self, frame: &RgbaFrame) -> Result<(), MediaError> {
-        let mut source = self.source_frame(ffi::AV_PIX_FMT_RGBA, frame.width, frame.height)?;
         let row = frame.width as usize * 4;
+        let needed = row * frame.height as usize;
+        if frame.rgba.len() < needed {
+            return Err(MediaError::Unsupported {
+                message: format!(
+                    "an RGBA frame of {}x{} needs {needed} bytes, not {}",
+                    frame.width,
+                    frame.height,
+                    frame.rgba.len()
+                ),
+            });
+        }
+        if self.video.as_ref().is_some_and(|v| v.quantizer.is_some()) {
+            return self.push_indexed(&frame.rgba, frame.width, frame.height);
+        }
+        let mut source = self.source_frame(ffi::AV_PIX_FMT_RGBA, frame.width, frame.height)?;
         fill_plane(&mut source, 0, &frame.rgba, row, row, frame.height as usize);
-        self.encode_video(&source, true)
+        self.encode_video(&source)
+    }
+
+    /// Indexes `width * height` RGBA pixels with the GIF quantizer and encodes the palette
+    /// frame.
+    fn push_indexed(&mut self, rgba: &[u8], width: u32, height: u32) -> Result<(), MediaError> {
+        let mut source = self.source_frame(ffi::AV_PIX_FMT_PAL8, width, height)?;
+        let Some(quantizer) = self.video.as_mut().and_then(|v| v.quantizer.as_mut()) else {
+            return Ok(());
+        };
+        let (w, h) = (width as usize, height as usize);
+        let indexed = quantizer.index(rgba, w, h);
+        fill_plane(&mut source, 0, &indexed.indices, w, w, h);
+        fill_palette(&mut source, &indexed.palette)?;
+        self.encode_video(&source)
     }
 
     /// Appends interleaved samples at the output's sample rate and channel count.
@@ -537,54 +712,26 @@ impl FfmpegWriter {
         Ok(frame)
     }
 
-    fn encode_video(&mut self, source: &AVFrame, from_rgb: bool) -> Result<(), MediaError> {
+    fn encode_video(&mut self, source: &AVFrame) -> Result<(), MediaError> {
         let Some(video) = &mut self.video else {
             return Ok(());
         };
         let mut frame = if source.format == video.format {
             source.clone()
         } else {
-            let scaler = match &mut video.scaler {
-                Some((format, scaler)) if *format == source.format => scaler,
-                slot => {
-                    let scaler = SwsContext::get_context(
-                        source.width,
-                        source.height,
-                        source.format,
-                        source.width,
-                        source.height,
-                        video.format,
-                        ffi::SWS_BICUBIC,
-                        None,
-                        None,
-                        None,
-                    )
-                    .ok_or_else(|| MediaError::EncodeFailed {
-                        message: "cannot convert frames to the encoder's format".into(),
-                    })?;
-                    set_bt709(&scaler, from_rgb);
-                    &mut slot.insert((source.format, scaler)).1
-                }
-            };
-            let mut converted = AVFrame::new();
-            converted.set_format(video.format);
-            converted.set_width(source.width);
-            converted.set_height(source.height);
-            converted.alloc_buffer().map_err(|e| encode_failed(&e))?;
-            scaler
-                .scale_frame(source, 0, source.height, &mut converted)
-                .map_err(|e| encode_failed(&e))?;
-            converted
+            scale(&mut video.scaler, source, video.format)?
         };
         frame.set_pts(video.next_pts);
-        // SAFETY: plain enum fields of a frame we own.
-        unsafe {
-            use rsmpeg::UnsafeDerefMut;
-            let raw = frame.deref_mut();
-            raw.color_range = ffi::AVCOL_RANGE_MPEG;
-            raw.colorspace = ffi::AVCOL_SPC_BT709;
-            raw.color_primaries = ffi::AVCOL_PRI_BT709;
-            raw.color_trc = ffi::AVCOL_TRC_BT709;
+        if video.format != ffi::AV_PIX_FMT_PAL8 {
+            // SAFETY: plain enum fields of a frame we own.
+            unsafe {
+                use rsmpeg::UnsafeDerefMut;
+                let raw = frame.deref_mut();
+                raw.color_range = ffi::AVCOL_RANGE_MPEG;
+                raw.colorspace = ffi::AVCOL_SPC_BT709;
+                raw.color_primaries = ffi::AVCOL_PRI_BT709;
+                raw.color_trc = ffi::AVCOL_TRC_BT709;
+            }
         }
         video.next_pts += 1;
         self.send(true, Some(&frame))
@@ -605,25 +752,26 @@ impl FfmpegWriter {
                 .into_inner(),
         );
         frame.alloc_buffer().map_err(|e| encode_failed(&e))?;
-        let planar = audio.encoder.sample_fmt == ffi::AV_SAMPLE_FMT_FLTP;
-        // SAFETY: the frame was just allocated for `frames` samples of `channels` channels
-        // in the encoder's format: one plane of `frames * channels` floats when interleaved,
-        // or `channels` planes of `frames` floats when planar.
-        unsafe {
-            if planar {
-                for channel in 0..audio.channels {
-                    let plane =
-                        std::slice::from_raw_parts_mut(frame.data[channel].cast::<f32>(), frames);
-                    for (i, sample) in plane.iter_mut().enumerate() {
-                        *sample = samples[i * audio.channels + channel];
-                    }
-                }
-            } else {
-                let plane = std::slice::from_raw_parts_mut(
-                    frame.data[0].cast::<f32>(),
-                    frames * audio.channels,
-                );
-                plane.copy_from_slice(&samples[..frames * audio.channels]);
+        let planes = encode_samples(
+            &samples[..frames * audio.channels],
+            audio.channels,
+            audio.encoding,
+            audio.planar,
+        );
+        let capacity = usize::try_from(frame.linesize[0]).unwrap_or(0);
+        for (index, bytes) in planes.iter().enumerate() {
+            let destination = frame.data[index];
+            if destination.is_null() || capacity < bytes.len() {
+                return Err(MediaError::EncodeFailed {
+                    message: format!("audio plane {index} is missing or too small"),
+                });
+            }
+            // SAFETY: the frame was just allocated for `frames` samples of `channels`
+            // channels in the encoder's sample format, so each of its planes (one when
+            // interleaved, one per channel when planar, at most two here, all in `data`)
+            // holds `linesize[0]` bytes, which was checked to cover `bytes`.
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, bytes.len());
             }
         }
         frame.set_pts(audio.next_pts);
@@ -686,9 +834,116 @@ fn fill_plane(
     }
 }
 
-/// Makes swscale use BT.709 coefficients, full-range input for RGB and limited-range
-/// Y'CbCr output, instead of its BT.601 default.
-fn set_bt709(scaler: &SwsContext, from_rgb: bool) {
+/// Converts `source` to `target` with BT.709 coefficients, reusing the scaler in `slot`
+/// while frames keep the same format.
+fn scale(
+    slot: &mut Option<(i32, SwsContext)>,
+    source: &AVFrame,
+    target: i32,
+) -> Result<AVFrame, MediaError> {
+    let scaler = match slot {
+        Some((format, scaler)) if *format == source.format => scaler,
+        slot => {
+            let scaler = SwsContext::get_context(
+                source.width,
+                source.height,
+                source.format,
+                source.width,
+                source.height,
+                target,
+                ffi::SWS_BICUBIC,
+                None,
+                None,
+                None,
+            )
+            .ok_or_else(|| MediaError::EncodeFailed {
+                message: "cannot convert frames to the encoder's format".into(),
+            })?;
+            set_bt709(
+                &scaler,
+                source.format == ffi::AV_PIX_FMT_RGBA,
+                target == ffi::AV_PIX_FMT_RGBA,
+            );
+            &mut slot.insert((source.format, scaler)).1
+        }
+    };
+    let mut converted = AVFrame::new();
+    converted.set_format(target);
+    converted.set_width(source.width);
+    converted.set_height(source.height);
+    converted.alloc_buffer().map_err(|e| encode_failed(&e))?;
+    scaler
+        .scale_frame(source, 0, source.height, &mut converted)
+        .map_err(|e| encode_failed(&e))?;
+    Ok(converted)
+}
+
+/// Writes the 256 entries of a `pal8` frame's palette.
+fn fill_palette(frame: &mut AVFrame, palette: &[u32; 256]) -> Result<(), MediaError> {
+    let destination = frame.data[1];
+    if destination.is_null() {
+        return Err(MediaError::EncodeFailed {
+            message: "the palette frame has no palette".into(),
+        });
+    }
+    // SAFETY: `av_frame_get_buffer` gives a `pal8` frame its palette as a second plane of
+    // AVPALETTE_SIZE (1024) bytes in `data[1]`, which is non-null here; `palette` is 256
+    // native-endian u32 entries, exactly that size, and does not overlap the frame.
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            palette.as_ptr().cast::<u8>(),
+            destination,
+            std::mem::size_of_val(palette),
+        );
+    }
+    Ok(())
+}
+
+/// Converts interleaved floats to the encoder's planes in native byte order: one plane
+/// when interleaved, one per channel when planar. Integers are rounded and clipped, with
+/// no dither, so a 16-bit file decodes back to within half a step of the input.
+fn encode_samples(
+    samples: &[f32],
+    channels: usize,
+    encoding: SampleEncoding,
+    planar: bool,
+) -> Vec<Vec<u8>> {
+    let channels = channels.max(1);
+    let plane_count = if planar { channels } else { 1 };
+    let bytes_per_sample = match encoding {
+        SampleEncoding::Int16 => 2,
+        SampleEncoding::Float | SampleEncoding::Int32 { .. } => 4,
+    };
+    let mut planes =
+        vec![Vec::with_capacity(samples.len() / plane_count * bytes_per_sample); plane_count];
+    for (i, &sample) in samples.iter().enumerate() {
+        let plane = &mut planes[if planar { i % channels } else { 0 }];
+        match encoding {
+            SampleEncoding::Float => plane.extend_from_slice(&sample.to_ne_bytes()),
+            SampleEncoding::Int16 => {
+                plane.extend_from_slice(&(quantize(sample, 16) as i16).to_ne_bytes());
+            }
+            SampleEncoding::Int32 { bits } => {
+                plane.extend_from_slice(&(quantize(sample, bits) << (32 - bits)).to_ne_bytes());
+            }
+        }
+    }
+    planes
+}
+
+/// A sample from -1 to 1 as a signed integer of `bits` bits (at most 32), rounded to the
+/// nearest step and clipped; NaN becomes 0.
+fn quantize(sample: f32, bits: u32) -> i32 {
+    let scale = f64::from(1u32 << (bits.clamp(2, 32) - 1));
+    (f64::from(sample) * scale)
+        .round()
+        .clamp(-scale, scale - 1.0) as i32
+}
+
+/// Makes swscale use BT.709 coefficients instead of its BT.601 default, with full range
+/// on the RGB side (`rgb_in` for the input, `rgb_out` for the output) and limited range
+/// on the Y'CbCr side.
+fn set_bt709(scaler: &SwsContext, rgb_in: bool, rgb_out: bool) {
     // SAFETY: `sws_getCoefficients` returns a pointer to a static table, and the context is
     // valid and owned by the caller for the duration of the call.
     unsafe {
@@ -696,9 +951,9 @@ fn set_bt709(scaler: &SwsContext, from_rgb: bool) {
         ffi::sws_setColorspaceDetails(
             scaler.as_ptr() as *mut _,
             table,
-            i32::from(from_rgb),
+            i32::from(rgb_in),
             table,
-            0,
+            i32::from(rgb_out),
             0,
             1 << 16,
             1 << 16,
@@ -709,5 +964,119 @@ fn set_bt709(scaler: &SwsContext, from_rgb: bool) {
 fn encode_failed(error: &RsmpegError) -> MediaError {
     MediaError::EncodeFailed {
         message: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn samples_are_rounded_and_clipped_to_integers() {
+        assert_eq!(quantize(0.0, 16), 0);
+        assert_eq!(quantize(0.5, 16), 16_384);
+        assert_eq!(quantize(-1.0, 16), -32_768);
+        assert_eq!(
+            quantize(1.0, 16),
+            32_767,
+            "full scale clips to the largest step"
+        );
+        assert_eq!(quantize(3.0, 24), 8_388_607);
+        assert_eq!(quantize(-3.0, 24), -8_388_608);
+        assert_eq!(
+            quantize(1.0 / 65_536.0, 16),
+            1,
+            "half a step rounds away from zero"
+        );
+        assert_eq!(quantize(f32::NAN, 16), 0);
+        assert_eq!(quantize(1.0, 32), i32::MAX);
+        assert_eq!(quantize(-1.0, 32), i32::MIN);
+    }
+
+    #[test]
+    fn samples_fill_interleaved_and_planar_layouts() {
+        let samples = [0.5f32, -0.5, 0.25, -0.25];
+        let planar = encode_samples(&samples, 2, SampleEncoding::Float, true);
+        assert_eq!(planar.len(), 2);
+        assert_eq!(
+            planar[0],
+            [0.5f32.to_ne_bytes(), 0.25f32.to_ne_bytes()].concat()
+        );
+        assert_eq!(
+            planar[1],
+            [(-0.5f32).to_ne_bytes(), (-0.25f32).to_ne_bytes()].concat()
+        );
+        let interleaved = encode_samples(&samples, 2, SampleEncoding::Int16, false);
+        let expected: Vec<u8> = [16_384i16, -16_384, 8_192, -8_192]
+            .iter()
+            .flat_map(|v| v.to_ne_bytes())
+            .collect();
+        assert_eq!(interleaved, [expected]);
+        // 24-bit samples sit in the top three bytes of 32-bit integers.
+        let wide = encode_samples(&[0.5], 1, SampleEncoding::Int32 { bits: 24 }, false);
+        assert_eq!(wide, [(4_194_304i32 << 8).to_ne_bytes().to_vec()]);
+        let split = encode_samples(&samples, 2, SampleEncoding::Int16, true);
+        assert_eq!(
+            split[1],
+            [(-16_384i16).to_ne_bytes(), (-8_192i16).to_ne_bytes()].concat()
+        );
+    }
+
+    #[test]
+    fn encoders_get_the_sample_format_of_their_depth() {
+        let format = |name: &str, codec| {
+            AVCodec::find_encoder_by_name(&c(name)).and_then(|e| sample_format_for(codec, &e))
+        };
+        assert_eq!(
+            format("pcm_s16le", AudioCodec::Pcm16),
+            Some(ffi::AV_SAMPLE_FMT_S16)
+        );
+        assert_eq!(
+            format("pcm_s24le", AudioCodec::Pcm24),
+            Some(ffi::AV_SAMPLE_FMT_S32)
+        );
+        assert_eq!(
+            format("flac", AudioCodec::Flac),
+            Some(ffi::AV_SAMPLE_FMT_S16)
+        );
+        assert_eq!(
+            format("aac", AudioCodec::Aac),
+            Some(ffi::AV_SAMPLE_FMT_FLTP)
+        );
+        if let Some(lame) = format("libmp3lame", AudioCodec::Mp3) {
+            assert_eq!(lame, ffi::AV_SAMPLE_FMT_FLTP);
+        }
+        assert_eq!(
+            sample_layout(ffi::AV_SAMPLE_FMT_S32, AudioCodec::Pcm24),
+            Some((SampleEncoding::Int32 { bits: 24 }, false))
+        );
+        assert_eq!(
+            sample_layout(ffi::AV_SAMPLE_FMT_S32P, AudioCodec::Mp3),
+            Some((SampleEncoding::Int32 { bits: 32 }, true))
+        );
+        assert_eq!(sample_layout(ffi::AV_SAMPLE_FMT_DBL, AudioCodec::Aac), None);
+    }
+
+    #[test]
+    fn constant_quality_yields_to_a_requested_bit_rate() {
+        let keys = |name: &str, requested: bool| -> Vec<String> {
+            let dict = encoder_options(name, VideoCodec::Vp9, requested);
+            let mut keys = Vec::new();
+            if let Some(dict) = &dict {
+                let mut previous = None;
+                while let Some(entry) = dict.get(c"", previous, ffi::AV_DICT_IGNORE_SUFFIX) {
+                    keys.push(entry.key().to_string_lossy().into_owned());
+                    previous = Some(entry);
+                }
+            }
+            keys
+        };
+        assert!(keys("libvpx-vp9", false).contains(&"crf".to_string()));
+        assert!(!keys("libvpx-vp9", true).contains(&"crf".to_string()));
+        assert!(!keys("libvpx-vp9", true).contains(&"b".to_string()));
+        assert!(!keys("libsvtav1", true).contains(&"crf".to_string()));
+        assert!(!keys("librav1e", true).contains(&"qp".to_string()));
+        assert_eq!(prores_profile(VideoCodec::ProRes422), "standard");
+        assert_eq!(prores_profile(VideoCodec::ProRes4444), "4444");
     }
 }

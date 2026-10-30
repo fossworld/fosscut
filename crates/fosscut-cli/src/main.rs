@@ -11,9 +11,10 @@ use std::process::ExitCode;
 
 use args::{
     AdjustmentCommand, AnimationCommand, AudioCommand, CaptionsCommand, Cli, ClipCommand,
-    ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand, LookCommand,
-    MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand, RevealArgs,
-    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand, TransitionCommand,
+    ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand, LibraryCommand,
+    LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand,
+    RevealArgs, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -583,6 +584,7 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             ]),
         ),
         Command::Text(command) => text(cli, command),
+        Command::Library(command) => library(cli, command),
         Command::Audio(AudioCommand::Normalize {
             clips,
             target,
@@ -705,12 +707,28 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             preset,
             timeline,
             presets,
+            resolution,
+            fps,
+            bitrate,
+            audio_bitrate,
+            range,
+            cover,
+            subtitles,
         } => export(
             cli,
             output.as_deref(),
             preset.as_deref(),
             timeline.as_deref(),
             *presets,
+            &ExportChoices {
+                resolution: resolution.clone(),
+                fps: fps.clone(),
+                bitrate: bitrate.clone(),
+                audio_bitrate: audio_bitrate.clone(),
+                range: range.clone(),
+                cover: cover.clone(),
+                subtitles: subtitles.clone(),
+            },
         ),
         Command::Skills(SkillsCommand::List) => {
             let skills: Vec<Value> = fosscut_mcp::skills::SKILLS
@@ -973,12 +991,24 @@ fn query(cli: &Cli, name: &str, args: Value) -> Result<Outcome, ApiError> {
 }
 
 /// Renders and verifies an export (milestone 3), or lists the presets.
+/// The export options of `fosscut export`, as typed.
+struct ExportChoices {
+    resolution: Option<String>,
+    fps: Option<String>,
+    bitrate: Option<String>,
+    audio_bitrate: Option<String>,
+    range: Option<String>,
+    cover: Option<TimeInput>,
+    subtitles: Option<String>,
+}
+
 fn export(
     cli: &Cli,
     output: Option<&Path>,
     preset: Option<&str>,
     timeline: Option<&str>,
     list: bool,
+    choices: &ExportChoices,
 ) -> Result<Outcome, ApiError> {
     if list {
         return Ok(Outcome::Query(
@@ -1002,15 +1032,76 @@ fn export(
         })?,
         None => preset_for(output)?,
     };
+    let failed = |e: EngineError| engine_error(&e);
+    let choice = fosscut_engine::SettingsChoice {
+        resolution: choices
+            .resolution
+            .as_deref()
+            .map(fosscut_engine::resolution)
+            .transpose()
+            .map_err(failed)?,
+        rate: choices
+            .fps
+            .as_deref()
+            .map(fosscut_engine::frame_rate)
+            .transpose()
+            .map_err(failed)?,
+        video_bit_rate: choices
+            .bitrate
+            .as_deref()
+            .map(fosscut_engine::bit_rate)
+            .transpose()
+            .map_err(failed)?,
+        audio_bit_rate: choices
+            .audio_bitrate
+            .as_deref()
+            .map(fosscut_engine::bit_rate)
+            .transpose()
+            .map_err(failed)?,
+    };
+    let rate = format.rate;
+    let time = |input: &TimeInput| {
+        input
+            .resolve(rate)
+            .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("time: {e}")))
+    };
+    let range = match choices.range.as_deref() {
+        Some(text) => {
+            let (from, to) = text.split_once("..").ok_or_else(|| {
+                ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!("range {text}: expected START..END, for example 2s..10s"),
+                )
+            })?;
+            let parse = |t: &str| {
+                t.parse::<TimeInput>().map_err(|e| {
+                    ApiError::new(codes::INVALID_ARGUMENTS, format!("range {text}: {e}"))
+                })
+            };
+            Some((time(&parse(from)?)?, time(&parse(to)?)?))
+        }
+        None => None,
+    };
+    let options = fosscut_engine::ExportOptions {
+        range,
+        cover: choices.cover.as_ref().map(time).transpose()?,
+        subtitles: choices
+            .subtitles
+            .as_deref()
+            .map(fosscut_engine::SubtitleFormat::named)
+            .transpose()
+            .map_err(failed)?,
+    };
     let request = ExportRequest {
         bundle: bundle.clone(),
         timeline,
-        settings: preset.settings(format),
+        settings: fosscut_engine::settings_for(preset, format, &choice),
         output: output.to_path_buf(),
         allow_overwrite: cli.write.allow_destructive,
         expected_revision: cli.write.expected_revision,
         request_id: cli.write.request_id.clone(),
         cache: fosscut_engine::cache_dir(),
+        options,
     };
     if cli.write.dry_run {
         let plan = fosscut_engine::plan(project, &request).map_err(|e| engine_error(&e))?;
@@ -1484,6 +1575,73 @@ fn text(cli: &Cli, command: &TextCommand) -> Result<Outcome, ApiError> {
                 ("timeline", some(timeline)),
             ]),
         ),
+    }
+}
+
+/// `fosscut library list` and `fosscut library add`.
+fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
+    use fosscut_engine::library;
+    match command {
+        LibraryCommand::List { kind, search } => Ok(Outcome::Query(
+            "library.list".into(),
+            json!({ "items": library::search(kind.as_deref(), search.as_deref()) }),
+        )),
+        LibraryCommand::Add {
+            name,
+            kind,
+            at,
+            duration,
+            track,
+            clip,
+            lines,
+            media,
+        } => {
+            let item = library::find(name, kind.as_deref()).map_err(|e| engine_error(&e))?;
+            if matches!(item.kind, "sound" | "music") {
+                // Imported first (or found again), then placed.
+                let path = bundle::bundle_path(cli.project.as_deref())?;
+                let media_add =
+                    library::sound_media(&path, &item.name).map_err(|e| engine_error(&e))?;
+                // The import is the first write and takes the revision check and dry run;
+                // placing follows on the revision it made.
+                let mut import = Request::single("media.add", media_add);
+                apply_options(cli, &mut import, true);
+                import.request_id = None;
+                let imported = bundle::execute(&path, import)?;
+                if cli.write.dry_run {
+                    return Ok(Outcome::Write(imported));
+                }
+                let asset = imported.results[0]["asset"].clone();
+                let placed = object(vec![
+                    ("asset", Some(asset)),
+                    ("start", some(at)),
+                    ("duration", some(duration)),
+                    ("track", some(track)),
+                    (
+                        "free_track",
+                        (at.is_some() && track.is_none()).then_some(json!(true)),
+                    ),
+                ]);
+                let mut request = Request::single("clip.add", placed);
+                apply_options(cli, &mut request, true);
+                request.expected_revision = Some(imported.revision);
+                return execute(cli, request);
+            }
+            let placement = library::Placement {
+                start: at.as_ref().map(|t| json!(t)),
+                duration: duration.as_ref().map(|t| json!(t)),
+                track: track.clone(),
+                clip: clip.clone(),
+                lines: lines.iter().map(|l| l.replace("\\n", "\n")).collect(),
+                media: media.clone(),
+            };
+            let call = library::command_for(&item, &placement).map_err(|e| engine_error(&e))?;
+            write(
+                cli,
+                call["command"].as_str().unwrap_or_default(),
+                call["args"].clone(),
+            )
+        }
     }
 }
 

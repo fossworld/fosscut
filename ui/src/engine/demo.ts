@@ -3,7 +3,47 @@
 
 import { clip, entry, moment, track } from "../test/fixtures";
 import { FakeEngine } from "./fake";
-import type { TimelineView } from "./types";
+import type { LibraryItem, LibraryKind, TimelineView } from "./types";
+
+/** A sample of the built-in library, as `library_list` answers. */
+function library(): LibraryItem[] {
+  const item = (kind: LibraryKind, name: string, title: string, description: string, extra: Partial<LibraryItem> = {}) => ({
+    name,
+    kind,
+    title,
+    description,
+    tags: [],
+    commercial: true,
+    ...extra,
+  });
+  return [
+    item("shape", "rounded-rectangle", "Rounded rectangle", "A rectangle with soft corners."),
+    item("shape", "circle", "Circle", "A circle."),
+    item("shape", "star", "Star", "A five-pointed star."),
+    item("shape", "arrow", "Arrow", "A bold arrow pointing right."),
+    item("sticker", "badge-new", "New badge", "A red pill with NEW in white capitals.", { tags: ["promo"] }),
+    item("sticker", "badge-sale", "Sale badge", "A yellow burst with SALE in black capitals.", { tags: ["promo", "discount"] }),
+    item("sticker", "subscribe", "Subscribe button", "A red button reading SUBSCRIBE, for calls to action."),
+    item("sticker", "speech-bubble", "Speech bubble", "A white speech bubble with a short line in it."),
+    item("background", "sunset", "Sunset", "Warm orange fading to pink from top to bottom."),
+    item("background", "night", "Night", "A purple glow fading to black at the edges."),
+    item("template", "vertical-promo", "vertical-promo", "A 9:16 promo: a headline, your shots with dissolves and an end card."),
+    item("template", "quote-card", "quote-card", "A quotation typed out on a dark gradient, with its author."),
+    item("title", "lower-third", "lower-third", "A name and a role at the lower left."),
+    item("title", "headline", "headline", "A big centred title rising in word by word."),
+    item("text_style", "neon", "neon", "Pale pink letters glowing magenta."),
+    item("text_style", "highlight", "highlight", "Black letters on a bright yellow box."),
+    item("caption_style", "karaoke", "karaoke", "Words light up as they are spoken."),
+    item("caption_style", "highlight", "highlight", "The spoken word in a bright box."),
+    item("look", "teal_orange", "Teal and orange", "Cool shadows and warm skin tones."),
+    item("look", "noir", "Noir", "Contrasty black and white."),
+    item("sound", "whoosh", "Whoosh", "A quick rush of air for transitions.", { seconds: 0.6, tags: ["transition"] }),
+    item("sound", "pop", "Pop", "A short bright pop for things appearing.", { seconds: 0.25 }),
+    item("sound", "ding", "Ding", "A clear bell for a reveal.", { seconds: 1.4 }),
+    item("music", "lofi-beat", "Lo-fi beat", "A relaxed loop under talking.", { seconds: 16, bpm: 80 }),
+    item("music", "upbeat-pop", "Upbeat pop", "A bright, driving loop for promos.", { seconds: 8, bpm: 120 }),
+  ];
+}
 
 export function demoEngine(): FakeEngine {
   const engine = new FakeEngine();
@@ -106,8 +146,44 @@ export function demoEngine(): FakeEngine {
         clip("clip_0011", "caption", 1, 2.2, { text: "Edit by talking" }),
         clip("clip_0012", "caption", 2.2, 3.6, { text: "to your agent" }),
       ]),
+      track("track_0040", "video", 4, [
+        clip("clip_0041", "shape", 16, 20, {
+          shape: "rectangle",
+          text: "SALE",
+          transform: { position: [0.3, -0.3] },
+          content: {
+            shape: "rectangle",
+            size: [0.18, 0.08],
+            roundness: 1,
+            fill: { color: "#FF3B5C", gradient: { to: "#FF9A3C", angle: 90 } },
+            label: { text: "SALE", style: { size: 0.045, color: "#FFFFFF", bold: true } },
+          },
+        }),
+      ]),
     ],
   });
+  engine.library = library();
+  engine.exportListing = {
+    presets: [
+      { name: "mp4-h264", description: "H.264 and AAC in MP4: plays everywhere (hardware encoder)", extension: "mp4", available: true },
+      { name: "mp4-hevc", description: "HEVC and AAC in MP4: smaller files (hardware encoder)", extension: "mp4", available: true },
+      { name: "mp4-av1", description: "AV1 and AAC in MP4: small files, modern players", extension: "mp4", available: false },
+      { name: "mov-prores", description: "ProRes 422 and AAC in QuickTime: for other editors", extension: "mov", available: true },
+      { name: "webm-vp9", description: "VP9 and Opus in WebM: for the web", extension: "webm", available: true },
+      { name: "m4a-aac", description: "AAC audio only", extension: "m4a", available: true },
+    ],
+    resolutions: [
+      { name: "480p", pixels: 480 },
+      { name: "720p", pixels: 720 },
+      { name: "1080p", pixels: 1080 },
+      { name: "2k", pixels: 1440 },
+      { name: "4k", pixels: 2160 },
+      { name: "8k", pixels: 4320 },
+    ],
+  };
+  engine.exportPicks = "/demo/Launch video (demo).mp4";
+  engine.exportFrames = 720;
+  engine.exportStep = 24;
   engine.answers["project.info"] = () => ({ ...engine.opened?.info, revision: engine.revision });
   engine.answers["timeline.read"] = timeline;
   const amount = (name: string, meaning: string) => ({

@@ -4,7 +4,7 @@ import { FakeEngine } from "../engine/fake";
 import type { EditRequest, Opened } from "../engine/types";
 import { entry, moment, timeline } from "../test/fixtures";
 import { FLICKS_PER_SECOND, framesToFlicks, parseRate } from "../transport/time";
-import { Editor, levelled } from "./editor";
+import { Editor, finished, levelled } from "./editor";
 
 const fps30 = parseRate("30");
 
@@ -748,5 +748,174 @@ describe("editor", () => {
       { command: "text.template", args: { template: "lower-third", start: { flicks: FLICKS_PER_SECOND } } },
       { command: "text.add", args: { text: "Title", start: { flicks: FLICKS_PER_SECOND } } },
     ]);
+  });
+
+  it("reads the library once and adds items against the revision on screen, selecting what they place", async () => {
+    const { editor, fake } = await started();
+    fake.library = [
+      { name: "badge-sale", kind: "sticker", title: "Sale badge", description: "SALE", tags: [], commercial: true },
+      { name: "whoosh", kind: "sound", title: "Whoosh", description: "Air", tags: [], seconds: 0.6, commercial: true },
+    ];
+    await editor.loadLibrary();
+    await editor.loadLibrary();
+    expect(editor.getState().library?.map((i) => i.name)).toEqual(["badge-sale", "whoosh"]);
+    expect(fake.callsOf("libraryList"), "once").toEqual([[undefined, undefined]]);
+
+    await editor.seek(FLICKS_PER_SECOND);
+    expect(await editor.addFromLibrary({ name: "badge-sale", kind: "sticker", start_flicks: FLICKS_PER_SECOND })).toBe(true);
+    expect(fake.callsOf("libraryAdd")).toEqual([
+      [{ name: "badge-sale", kind: "sticker", start_flicks: FLICKS_PER_SECOND, expected_revision: 4 }],
+    ]);
+    expect(editor.getState().selection, "the new sticker is selected").toBe("clip_0105");
+    editor.select("clip_0003");
+    await editor.addFromLibrary({ name: "teal_orange", kind: "look", clip: "clip_0003" });
+    expect(editor.getState().selection, "a look keeps the selection").toBe("clip_0003");
+
+    fake.onLibraryAdd = () => ({ committed: true, dry_run: false, replayed: false, revision: 7, results: [{ timeline: "timeline_0050" }] });
+    await editor.addFromLibrary({ name: "vertical-promo", kind: "template", media: ["asset_0001"] });
+    expect(editor.getState().selection, "a template shows its new timeline").toBeNull();
+    expect(editor.getState().playhead).toBe(0);
+    expect(fake.callsOf("preview.show").at(-1)).toEqual([0]);
+  });
+
+  it("reloads when a library add meets a newer revision, and shows other refusals", async () => {
+    const { editor, fake } = await started();
+    const reads = () => fake.callsOf("query").filter(([name]) => name === "timeline.read").length;
+    const before = reads();
+    fake.onLibraryAdd = () => {
+      throw { code: "fosscut.revision.conflict", message: "expected revision 4, found 5" };
+    };
+    expect(await editor.addFromLibrary({ name: "whoosh", kind: "sound" })).toBe(false);
+    expect(reads(), "reloaded").toBe(before + 1);
+    expect(editor.getState().notice?.text).toContain("It is up to date now");
+    fake.onLibraryAdd = () => {
+      throw { code: "fosscut.request.invalid_arguments", message: "the look teal_orange needs the clip to apply it to" };
+    };
+    expect(await editor.addFromLibrary({ name: "teal_orange", kind: "look" })).toBe(false);
+    expect(editor.getState().notice).toEqual({ kind: "error", text: "the look teal_orange needs the clip to apply it to" });
+    fake.opened = null;
+    await editor.close();
+    expect(await editor.addFromLibrary({ name: "circle" }), "nothing open").toBe(false);
+  });
+
+  it("chooses media in order and changes shapes with one merge patch", async () => {
+    const { editor, fake } = await started();
+    editor.chooseMedia("asset_0002", true);
+    editor.chooseMedia("asset_0001", true);
+    editor.chooseMedia("asset_0002", true);
+    expect(editor.getState().chosen).toEqual(["asset_0001", "asset_0002"]);
+    editor.chooseMedia("asset_0001", false);
+    expect(editor.getState().chosen).toEqual(["asset_0002"]);
+    await editor.setShape("clip_0041", null);
+    await editor.setShape("clip_0041", {});
+    await editor.setShape("clip_0041", { fill: { gradient: { angle: 45 } } });
+    expect(fake.callsOf("execute")).toEqual([
+      [{ commands: [{ command: "shape.set", args: { clip: "clip_0041", set: { fill: { gradient: { angle: 45 } } } } }], expected_revision: 4 }],
+    ]);
+  });
+
+  it("exports in the background: presets once, progress, the report, and cancelling", async () => {
+    const { editor, fake } = await started();
+    fake.exportListing = { presets: [{ name: "mp4-h264", description: "H.264", extension: "mp4", available: true }], resolutions: [] };
+    await editor.openExport();
+    editor.closeExport();
+    await editor.openExport();
+    expect(editor.getState().exporting.open).toBe(true);
+    expect(fake.callsOf("exportPresets"), "read once").toHaveLength(1);
+    expect(await editor.pickExportPath("Demo.mp4", "mp4")).toBe("/work/Export.mp4");
+    expect(fake.callsOf("exportPick")).toEqual([["Demo.mp4", "mp4"]]);
+
+    await editor.pollExport();
+    expect(fake.callsOf("exportStatus"), "nothing to follow yet").toEqual([]);
+    expect(await editor.startExport({ output: "/work/Demo.mp4", preset: "mp4-h264" })).toBe(true);
+    expect(editor.getState().exporting.job?.state).toBe("running");
+    for (let read = 0; read < 3; read += 1) await editor.pollExport();
+    const done = editor.getState().exporting.job;
+    expect(done?.state).toBe("succeeded");
+    expect(done?.report?.output).toBe("/work/Demo.mp4");
+    await editor.pollExport();
+    expect(fake.callsOf("exportStatus"), "a finished export is not read again").toHaveLength(3);
+    await editor.cancelExport();
+    expect(fake.callsOf("exportCancel"), "nor cancelled").toEqual([]);
+
+    editor.clearExport();
+    await editor.startExport({ output: "/work/Again.mp4", preset: "mp4-h264" });
+    await editor.pollExport();
+    await editor.cancelExport();
+    expect(editor.getState().exporting.job?.state).toBe("cancelled");
+    expect(fake.callsOf("exportCancel")).toEqual([["job_0002"]]);
+
+    fake.exportFailure = { code: "fosscut.export.missing_media", message: "a clip's media is missing" };
+    editor.clearExport();
+    await editor.startExport({ output: "/work/Third.mp4", preset: "mp4-h264" });
+    await editor.pollExport();
+    expect(editor.getState().exporting.job?.error?.code).toBe("fosscut.export.missing_media");
+    editor.closeExport();
+    expect(editor.getState().exporting.job, "the export stays when the dialog closes").not.toBeNull();
+  });
+
+  it("says when an export finishes while its dialog is hidden", async () => {
+    const { editor, fake } = await started();
+    fake.exportFrames = 60;
+    await editor.openExport();
+    await editor.startExport({ output: "/work/Demo.mp4", preset: "mp4-h264" });
+    await editor.pollExport();
+    expect(editor.getState().notice, "nothing to say while it shows").toBeNull();
+    editor.closeExport();
+    await editor.pollExport();
+    expect(editor.getState().exporting.job?.state).toBe("succeeded");
+    expect(editor.getState().notice).toEqual({ kind: "info", text: "Exported /work/Demo.mp4." });
+    const job = { job: "job_0009", kind: "export", progress: { done: 1, total: 2 }, elapsed_ms: 1, output: "/work/A.mp4" };
+    expect(finished({ ...job, state: "cancelled" }).text).toBe("The export to /work/A.mp4 was cancelled.");
+    expect(finished({ ...job, state: "failed", error: { code: "fosscut.export.missing_media", message: "a file is missing" } })).toEqual({
+      kind: "error",
+      text: "The export to /work/A.mp4 failed: a file is missing.",
+    });
+    expect(finished({ ...job, state: "failed", output: undefined }).text).toBe("The export to job_0009 failed: no reason given.");
+  });
+
+  it("replaces an existing file only after asking, and shows refusals in the dialog", async () => {
+    const asked: string[] = [];
+    let replace = false;
+    const { editor, fake } = await started(engine(), (question) => {
+      asked.push(question);
+      return replace;
+    });
+    fake.exportRefusal = { code: "fosscut.guard.destructive", message: "/work/Demo.mp4 exists" };
+    expect(await editor.startExport({ output: "/work/Demo.mp4" })).toBe(false);
+    expect(asked).toEqual(["/work/Demo.mp4 exists. Replace it?"]);
+    expect(editor.getState().exporting.error, "declining is no error").toBeNull();
+    replace = true;
+    const startAt = fake.callsOf("exportStart").length;
+    let tries = 0;
+    fake.exportStart = async (choice) => {
+      tries += 1;
+      if (!choice.overwrite) throw { code: "fosscut.guard.destructive", message: "/work/Demo.mp4 exists" };
+      return { job: "job_0001", kind: "export", state: "running", progress: { done: 0, total: 0 }, elapsed_ms: 0 };
+    };
+    expect(await editor.startExport({ output: "/work/Demo.mp4" })).toBe(true);
+    expect(tries, "once more, replacing it").toBe(2);
+    expect(fake.callsOf("exportStart")).toHaveLength(startAt);
+
+    fake.exportStart = async () => {
+      throw { code: "fosscut.export.invalid_settings", message: "the range must start inside the timeline" };
+    };
+    expect(await editor.startExport({ output: "/work/Part.mp4", range_flicks: [0, 1] })).toBe(false);
+    expect(editor.getState().exporting.error?.code).toBe("fosscut.export.invalid_settings");
+    fake.exportPresets = async () => {
+      throw { code: "fosscut.internal", message: "no encoders" };
+    };
+    await editor.openExport();
+    expect(editor.getState().exporting.error?.message).toBe("no encoders");
+    expect(editor.getState().exporting.presets).toBeNull();
+    fake.exportPresets = async () => fake.exportListing;
+    await editor.openExport();
+    expect(editor.getState().exporting.error, "opening again reads them again").toBeNull();
+    expect(editor.getState().exporting.presets).toEqual(fake.exportListing);
+    fake.exportPick = async () => {
+      throw { code: "fosscut.request.invalid_arguments", message: "no dialog" };
+    };
+    expect(await editor.pickExportPath("Demo.mp4")).toBeNull();
+    expect(editor.getState().exporting.error?.message).toBe("no dialog");
   });
 });

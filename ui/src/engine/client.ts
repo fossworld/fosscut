@@ -9,6 +9,11 @@ import type {
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  ExportChoice,
+  ExportPresets,
+  JobStatus,
+  LibraryAddRequest,
+  LibraryItem,
   Normalization,
   Opened,
   Playhead,
@@ -78,6 +83,25 @@ export interface EngineClient {
    * `targetLufs` (-14 LUFS when omitted), to apply with `execute` like any edit.
    */
   audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization>;
+  /**
+   * The built-in library's items, of `kind` when given, with every word of `search` in
+   * their name, title, description or tags.
+   */
+  libraryList(kind?: string, search?: string): Promise<LibraryItem[]>;
+  /**
+   * Adds a library item to the open project as the user's edit: sounds and music are
+   * imported, then placed; templates build a new timeline that becomes the one shown.
+   */
+  libraryAdd(request: LibraryAddRequest): Promise<EditResponse>;
+  /** The export presets this machine has, and the resolutions export offers by name. */
+  exportPresets(): Promise<ExportPresets>;
+  /** Asks the user where to save an export; null when they cancel. */
+  exportPick(name: string, extension?: string): Promise<string | null>;
+  /** Starts exporting the primary timeline in the background, after checking it. */
+  exportStart(choice: ExportChoice): Promise<JobStatus>;
+  exportStatus(job: string): Promise<JobStatus>;
+  /** Stops an export; nothing is written. */
+  exportCancel(job: string): Promise<JobStatus>;
   media: {
     /** Shows an asset's file in the system's file manager. */
     reveal(asset: string): Promise<void>;

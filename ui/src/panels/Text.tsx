@@ -98,7 +98,7 @@ function Amount({ path, value, onCommit }: { path: string; value: number; onComm
 }
 
 /** A colour swatch; the edit is sent once the picker closes, not while it moves. */
-function Swatch({ label, value, onCommit }: { label: string; value: string; onCommit: (rgb: string) => void }) {
+export function Swatch({ label, value, onCommit }: { label: string; value: string; onCommit: (rgb: string) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const input = ref.current;
