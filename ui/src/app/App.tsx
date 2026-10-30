@@ -4,6 +4,7 @@ import { type Action, actionFor, isTyping } from "../keyboard";
 import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
 import { who } from "../panels/runs";
+import { MaskOverlay } from "../preview/MaskOverlay";
 import { PreviewHole } from "../preview/PreviewHole";
 import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
@@ -105,7 +106,9 @@ export function App({ editor }: { editor: Editor }) {
             <button onClick={() => void editor.close()}>Close</button>
           </header>
           <main>
-            <PreviewHole editor={editor} />
+            <PreviewHole editor={editor}>
+              <MaskOverlay editor={editor} state={state} />
+            </PreviewHole>
             <aside className="activity">
               {selected && (
                 <Inspector

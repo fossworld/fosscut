@@ -41,6 +41,19 @@ export interface EditorState {
   catalog: Catalog | null;
   /** LUT assets in the media table, for `color.lut` effects. */
   luts: { id: string; name: string }[];
+  /** Drawing a path or painting a brush mask on the preview, when not null. */
+  maskTool: MaskTool | null;
+}
+
+/** What drawing on the preview edits. */
+export interface MaskTool {
+  clip: string;
+  mask: string;
+  mode: "pen" | "brush";
+  /** Brush radius as a fraction of the picture's height. */
+  radius: number;
+  /** The brush erases instead of painting. */
+  erase: boolean;
 }
 
 const EMPTY: EditorState = {
@@ -55,6 +68,7 @@ const EMPTY: EditorState = {
   notice: null,
   catalog: null,
   luts: [],
+  maskTool: null,
 };
 
 /** Asks the user a yes-or-no question; the app passes `window.confirm`. */
@@ -361,6 +375,59 @@ export class Editor {
   async setProperties(clip: string, set: Record<string, unknown>): Promise<void> {
     if (Object.keys(set).length === 0) return;
     await this.edit([{ command: "clip.set", args: { clip, set } }]);
+  }
+
+  /** Starts or stops drawing a mask on the preview. */
+  setMaskTool(tool: MaskTool | null): void {
+    this.set({ maskTool: tool });
+  }
+
+  /** Adds a mask of `shape` to a clip; path and brush masks start drawing on the preview. */
+  async addMask(clip: string, shape: string): Promise<void> {
+    if (shape === "path" || shape === "brush") {
+      // These need points or strokes before they are valid: draw first, then add.
+      this.set({ maskTool: { clip, mask: "", mode: shape === "path" ? "pen" : "brush", radius: 0.04, erase: false } });
+      return;
+    }
+    const args: Record<string, unknown> = { clip, shape };
+    if (shape === "text") args.text = "TEXT";
+    await this.edit([{ command: "mask.add", args }]);
+  }
+
+  /**
+   * Finishes drawing: a new path or brush mask with what was drawn, or the drawing added
+   * to the mask being edited. Brush strokes add to the mask's strokes.
+   */
+  async finishMask(drawn: { points?: { at: [number, number] }[]; stroke?: { points: [number, number][]; radius: number; erase: boolean } }): Promise<void> {
+    const tool = this.state.maskTool;
+    if (!tool) return;
+    const timeline = this.state.timeline;
+    const clip = timeline ? findClip(timeline, tool.clip) : null;
+    const existing = clip?.masks?.find((m) => m.id === tool.mask);
+    if (drawn.points) {
+      if (drawn.points.length < 3) {
+        this.set({ notice: { kind: "info", text: "A path needs at least three points." } });
+        return;
+      }
+      const command = existing
+        ? { command: "mask.set", args: { clip: tool.clip, mask: tool.mask, points: drawn.points } }
+        : { command: "mask.add", args: { clip: tool.clip, shape: "path", size: [1, 1], points: drawn.points } };
+      if (await this.edit([command])) this.set({ maskTool: null });
+      return;
+    }
+    if (drawn.stroke) {
+      const strokes = [...(existing?.strokes ?? []), drawn.stroke];
+      const command = existing
+        ? { command: "mask.set", args: { clip: tool.clip, mask: tool.mask, strokes } }
+        : { command: "mask.add", args: { clip: tool.clip, shape: "brush", strokes } };
+      await this.edit([command]);
+      if (!existing) {
+        // Keep painting into the mask just made.
+        const after = this.state.timeline ? findClip(this.state.timeline, tool.clip) : null;
+        const made = after?.masks?.[after.masks.length - 1];
+        if (made) this.set({ maskTool: { ...tool, mask: made.id } });
+      }
+    }
   }
 
   /** Adds an effect at its defaults to the end of a clip's effects. */

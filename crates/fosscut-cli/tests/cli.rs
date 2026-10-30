@@ -2223,3 +2223,143 @@ fn effects_luts_adjustments_and_auto_color_from_the_command_line() {
         json!("color.adjust")
     );
 }
+
+#[test]
+fn masks_and_chroma_keys_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("masks");
+    for (name, source) in [
+        ("white.mp4", "color=c=white:s=320x180:r=30:d=2"),
+        (
+            "screen.mp4",
+            "color=c=0x00ff00:s=320x180:r=30:d=2,drawbox=x=140:y=70:w=40:h=40:color=white:t=fill",
+        ),
+        ("red.mp4", "color=c=0xff0000:s=320x180:r=30:d=2"),
+    ] {
+        let status = Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args(["-v", "error", "-f", "lavfi", "-i", source])
+            .args(["-c:v", "mpeg4", "-q:v", "2", name])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let new = [
+        "project",
+        "new",
+        "Masks.fosscut",
+        "--width",
+        "320",
+        "--height",
+        "180",
+    ];
+    ok(&dir, &new);
+    for file in ["white.mp4", "screen.mp4", "red.mp4"] {
+        ok(&dir, &["media", "import", file]);
+    }
+    let white = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let clip = white["results"][0]["clip"].as_str().unwrap().to_string();
+    let grab = |out: &str| {
+        ok(&dir, &["frame", "1s", "--out", out, "--width", "160"]);
+        white_columns(&dir.join(out))
+    };
+    assert_eq!(grab("plain.png").len(), 160);
+    let added = ok(
+        &dir,
+        &[
+            "mask",
+            "add",
+            "--clip",
+            &clip,
+            "--shape",
+            "rectangle",
+            "--set",
+            "center=[0.25,0.5]",
+            "--set",
+            "size=[0.5,1]",
+        ],
+    );
+    let mask = added["results"][0]["mask"].as_str().unwrap().to_string();
+    let left = grab("left.png");
+    assert!(
+        left.iter().all(|&x| x < 82) && left.len() > 70,
+        "the left half: {left:?}"
+    );
+    ok(
+        &dir,
+        &[
+            "mask",
+            "set",
+            "--clip",
+            &clip,
+            "--mask",
+            &mask,
+            "--set",
+            "invert=true",
+        ],
+    );
+    let right = grab("right.png");
+    assert!(right.iter().all(|&x| x > 78), "inverted: {right:?}");
+    let bad = fails(&dir, &["mask", "add", "--clip", &clip, "--shape", "path"]);
+    assert_eq!(
+        bad["code"],
+        json!("fosscut.model.invalid"),
+        "a path needs points"
+    );
+    ok(&dir, &["mask", "remove", "--clip", &clip, "--mask", &mask]);
+    ok(
+        &dir,
+        &["clip", "set", "--clip", &clip, "--enabled", "false"],
+    );
+
+    // The green screen over red: keyed, the red shows around the white square.
+    let below = ok(&dir, &["track", "add", "--kind", "video"]);
+    let below = below["results"][0]["track"].as_str().unwrap().to_string();
+    let above = ok(&dir, &["track", "add", "--kind", "video"]);
+    let above = above["results"][0]["track"].as_str().unwrap().to_string();
+    let red_clip = [
+        "clip",
+        "add",
+        "--asset",
+        "asset_0003",
+        "--start",
+        "0s",
+        "--track",
+    ];
+    let mut args = red_clip.to_vec();
+    args.push(&below);
+    ok(&dir, &args);
+    let screen_clip = [
+        "clip",
+        "add",
+        "--asset",
+        "asset_0002",
+        "--start",
+        "0s",
+        "--track",
+    ];
+    let mut args = screen_clip.to_vec();
+    args.push(&above);
+    let screen = ok(&dir, &args);
+    let screen = screen["results"][0]["clip"].as_str().unwrap().to_string();
+    ok(
+        &dir,
+        &["effect", "add", "--clip", &screen, "--type", "key.chroma"],
+    );
+    ok(
+        &dir,
+        &["frame", "1s", "--out", "keyed.png", "--width", "160"],
+    );
+    let red = mean_channel(&dir.join("keyed.png"), 0);
+    let green = mean_channel(&dir.join("keyed.png"), 1);
+    assert!(
+        red > 200.0 && green < 60.0,
+        "red shows through: {red} {green}"
+    );
+    assert!(
+        !white_columns(&dir.join("keyed.png")).is_empty(),
+        "the square stays"
+    );
+}

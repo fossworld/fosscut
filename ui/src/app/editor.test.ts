@@ -279,6 +279,33 @@ describe("editor", () => {
     ]);
   });
 
+  it("adds shape masks at once, and path and brush masks after drawing them", async () => {
+    const { editor, fake } = await started();
+    await editor.addMask("clip_0003", "ellipse");
+    await editor.addMask("clip_0003", "text");
+    await editor.addMask("clip_0003", "path");
+    expect(editor.getState().maskTool).toMatchObject({ clip: "clip_0003", mask: "", mode: "pen" });
+    await editor.finishMask({ points: [{ at: [0, 0] }] });
+    expect(editor.getState().notice?.text).toContain("three points");
+    const triangle = [{ at: [-1, -1] as [number, number] }, { at: [1, -1] as [number, number] }, { at: [0, 1] as [number, number] }];
+    await editor.finishMask({ points: triangle });
+    expect(editor.getState().maskTool, "done drawing").toBeNull();
+    await editor.addMask("clip_0003", "brush");
+    await editor.finishMask({ stroke: { points: [[0.2, 0.2]], radius: 0.04, erase: false } });
+    editor.setMaskTool(null);
+    await editor.finishMask({ stroke: { points: [[0.2, 0.2]], radius: 0.04, erase: false } });
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "mask.add", args: { clip: "clip_0003", shape: "ellipse" } },
+      { command: "mask.add", args: { clip: "clip_0003", shape: "text", text: "TEXT" } },
+      { command: "mask.add", args: { clip: "clip_0003", shape: "path", size: [1, 1], points: triangle } },
+      {
+        command: "mask.add",
+        args: { clip: "clip_0003", shape: "brush", strokes: [{ points: [[0.2, 0.2]], radius: 0.04, erase: false }] },
+      },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

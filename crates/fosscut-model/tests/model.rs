@@ -616,7 +616,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
-    for older in ["0.1.0", "0.2.0", "0.3.0"] {
+    for older in ["0.1.0", "0.2.0", "0.3.0", "0.4.0"] {
         manifest["format_version"] = older.into();
         store
             .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
@@ -626,7 +626,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.4.0");
+    assert_eq!(FORMAT_VERSION, "0.5.0");
 }
 
 #[test]

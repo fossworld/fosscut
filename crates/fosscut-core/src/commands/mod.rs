@@ -4,6 +4,7 @@ mod caption;
 mod clip;
 mod effect;
 mod keyframe;
+mod mask;
 mod media;
 mod text;
 mod timeline;
@@ -25,6 +26,7 @@ pub use keyframe::{
     ClipProperties, ClipSet, Easing, KeyframeRemove, KeyframeReport, KeyframeSet, KeyframesChanged,
 };
 pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
+pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
 pub use text::TextAdd;
 pub use timeline::{
@@ -53,6 +55,9 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<EffectCopy>();
     registry.register::<AdjustmentAdd>();
     registry.register::<LookApply>();
+    registry.register::<MaskAdd>();
+    registry.register::<MaskSet>();
+    registry.register::<MaskRemove>();
     registry.register::<TextAdd>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();

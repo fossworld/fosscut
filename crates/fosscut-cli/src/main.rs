@@ -11,8 +11,8 @@ use std::process::ExitCode;
 
 use args::{
     AdjustmentCommand, CaptionsCommand, Cli, ClipCommand, ColorCommand, Command, EffectCommand,
-    KeyframeCommand, LookCommand, MediaCommand, ModelsCommand, ProjectCommand, SkillTarget,
-    SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    KeyframeCommand, LookCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand,
+    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -482,6 +482,34 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             json!({ "clip": clip, "look": look, "replace": replace }),
         ),
         Command::Color(command) => color(cli, command),
+        Command::Mask(command) => {
+            let (name, mut args, settings) = match command {
+                MaskCommand::Add {
+                    clip,
+                    shape,
+                    settings,
+                } => (
+                    "mask.add",
+                    json!({ "clip": clip, "shape": shape }),
+                    settings,
+                ),
+                MaskCommand::Set {
+                    clip,
+                    mask,
+                    settings,
+                } => ("mask.set", json!({ "clip": clip, "mask": mask }), settings),
+                MaskCommand::Remove { clip, mask } => (
+                    "mask.remove",
+                    json!({ "clip": clip, "mask": mask }),
+                    &Vec::new(),
+                ),
+            };
+            for text in settings {
+                let (field, value) = property_value(text)?;
+                args[field] = value;
+            }
+            write(cli, name, args)
+        }
         Command::Models(ModelsCommand::List) => Ok(Outcome::Query(
             "models.list".into(),
             json!({

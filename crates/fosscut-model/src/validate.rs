@@ -181,6 +181,19 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                         "audio clips have no picture for effects",
                     );
                 }
+                if matches!(clip.content, ClipContent::Audio { .. }) && !clip.masks.is_empty() {
+                    issues.push(
+                        &clip_path,
+                        "fosscut.model.mask_target",
+                        "audio clips have no picture for masks",
+                    );
+                }
+                for mask in &clip.masks {
+                    let mask_path = format!("{clip_path}/{}", mask.id);
+                    expect_kind(&mut issues, &mask.id, IdKind::Mask, &mask_path);
+                    unique(&mut issues, &mask.id, &mask_path);
+                    check_mask(&mut issues, mask, &mask_path);
+                }
                 for effect in &clip.effects {
                     let effect_path = format!("{clip_path}/{}", effect.id);
                     expect_kind(&mut issues, &effect.id, IdKind::Effect, &effect_path);
@@ -353,6 +366,7 @@ fn check_effect(issues: &mut Issues, project: &Project, effect: &Effect, path: &
             (ParamKind::Pair, ParamValue::Pair(v)) => v.iter().all(|x| within(param, *x)),
             (ParamKind::Bool, ParamValue::Flag(_)) => true,
             (ParamKind::Choice, ParamValue::Name(n)) => param.choices.contains(&n.as_str()),
+            (ParamKind::Color, ParamValue::Name(n)) => crate::Color::parse(n).is_ok(),
             (ParamKind::Curve, ParamValue::Points(points)) => {
                 points.len() >= 2
                     && points.iter().all(|p| p.iter().all(|x| within(param, *x)))
@@ -404,6 +418,91 @@ fn check_effect(issues: &mut Issues, project: &Project, effect: &Effect, path: &
                         "{}.{name} keyframe value {:?} is invalid",
                         spec.name, key.value
                     ),
+                );
+            }
+        }
+    }
+}
+
+/// A mask's values must be in range, and its shape must have what it needs: a path at
+/// least three points, a text mask some text, a brush at least one stroke.
+fn check_mask(issues: &mut Issues, mask: &crate::Mask, path: &str) {
+    use crate::MaskShape;
+    let mut bad = |code: &str, message: String| issues.push(path, code, message);
+    let finite = |v: &[f64]| v.iter().all(|x| x.is_finite());
+    let ok = finite(&[
+        mask.center[0],
+        mask.center[1],
+        mask.size[0],
+        mask.size[1],
+        mask.rotation,
+    ]) && mask.size.iter().all(|s| *s >= 0.0)
+        && (0.0..=1.0).contains(&mask.feather)
+        && (-1.0..=1.0).contains(&mask.expansion)
+        && (0.0..=1.0).contains(&mask.roundness);
+    if !ok {
+        bad(
+            "fosscut.model.mask",
+            "mask size must be at least 0, feather and roundness 0 to 1, expansion -1 to 1".into(),
+        );
+    }
+    let shaped = match mask.shape {
+        MaskShape::Path => {
+            mask.points.len() >= 3
+                && mask.points.iter().all(|p| {
+                    finite(&p.at)
+                        && p.in_handle.is_none_or(|h| finite(&h))
+                        && p.out_handle.is_none_or(|h| finite(&h))
+                })
+        }
+        MaskShape::Text => mask.text.as_deref().is_some_and(|t| !t.trim().is_empty()),
+        MaskShape::Brush => {
+            !mask.strokes.is_empty()
+                && mask.strokes.iter().all(|s| {
+                    !s.points.is_empty()
+                        && s.radius.is_finite()
+                        && s.radius > 0.0
+                        && s.points.iter().all(|p| finite(p))
+                })
+        }
+        _ => true,
+    };
+    if !shaped {
+        bad(
+            "fosscut.model.mask_shape",
+            format!(
+                "a {:?} mask needs its points (three or more), text or strokes",
+                mask.shape
+            ),
+        );
+    }
+    for (name, keys) in &mask.keyframes {
+        let Some((_, pair, low, high)) = crate::MASK_PROPERTIES.iter().find(|(n, ..)| n == name)
+        else {
+            bad(
+                "fosscut.model.keyframe_path",
+                format!("mask {name} does not take keyframes"),
+            );
+            continue;
+        };
+        if keys.is_empty() || keys.windows(2).any(|w| w[1].time <= w[0].time) {
+            bad(
+                "fosscut.model.keyframes",
+                format!("mask {name} keyframes must be in time order, one per time"),
+            );
+        }
+        for key in keys {
+            let values: Option<Vec<f64>> = match (pair, key.value) {
+                (false, KeyValue::Number(v)) => Some(vec![v]),
+                (true, KeyValue::Pair(v)) => Some(v.to_vec()),
+                _ => None,
+            };
+            let fine =
+                values.is_some_and(|v| v.iter().all(|x| !x.is_nan() && x >= low && x <= high));
+            if !fine {
+                bad(
+                    "fosscut.model.keyframe_value",
+                    format!("mask {name} keyframe value {:?} is invalid", key.value),
                 );
             }
         }

@@ -4,6 +4,7 @@ import { EASINGS, type EasingName, easingName, keyAt, keyTimes } from "../app/an
 import type { Editor } from "../app/editor";
 import type { Catalog, ClipView } from "../engine/types";
 import { Effects } from "./Effects";
+import { Masks } from "./Masks";
 import {
   type Field,
   type Viewing,
@@ -264,6 +265,7 @@ export function Inspector({
       {hasPicture(clip) && (
         <Effects editor={editor} clip={clip} playhead={playhead} catalog={catalog} luts={luts} others={others} />
       )}
+      {hasPicture(clip) && <Masks editor={editor} clip={clip} playhead={playhead} tool={editor.getState().maskTool} />}
     </section>
   );
 }

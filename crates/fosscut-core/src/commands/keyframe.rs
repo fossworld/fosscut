@@ -451,10 +451,55 @@ enum Target {
         index: usize,
         param: fosscut_model::ParamSpec,
     },
+    Mask {
+        index: usize,
+        name: &'static str,
+        pair: bool,
+        range: (f64, f64),
+    },
+}
+
+/// The value of mask property `name`.
+fn mask_value(mask: &fosscut_model::Mask, name: &str) -> KeyValue {
+    match name {
+        "center" => KeyValue::Pair(mask.center),
+        "size" => KeyValue::Pair(mask.size),
+        "rotation" => KeyValue::Number(mask.rotation),
+        "feather" => KeyValue::Number(mask.feather),
+        "expansion" => KeyValue::Number(mask.expansion),
+        _ => KeyValue::Number(mask.roundness),
+    }
 }
 
 impl Target {
     fn of(command: &str, clip: &Clip, path: &str) -> Result<Target, ApiError> {
+        if let Some((mask, name)) = fosscut_model::mask_path(path) {
+            let index = clip
+                .masks
+                .iter()
+                .position(|m| m.id.as_str() == mask)
+                .ok_or_else(|| {
+                    ApiError::new(
+                        codes::MASK_NOT_FOUND,
+                        format!("{command}: {} has no mask {mask}", clip.id),
+                    )
+                })?;
+            let (name, pair, low, high) = fosscut_model::MASK_PROPERTIES
+                .iter()
+                .find(|(n, ..)| *n == name)
+                .copied()
+                .ok_or_else(|| {
+                    invalid(format!(
+                        "{command}: masks animate center, size, rotation, feather, expansion and roundness, not {name}"
+                    ))
+                })?;
+            return Ok(Target::Mask {
+                index,
+                name,
+                pair,
+                range: (low, high),
+            });
+        }
         let Some((effect, name)) = fosscut_model::effect_path(path) else {
             return Ok(Target::Property(property_of(command, clip, path)?));
         };
@@ -481,6 +526,7 @@ impl Target {
         match self {
             Target::Property(p) => p.animatable,
             Target::Effect { param, .. } => param.animatable,
+            Target::Mask { .. } => true,
         }
     }
 
@@ -489,6 +535,7 @@ impl Target {
         match self {
             Target::Property(p) => p.path.to_string(),
             Target::Effect { param, .. } => param.name.to_string(),
+            Target::Mask { name, .. } => name.to_string(),
         }
     }
 
@@ -496,6 +543,7 @@ impl Target {
         match self {
             Target::Property(_) => &mut clip.keyframes,
             Target::Effect { index, .. } => &mut clip.effects[*index].keyframes,
+            Target::Mask { index, .. } => &mut clip.masks[*index].keyframes,
         }
     }
 
@@ -503,6 +551,7 @@ impl Target {
         match self {
             Target::Property(p) => clip.keyframes.get(p.path),
             Target::Effect { index, param } => clip.effects[*index].keyframes.get(param.name),
+            Target::Mask { index, name, .. } => clip.masks[*index].keyframes.get(*name),
         }
     }
 
@@ -522,6 +571,25 @@ impl Target {
                     max: param.max,
                     choices: &[],
                     meaning: param.meaning,
+                };
+                key_value(command, &as_property, value)
+            }
+            Target::Mask {
+                name, pair, range, ..
+            } => {
+                let as_property = Property {
+                    path: name,
+                    kind: if *pair {
+                        PropertyKind::Pair
+                    } else {
+                        PropertyKind::Number
+                    },
+                    applies: Applies::Picture,
+                    animatable: true,
+                    min: range.0.is_finite().then_some(range.0),
+                    max: range.1.is_finite().then_some(range.1),
+                    choices: &[],
+                    meaning: "",
                 };
                 key_value(command, &as_property, value)
             }
@@ -545,6 +613,7 @@ impl Target {
                     _ => None,
                 }
             }
+            Target::Mask { index, name, .. } => Some(mask_value(&clip.masks[*index], name)),
         }
     }
 
@@ -572,6 +641,19 @@ impl Target {
                 }
                 Ok(())
             }
+            Target::Mask { index, name, .. } => {
+                let mask = &mut clip.masks[*index];
+                match (*name, value) {
+                    ("center", KeyValue::Pair(v)) => mask.center = v,
+                    ("size", KeyValue::Pair(v)) => mask.size = v,
+                    ("rotation", KeyValue::Number(v)) => mask.rotation = v,
+                    ("feather", KeyValue::Number(v)) => mask.feather = v,
+                    ("expansion", KeyValue::Number(v)) => mask.expansion = v,
+                    ("roundness", KeyValue::Number(v)) => mask.roundness = v,
+                    _ => {}
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -584,8 +666,10 @@ pub struct KeyframeSet {
     pub clip: Id,
     /// An animatable property: `transform.position`, `transform.scale`,
     /// `transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,
-    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`, or a numeric effect parameter as
-    /// `effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`).
+    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`; a numeric effect parameter as
+    /// `effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`); or a mask's
+    /// `center`, `size`, `rotation`, `feather`, `expansion` or `roundness` as
+    /// `masks.<mask id>.<property>`.
     pub property: String,
     /// Timeline position of the keyframe, from the clip's start to its end; snapped to the
     /// nearest frame. Give this or `offset`.
@@ -617,7 +701,7 @@ pub struct KeyframesChanged {
 
 impl Command for KeyframeSet {
     const NAME: &'static str = "keyframe.set";
-    const SUMMARY: &'static str = "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, and numeric effect parameters as effects.<id>.<param>.";
+    const SUMMARY: &'static str = "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, numeric effect parameters as effects.<id>.<param>, and mask placement as masks.<id>.<property>.";
     type Output = KeyframesChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<KeyframesChanged, ApiError> {

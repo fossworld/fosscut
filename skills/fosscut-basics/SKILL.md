@@ -30,6 +30,7 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Animate any of those over time (zoom in, fade a title, duck music) | `edit` with `keyframe.set` at two or more times, with an easing | `fosscut keyframe set --clip <id> --property opacity --at 1s --value 0` |
 | Color and look: exposure, white balance, curves, HSL, wheels, LUTs, vignette, blur, sharpen, grain (types and parameters in `capabilities` under `effects`) | `edit` with `effect.add`, `effect.set`; `look.apply` for a ready look; `adjustment.add` to grade everything below | `fosscut effect add --clip <id> --type color.adjust --param exposure=0.5`, `fosscut look apply teal_orange --clip <id>` |
 | Correct a clip's color, or match it to another | `color` with action `auto` or `match` | `fosscut color auto --clip <id>`, `fosscut color match --clip <id> --reference <id>` |
+| Show part of a picture: shapes, a pen path, text or brush strokes, feathered, combined, animated; remove a green screen | `edit` with `mask.add`, `mask.set`; `effect.add` with `key.chroma` | `fosscut mask add --clip <id> --shape ellipse --set feather=0.3`, `fosscut effect add --clip <id> --type key.chroma` |
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 

@@ -199,11 +199,14 @@ pub(crate) fn find_or_create_track(
     Ok(id)
 }
 
-/// Gives the effects of `clip` new ids, for a clip that copies another's effects (the
+/// Gives the effects and masks of `clip` new ids, for a clip that copies another's (the
 /// right part of a split, a piece of a cut, a duplicate): effect ids are unique in a
 /// project.
 pub(crate) fn renew_effect_ids(project: &mut Project, clip: &mut Clip) {
     for effect in &mut clip.effects {
         effect.id = project.allocate_id(fosscut_model::IdKind::Effect);
+    }
+    for mask in &mut clip.masks {
+        mask.id = project.allocate_id(fosscut_model::IdKind::Mask);
     }
 }

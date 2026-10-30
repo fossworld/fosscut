@@ -186,6 +186,13 @@ impl Command for ClipSplit {
         let effect_ids: Vec<Id> = (0..effects)
             .map(|_| ctx.project.allocate_id(IdKind::Effect))
             .collect();
+        let masks = ctx.project.timelines[&location.timeline].tracks[location.track].clips
+            [location.clip]
+            .masks
+            .len();
+        let mask_ids: Vec<Id> = (0..masks)
+            .map(|_| ctx.project.allocate_id(IdKind::Mask))
+            .collect();
         let timeline = timeline_mut(ctx.project, &location.timeline)?;
         let rate = timeline.format.rate;
         let at = resolve(&self.at, rate)?;
@@ -249,6 +256,15 @@ impl Command for ClipSplit {
             .map(|(mut effect, id)| {
                 effect.id = id;
                 effect
+            })
+            .collect();
+        right.masks = right
+            .masks
+            .into_iter()
+            .zip(mask_ids)
+            .map(|(mut mask, id)| {
+                mask.id = id;
+                mask
             })
             .collect();
         right.audio.fade_in = Flicks::ZERO;

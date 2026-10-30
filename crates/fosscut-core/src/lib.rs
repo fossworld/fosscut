@@ -34,7 +34,8 @@ pub use changes::ChangeSummary;
 pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry};
 pub use commands::{
     AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
-    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
+    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply, MaskAdd, MaskFields,
+    MaskRemove, MaskSet, MasksChanged,
 };
 pub use commands::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,

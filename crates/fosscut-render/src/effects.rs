@@ -75,6 +75,7 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "color.lut" => Pass::Pixel("fs_lut"),
         "color.vignette" => Pass::Pixel("fs_vignette"),
         "stylize.grain" => Pass::Pixel("fs_grain"),
+        "key.chroma" => Pass::Pixel("fs_chroma"),
         "blur.gaussian" => Pass::Blur,
         "detail.sharpen" => Pass::Sharpen,
         _ => return None,
@@ -82,7 +83,7 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
 }
 
 /// Every per-pixel entry point, for building pipelines.
-pub const PIXEL_ENTRIES: [&str; 11] = [
+pub const PIXEL_ENTRIES: [&str; 12] = [
     "fs_copy",
     "fs_mix",
     "fs_adjust",
@@ -92,6 +93,7 @@ pub const PIXEL_ENTRIES: [&str; 11] = [
     "fs_lut",
     "fs_vignette",
     "fs_grain",
+    "fs_chroma",
     "fs_blur",
     "fs_sharpen",
 ];
@@ -130,9 +132,29 @@ pub fn pack(effect: &PlannedEffect, size: (u32, u32), lut_size: u32) -> [[f32; 4
             p[1] = [h / 1080.0, 0.0, 0.0, 0.0];
         }
         "detail.sharpen" => p[0] = [n("amount"), 0.0, 0.0, 0.0],
+        "key.chroma" => {
+            p[0] = [n("similarity"), n("smoothness"), n("spill"), 0.0];
+            let color = match effect.values.get("color") {
+                Some(ParamValue::Name(hex)) => hex_rgb(hex),
+                _ => [0.0, 1.0, 0.0],
+            };
+            p[1] = [color[0], color[1], color[2], 0.0];
+        }
         _ => {}
     }
     p
+}
+
+/// The sRGB-encoded channels of `#RRGGBB`, 0 to 1; black when malformed.
+pub fn hex_rgb(hex: &str) -> [f32; 3] {
+    let digits = hex.trim_start_matches('#');
+    let channel = |i: usize| {
+        digits
+            .get(i..i + 2)
+            .and_then(|d| u8::from_str_radix(d, 16).ok())
+            .map_or(0.0, |v| f32::from(v) / 255.0)
+    };
+    [channel(0), channel(2), channel(4)]
 }
 
 /// One half of a separable blur with standard deviation `sigma` pixels of a picture

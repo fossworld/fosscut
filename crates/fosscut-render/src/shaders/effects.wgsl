@@ -15,6 +15,8 @@ struct EffectParams {
 @group(0) @binding(2) var aux_texture: texture_2d<f32>;
 @group(0) @binding(3) var lut_texture: texture_3d<f32>;
 @group(0) @binding(4) var<uniform> effect: EffectParams;
+// Coverage of an adjustment layer's masks over the canvas (fs_mix, when p[0].y is 1).
+@group(0) @binding(5) var mask_texture: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
@@ -50,11 +52,17 @@ fn fs_copy(@builtin(position) position: vec4f) -> @location(0) vec4f {
     return load(position);
 }
 
-// Mixes the original (aux) with the effected input by p[0].x: an adjustment layer's opacity.
+// Mixes the original (aux) with the effected input by p[0].x, an adjustment layer's
+// opacity, times its masks' coverage when p[0].y is 1.
 @fragment
 fn fs_mix(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let original = textureLoad(aux_texture, vec2i(position.xy), 0);
-    return mix(original, load(position), clamp(effect.p[0].x, 0.0, 1.0));
+    var amount = clamp(effect.p[0].x, 0.0, 1.0);
+    if effect.p[0].y > 0.5 {
+        let uv = position.xy / vec2f(textureDimensions(input_texture));
+        amount = amount * textureSampleLevel(mask_texture, linear_sampler, uv, 0.0).r;
+    }
+    return mix(original, load(position), amount);
 }
 
 // ---- color.adjust ----
@@ -307,6 +315,40 @@ fn fs_grain(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let midtones = 1.0 - pow(abs(2.0 * dot(v, LUMA) - 1.0), 2.0);
     v = v + vec3f(noise * p.x * 0.12 * (0.35 + 0.65 * midtones));
     return finish(from_display(v), texel.a);
+}
+
+// ---- key.chroma ----
+
+fn cbcr(c: vec3f) -> vec2f {
+    let y = dot(c, LUMA);
+    return vec2f((c.b - y) / 1.8556, (c.r - y) / 1.5748);
+}
+
+// Removes the key color (p[1].rgb, sRGB-encoded): pixels whose chroma is within the
+// similarity of the key's become transparent, softly over the smoothness, and the key's
+// chroma is taken out of what stays by the spill amount. p[0]: similarity, smoothness,
+// spill.
+@fragment
+fn fs_chroma(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let p = effect.p[0];
+    let v = to_display(unpremultiply(texel));
+    let key = cbcr(effect.p[1].rgb);
+    var chroma = cbcr(v);
+    let threshold = p.x * 0.5;
+    let distance = length(chroma - key);
+    let keep = smoothstep(threshold, threshold + p.y * 0.5 + 0.001, distance);
+    let direction = key / max(length(key), 1e-6);
+    let along = max(dot(chroma, direction), 0.0);
+    chroma = chroma - direction * along * clamp(p.z, 0.0, 1.0);
+    let y = dot(v, LUMA);
+    let r = y + 1.5748 * chroma.y;
+    let b = y + 1.8556 * chroma.x;
+    let g = (y - 0.2126 * r - 0.0722 * b) / 0.7152;
+    return finish(from_display(vec3f(r, g, b)), texel.a * keep);
 }
 
 // ---- blur.gaussian and the blur half of detail.sharpen ----

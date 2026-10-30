@@ -586,3 +586,42 @@ body.browser .preview-hole::after {
   fill: var(--accent, #ff7a45);
   cursor: grab;
 }
+
+.preview-hole {
+  position: relative;
+}
+
+.mask-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  outline: none;
+}
+
+.mask-overlay.drawing {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.mask-overlay path {
+  fill: none;
+  stroke: var(--accent, #ff7a45);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.mask-overlay path.draft {
+  stroke-dasharray: none;
+  stroke-width: 2;
+}
+
+.mask-overlay circle {
+  fill: var(--accent, #ff7a45);
+}
+
+.overlay-buttons {
+  display: flex;
+  gap: 6px;
+}

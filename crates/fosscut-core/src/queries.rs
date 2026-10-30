@@ -353,8 +353,57 @@ fn clip_view(
     if let ClipContent::Adjustment = clip.content {
         view["text"] = json!("Adjustment");
     }
+    if detail == Detail::Full
+        && let Some(video) = clip
+            .content
+            .asset()
+            .and_then(|a| project.media.get(a))
+            .and_then(|a| a.info.video.as_ref())
+    {
+        // The picture as displayed, after its rotation: what masks and placement measure.
+        let turned = video.rotation.rem_euclid(180) == 90;
+        view["picture"] = if turned {
+            json!([video.height, video.width])
+        } else {
+            json!([video.width, video.height])
+        };
+    }
     if !clip.enabled {
         view["enabled"] = json!(false);
+    }
+    if !clip.masks.is_empty() {
+        view["masks"] = clip
+            .masks
+            .iter()
+            .map(|m| {
+                let mut mask = json!(m);
+                if detail != Detail::Full {
+                    return json!({ "id": m.id, "shape": m.shape });
+                }
+                if !m.keyframes.is_empty() {
+                    let reports: serde_json::Map<String, Value> = m
+                        .keyframes
+                        .iter()
+                        .map(|(name, keys)| {
+                            let keys: Vec<Value> = keys
+                                .iter()
+                                .map(|k| {
+                                    json!({
+                                        "at": TimeReport::new(clip.start + k.time, rate),
+                                        "offset": TimeReport::new(k.time, rate),
+                                        "value": k.value,
+                                        "interpolation": k.interpolation,
+                                    })
+                                })
+                                .collect();
+                            (name.clone(), json!(keys))
+                        })
+                        .collect();
+                    mask["keyframes"] = Value::Object(reports);
+                }
+                mask
+            })
+            .collect();
     }
     if !clip.effects.is_empty() {
         view["effects"] = clip

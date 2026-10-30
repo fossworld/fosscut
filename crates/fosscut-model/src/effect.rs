@@ -141,6 +141,8 @@ pub enum ParamKind {
     Curve,
     /// A media asset `{"asset": "asset_…"}` of the kind the parameter names.
     Asset,
+    /// An sRGB color `#RRGGBB`.
+    Color,
 }
 
 /// A parameter's default.
@@ -229,6 +231,8 @@ pub enum EffectCategory {
     Detail,
     /// Texture and stylization.
     Stylize,
+    /// Keying: making parts of the picture transparent.
+    Key,
 }
 
 /// A built-in effect type and its parameters (ADR-0011, item 1).
@@ -506,6 +510,50 @@ pub fn effect_types() -> Vec<EffectSpec> {
                     "0 follows the picture's shape, 1 is a circle, -1 squarer",
                 ),
                 number("feather", 0.5, 0.0, 1.0, "", "how soft the transition is"),
+            ],
+        },
+        EffectSpec {
+            name: "key.chroma",
+            version: 1,
+            title: "Chroma key",
+            category: EffectCategory::Key,
+            summary: "Makes one color transparent, such as a green or blue screen, with soft edges and spill removal.",
+            params: vec![
+                ParamSpec {
+                    name: "color",
+                    kind: ParamKind::Color,
+                    default: ParamDefault::Name("#00FF00"),
+                    min: None,
+                    max: None,
+                    unit: "",
+                    choices: &[],
+                    animatable: false,
+                    meaning: "the color to remove, #RRGGBB",
+                },
+                number(
+                    "similarity",
+                    0.35,
+                    0.0,
+                    1.0,
+                    "",
+                    "how close a color must be to the key to vanish",
+                ),
+                number(
+                    "smoothness",
+                    0.1,
+                    0.0,
+                    1.0,
+                    "",
+                    "how gradually colors near the key fade",
+                ),
+                number(
+                    "spill",
+                    0.5,
+                    0.0,
+                    1.0,
+                    "",
+                    "how much of the key's color is removed from what stays",
+                ),
             ],
         },
         EffectSpec {

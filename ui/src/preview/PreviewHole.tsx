@@ -7,7 +7,7 @@ import type { Editor } from "../app/editor";
  * the page the engine draws video into. It reports where it is whenever that changes. A
  * web build substitutes a canvas here.
  */
-export function PreviewHole({ editor }: { editor: Editor }) {
+export function PreviewHole({ editor, children }: { editor: Editor; children?: React.ReactNode }) {
   const hole = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -28,5 +28,9 @@ export function PreviewHole({ editor }: { editor: Editor }) {
     };
   }, [editor]);
 
-  return <div className="preview-hole" ref={hole} aria-label="Preview" />;
+  return (
+    <div className="preview-hole" ref={hole} aria-label="Preview">
+      {children}
+    </div>
+  );
 }

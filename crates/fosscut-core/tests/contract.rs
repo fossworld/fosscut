@@ -86,6 +86,22 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             json!({ "start": "1s", "duration": "2s", "effects": [{ "type": "color.adjust", "params": { "saturation": -1 } }] })
         }
         "look.apply" => json!({ "clip": clip, "look": "teal_orange" }),
+        "mask.add" => {
+            json!({ "clip": clip, "shape": "ellipse", "feather": 0.3, "center": [0.4, 0.5] })
+        }
+        "mask.set" | "mask.remove" => {
+            let added = run(
+                &mut session,
+                "mask.add",
+                json!({ "clip": clip, "shape": "rectangle" }),
+            );
+            let mask = added.results[0]["mask"].clone();
+            if command == "mask.set" {
+                json!({ "clip": clip, "mask": mask, "roundness": 0.5, "invert": true })
+            } else {
+                json!({ "clip": clip, "mask": mask })
+            }
+        }
         "keyframe.remove" => {
             run(
                 &mut session,

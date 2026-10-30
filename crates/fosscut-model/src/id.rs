@@ -21,6 +21,8 @@ pub enum IdKind {
     Asset,
     /// An effect on a clip (`effect_…`).
     Effect,
+    /// A mask on a clip (`mask_…`).
+    Mask,
 }
 
 impl IdKind {
@@ -33,6 +35,7 @@ impl IdKind {
             IdKind::Clip => "clip",
             IdKind::Asset => "asset",
             IdKind::Effect => "effect",
+            IdKind::Mask => "mask",
         }
     }
 }
