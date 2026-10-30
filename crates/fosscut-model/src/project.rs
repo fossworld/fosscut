@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::Id;
+use crate::{Id, TextPreset};
 
 /// The project manifest (`project.json`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Manifest {
     /// Format version of the bundle (semantic version).
     pub format_version: String,
@@ -20,6 +20,9 @@ pub struct Manifest {
     pub primary_timeline: Id,
     /// Timelines in the project, in display order.
     pub timelines: Vec<TimelineEntry>,
+    /// Text styles saved for reuse, sorted by name (ADR-0027).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub text_presets: Vec<TextPreset>,
 }
 
 /// A timeline listed in the manifest.

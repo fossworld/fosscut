@@ -10,6 +10,7 @@ import type {
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  Normalization,
   Opened,
   ProjectSummary,
   TrashEntry,
@@ -74,6 +75,11 @@ export class TauriEngine implements EngineClient {
 
   colorSuggest(clip: string, reference?: string): Promise<ColorSuggestion> {
     return invoke("color_suggest", { clip, reference: reference ?? null });
+  }
+
+  audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization> {
+    // Tauri hands camelCase arguments to the command's snake_case parameters.
+    return invoke("audio_normalize", { clips, targetLufs: targetLufs ?? null });
   }
 
   media = {

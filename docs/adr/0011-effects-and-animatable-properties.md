@@ -57,6 +57,9 @@ In CapCut, effects, filters, transitions and text templates arrive as downloadab
   - **Chroma key** (format 0.5.0): `key.chroma` removes a color (a new `color` parameter kind, `#RRGGBB`, green by default). Pixels whose chroma (BT.709 Cb and Cr) lies within the similarity of the key's become transparent, fading over the smoothness. Spill removal takes the key's chroma out of what stays.
   - **Automatic color** (ADR-0012: measured locally, no model): `fosscut_engine::color` renders seven frames of a clip without effects and measures their mean color, median, 1st and 99th luma percentiles and colorfulness. `color.auto` adds a `color.adjust` first in the clip's effects: a partial gray-world white balance, median brightness towards middle gray, and levels stretched only when the picture has a real tonal range. `color.match` adds one that brings the channel balance, brightness, spread and colorfulness close to a reference clip. Both are engine operations (`fosscut color auto|match`, the MCP `color` tool, the desktop's Auto color and Match color) that end in an ordinary `effect.add`, so they are undoable.
 
+- **Styled text** (format 0.11.0, item 5): spans, reveals by letter, word or line, spacing, outlines, boxes, shadows, glows and project fonts are decided in [ADR-0027](0027-styled-text-with-project-fonts.md); built-in text presets and title templates are data in `fosscut-core/presets/text/`.
+- **Sound effects** (format 0.11.0, item 1): `audio.denoise`, `audio.enhance_voice` and `audio.vocals` are registry types of the `audio` category, applied by the mixer, as decided in [ADR-0026](0026-sound-effects-in-the-effect-registry.md).
+
 ## Consequences
 
 - Agents can enumerate effects and parameters, and invalid values are rejected before rendering.

@@ -133,6 +133,9 @@ pub mod codes {
     pub const EFFECT_UNKNOWN_TYPE: &str = "fosscut.effect.unknown_type";
     /// The clip has no effect with this id.
     pub const EFFECT_NOT_FOUND: &str = "fosscut.effect.not_found";
+    /// The effect does not fit the clip: sound effects need sound, picture effects a
+    /// picture.
+    pub const EFFECT_TARGET: &str = "fosscut.effect.wrong_target";
     /// No built-in look has this name.
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The clip has no mask with this id.
@@ -155,6 +158,18 @@ pub mod codes {
     pub const MEDIA_INCOMPLETE: &str = "fosscut.media.incomplete_info";
     /// Text is empty.
     pub const TEXT_EMPTY: &str = "fosscut.text.empty";
+    /// A text style, span or reveal is out of range.
+    pub const TEXT_INVALID: &str = "fosscut.text.invalid";
+    /// The font family is neither bundled nor in a font asset.
+    pub const TEXT_UNKNOWN_FONT: &str = "fosscut.text.unknown_font";
+    /// The clip is not a text clip.
+    pub const TEXT_NOT_TEXT: &str = "fosscut.text.not_text";
+    /// No text preset has this name.
+    pub const TEXT_UNKNOWN_PRESET: &str = "fosscut.text.unknown_preset";
+    /// The project already has a text preset of this name.
+    pub const TEXT_PRESET_EXISTS: &str = "fosscut.text.preset_exists";
+    /// No title template has this name.
+    pub const TEXT_UNKNOWN_TEMPLATE: &str = "fosscut.text.unknown_template";
     /// Caption words are empty, out of order, overlapping or outside their page.
     pub const CAPTIONS_INVALID_WORDS: &str = "fosscut.captions.invalid_words";
     /// No caption preset has this name.
@@ -317,6 +332,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             "Read the clip's effects with timeline.read; effect ids look like effect_0007.",
         ),
         entry(
+            EFFECT_TARGET,
+            "The effect does not fit the clip: sound effects need sound, picture effects a picture.",
+            "Put audio.* effects on audio clips, video clips with sound or compound clips, and picture effects on clips with a picture.",
+        ),
+        entry(
             TRANSITION_UNKNOWN_TYPE,
             "No transition type has this name.",
             "List the transitions with capabilities (under transitions).",
@@ -367,6 +387,36 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             "Import the file with a front end that probes it (fosscut media import).",
         ),
         entry(TEXT_EMPTY, "Text is empty.", "Provide non-empty text."),
+        entry(
+            TEXT_INVALID,
+            "A text style, span or reveal is out of range.",
+            "Read the message and the details; capabilities lists the text style fields and their ranges under text.",
+        ),
+        entry(
+            TEXT_UNKNOWN_FONT,
+            "The font family is neither bundled nor in a font asset.",
+            "Use Inter, or import a .ttf or .otf file with media import and name one of its families.",
+        ),
+        entry(
+            TEXT_NOT_TEXT,
+            "The clip is not a text clip.",
+            "Find text clips with timeline.read; captions change through captions.edit and captions.style.",
+        ),
+        entry(
+            TEXT_UNKNOWN_PRESET,
+            "No text preset has this name.",
+            "capabilities lists the built-in presets under text.presets; project.info lists the saved ones.",
+        ),
+        entry(
+            TEXT_PRESET_EXISTS,
+            "The project already has a text preset of this name.",
+            "Pass replace: true to overwrite it, or choose another name.",
+        ),
+        entry(
+            TEXT_UNKNOWN_TEMPLATE,
+            "No title template has this name.",
+            "capabilities lists the templates under text.templates.",
+        ),
         entry(
             CAPTIONS_INVALID_WORDS,
             "Caption words are empty, out of order, overlapping or outside their page.",

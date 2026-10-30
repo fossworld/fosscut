@@ -62,6 +62,7 @@ impl Command for MediaAdd {
             }
             AssetKind::Image => info.video.is_some(),
             AssetKind::Lut => info.lut.is_some(),
+            AssetKind::Font => info.font.as_ref().is_some_and(|f| !f.families.is_empty()),
         };
         if !complete {
             return Err(ApiError::new(

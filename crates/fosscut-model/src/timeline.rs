@@ -9,6 +9,7 @@ use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
 use crate::mask::Mask;
 use crate::speed::Speed;
+use crate::text::TextContent;
 use crate::transition::{ClipAnimations, Transition};
 use crate::{Id, is_default};
 
@@ -437,7 +438,7 @@ pub enum ClipContent {
         asset: Id,
     },
     /// A text title.
-    Text(TextContent),
+    Text(Box<TextContent>),
     /// A caption page: lines of timed words (ADR-0021).
     Caption(CaptionContent),
     /// An adjustment layer: its effects apply to everything below it while it lasts.
@@ -662,56 +663,6 @@ pub enum ChannelMode {
     Right,
     /// Both channels mixed to one, played on both.
     Mono,
-}
-
-/// Text content with a single style.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct TextContent {
-    /// The text; `\n` separates lines.
-    pub text: String,
-    /// Appearance; defaults when omitted.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub style: TextStyle,
-}
-
-/// Text appearance.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct TextStyle {
-    /// Font family; the default sans-serif font when omitted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub font: Option<String>,
-    /// Font size as a fraction of the canvas height.
-    #[serde(default = "default_text_size")]
-    pub size: f64,
-    /// Fill colour.
-    #[serde(default)]
-    pub color: Color,
-    /// Bold weight.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub bold: bool,
-    /// Italic style.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub italic: bool,
-    /// Horizontal alignment of lines.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub align: Align,
-}
-
-fn default_text_size() -> f64 {
-    0.08
-}
-
-impl Default for TextStyle {
-    fn default() -> TextStyle {
-        TextStyle {
-            font: None,
-            size: default_text_size(),
-            color: Color::default(),
-            bold: false,
-            italic: false,
-            align: Align::default(),
-        }
-    }
 }
 
 /// Horizontal text alignment.

@@ -4,7 +4,7 @@
 // its plain value with `clip.set`.
 
 import { keyAt, keysOf, numberAt, pairAt } from "../app/animation";
-import type { ClipView, CommandCall } from "../engine/types";
+import type { AssetView, ClipView, CommandCall } from "../engine/types";
 import { FLICKS_PER_SECOND } from "../transport/time";
 
 export type FieldId =
@@ -65,6 +65,18 @@ export function isPlaced(clip: ClipView): boolean {
 /** True for clips with sound. */
 export function hasSound(clip: ClipView): boolean {
   return clip.kind === "audio" || clip.kind === "video";
+}
+
+/**
+ * True for clips that play sound (ADR-0026, item 3): audio and compound clips, and video
+ * clips whose media has sound. A video whose asset the listing lacks counts as sounding,
+ * so the engine decides.
+ */
+export function playsSound(clip: ClipView, media: AssetView[]): boolean {
+  if (clip.kind === "audio" || clip.kind === "timeline") return true;
+  if (clip.kind !== "video") return false;
+  const asset = media.find((a) => a.id === clip.asset);
+  return !asset || asset.kind === "audio" || (asset.audio !== undefined && asset.audio !== null);
 }
 
 /** True when the clip's picture is stretched, so its scale shows as two values. */

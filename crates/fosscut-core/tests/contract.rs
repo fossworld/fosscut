@@ -32,7 +32,31 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             let title = run(&mut session, "text.add", json!({ "text": "Remove me" }));
             json!({ "clip": title.results[0]["clip"] })
         }
-        "text.add" => json!({ "text": "Hello", "start": "0f", "duration": "1.5s" }),
+        "text.add" => json!({
+            "text": "Hello there",
+            "start": "0f",
+            "duration": "1.5s",
+            "preset": "outline",
+            "style": { "letter_spacing": 0.05 },
+            "spans": [{ "start": 6, "end": 11, "color": "#FFCC00" }],
+            "reveal": { "unit": "word", "motion": "fade", "duration": "0.5s" }
+        }),
+        "text.set" => {
+            let title = run(&mut session, "text.add", json!({ "text": "Restyle me" }));
+            json!({ "clip": title.results[0]["clip"], "preset": "neon", "style": { "underline": true }, "reveal": null })
+        }
+        "text.preset_save" => json!({ "name": "Lower", "style": { "box": { "enabled": true } } }),
+        "text.preset_remove" => {
+            run(
+                &mut session,
+                "text.preset_save",
+                json!({ "name": "Spare", "style": { "bold": true } }),
+            );
+            json!({ "name": "Spare" })
+        }
+        "text.template" => {
+            json!({ "template": "lower-third", "lines": ["Sam Lee", "Editor"], "start": "0f" })
+        }
         "captions.add" => json!({
             "words": [
                 { "text": "Hello", "start": { "seconds": "0.5" }, "end": { "seconds": "0.9" } },

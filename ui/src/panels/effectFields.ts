@@ -1,10 +1,12 @@
 // Effect parameters at the playhead and the commands an edit turns into (ADR-0011,
 // items 1 and 2): numbers and pairs with keyframes change by a keyframe at the playhead
 // (`effects.<id>.<param>`), everything else with `effect.set`. Curves are edited point by
-// point here, then sent whole.
+// point here, then sent whole. Sound effects (category `audio`) go on clips with sound and
+// picture effects on clips with a picture (ADR-0026, item 3).
 
 import { evaluate } from "../app/animation";
-import type { ClipView, CommandCall, EffectSpec, EffectView, KeyframeView, ParamSpec } from "../engine/types";
+import type { AssetView, ClipView, CommandCall, EffectSpec, EffectView, KeyframeView, ParamSpec } from "../engine/types";
+import { hasPicture, playsSound } from "./fields";
 
 export type Point = [number, number];
 
@@ -28,9 +30,38 @@ export function keyed(effect: EffectView, param: string, playhead: number): bool
   return keysOf(effect, param)?.some((k) => k.at.flicks === playhead) ?? false;
 }
 
+/** What effects can change on a clip: its picture, its sound, or both. */
+export interface Targets {
+  picture: boolean;
+  sound: boolean;
+}
+
+/**
+ * Audio clips have only sound; video clips with sound and compound clips have both;
+ * text, image, caption and adjustment clips and silent videos have only a picture.
+ */
+export function targetsOf(clip: ClipView, media: AssetView[]): Targets {
+  return { picture: hasPicture(clip), sound: playsSound(clip, media) };
+}
+
+/** True for effects that change sound rather than pictures. */
+export function isSoundEffect(spec: EffectSpec): boolean {
+  return spec.category === "audio";
+}
+
+/** The effect types a clip can take, in the catalog's order. */
+export function offeredEffects(catalog: EffectSpec[], targets: Targets): EffectSpec[] {
+  return catalog.filter((spec) => (isSoundEffect(spec) ? targets.sound : targets.picture));
+}
+
+/** True when a parameter takes keyframes: animatable numbers and pairs only. */
+export function keyframeable(spec: ParamSpec): boolean {
+  return spec.animatable && (spec.kind === "number" || spec.kind === "pair");
+}
+
 /** The value of a parameter at the playhead: keyframes, the stored value, or the default. */
 export function paramAt(clip: ClipView, effect: EffectView, spec: ParamSpec, playhead: number): unknown {
-  const keys = keysOf(effect, spec.name);
+  const keys = keyframeable(spec) ? keysOf(effect, spec.name) : undefined;
   if (keys) {
     const value = evaluate(keys, playhead - clip.start.flicks);
     if (value !== undefined) return value;
@@ -70,8 +101,9 @@ export function paramChange(
       return null;
     }
   }
+  if (spec.kind === "choice" && !(typeof value === "string" && (spec.choices ?? []).includes(value))) return null;
   if (same(value, paramAt(clip, effect, spec, playhead))) return null;
-  if (animated(effect, spec.name)) {
+  if (keyframeable(spec) && animated(effect, spec.name)) {
     return {
       command: "keyframe.set",
       args: { clip: clip.id, property: paramPath(effect, spec.name), at: { flicks: playhead }, value },

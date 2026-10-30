@@ -4,6 +4,85 @@ expression: listing
 ---
 [
   {
+    "description": "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches.",
+    "input": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "ceiling_dbfs": {
+          "description": "Highest sample peak in dBFS, from -12 to 0; -1 when omitted.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clips": {
+          "description": "The clips with sound to level (audio, video or compound clips).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Report what would change without committing it.",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Add or adjust an `audio.limiter` where the peaks leave too little room for the\nvolume alone (the default); false only changes volumes.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "Retry key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_lufs": {
+          "description": "Target loudness in LUFS; -14 (short-form platforms) when omitted; podcasts use -16.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "clips"
+      ],
+      "type": "object"
+    },
+    "name": "audio_normalize",
+    "read_only": false
+  },
+  {
     "description": "List what FossCut can do: every editing command and query with a summary, the engine operations, the analyzers, the models and whether each is installed, and the export presets this machine can encode. Before using a command the first time, call it with names (for example [\"clip.add\", \"text.add\"]) to get just those argument schemas; detail: full returns every schema and error code at once and is large.",
     "input": {
       "$defs": {
@@ -138,6 +217,11 @@ expression: listing
             "null"
           ]
         },
+        "lyrics": {
+          "default": false,
+          "description": "generate: caption a song's lyrics: the music track first, one sung line per page,\nthe karaoke look unless a preset is given.",
+          "type": "boolean"
+        },
         "paging": {
           "description": "generate: paging limits, for example `{\"max_words\": 3, \"max_lines\": 1}`."
         },
@@ -174,6 +258,11 @@ expression: listing
             "null"
           ]
         },
+        "skip_fillers": {
+          "default": false,
+          "description": "generate: leave out the words the transcript marks as fillers (\"um\", \"uh\").",
+          "type": "boolean"
+        },
         "source_track": {
           "description": "generate: the track whose clips are captioned; the first video or audio track with\nsound when omitted.",
           "type": [
@@ -183,6 +272,13 @@ expression: listing
         },
         "style": {
           "description": "Changes to the caption track's look as a JSON merge patch, for example\n`{\"placement\": \"middle\", \"size\": 0.07}`."
+        },
+        "subtitles": {
+          "description": "export: `original` (the default), `translation` (each page's translation line) or\n`both` (bilingual: the words, then the translation).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "timeline": {
           "description": "Timeline; the primary timeline when omitted.",

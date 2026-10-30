@@ -37,6 +37,10 @@ export interface ProjectInfo {
   primary_timeline: string;
   timelines: TimelineSummary[];
   assets: number;
+  /** Every font family text can use, sorted, the bundled Inter among them. */
+  fonts?: string[];
+  /** Names of the text styles saved in the project (`text.preset_save`). */
+  text_presets?: string[];
 }
 
 /** A recent project in the browser. */
@@ -64,7 +68,7 @@ export interface TrashEntry {
 /** One asset of `media.list`. */
 export interface AssetView {
   id: string;
-  kind: "video" | "audio" | "image" | "lut";
+  kind: "video" | "audio" | "image" | "lut" | "font";
   name: string;
   duration?: Moment | null;
   video?: { width: number; height: number } | null;
@@ -75,6 +79,8 @@ export interface AssetView {
   folder?: string | null;
   /** True when its file cannot be found (the desktop marks it). */
   missing?: boolean;
+  /** A font asset's families, for text styles. */
+  families?: string[];
 }
 
 /** `media.list`. */
@@ -139,6 +145,12 @@ export interface ClipView {
   end: Moment;
   duration: Moment;
   text?: string;
+  /** A text clip's style, restyled parts and reveal (ADR-0027). */
+  style?: TextStyleView;
+  spans?: TextSpanView[];
+  reveal?: TextRevealView;
+  /** The asset a video, audio or image clip shows. */
+  asset?: string;
   asset_name?: string;
   source_in?: Moment;
   transform?: Transform;
@@ -297,11 +309,106 @@ export interface Catalog {
   transitions: TransitionSpec[];
   animations: AnimationPreset[];
   speed_presets: SpeedPreset[];
+  text: TextCatalog;
+}
+
+export type TextCase = "as_written" | "upper" | "lower" | "title";
+export type TextAlign = "left" | "center" | "right";
+
+/**
+ * A text style as the engine stores it: sparse, so omitted fields are at their defaults.
+ * Lengths are in em (fractions of the font size); `size` is a fraction of the canvas
+ * height; colours are `#RRGGBB` or `#RRGGBBAA`.
+ */
+export interface TextStyleView {
+  font?: string;
+  size?: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  case?: TextCase;
+  align?: TextAlign;
+  letter_spacing?: number;
+  line_height?: number;
+  stroke?: { enabled: boolean; color?: string; width?: number };
+  box?: { enabled: boolean; color?: string; padding?: number; radius?: number };
+  shadow?: { enabled: boolean; color?: string; offset?: [number, number]; blur?: number };
+  glow?: { enabled: boolean; color?: string; radius?: number };
+}
+
+/** Part of a text styled differently, by character positions (`end` excluded). */
+export interface TextSpanView {
+  start: number;
+  end: number;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  font?: string;
+  size?: number;
+}
+
+export type RevealUnit = "letter" | "word" | "line";
+export type RevealMotion = "appear" | "fade" | "rise";
+
+/** How a text appears, as `timeline.read` reports it. */
+export interface TextRevealView {
+  unit: RevealUnit;
+  motion?: RevealMotion;
+  duration: Moment;
+  exit?: boolean;
+}
+
+/** A built-in text style. */
+export interface TextPresetView {
+  name: string;
+  description: string;
+  style?: TextStyleView;
+}
+
+/** A built-in title template and the placeholders of its lines. */
+export interface TitleTemplateView {
+  name: string;
+  description: string;
+  lines: string[];
+}
+
+/** What `capabilities` says about text. */
+export interface TextCatalog {
+  fonts: string[];
+  presets: TextPresetView[];
+  templates: TitleTemplateView[];
+  reveal: { units: RevealUnit[]; motions: RevealMotion[] };
+  cases: TextCase[];
 }
 
 /** A color correction measured by the engine, ready for `effect.add`. */
 export interface ColorSuggestion {
   effect_add: Record<string, unknown>;
+}
+
+/** One clip's loudness and the volume that levels it. */
+export interface Leveled {
+  clip: string;
+  /** Integrated loudness at volume 1, in LUFS; null when silent or under 400 ms. */
+  measured_lufs: number | null;
+  /** Sample peak at volume 1, in dBFS. */
+  peak_dbfs: number | null;
+  gain_db: number;
+  /** The clip's new volume. */
+  volume: number;
+  /** True when the peak ceiling or the gain range held the gain back. */
+  limited: boolean;
+}
+
+/** Loudness measured by the engine, with the `clip.set` calls that level it. */
+export interface Normalization {
+  target_lufs: number;
+  ceiling_dbfs: number;
+  clips: Leveled[];
+  /** One `clip.set` per measured clip, to apply as one edit. */
+  commands: CommandCall[];
 }
 
 export interface TrackView {

@@ -236,7 +236,9 @@ impl EffectsChanged {
 }
 
 /// Runs `edit` on a clip with a picture, after checking its track is unlocked.
-fn with_picture<T>(
+/// Edits a clip's effects, then checks each one fits the clip: picture effects need a
+/// picture and sound effects need sound (ADR-0026, item 3).
+fn with_effects<T>(
     ctx: &mut Context<'_>,
     command: &str,
     id: &Id,
@@ -248,12 +250,36 @@ fn with_picture<T>(
     let track = &mut timeline.tracks[location.track];
     ensure_unlocked(track)?;
     let clip = &mut track.clips[location.clip];
-    if matches!(clip.content, ClipContent::Audio { .. }) {
-        return Err(invalid(format!(
-            "{command}: {id} is an audio clip; effects change pictures"
-        )));
-    }
     let result = edit(clip, &snapshot)?;
+    let sound = match &clip.content {
+        ClipContent::Audio { .. } | ClipContent::Timeline { .. } => true,
+        ClipContent::Video { asset, .. } => snapshot.get(asset).is_some_and(|a| a.has_audio()),
+        _ => false,
+    };
+    let picture = !matches!(clip.content, ClipContent::Audio { .. });
+    for effect in &clip.effects {
+        let Some(spec) = effect_type(&effect.effect_type) else {
+            continue;
+        };
+        let refusal = if spec.is_audio() && !sound {
+            Some(format!(
+                "{command}: {} changes sound, and {id} has none",
+                spec.name
+            ))
+        } else if !spec.is_audio() && !picture {
+            Some(format!(
+                "{command}: {id} is an audio clip; {} changes pictures",
+                spec.name
+            ))
+        } else {
+            None
+        };
+        if let Some(message) = refusal {
+            return Err(ApiError::new(codes::EFFECT_TARGET, message).with_hint(
+                "Sound effects (audio.*) go on audio clips, video clips with sound and compound clips; picture effects on clips with a picture.",
+            ));
+        }
+    }
     let changed = EffectsChanged::of(clip, None);
     Ok((result, changed))
 }
@@ -275,7 +301,8 @@ fn effect_index(command: &str, clip: &Clip, effect: &Id) -> Result<usize, ApiErr
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EffectAdd {
-    /// The clip: a video, image, text, caption or adjustment clip.
+    /// The clip: a video, image, text, caption, compound or adjustment clip for picture
+    /// effects; an audio, video or compound clip with sound for sound effects.
     pub clip: Id,
     /// The effect type, such as `color.adjust` (capabilities lists them under effects).
     #[serde(rename = "type")]
@@ -290,14 +317,14 @@ pub struct EffectAdd {
 
 impl Command for EffectAdd {
     const NAME: &'static str = "effect.add";
-    const SUMMARY: &'static str = "Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it.";
+    const SUMMARY: &'static str = "Add an effect to a clip: to its picture (color.adjust for exposure, white balance, contrast, tone and saturation, color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and others) or to its sound (audio.denoise, audio.enhance_voice, audio.vocals to isolate or remove a centred voice). Effects apply in order; on an adjustment clip picture effects apply to everything below it. capabilities lists every type with its parameters.";
     type Output = EffectsChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<EffectsChanged, ApiError> {
         let spec = spec_of(Self::NAME, &self.effect_type)?;
         let id = ctx.project.allocate_id(IdKind::Effect);
         let added = id.clone();
-        let (_, mut changed) = with_picture(ctx, Self::NAME, &self.clip, |clip, media| {
+        let (_, mut changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, media| {
             let mut effect = Effect {
                 id,
                 effect_type: spec.name.to_string(),
@@ -363,7 +390,7 @@ impl Command for EffectSet {
             ));
         }
         let effect_id = self.effect.clone();
-        let (_, mut changed) = with_picture(ctx, Self::NAME, &self.clip, |clip, media| {
+        let (_, mut changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, media| {
             let index = effect_index(Self::NAME, clip, &self.effect)?;
             let effect = &mut clip.effects[index];
             let spec = spec_of(Self::NAME, &effect.effect_type)?;
@@ -407,7 +434,7 @@ impl Command for EffectRemove {
     type Output = EffectsChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<EffectsChanged, ApiError> {
-        let (_, changed) = with_picture(ctx, Self::NAME, &self.clip, |clip, _| {
+        let (_, changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, _| {
             let index = effect_index(Self::NAME, clip, &self.effect)?;
             clip.effects.remove(index);
             Ok(())
@@ -436,7 +463,7 @@ impl Command for EffectMove {
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<EffectsChanged, ApiError> {
         let effect_id = self.effect.clone();
-        let (_, mut changed) = with_picture(ctx, Self::NAME, &self.clip, |clip, _| {
+        let (_, mut changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, _| {
             let from = effect_index(Self::NAME, clip, &self.effect)?;
             if self.index >= clip.effects.len() {
                 return Err(invalid(format!(
@@ -500,7 +527,7 @@ impl Command for EffectCopy {
                 effect.id = ctx.project.allocate_id(IdKind::Effect);
             }
             let append = self.append;
-            let (_, changed) = with_picture(ctx, Self::NAME, target, |clip, _| {
+            let (_, changed) = with_effects(ctx, Self::NAME, target, |clip, _| {
                 if !append {
                     clip.effects.clear();
                 }
@@ -688,7 +715,7 @@ impl Command for LookApply {
             .collect();
         let effects = build_effects(Self::NAME, ctx.project, &inputs)?;
         let replace = self.replace;
-        let (_, changed) = with_picture(ctx, Self::NAME, &self.clip, |clip, _| {
+        let (_, changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, _| {
             if replace {
                 clip.effects.clear();
             }

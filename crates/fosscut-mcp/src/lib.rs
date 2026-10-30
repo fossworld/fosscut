@@ -46,8 +46,8 @@ use serde_json::{Value, json};
 use params::{
     CapabilitiesArgs, CaptionsAction, CaptionsArgs, ColorAction, ColorArgs, Detail, EditArgs,
     ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs, MediaAnalyzeArgs,
-    MediaImportArgs, ModelsArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs,
-    SheetArgs, TimelineReadArgs,
+    MediaImportArgs, ModelsArgs, NormalizeArgs, ProjectArgs, ProjectNewArgs, ProjectOpenArgs,
+    QueryArgs, SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -635,10 +635,15 @@ impl FosscutServer {
                 let words = match args.action {
                     CaptionsAction::Export => {
                         let path = file("export")?;
+                        let text = match args.subtitles.as_deref() {
+                            Some(name) => fosscut_engine::captions::SrtText::named(name)?,
+                            None => fosscut_engine::captions::SrtText::Original,
+                        };
                         let srt = fosscut_engine::captions::export_srt(
                             &snapshot,
                             timeline.as_ref(),
                             track.as_ref(),
+                            text,
                         )?;
                         if path.exists() && !args.allow_destructive {
                             return Err(EngineError::OutputExists {
@@ -671,9 +676,15 @@ impl FosscutServer {
                                 transcript: args.transcript.clone(),
                                 cache: state.cache.clone(),
                                 models: state.models.clone(),
+                                skip_fillers: args.skip_fillers,
+                                lyrics: args.lyrics,
                             },
                         )?;
-                        (generated.words, args.paging.clone())
+                        let paging = match (&args.paging, args.lyrics) {
+                            (None, true) => Some(fosscut_engine::captions::lyrics_paging()),
+                            (paging, _) => paging.clone(),
+                        };
+                        (generated.words, paging)
                     }
                     CaptionsAction::Import => {
                         let path = file("import")?;
@@ -708,7 +719,12 @@ impl FosscutServer {
                 for (key, value) in [
                     ("timeline", timeline.map(|t| json!(t))),
                     ("track", track.map(|t| json!(t))),
-                    ("preset", args.preset.map(|p| json!(p))),
+                    (
+                        "preset",
+                        args.preset
+                            .map(|p| json!(p))
+                            .or_else(|| args.lyrics.then(|| json!("karaoke"))),
+                    ),
                     ("style", args.style),
                     ("paging", paging),
                     ("replace", args.replace.then_some(json!(true))),
@@ -792,6 +808,64 @@ impl FosscutServer {
                 if let Some(reference) = suggestion.reference {
                     value["reference"] = json!(reference);
                 }
+                Ok(value)
+            })
+            .await,
+        )
+    }
+
+    /// Levels clips' loudness.
+    #[tool(
+        description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
+    )]
+    async fn audio_normalize(
+        &self,
+        params: Parameters<NormalizeArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let bundle = match self.bundle(args.project.clone()) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let actor = actor(&context);
+        let state = Arc::clone(&self.state);
+        reply(
+            blocking(move || {
+                use fosscut_engine::loudness;
+                let snapshot = state.projects.snapshot(&bundle)?;
+                let clips = args
+                    .clips
+                    .iter()
+                    .map(|c| {
+                        fosscut_model::Id::parse(c).map_err(|e| {
+                            ApiError::new(codes::INVALID_ARGUMENTS, format!("clip: {e}"))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, ApiError>>()?;
+                let measured = loudness::normalize(
+                    &snapshot,
+                    &bundle,
+                    &clips,
+                    args.target_lufs.unwrap_or(loudness::DEFAULT_TARGET_LUFS),
+                    args.ceiling_dbfs.unwrap_or(loudness::DEFAULT_CEILING_DBFS),
+                    args.limit.unwrap_or(true),
+                )?;
+                if measured.commands.is_empty() {
+                    return Ok(json!({ "normalization": measured, "committed": false }));
+                }
+                let mut write: Request =
+                    serde_json::from_value(json!({ "commands": measured.commands }))
+                        .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+                write.expected_revision = args.expected_revision;
+                write.dry_run = args.dry_run;
+                write.request_id = args.request_id;
+                write.reason = args.reason;
+                write.actor = actor;
+                write.at_ms = project::now_ms();
+                let response = state.projects.execute(&bundle, write)?;
+                let mut value = as_value(&response);
+                value["normalization"] = json!(measured);
                 Ok(value)
             })
             .await,

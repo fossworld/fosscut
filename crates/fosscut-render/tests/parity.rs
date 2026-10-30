@@ -48,6 +48,7 @@ fn project() -> (Project, Id) {
                 }),
                 audio: None,
                 lut: None,
+                ..Default::default()
             },
         });
     }
@@ -240,14 +241,15 @@ fn text_matches_between_preview_and_export() {
             Id::new(IdKind::Clip, 40),
             Flicks::ZERO,
             frames(90),
-            ClipContent::Text(fosscut_model::TextContent {
+            ClipContent::Text(Box::new(fosscut_model::TextContent {
                 text: "Preview equals export".into(),
                 style: fosscut_model::TextStyle {
                     size: 0.08,
                     bold: true,
                     ..fosscut_model::TextStyle::default()
                 },
-            }),
+                ..Default::default()
+            })),
         )
     };
     project

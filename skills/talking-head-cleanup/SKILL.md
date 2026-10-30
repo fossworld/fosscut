@@ -1,6 +1,6 @@
 ---
 name: talking-head-cleanup
-description: Tighten talking-head footage with FossCut by cutting filler words, long pauses and retakes found in a local transcript, keeping picture, sound and captions in sync. Use when the user asks to clean up a talk, interview, vlog or podcast video, remove ums, uhs, pauses or dead air, cut retakes, or make the edit snappier.
+description: Tighten talking-head footage with FossCut by cutting filler words, long pauses and retakes found in a local transcript, keeping picture, sound and captions in sync, and clean up its sound (noise, clarity, loudness). Use when the user asks to clean up a talk, interview, vlog or podcast video, remove ums, uhs, pauses or dead air, cut retakes, make the edit snappier, or fix noisy, muddy or uneven sound.
 ---
 
 # Talking-head cleanup
@@ -40,7 +40,12 @@ Follow the safe editing loop of the `fosscut-basics` skill (read, plan with a dr
    - `frame_grab` just before and after the first few cuts: the speaker should not jump in an odd way.
    - `contact_sheet` for the whole edit.
    - If there are captions, a frame at a spoken word shows them in sync.
-9. **Export** as usual, and report the time saved and what was cut.
+9. **Clean up the sound** (ask first if the user did not ask for it):
+   - **Noise:** for steady background noise (hiss, hum, air conditioning), `effect.add` with `audio.denoise` on each speech clip, `amount` 0.5 to 0.8. Higher amounts can make the voice sound thin.
+   - **Clarity:** for a muddy or distant voice, add `audio.enhance_voice` after the denoise.
+   - **Loudness:** `audio_normalize` with every speech clip, to -14 LUFS for short-form video or -16 for podcasts. It measures each clip with its effects, so run it last. Where the voice's peaks leave too little room, it adds an `audio.limiter` so the clip still reaches the target without clipping; tell the user the loudness it reached.
+   - The tools work on this machine without a model. `audio.denoise` treats any sound held for more than about a second and a half as noise, so do not use it on music.
+10. **Export** as usual, and report the time saved, what was cut and how the sound was treated.
 
 ## When something fails
 

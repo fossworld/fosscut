@@ -10,9 +10,11 @@ import {
   type Client,
   type CommandCall,
   type EditRequest,
+  type EditResponse,
   type History,
   type LogEntry,
   type MediaListing,
+  type Normalization,
   type Opened,
   type ProjectSummary,
   type TimelineView,
@@ -134,6 +136,28 @@ const EMPTY: EditorState = {
   maskTool: null,
 };
 
+/** What a catalog says about text when `capabilities` has nothing on it. */
+const NO_TEXT: Catalog["text"] = {
+  fonts: ["Inter"],
+  presets: [],
+  templates: [],
+  reveal: { units: ["letter", "word", "line"], motions: ["appear", "fade", "rise"] },
+  cases: ["as_written", "upper", "lower", "title"],
+};
+
+/** What normalizing loudness did, in a sentence. */
+export function levelled(normalization: Normalization): string {
+  const measured = normalization.clips.filter((c) => c.measured_lufs !== null);
+  if (measured.length === 0) return "Nothing to level: the clips are silent or shorter than 400 ms.";
+  const count = (n: number, what: string) => (n === 1 ? `one ${what}` : `${n} ${what}s`);
+  const parts = [`Levelled to ${normalization.target_lufs} LUFS`];
+  const limited = measured.filter((c) => c.limited).length;
+  if (limited > 0) parts.push(`${count(limited, "clip")} held back by the ${normalization.ceiling_dbfs} dBFS peak ceiling`);
+  const silent = normalization.clips.length - measured.length;
+  if (silent > 0) parts.push(`${count(silent, "silent clip")} left alone`);
+  return `${parts.join("; ")}.`;
+}
+
 /** Asks the user a yes-or-no question; the app passes `window.confirm`. */
 export type Confirm = (question: string) => boolean;
 
@@ -230,6 +254,7 @@ export class Editor {
           transitions: caps.transitions ?? [],
           animations: caps.animations ?? [],
           speed_presets: caps.speed_presets ?? [],
+          text: { ...NO_TEXT, ...caps.text },
         },
       });
     } catch {
@@ -537,33 +562,39 @@ export class Editor {
    * reloads and says so; a destructive change asks first, then applies with consent.
    */
   async edit(commands: CommandCall[], reason?: string): Promise<boolean> {
+    return (await this.apply(commands, reason)) !== null;
+  }
+
+  /** `edit`, answering the engine's response, or null when nothing was applied. */
+  private async apply(commands: CommandCall[], reason?: string): Promise<EditResponse | null> {
     const timeline = this.state.timeline;
-    if (!timeline) return false;
+    if (!timeline) return null;
     const request: EditRequest = { commands, expected_revision: timeline.revision };
     if (reason) request.reason = reason;
+    let response: EditResponse;
     try {
-      await this.engine.execute(request);
+      response = await this.engine.execute(request);
     } catch (error) {
       const api = asError(error);
       if (api.code === "fosscut.revision.conflict") {
         await this.refresh();
         this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
-        return false;
+        return null;
       }
       if (api.code === "fosscut.guard.destructive" && this.confirm(`${api.message}. Do it anyway?`)) {
         try {
-          await this.engine.execute({ ...request, allow_destructive: true });
+          response = await this.engine.execute({ ...request, allow_destructive: true });
         } catch (again) {
           this.notify(again);
-          return false;
+          return null;
         }
       } else {
         if (api.code !== "fosscut.guard.destructive") this.notify(api);
-        return false;
+        return null;
       }
     }
     await this.refresh();
-    return true;
+    return response;
   }
 
   async deleteSelection(): Promise<void> {
@@ -942,6 +973,63 @@ export class Editor {
     } catch (error) {
       this.notify(error);
     }
+  }
+
+  /**
+   * Levels the loudness of clips with sound: the engine measures them, and the volumes it
+   * works out apply as one undoable step, with a note of what it did.
+   */
+  async normalizeLoudness(clips: string[], targetLufs?: number): Promise<void> {
+    if (clips.length === 0) {
+      this.set({ notice: { kind: "info", text: "Select clips with sound to normalize their loudness." } });
+      return;
+    }
+    let normalization: Normalization;
+    try {
+      normalization = await this.engine.audioNormalize(clips, targetLufs);
+    } catch (error) {
+      this.notify(error);
+      return;
+    }
+    if (normalization.commands.length > 0 && !(await this.edit(normalization.commands, "Normalize loudness"))) return;
+    this.set({ notice: { kind: "info", text: levelled(normalization) } });
+  }
+
+  // ---- Text ----
+
+  /** Changes a text clip with `text.set`: `text`, `preset`, a `style` patch, `spans` or `reveal`. */
+  async setText(clip: string, change: Record<string, unknown> | null): Promise<void> {
+    if (!change || Object.keys(change).length === 0) return;
+    await this.edit([{ command: "text.set", args: { clip, ...change } }]);
+  }
+
+  /** Saves a text clip's style in the project as `name`, asking before replacing one. */
+  async saveTextPreset(clip: string, name: string): Promise<boolean> {
+    const preset = name.trim();
+    if (!preset) return false;
+    const args: Record<string, unknown> = { name: preset, clip };
+    if (this.state.opened?.info.text_presets?.includes(preset)) {
+      if (!this.confirm(`The project already has a text preset called ${preset}. Replace it?`)) return false;
+      args.replace = true;
+    }
+    if (!(await this.edit([{ command: "text.preset_save", args }]))) return false;
+    this.set({ notice: { kind: "info", text: `Saved the style as ${preset}.` } });
+    return true;
+  }
+
+  /**
+   * Adds a title at the playhead and selects it: a built-in template, or plain text when
+   * `template` is empty.
+   */
+  async addTitle(template: string): Promise<void> {
+    if (!this.state.timeline) return;
+    const start = { flicks: this.state.playhead };
+    const command = template
+      ? { command: "text.template", args: { template, start } }
+      : { command: "text.add", args: { text: "Title", start } };
+    const response = await this.apply([command]);
+    const placed = response?.results[0] as { clip?: string } | undefined;
+    if (placed?.clip) this.set({ selection: placed.clip, also: [] });
   }
 
   /** Deactivates the selected clip, or activates it again. */

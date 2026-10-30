@@ -29,6 +29,16 @@ pub struct GenerateRequest {
     pub cache: PathBuf,
     /// The models directory.
     pub models: PathBuf,
+    /// Leave out words the transcript marks as filler candidates ("um", "uh").
+    pub skip_fillers: bool,
+    /// Song lyrics: without a source track, caption the first audio track with sound
+    /// (the music) before any video track.
+    pub lyrics: bool,
+}
+
+/// How lyrics are paged: a sung line per page, broken at breaths.
+pub fn lyrics_paging() -> Value {
+    json!({ "max_words": 8, "max_lines": 1, "max_gap_ms": 900, "linger_ms": 600 })
 }
 
 /// Words ready for `captions.add`.
@@ -72,19 +82,28 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
             .ok_or_else(|| EngineError::InvalidArguments {
                 message: format!("track {id} does not exist in {timeline_id}"),
             })?,
-        None => timeline
-            .tracks
-            .iter()
-            .find(|t| {
+        None => {
+            let candidate = |t: &&fosscut_model::Track| {
                 with_sound(t.kind)
                     && t.clips
                         .iter()
                         .any(|c| c.content.asset().is_some_and(has_audio))
-            })
-            .ok_or_else(|| EngineError::NoTranscript {
-                assets: Vec::new(),
-                message: format!("{timeline_id} has no clips with sound to caption"),
-            })?,
+            };
+            let music = request.lyrics.then(|| {
+                timeline
+                    .tracks
+                    .iter()
+                    .filter(|t| t.kind == TrackKind::Audio)
+                    .find(candidate)
+            });
+            music
+                .flatten()
+                .or_else(|| timeline.tracks.iter().find(candidate))
+        }
+        .ok_or_else(|| EngineError::NoTranscript {
+            assets: Vec::new(),
+            message: format!("{timeline_id} has no clips with sound to caption"),
+        })?,
     };
     let mut words = Vec::new();
     let mut missing = Vec::new();
@@ -123,29 +142,7 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
             continue;
         };
         clips += 1;
-        // Words map to the timeline through the clip's speed (ADR-0023); a reversed clip
-        // plays a word's end first. Frozen clips are silent and caption nothing.
-        for word in &transcript.words {
-            let (Some(a), Some(b)) = (
-                clip.offset_of_source(word.start.flicks),
-                clip.offset_of_source(
-                    word.end
-                        .flicks
-                        .min(clip.content.source_in().unwrap_or_default() + clip.source_length()),
-                ),
-            ) else {
-                continue;
-            };
-            let (from, to) = (a.min(b), a.max(b));
-            if from >= clip.duration || to <= from {
-                continue;
-            }
-            words.push(json!({
-                "text": word.text,
-                "start": flicks(clip.start + from),
-                "end": flicks(clip.start + to.min(clip.duration)),
-            }));
-        }
+        words.extend(clip_words(clip, &transcript, request.skip_fillers));
     }
     if !missing.is_empty() {
         return Err(EngineError::NoTranscript {
@@ -165,6 +162,50 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
         clips,
         words,
     })
+}
+
+/// A clip's transcript words in timeline time, as `captions.add` takes them. A word
+/// belongs to the clip when it starts inside the part of the media the clip shows; it ends
+/// no later than the clip. Words the recognizer timed as zero-length are kept with no
+/// length, so none goes missing; fillers are left out with `skip_fillers`.
+fn clip_words(
+    clip: &fosscut_model::Clip,
+    transcript: &fosscut_analysis::speech::Transcript,
+    skip_fillers: bool,
+) -> Vec<Value> {
+    let fillers: std::collections::BTreeSet<usize> = if skip_fillers {
+        transcript.fillers.iter().map(|f| f.word).collect()
+    } else {
+        Default::default()
+    };
+    let mut words = Vec::new();
+    for (index, word) in transcript.words.iter().enumerate() {
+        if fillers.contains(&index) {
+            continue;
+        }
+        // Words map to the timeline through the clip's speed (ADR-0023); a reversed clip
+        // plays a word's end first. Frozen clips are silent and caption nothing.
+        let (Some(a), Some(b)) = (
+            clip.offset_of_source(word.start.flicks),
+            clip.offset_of_source(
+                word.end
+                    .flicks
+                    .min(clip.content.source_in().unwrap_or_default() + clip.source_length()),
+            ),
+        ) else {
+            continue;
+        };
+        let (from, to) = (a.min(b), a.max(b));
+        if from >= clip.duration {
+            continue;
+        }
+        words.push(json!({
+            "text": word.text,
+            "start": flicks(clip.start + from),
+            "end": flicks(clip.start + to.min(clip.duration)),
+        }));
+    }
+    words
 }
 
 /// One subtitle cue.
@@ -344,12 +385,41 @@ fn srt_clock(time: Flicks) -> String {
     )
 }
 
+/// Which text of bilingual captions a subtitle file holds.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum SrtText {
+    /// The words as shown.
+    #[default]
+    Original,
+    /// Each page's translation, or its words where it has none.
+    Translation,
+    /// The words, then the translation line under them.
+    Both,
+}
+
+impl SrtText {
+    /// The choice named `original`, `translation` or `both`.
+    pub fn named(name: &str) -> Result<SrtText, EngineError> {
+        match name {
+            "original" => Ok(SrtText::Original),
+            "translation" => Ok(SrtText::Translation),
+            "both" => Ok(SrtText::Both),
+            other => Err(EngineError::InvalidArguments {
+                message: format!(
+                    "subtitle text must be original, translation or both, not {other:?}"
+                ),
+            }),
+        }
+    }
+}
+
 /// The caption pages of a caption track as SRT: one cue per page, times rounded to the
-/// millisecond, lines kept.
+/// millisecond, lines kept, with the pages' translations as `text` says.
 pub fn export_srt(
     project: &Project,
     timeline: Option<&Id>,
     track: Option<&Id>,
+    text: SrtText,
 ) -> Result<String, EngineError> {
     let timeline_id = timeline
         .cloned()
@@ -374,11 +444,16 @@ pub fn export_srt(
             continue;
         };
         number += 1;
+        let words = caption.text();
+        let shown = match (text, &caption.translation) {
+            (SrtText::Translation, Some(translation)) => translation.clone(),
+            (SrtText::Both, Some(translation)) => format!("{words}\n{translation}"),
+            _ => words,
+        };
         out.push_str(&format!(
-            "{number}\n{} --> {}\n{}\n\n",
+            "{number}\n{} --> {}\n{shown}\n\n",
             srt_clock(clip.start),
             srt_clock(clip.end()),
-            caption.text()
         ));
     }
     if number == 0 {
@@ -490,5 +565,64 @@ mod tests {
         let srt = "1\na\nA\n\n2\nb\nB\n\n3\nc\nC\n\n";
         assert_eq!(srt_preview(srt, 2), "1\na\nA\n\n2\nb\nB");
         assert_eq!(srt_preview(srt, 9), "1\na\nA\n\n2\nb\nB\n\n3\nc\nC");
+    }
+
+    #[test]
+    fn clip_words_keep_zero_length_words_and_skip_fillers_when_asked() {
+        use fosscut_analysis::Moment;
+        use fosscut_analysis::speech::{Filler, Transcript, Word};
+        use fosscut_model::{Clip, IdKind};
+        let at = |ms: i64| Moment::new(Flicks::from_millis(ms));
+        let word = |text: &str, from: i64, to: i64| Word {
+            text: text.into(),
+            start: at(from),
+            end: at(to),
+            probability: 0.9,
+        };
+        let transcript = Transcript {
+            model: "test".into(),
+            language: "en".into(),
+            segments: Vec::new(),
+            words: vec![
+                word("Well", 1000, 1300),
+                word("um", 1300, 1600),
+                word("ride", 1600, 1600),
+                word("along", 1600, 2000),
+                word("later", 9000, 9500),
+            ],
+            fillers: vec![Filler {
+                word: 1,
+                text: "um".into(),
+                start: at(1300),
+                end: at(1600),
+            }],
+            pauses: Vec::new(),
+            min_pause_ms: 300,
+        };
+        // A clip showing the media from 1 s for 2 s, placed at 10 s.
+        let clip = Clip::new(
+            Id::new(IdKind::Clip, 1),
+            Flicks::from_seconds(10).unwrap(),
+            Flicks::from_seconds(2).unwrap(),
+            ClipContent::Audio {
+                asset: Id::new(IdKind::Asset, 2),
+                source_in: Flicks::from_seconds(1).unwrap(),
+            },
+        );
+        let texts = |words: &[Value]| -> Vec<String> {
+            words
+                .iter()
+                .map(|w| w["text"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let all = clip_words(&clip, &transcript, false);
+        assert_eq!(texts(&all), ["Well", "um", "ride", "along"]);
+        assert_eq!(all[2]["start"], all[2]["end"], "kept with no length");
+        assert_eq!(
+            all[0]["start"]["flicks"],
+            Flicks::from_seconds(10).unwrap().get()
+        );
+        let tidy = clip_words(&clip, &transcript, true);
+        assert_eq!(texts(&tidy), ["Well", "ride", "along"]);
     }
 }

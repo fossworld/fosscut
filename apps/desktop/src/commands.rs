@@ -281,6 +281,42 @@ pub async fn color_suggest(
     .await
 }
 
+/// Measures the loudness of `clips` and returns the volumes that bring each to
+/// `target_lufs` (-14 LUFS when omitted) with peaks under -1 dBFS, with the `clip.set`
+/// calls that apply them; the window applies those with `execute`, as any edit.
+#[tauri::command]
+pub async fn audio_normalize(
+    state: State<'_, AppState>,
+    clips: Vec<String>,
+    target_lufs: Option<f64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || normalize(&workspace, &clips, target_lufs)).await
+}
+
+/// What `audio_normalize` answers for the project open in `workspace`.
+fn normalize(workspace: &Workspace, clips: &[String], target_lufs: Option<f64>) -> Answer<Value> {
+    let clips = clips
+        .iter()
+        .map(|text| {
+            fosscut_model::Id::parse(text).map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, e))
+        })
+        .collect::<Answer<Vec<_>>>()?;
+    let (bundle, project, _) = workspace
+        .snapshot()
+        .ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, "no project is open"))?;
+    let normalization = fosscut_engine::loudness::normalize(
+        &project,
+        &bundle,
+        &clips,
+        target_lufs.unwrap_or(fosscut_engine::loudness::DEFAULT_TARGET_LUFS),
+        fosscut_engine::loudness::DEFAULT_CEILING_DBFS,
+        true,
+    )
+    .map_err(ApiError::from)?;
+    serde_json::to_value(normalization).map_err(|e| ApiError::new(codes::INTERNAL, e.to_string()))
+}
+
 /// The agents and other front ends connected to the open project.
 #[tauri::command]
 pub fn clients(state: State<'_, AppState>) -> Vec<ClientInfo> {
@@ -397,4 +433,60 @@ pub async fn trash_restore(state: State<'_, AppState>, id: String) -> Answer<Pat
 pub async fn trash_delete(state: State<'_, AppState>, id: String) -> Answer<()> {
     let library = Arc::clone(&state.library);
     blocking(move || library.delete(&id)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizing_measures_clips_of_the_open_project_and_refuses_the_rest() {
+        // A short runtime directory: Unix socket paths are limited to about 100 bytes.
+        let base = if cfg!(unix) {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let runtime = base.join(format!("fcd-loud-{}", std::process::id()));
+        let work =
+            std::env::temp_dir().join(format!("fosscut-desktop-loud-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&runtime);
+        let _ = std::fs::remove_dir_all(&work);
+        std::fs::create_dir_all(&work).unwrap();
+        let workspace = Workspace::new(runtime.clone(), None);
+        let closed = normalize(&workspace, &["clip_0001".into()], None).unwrap_err();
+        assert_eq!(closed.code, codes::INVALID_ARGUMENTS);
+        assert!(closed.message.contains("no project"), "{closed:?}");
+
+        workspace
+            .create(&NewProject {
+                path: work.join("Loud.fosscut"),
+                name: None,
+                width: 1280,
+                height: 720,
+                rate: "25".into(),
+            })
+            .unwrap();
+        let unparsed = normalize(&workspace, &["not an id".into()], None).unwrap_err();
+        assert_eq!(unparsed.code, codes::INVALID_ARGUMENTS);
+        let none = normalize(&workspace, &[], None).unwrap_err();
+        assert!(none.message.contains("at least one clip"), "{none:?}");
+
+        let added = workspace
+            .execute(Request::single(
+                "text.add",
+                json!({ "text": "Quiet", "duration": "1s" }),
+            ))
+            .unwrap();
+        let title = added.results[0]["clip"].as_str().unwrap().to_string();
+        let silent = normalize(&workspace, std::slice::from_ref(&title), None).unwrap_err();
+        assert_eq!(silent.code, codes::INVALID_ARGUMENTS);
+        assert!(silent.message.contains("without sound"), "{silent:?}");
+        let target = normalize(&workspace, &[title], Some(-60.0)).unwrap_err();
+        assert!(target.message.contains("target"), "{target:?}");
+
+        workspace.close();
+        let _ = std::fs::remove_dir_all(&runtime);
+        let _ = std::fs::remove_dir_all(&work);
+    }
 }

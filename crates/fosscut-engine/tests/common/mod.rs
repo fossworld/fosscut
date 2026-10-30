@@ -118,6 +118,7 @@ pub fn project(relative: &str) -> Project {
                 codec: None,
             }),
             lut: None,
+            ..Default::default()
         },
     });
     project.manifest.next_id = 10;
@@ -153,10 +154,11 @@ pub fn project(relative: &str) -> Project {
             Id::new(IdKind::Clip, 5),
             Flicks::ZERO,
             frames(15),
-            ClipContent::Text(TextContent {
+            ClipContent::Text(Box::new(TextContent {
                 text: "Title".into(),
                 style: TextStyle::default(),
-            }),
+                ..Default::default()
+            })),
         )],
     });
     project

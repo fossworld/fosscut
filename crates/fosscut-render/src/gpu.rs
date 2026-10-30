@@ -6,7 +6,7 @@
 //! the canvas is encoded with the output transfer function into the target
 //! (`encode.wgsl`). Textures are cached between frames by size and layer slot.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use fosscut_media::{PixelFormat, VideoFrame};
@@ -21,7 +21,7 @@ use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
 use crate::mask::{Coverage, rasterize as rasterize_masks};
 use crate::plan::{LayerSource, MaskShape, RenderPlan, SourceRef};
-use crate::text::{TextEngine, TextRaster, linear_color};
+use crate::text::{TextEngine, TextLayer, TextRaster};
 use crate::{FrameProvider, RenderError};
 use fosscut_model::BlendMode;
 
@@ -171,6 +171,8 @@ pub struct Renderer {
     textures: HashMap<TextureKey, wgpu::Texture>,
     text: TextEngine,
     text_cache: HashMap<String, Arc<TextRaster>>,
+    /// Font families the text engine has, or that no font asset provides.
+    fonts_loaded: HashSet<String>,
     caption_cache: HashMap<String, Arc<CaptionRaster>>,
     /// How deep inside compound clips the plan being recorded is (ADR-0025): each level
     /// uses scratch slots of its own.
@@ -409,6 +411,7 @@ impl Renderer {
             textures: HashMap::new(),
             text: TextEngine::new(),
             text_cache: HashMap::new(),
+            fonts_loaded: HashSet::from([crate::text::DEFAULT_FAMILY.to_string()]),
             caption_cache: HashMap::new(),
             nesting: 0,
             mask_cache: HashMap::new(),
@@ -875,15 +878,20 @@ impl Renderer {
                 );
                 (texture, vertices)
             }
-            LayerSource::Text(content) => {
+            LayerSource::Text(text) => {
+                self.load_fonts(&text.content, frames)?;
                 // Rasterize at the output resolution: output pixels per canvas pixel.
                 let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
-                let raster = self.rasterize(content, plan.canvas, scale);
+                let raster = self.rasterize(text, plan.canvas, scale);
                 if raster.is_empty() {
                     return Ok(None);
                 }
-                let color = linear_color(content.style.color.as_str());
-                let texture = self.upload_text(encoder, index, &raster, color);
+                let texture = self.upload_rgba(
+                    encoder,
+                    index,
+                    (raster.width, raster.height),
+                    &raster.pixels,
+                );
                 let scale = f64::from(scale);
                 let natural = (
                     f64::from(raster.width) / scale,
@@ -911,7 +919,12 @@ impl Renderer {
                     return Ok(None);
                 }
                 opacity *= look.alpha;
-                let texture = self.upload_caption(encoder, index, &raster);
+                let texture = self.upload_rgba(
+                    encoder,
+                    index,
+                    (raster.width, raster.height),
+                    &raster.pixels,
+                );
                 let scale = f64::from(scale);
                 let natural = (
                     f64::from(raster.width) / scale,
@@ -1034,19 +1047,19 @@ impl Renderer {
             None => {
                 let text = &mut self.text;
                 let coverage = rasterize_masks(masks, size, &mut |words| {
-                    let content = fosscut_model::TextContent {
-                        text: words.to_string(),
-                        style: fosscut_model::TextStyle {
+                    let content = fosscut_model::TextContent::styled(
+                        words,
+                        fosscut_model::TextStyle {
                             bold: true,
                             size: 0.6,
                             ..fosscut_model::TextStyle::default()
                         },
-                    };
-                    let raster = text.rasterize(&content, (1536, 384), 1.0);
+                    );
+                    let raster = text.rasterize(&TextLayer::still(content), (1536, 384), 1.0);
                     (!raster.is_empty()).then(|| Coverage {
                         width: raster.width,
                         height: raster.height,
-                        data: raster.coverage.clone(),
+                        data: raster.coverage(),
                     })
                 })?;
                 if self.mask_cache.len() >= TEXT_CACHE_LIMIT {
@@ -1610,21 +1623,46 @@ impl Renderer {
         }
     }
 
-    /// Rasterized text, cached by content, canvas and scale.
-    fn rasterize(
+    /// Adds the font files of families `content` names that the text engine lacks, from
+    /// the frame provider (the project's font assets), so text never falls back silently
+    /// when a font is available. Cached rasters drawn before a font arrived are dropped.
+    fn load_fonts(
         &mut self,
         content: &fosscut_model::TextContent,
-        canvas: (u32, u32),
-        scale: f32,
-    ) -> Arc<TextRaster> {
-        let key = format!("{content:?}|{}x{}|{}", canvas.0, canvas.1, scale.to_bits());
+        frames: &mut dyn FrameProvider,
+    ) -> Result<(), RenderError> {
+        for family in content.fonts() {
+            if self.fonts_loaded.contains(family) {
+                continue;
+            }
+            if let Some(data) = frames.font(family)? {
+                for loaded in self.text.add_font(data.to_vec()) {
+                    self.fonts_loaded.insert(loaded);
+                }
+                self.text_cache.clear();
+            }
+            self.fonts_loaded.insert(family.to_string());
+        }
+        Ok(())
+    }
+
+    /// Composed text, cached by content, canvas, scale and, during a reveal, the moment.
+    fn rasterize(&mut self, layer: &TextLayer, canvas: (u32, u32), scale: f32) -> Arc<TextRaster> {
+        let key = format!(
+            "{:?}|{:?}|{}x{}|{}",
+            layer.content,
+            layer.moment(),
+            canvas.0,
+            canvas.1,
+            scale.to_bits()
+        );
         if let Some(raster) = self.text_cache.get(&key) {
             return raster.clone();
         }
         if self.text_cache.len() >= TEXT_CACHE_LIMIT {
             self.text_cache.clear();
         }
-        let raster = Arc::new(self.text.rasterize(content, canvas, scale));
+        let raster = Arc::new(self.text.rasterize(layer, canvas, scale));
         self.text_cache.insert(key, raster.clone());
         raster
     }
@@ -1656,40 +1694,20 @@ impl Renderer {
         raster
     }
 
-    /// Uploads a composed caption page (premultiplied linear RGBA) and mipmaps it.
-    fn upload_caption(
+    /// Uploads composed text or a caption page (premultiplied linear RGBA) and mipmaps it.
+    fn upload_rgba(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         index: usize,
-        raster: &CaptionRaster,
+        size: (u32, u32),
+        pixels: &[[f32; 4]],
     ) -> wgpu::Texture {
-        let texels: Vec<u16> = raster
-            .pixels
+        let texels: Vec<u16> = pixels
             .iter()
             .flatten()
             .map(|&v| half::f16::from_f32(v).to_bits())
             .collect();
-        self.upload_texels(encoder, index, (raster.width, raster.height), &texels)
-    }
-
-    /// Uploads glyph coverage as premultiplied linear color and mipmaps it.
-    fn upload_text(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        index: usize,
-        raster: &TextRaster,
-        color: [f32; 4],
-    ) -> wgpu::Texture {
-        let texels: Vec<u16> = raster
-            .coverage
-            .iter()
-            .flat_map(|&c| {
-                let alpha = f32::from(c) / 255.0 * color[3];
-                [color[0] * alpha, color[1] * alpha, color[2] * alpha, alpha]
-            })
-            .map(|v| half::f16::from_f32(v).to_bits())
-            .collect();
-        self.upload_texels(encoder, index, (raster.width, raster.height), &texels)
+        self.upload_texels(encoder, index, size, &texels)
     }
 
     /// Uploads premultiplied linear RGBA16F texels into the text slot of layer `index` and

@@ -154,6 +154,7 @@ export function App({ editor }: { editor: Editor }) {
                   playhead={state.playhead}
                   catalog={state.catalog}
                   luts={state.luts}
+                  media={state.media}
                   others={(state.timeline?.tracks ?? [])
                     .flatMap((t) => t.clips)
                     .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}

@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.10.0
+Demo (project_<random>)  revision 0  format 0.11.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,17 +93,17 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.10.0
+Demo (project_<random>)  revision 8  format 0.11.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.10.0
+API 0.1.0  project format 0.11.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
-  captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
+  captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, which words are emphasised, or its translation line (bilingual captions).
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
   clip.add       Place a media asset (or, with compound, a compound timeline) on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   clip.align     Align a clip on the canvas: put the visible part of its picture against the left, right, top or bottom edge, or centre it, taking its scale, crop, flips and rotation into account. Text and captions can only be centred.
@@ -123,7 +123,7 @@ commands:
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.
   clip.ungroup   Take clips out of their groups, so each edits on its own again.
   clips.paste    Paste clips copied with the clips.copy query at a time, keeping their arrangement: new ids, the same media, effects, masks and keyframes, and groups among them kept. Never overwrites: fails with fosscut.clip.overlap.
-  effect.add     Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it.
+  effect.add     Add an effect to a clip: to its picture (color.adjust for exposure, white balance, contrast, tone and saturation, color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and others) or to its sound (audio.denoise, audio.enhance_voice, audio.vocals to isolate or remove a centred voice). Effects apply in order; on an adjustment clip picture effects apply to everything below it. capabilities lists every type with its parameters.
   effect.copy    Apply one clip's effects (with their keyframes) to other clips, replacing theirs or, with append, after them: the way to grade every clip alike.
   effect.move    Move an effect to another position in its clip's order; effects apply first to last.
   effect.remove  Remove an effect and its keyframes from a clip.
@@ -146,7 +146,11 @@ commands:
   media.remove   Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too.
   media.rename   Rename an asset in the media bin. Only the display name changes, not the file.
   media.replace  Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin.
-  text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  text.add       Add a text clip: a style or preset (outline, shadow, boxes, glow, spacing, case, underline, project fonts), spans that restyle parts, and a reveal (typewriter, word by word, line by line). Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  text.preset_remove Remove a text preset saved in the project; clips styled with it keep their style.
+  text.preset_save Save a text clip's style (or a given style) as a named preset of the project, to reuse with preset in text.add and text.set.
+  text.set       Change a text clip: its text, a preset, a style patch (font, size, colour, bold, italic, underline, case, alignment, letter and line spacing, outline, box, shadow, glow), its spans or its reveal.
+  text.template  Add a title template (lower-third, headline, chapter, quote, callout, end-card) as a styled, animated text clip with your lines.
   timeline.add   Add a timeline to the project: empty, or a new timeline from chosen media placed one after another, with the canvas and rate of the first video unless given. primary makes it the one commands and exports use by default.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
   timeline.remove Remove a timeline (allow_destructive when it has clips). A project keeps at least one timeline; removing the primary one makes the next primary.

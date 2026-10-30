@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import type { EffectView, ParamSpec } from "../engine/types";
+import type { AssetView, EffectSpec, EffectView, ParamSpec } from "../engine/types";
 import { clip, moment } from "../test/fixtures";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import {
   addPoint,
   animated,
+  isSoundEffect,
   keyed,
+  keyframeable,
+  offeredEffects,
   movePoint,
   paramAt,
   paramChange,
   paramPath,
   removePoint,
   specOf,
+  targetsOf,
   toggleParamKey,
 } from "./effectFields";
 
@@ -95,5 +99,85 @@ describe("effect parameters", () => {
     expect(movePoint(added, 0, [0.3, 0.1])[0]).toEqual([0.3, 0.1]);
     expect(removePoint(added, 1)).toEqual(straight);
     expect(removePoint(straight, 0), "two points stay").toEqual(straight);
+  });
+});
+
+describe("sound and picture effects", () => {
+  const effect = (type: string, category: string, params: ParamSpec[] = []): EffectSpec => ({
+    type,
+    version: 1,
+    title: type,
+    category,
+    summary: "",
+    params,
+  });
+  const amount: ParamSpec = { name: "amount", kind: "number", default: 0.7, min: 0, max: 1, animatable: false, meaning: "" };
+  const mode: ParamSpec = {
+    name: "mode",
+    kind: "choice",
+    default: "isolate",
+    choices: ["isolate", "remove"],
+    animatable: false,
+    meaning: "",
+  };
+  const catalog = [
+    effect("color.adjust", "color", [exposure]),
+    effect("audio.denoise", "audio", [amount]),
+    effect("blur.gaussian", "blur"),
+    effect("audio.vocals", "audio", [mode]),
+  ];
+  const media: AssetView[] = [
+    { id: "asset_0001", kind: "video", name: "talk.mp4", used_by: [], audio: { channels: 2 } },
+    { id: "asset_0002", kind: "video", name: "silent.mp4", used_by: [], audio: null },
+    { id: "asset_0003", kind: "audio", name: "music.m4a", used_by: [] },
+  ];
+  const offered = (kind: string, extra: Record<string, unknown> = {}) =>
+    offeredEffects(catalog, targetsOf(clip("clip_0001", kind, 0, 2, extra), media)).map((e) => e.type);
+
+  it("offer sound effects only where there is sound, and picture effects only where there is a picture", () => {
+    expect(offered("audio", { asset: "asset_0003" }), "audio clips: sound only").toEqual(["audio.denoise", "audio.vocals"]);
+    expect(offered("video", { asset: "asset_0001" }), "a video with sound: both").toEqual([
+      "color.adjust",
+      "audio.denoise",
+      "blur.gaussian",
+      "audio.vocals",
+    ]);
+    expect(offered("video", { asset: "asset_0002" }), "a silent video: pictures only").toEqual(["color.adjust", "blur.gaussian"]);
+    expect(offered("video", { asset: "asset_0009" }), "an unlisted asset is left to the engine").toHaveLength(4);
+    expect(offered("timeline"), "compound clips: both").toHaveLength(4);
+    for (const kind of ["text", "image", "caption", "adjustment"]) {
+      expect(offered(kind), kind).toEqual(["color.adjust", "blur.gaussian"]);
+    }
+    expect(catalog.map(isSoundEffect)).toEqual([false, true, false, true]);
+  });
+
+  it("never keyframe parameters that are not animatable", () => {
+    const sound = clip("clip_0001", "audio", 0, 2);
+    const denoise: EffectView = {
+      id: "effect_0002",
+      type: "audio.denoise",
+      params: { amount: 0.5 },
+      keyframes: { amount: [{ at: moment(1), offset: moment(1), value: 0.9, interpolation: "linear" }] },
+    };
+    expect([keyframeable(exposure), keyframeable(amount), keyframeable(mode), keyframeable(master)]).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(paramAt(sound, denoise, amount, second), "stray keys are not read").toBe(0.5);
+    expect(paramChange(sound, denoise, amount, 0.8, second)).toEqual({
+      command: "effect.set",
+      args: { clip: "clip_0001", effect: "effect_0002", params: { amount: 0.8 } },
+    });
+    const vocals: EffectView = { id: "effect_0003", type: "audio.vocals" };
+    expect(paramAt(sound, vocals, mode, 0)).toBe("isolate");
+    expect(paramChange(sound, vocals, mode, "remove", 0)?.args).toEqual({
+      clip: "clip_0001",
+      effect: "effect_0003",
+      params: { mode: "remove" },
+    });
+    expect(paramChange(sound, vocals, mode, "isolate", 0), "unchanged").toBeNull();
+    expect(paramChange(sound, vocals, mode, "louder", 0), "not a choice").toBeNull();
   });
 });

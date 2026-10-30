@@ -18,6 +18,7 @@ pub mod frame;
 pub mod import;
 pub mod jobs;
 pub mod live;
+pub mod loudness;
 mod operations;
 mod preset;
 pub mod preview;

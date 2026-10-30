@@ -102,15 +102,45 @@ fn ffprobe_path() -> String {
     std::env::var("FOSSCUT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
 }
 
-/// Probes `file`: `.cube` files are read as 3D LUTs, everything else goes to ffprobe.
+/// Probes `file`: `.cube` files are read as 3D LUTs, `.ttf`, `.otf` and `.ttc` files as
+/// fonts, everything else goes to ffprobe.
 pub fn probe(file: &Path) -> Result<Probed, ApiError> {
-    let is_cube = file
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("cube"));
-    if is_cube {
+    let extension = |names: &[&str]| {
+        file.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| names.iter().any(|n| e.eq_ignore_ascii_case(n)))
+    };
+    if extension(&["cube"]) {
         return probe_lut(file);
     }
+    if extension(&["ttf", "otf", "ttc", "otc"]) {
+        return probe_font(file);
+    }
     probe_media(file)
+}
+
+/// Reads a font file and lists its families (ADR-0027).
+fn probe_font(file: &Path) -> Result<Probed, ApiError> {
+    let data = std::fs::read(file).map_err(|e| {
+        ApiError::new(
+            codes::PROBE_FAILED,
+            format!("cannot read {}: {e}", file.display()),
+        )
+    })?;
+    let (families, faces) = fosscut_render::text::font_families(&data).map_err(|e| {
+        ApiError::new(
+            codes::PROBE_FAILED,
+            format!("{} is not a usable font: {e}", file.display()),
+        )
+        .with_hint("FossCut reads TrueType and OpenType fonts (.ttf, .otf) and collections (.ttc).")
+    })?;
+    Ok(Probed {
+        kind: AssetKind::Font,
+        info: MediaInfo {
+            font: Some(fosscut_model::FontInfo { families, faces }),
+            ..MediaInfo::default()
+        },
+    })
 }
 
 /// Reads a `.cube` file and checks it parses as a 3D LUT.
@@ -249,6 +279,7 @@ fn interpret(report: &Value) -> Option<Probed> {
                 audio_info
             },
             lut: None,
+            ..Default::default()
         },
     })
 }

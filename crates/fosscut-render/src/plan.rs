@@ -14,6 +14,7 @@ use crate::caption::CaptionLayer;
 use crate::effects::PlannedEffect;
 use crate::geometry::{UNCROPPED, clockwise_rotation};
 use crate::lut::Lut3d;
+use crate::text::TextLayer;
 
 /// Which frame of which asset a layer shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,8 +30,8 @@ pub struct SourceRef {
 pub enum LayerSource {
     /// A frame of a video or image asset.
     Frame(SourceRef),
-    /// Styled text, rasterized at the output resolution.
-    Text(TextContent),
+    /// Styled text at one moment, composed at the output resolution.
+    Text(Box<TextLayer>),
     /// A caption page at one moment (ADR-0021), composed at the output resolution.
     Caption(Box<CaptionLayer>),
     /// An adjustment layer: its effects apply to everything below it, mixed by its
@@ -139,7 +140,7 @@ impl Layer {
 
     /// A full-opacity text layer, centred on the canvas.
     pub fn text(content: TextContent) -> Layer {
-        Layer::with_source(LayerSource::Text(content))
+        Layer::with_source(LayerSource::Text(Box::new(TextLayer::still(content))))
     }
 
     /// A full-opacity caption page, placed in the canvas's safe area.
@@ -224,7 +225,10 @@ fn layer_for(
     let effects: Vec<PlannedEffect> = clip
         .effects
         .iter()
-        .filter(|e| e.enabled)
+        // Sound effects belong to the mixer (ADR-0026).
+        .filter(|e| {
+            e.enabled && !fosscut_model::effect_type(&e.effect_type).is_some_and(|t| t.is_audio())
+        })
         .filter_map(|e| {
             Some(PlannedEffect {
                 effect_type: e.effect_type.clone(),
@@ -287,7 +291,14 @@ fn layer_for(
             asset: asset.clone(),
             time: Flicks::ZERO,
         },
-        (ClipContent::Text(text), _) => return Some(placed(LayerSource::Text(text.clone()), 0)),
+        (ClipContent::Text(text), _) => {
+            let layer = TextLayer {
+                content: (**text).clone(),
+                time: offset,
+                duration: clip.duration,
+            };
+            return Some(placed(LayerSource::Text(Box::new(layer)), 0));
+        }
         (ClipContent::Adjustment, TrackKind::Video) => {
             return (!effects.is_empty()).then(|| placed(LayerSource::Adjustment, 0));
         }
@@ -482,6 +493,7 @@ mod tests {
                 }),
                 audio: None,
                 lut: None,
+                ..Default::default()
             },
         });
         let base = clip(
@@ -507,10 +519,11 @@ mod tests {
             &mut project,
             0,
             90,
-            ClipContent::Text(TextContent {
+            ClipContent::Text(Box::new(TextContent {
                 text: "Hi".into(),
                 style: TextStyle::default(),
-            }),
+                ..Default::default()
+            })),
         );
         let timeline_id = project.manifest.primary_timeline.clone();
         let tracks = vec![
@@ -551,7 +564,7 @@ mod tests {
             "source_in + offset"
         );
         assert_eq!(time(&plan.layers[1]), Some(frames(10)));
-        assert!(matches!(&plan.layers[2].source, LayerSource::Text(t) if t.text == "Hi"));
+        assert!(matches!(&plan.layers[2].source, LayerSource::Text(t) if t.content.text == "Hi"));
         assert_eq!(plan.layers[2].rotation, 0);
         assert_eq!(plan.layers[1].opacity, 1.0, "opacity is clamped");
         assert_eq!(
@@ -712,6 +725,7 @@ mod tests {
                         emphasis: false,
                     }],
                 }],
+                ..Default::default()
             }),
         );
         let style = fosscut_model::CaptionStyle {

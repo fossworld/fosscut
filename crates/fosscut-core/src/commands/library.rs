@@ -424,7 +424,9 @@ impl Command for MediaReplace {
             .cloned()
             .ok_or_else(|| not_found(&self.with))?;
         let fits = match old.kind {
-            AssetKind::Video | AssetKind::Image | AssetKind::Lut => new.kind == old.kind,
+            AssetKind::Video | AssetKind::Image | AssetKind::Lut | AssetKind::Font => {
+                new.kind == old.kind
+            }
             AssetKind::Audio => new.has_audio(),
         };
         if !fits || self.asset == self.with {

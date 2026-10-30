@@ -46,8 +46,9 @@ pub(crate) struct CapabilitiesArgs {
     /// `outline` lists names and summaries; `normal` and `full` include JSON Schemas.
     #[serde(default)]
     detail: Detail,
-    /// Only these commands and queries, each with its JSON Schemas, for example
-    /// `["clip.add", "text.add"]`: far smaller than every schema at once.
+    /// Only these commands, queries and effect types, each with its JSON Schemas or
+    /// parameters, for example `["clip.add", "text.add", "audio.denoise"]`: far smaller than
+    /// every schema at once.
     #[serde(default)]
     names: Vec<String>,
 }
@@ -116,13 +117,20 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
     let unknown: Vec<&String> = args
         .names
         .iter()
-        .filter(|n| ctx.registry.command(n).is_none() && ctx.registry.query(n).is_none())
+        .filter(|n| {
+            ctx.registry.command(n).is_none()
+                && ctx.registry.query(n).is_none()
+                && fosscut_model::effect_type(n).is_none()
+        })
         .collect();
     if !unknown.is_empty() {
         let shown: Vec<&str> = unknown.iter().map(|n| n.as_str()).collect();
         return Err(ApiError::new(
             codes::INVALID_ARGUMENTS,
-            format!("no command or query named {}", shown.join(", ")),
+            format!(
+                "no command, query or effect type named {}",
+                shown.join(", ")
+            ),
         )
         .with_hint("capabilities with detail outline lists every name.")
         .with_details(json!({ "unknown": shown })));
@@ -161,6 +169,16 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         "commands": commands,
         "queries": queries,
     });
+    // Effect types asked for by name come with their parameters.
+    let effects: Vec<Value> = args
+        .names
+        .iter()
+        .filter_map(|n| fosscut_model::effect_type(n))
+        .map(|t| json!(t))
+        .collect();
+    if !effects.is_empty() {
+        result["effects"] = json!(effects);
+    }
     if !brief && !named {
         result["request_schema"] =
             serde_json::to_value(schemars::schema_for!(Request)).unwrap_or_default();
@@ -183,7 +201,43 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         result["captions"] = json!({
             "presets": presets,
             "animators": crate::presets::caption_animators(brief),
+            "translation": "Bilingual captions: captions.edit sets a page's translation (written by you; FossCut never translates), shown under its words in the track style's translation look; captions export writes original, translation or both.",
         });
+        // Text (ADR-0027): presets, title templates, reveals and the bundled font.
+        let text_presets: Vec<Value> = crate::presets::text_style_presets()
+            .into_iter()
+            .map(|p| {
+                if brief {
+                    json!({ "name": p.name, "description": p.description })
+                } else {
+                    json!(p)
+                }
+            })
+            .collect();
+        let templates: Vec<Value> = crate::presets::text_templates()
+            .into_iter()
+            .map(|t| {
+                let placeholders: Vec<&str> =
+                    t.lines.iter().map(|l| l.placeholder.as_str()).collect();
+                json!({ "name": t.name, "description": t.description, "lines": placeholders })
+            })
+            .collect();
+        result["text"] = json!({
+            "fonts": [fosscut_model::BUNDLED_FONT],
+            "fonts_note": "Import .ttf, .otf or .ttc files with media import to use their families; project.info lists the families a project can use.",
+            "presets": text_presets,
+            "templates": templates,
+            "reveal": {
+                "units": ["letter", "word", "line"],
+                "motions": ["appear", "fade", "rise"],
+            },
+            "cases": ["as_written", "upper", "lower", "title"],
+        });
+        if !brief {
+            result["text"]["style_schema"] =
+                serde_json::to_value(schemars::schema_for!(fosscut_model::TextStyle))
+                    .unwrap_or_default();
+        }
         // The closed property vocabulary (ADR-0011, item 3): what clip.set and
         // keyframe.set take.
         let properties: Vec<Value> = fosscut_model::clip_properties()
@@ -264,6 +318,13 @@ fn project_info(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         "primary_timeline": project.manifest.primary_timeline,
         "timelines": timelines,
         "assets": project.media.assets.len(),
+        "fonts": project.media.font_families(),
+        "text_presets": project
+            .manifest
+            .text_presets
+            .iter()
+            .map(|p| &p.name)
+            .collect::<Vec<_>>(),
         "can_undo": !undo.is_empty(),
         "can_redo": !redo.is_empty(),
     }))
@@ -285,7 +346,7 @@ fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
                 .filter(|c| c.content.asset() == Some(&asset.id))
                 .map(|c| &c.id)
                 .collect();
-            json!({
+            let mut view = json!({
                 "id": asset.id,
                 "kind": asset.kind,
                 "name": asset.name,
@@ -295,7 +356,12 @@ fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
                 "audio": asset.info.audio,
                 "used_by": used_by,
                 "folder": asset.folder,
-            })
+            });
+            // A font asset's families are what text styles name (ADR-0027).
+            if let Some(font) = &asset.info.font {
+                view["families"] = json!(font.families);
+            }
+            view
         })
         .collect();
     Ok(json!({ "assets": assets, "folders": project.media.folders }))
@@ -351,6 +417,14 @@ fn clip_view(
             view["text"] = json!(text.text);
             if detail == Detail::Full {
                 view["style"] = json!(text.style);
+                if !text.spans.is_empty() {
+                    view["spans"] = json!(text.spans);
+                }
+                if let Some(reveal) = &text.reveal {
+                    let mut shown = json!(reveal);
+                    shown["duration"] = json!(TimeReport::new(reveal.duration, rate));
+                    view["reveal"] = shown;
+                }
             }
         }
         ClipContent::Adjustment => {}

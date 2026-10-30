@@ -113,6 +113,12 @@ The forces:
 - **No captions to export** is `fosscut.captions.none`. Exports return a preview of the first cues, so an agent without file access can check them. With no speech model, `generate` reports `fosscut.captions.no_transcript` too, since no transcript can exist.
 - **Spacing.** Outlines widen the space between words by 1.5 times their width. Presets keep lasting scale changes off emphasised words; only brief pops grow words into the gaps.
 
+- **Bilingual captions** (format 0.11.0):
+  - **Storage:** a page's `translation` holds the same words in a second language, written by the agent or person (FossCut never translates). `captions.edit` sets or removes it.
+  - **Display:** it appears under the words in the track style's `translation` look (size relative to the caption size, colour, italic), with the caption's font, outline and box, and shows when the page's first word does.
+  - **Subtitles:** SRT export writes the words, the translations or both.
+- **Fillers and lyrics:** `captions generate` with `skip_fillers` leaves out the words the transcript marks as filler candidates (ADR-0020 item 5). With `lyrics`, it captions the music track first, one sung line per page broken at breaths, in the karaoke look; recognition of sung words is only as good as the speech model's.
+
 ## Validation
 
 - **Paging property tests:**

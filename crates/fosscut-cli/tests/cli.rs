@@ -2844,3 +2844,213 @@ fn compound_clips_from_the_command_line() {
         "red again, now as its own clip"
     );
 }
+
+#[test]
+fn text_styles_templates_fonts_and_sound_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("text-sound");
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args([
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=25:d=2",
+        ])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=330:sample_rate=48000:duration=2",
+        ])
+        .args(["-c:v", "mpeg4", "-c:a", "aac", "-shortest", "talk.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Styled.fosscut",
+            "--width",
+            "320",
+            "--height",
+            "180",
+        ],
+    );
+    let p = ["-p", "Styled.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    let added = run(&[
+        "text",
+        "add",
+        "Hello world",
+        "--start",
+        "0s",
+        "--preset",
+        "outline",
+        "--style",
+        r#"{"letter_spacing": 0.05}"#,
+        "--spans",
+        r##"[{"start": 6, "end": 11, "color": "#FFCC00"}]"##,
+        "--reveal",
+        "word",
+        "--reveal-motion",
+        "fade",
+        "--reveal-duration",
+        "1s",
+    ]);
+    let title = added["results"][0]["clip"].as_str().unwrap().to_string();
+    let changed = run(&[
+        "text",
+        "set",
+        &title,
+        "--style",
+        r#"{"shadow": {"enabled": true}}"#,
+    ]);
+    let content = &changed["results"][0]["content"];
+    assert_eq!(content["style"]["shadow"]["enabled"], true, "{changed}");
+    assert_eq!(content["style"]["stroke"]["enabled"], true);
+    assert_eq!(content["spans"][0]["color"], "#FFCC00");
+    assert_eq!(content["reveal"]["motion"], "fade");
+    let shown = run(&["text", "set", &title, "--no-reveal"]);
+    assert!(shown["results"][0]["content"].get("reveal").is_none());
+    run(&["text", "save-preset", "Mine", "--clip", &title]);
+    let info = run(&["project", "info"]);
+    assert_eq!(info["text_presets"], json!(["Mine"]), "{info}");
+    run(&["text", "remove-preset", "Mine"]);
+    let template = run(&[
+        "text",
+        "template",
+        "lower-third",
+        "--line",
+        "Sam Lee",
+        "--line",
+        "Editor",
+        "--start",
+        "3s",
+        "--duration",
+        "2s",
+    ]);
+    assert!(template["results"][0]["clip"].is_string(), "{template}");
+    // Fonts: a project font file is imported and its family named.
+    std::fs::write(
+        dir.join("Fixture Sans.ttf"),
+        fosscut_render::text::fixture_font("Fixture Sans"),
+    )
+    .unwrap();
+    run(&["media", "import", "Fixture Sans.ttf"]);
+    let listed = run(&["media", "list"]);
+    let font = listed["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["kind"] == "font")
+        .unwrap();
+    assert_eq!(font["families"], json!(["Fixture Sans"]), "{listed}");
+    let unknown = fails(
+        &dir,
+        &[
+            &p[..],
+            &["text", "add", "Fonts", "--font", "Nope", "--start", "2s"],
+        ]
+        .concat(),
+    );
+    assert_eq!(unknown["code"], "fosscut.text.unknown_font", "{unknown}");
+    run(&[
+        "text",
+        "add",
+        "Fonts",
+        "--font",
+        "Fixture Sans",
+        "--start",
+        "5s",
+    ]);
+    ok(
+        &dir,
+        &[&p[..], &["frame", "0.5s", "--out", "styled.png"]].concat(),
+    );
+    assert_eq!(png_size(&dir.join("styled.png")), (320, 180));
+
+    // Sound: effects on a clip with sound, then levelled loudness.
+    run(&["media", "import", "talk.mp4"]);
+    let asset = run(&["media", "list"])["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["kind"] == "video")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let placed = run(&["clip", "add", "--asset", &asset]);
+    let clip = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    run(&[
+        "effect",
+        "add",
+        "--clip",
+        &clip,
+        "--type",
+        "audio.denoise",
+        "--param",
+        "amount=0.5",
+    ]);
+    run(&[
+        "effect",
+        "add",
+        "--clip",
+        &clip,
+        "--type",
+        "audio.enhance_voice",
+    ]);
+    let wrong = fails(
+        &dir,
+        &[
+            &p[..],
+            &["effect", "add", "--clip", &title, "--type", "audio.denoise"],
+        ]
+        .concat(),
+    );
+    assert_eq!(wrong["code"], "fosscut.effect.wrong_target", "{wrong}");
+    let leveled = run(&["audio", "normalize", "--clip", &clip, "--target", "-16"]);
+    let found = &leveled["normalization"]["clips"][0];
+    let volume = found["volume"].as_f64().unwrap();
+    assert!(found["measured_lufs"].as_f64().is_some(), "{leveled}");
+    assert!(leveled["response"]["committed"].as_bool().unwrap());
+    let timeline = run(&["timeline", "read", "--detail", "full"]);
+    let read = timeline["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["clips"].as_array().unwrap().clone())
+        .find(|c| c["id"] == clip.as_str())
+        .unwrap();
+    assert!(
+        (read["volume"].as_f64().unwrap() - volume).abs() < 1e-9,
+        "{read}"
+    );
+    ok(&dir, &[&p[..], &["export", "styled.mp4"]].concat());
+
+    // Bilingual captions written out as subtitles.
+    std::fs::write(
+        dir.join("talk.srt"),
+        "1\n00:00:00,200 --> 00:00:01,500\nHello there\n",
+    )
+    .unwrap();
+    let imported = run(&["captions", "import", "talk.srt"]);
+    let page = imported["results"][0]["pages"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    run(&["captions", "edit", &page, "--translation", "Hola"]);
+    run(&["captions", "export", "both.srt", "--subtitles", "both"]);
+    let both = std::fs::read_to_string(dir.join("both.srt")).unwrap();
+    assert!(both.contains("Hello there\nHola"), "{both}");
+    run(&["captions", "export", "es.srt", "--subtitles", "translation"]);
+    let es = std::fs::read_to_string(dir.join("es.srt")).unwrap();
+    assert!(es.contains("Hola") && !es.contains("Hello"), "{es}");
+}

@@ -1,0 +1,52 @@
+[
+  {
+    "name": "outline",
+    "description": "Bold white letters with a black outline: readable on any footage.",
+    "style": { "bold": true, "stroke": { "enabled": true, "width": 0.09 } }
+  },
+  {
+    "name": "shadow",
+    "description": "Bold white letters with a soft drop shadow.",
+    "style": { "bold": true, "shadow": { "enabled": true, "offset": [0.04, 0.06], "blur": 0.12 } }
+  },
+  {
+    "name": "boxed",
+    "description": "White letters on a rounded dark box behind each line.",
+    "style": { "bold": true, "box": { "enabled": true, "padding": 0.3, "radius": 0.25 } }
+  },
+  {
+    "name": "highlight",
+    "description": "Black letters on a bright yellow box, like a marker pen.",
+    "style": { "bold": true, "color": "#111111", "box": { "enabled": true, "color": "#FFE14D", "padding": 0.25, "radius": 0.12 } }
+  },
+  {
+    "name": "headline",
+    "description": "Heavy capitals with wide spacing and a soft shadow, for titles.",
+    "style": { "bold": true, "case": "upper", "letter_spacing": 0.05, "shadow": { "enabled": true, "blur": 0.15 } }
+  },
+  {
+    "name": "spaced",
+    "description": "Small capitals spread wide: a calm label or kicker.",
+    "style": { "size": 0.04, "case": "upper", "letter_spacing": 0.3 }
+  },
+  {
+    "name": "neon",
+    "description": "Pale pink letters glowing magenta, like a neon sign.",
+    "style": { "bold": true, "color": "#FFE6FB", "glow": { "enabled": true, "color": "#FF2FD6", "radius": 0.35 } }
+  },
+  {
+    "name": "glow",
+    "description": "White letters with a soft white glow.",
+    "style": { "bold": true, "glow": { "enabled": true, "color": "#FFFFFFCC", "radius": 0.4 } }
+  },
+  {
+    "name": "retro",
+    "description": "Warm yellow letters with a hard orange offset shadow.",
+    "style": { "bold": true, "color": "#FFD23F", "shadow": { "enabled": true, "color": "#E4572E", "offset": [0.07, 0.07], "blur": 0.0 } }
+  },
+  {
+    "name": "comic",
+    "description": "White capitals with a thick black outline and a hard shadow, for punchy hooks.",
+    "style": { "bold": true, "case": "upper", "stroke": { "enabled": true, "width": 0.14 }, "shadow": { "enabled": true, "color": "#000000", "offset": [0.06, 0.08], "blur": 0.0 } }
+  }
+]

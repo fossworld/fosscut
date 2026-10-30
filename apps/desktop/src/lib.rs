@@ -151,6 +151,7 @@ pub fn run() {
             commands::execute,
             commands::clients,
             commands::color_suggest,
+            commands::audio_normalize,
             commands::preview_viewport,
             commands::preview_show,
             commands::preview_play,

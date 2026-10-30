@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Animator, AssetKind, CaptionContent, CaptionStyle, Clip, ClipContent, Effect, Id, IdKind,
-    KeyValue, ParamKind, ParamValue, Project, PropertyKind, Track, TrackKind, clip_property,
-    effect_type,
+    KeyValue, ParamKind, ParamValue, Project, PropertyKind, TextContent, TextStyle, Track,
+    TrackKind, clip_property, effect_type,
 };
 
 /// One rule violation found by [`validate`].
@@ -84,6 +84,23 @@ pub fn validate(project: &Project) -> Vec<Issue> {
             "fosscut.model.timeline_list",
             "manifest timeline list does not match timeline documents",
         );
+    }
+
+    // Saved text styles have unique names in order, and valid styles (ADR-0027).
+    let families = project.media.font_families();
+    let presets = &manifest.text_presets;
+    if !presets.windows(2).all(|w| w[0].name < w[1].name)
+        || presets.iter().any(|p| p.name.trim().is_empty())
+    {
+        issues.push(
+            "project",
+            "fosscut.model.text_preset",
+            "text presets need names, unique and sorted",
+        );
+    }
+    for preset in presets {
+        let path = format!("project.text_presets.{}", preset.name);
+        check_text_style(&mut issues, &preset.style, &families, &path);
     }
 
     // Folders are valid paths, sorted, each with its parents; assets sit in listed ones.
@@ -212,13 +229,6 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                 }
                 check_properties(&mut issues, clip, &clip_path);
                 check_motion(&mut issues, clip, &clip_path);
-                if matches!(clip.content, ClipContent::Audio { .. }) && !clip.effects.is_empty() {
-                    issues.push(
-                        &clip_path,
-                        "fosscut.model.effect_target",
-                        "audio clips have no picture for effects",
-                    );
-                }
                 if matches!(clip.content, ClipContent::Audio { .. }) && !clip.masks.is_empty() {
                     issues.push(
                         &clip_path,
@@ -237,6 +247,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                     expect_kind(&mut issues, &effect.id, IdKind::Effect, &effect_path);
                     unique(&mut issues, &effect.id, &effect_path);
                     check_effect(&mut issues, project, effect, &effect_path);
+                    check_effect_target(&mut issues, project, clip, effect, &effect_path);
                 }
                 check_content(&mut issues, project, track.kind, clip, &clip_path);
             }
@@ -349,6 +360,39 @@ fn check_properties(issues: &mut Issues, clip: &Clip, path: &str) {
                 );
             }
         }
+    }
+}
+
+/// Sound effects go on clips with sound, picture effects on clips with a picture
+/// (ADR-0026, item 3).
+fn check_effect_target(
+    issues: &mut Issues,
+    project: &Project,
+    clip: &Clip,
+    effect: &Effect,
+    path: &str,
+) {
+    let Some(spec) = effect_type(&effect.effect_type) else {
+        return;
+    };
+    let sound = match &clip.content {
+        ClipContent::Audio { .. } | ClipContent::Timeline { .. } => true,
+        ClipContent::Video { asset, .. } => project.media.get(asset).is_some_and(|a| a.has_audio()),
+        _ => false,
+    };
+    let picture = !matches!(clip.content, ClipContent::Audio { .. });
+    if spec.is_audio() && !sound {
+        issues.push(
+            path,
+            "fosscut.model.effect_target",
+            format!("{} changes sound; this clip has none", spec.name),
+        );
+    } else if !spec.is_audio() && !picture {
+        issues.push(
+            path,
+            "fosscut.model.effect_target",
+            format!("{} changes pictures; audio clips have none", spec.name),
+        );
     }
 }
 
@@ -786,10 +830,11 @@ fn check_content(
             ),
         );
     }
-    if let ClipContent::Text(text) = content
-        && text.text.trim().is_empty()
-    {
-        issues.push(path, "fosscut.model.empty_text", "text clips need text");
+    if let ClipContent::Text(text) = content {
+        if text.text.trim().is_empty() {
+            issues.push(path, "fosscut.model.empty_text", "text clips need text");
+        }
+        check_text(issues, project, text, path);
     }
     if let ClipContent::Caption(caption) = content {
         check_caption(issues, caption, duration, path);
@@ -837,6 +882,117 @@ fn check_content(
     }
 }
 
+/// Problems with a text's style, spans and reveal in `project` (ADR-0027), so commands can
+/// report them before they change anything.
+pub fn text_issues(project: &Project, text: &TextContent) -> Vec<Issue> {
+    let mut issues = Issues(Vec::new());
+    check_text(&mut issues, project, text, "text");
+    issues.0
+}
+
+/// Problems with a text style in `project`, as [`text_issues`].
+pub fn text_style_issues(project: &Project, style: &TextStyle) -> Vec<Issue> {
+    let mut issues = Issues(Vec::new());
+    check_text_style(&mut issues, style, &project.media.font_families(), "style");
+    issues.0
+}
+
+/// A text's style, spans and reveal must make sense, and name only known fonts (ADR-0027).
+fn check_text(issues: &mut Issues, project: &Project, text: &TextContent, path: &str) {
+    let families = project.media.font_families();
+    check_text_style(issues, &text.style, &families, path);
+    let length = text.text.chars().count();
+    for (index, span) in text.spans.iter().enumerate() {
+        if span.start >= span.end || span.end > length {
+            issues.push(
+                path,
+                "fosscut.model.text_span",
+                format!(
+                    "span {index} ({} to {}) must cover characters of the {length}-character text",
+                    span.start, span.end
+                ),
+            );
+        }
+        if span
+            .size
+            .is_some_and(|s| !(s.is_finite() && s > 0.0 && s <= 1.0))
+        {
+            issues.push(
+                path,
+                "fosscut.model.text_style",
+                format!("span {index}: size must be a fraction of the canvas height up to 1"),
+            );
+        }
+        check_font(issues, span.font.as_deref(), &families, path);
+    }
+    if let Some(reveal) = &text.reveal
+        && !reveal.duration.is_positive()
+    {
+        issues.push(
+            path,
+            "fosscut.model.text_reveal",
+            "a reveal needs a positive duration",
+        );
+    }
+}
+
+/// The ranges ADR-0027 gives text style values.
+fn check_text_style(issues: &mut Issues, style: &TextStyle, families: &[String], path: &str) {
+    let within = |v: f64, low: f64, high: f64| v.is_finite() && v >= low && v <= high;
+    let checks = [
+        (
+            within(style.size, f64::MIN_POSITIVE, 1.0),
+            "size must be a fraction of the canvas height up to 1",
+        ),
+        (
+            within(style.letter_spacing, -0.5, 2.0),
+            "letter_spacing must be from -0.5 to 2 em",
+        ),
+        (
+            within(style.line_height, 0.5, 4.0),
+            "line_height must be from 0.5 to 4",
+        ),
+        (
+            within(style.stroke.width, 0.0, 1.0),
+            "stroke width must be from 0 to 1 em",
+        ),
+        (
+            within(style.background.padding, 0.0, 2.0) && within(style.background.radius, 0.0, 1.0),
+            "box padding must be from 0 to 2 em and radius from 0 to 1",
+        ),
+        (
+            style.shadow.offset.iter().all(|&v| within(v, -1.0, 1.0))
+                && within(style.shadow.blur, 0.0, 1.0),
+            "shadow offset must be from -1 to 1 em and blur from 0 to 1 em",
+        ),
+        (
+            within(style.glow.radius, 0.0, 2.0),
+            "glow radius must be from 0 to 2 em",
+        ),
+    ];
+    for (ok, message) in checks {
+        if !ok {
+            issues.push(path, "fosscut.model.text_style", message);
+        }
+    }
+    check_font(issues, style.font.as_deref(), families, path);
+}
+
+fn check_font(issues: &mut Issues, font: Option<&str>, families: &[String], path: &str) {
+    if let Some(font) = font
+        && !families.iter().any(|f| f == font)
+    {
+        issues.push(
+            path,
+            "fosscut.model.unknown_font",
+            format!(
+                "font {font:?} is neither bundled nor in a font asset; known: {}",
+                families.join(", ")
+            ),
+        );
+    }
+}
+
 /// Caption pages need words in order, each inside the clip (ADR-0021 item 1).
 fn check_caption(issues: &mut Issues, caption: &CaptionContent, duration: Flicks, path: &str) {
     let mut bad = |message: String| issues.push(path, "fosscut.model.caption_words", message);
@@ -879,8 +1035,12 @@ fn check_caption_style(issues: &mut Issues, track: &Track, path: &str) {
         stroke,
         background,
         animators,
+        translation,
         ..
     } = style;
+    if !(translation.size.is_finite() && (0.3..=1.0).contains(&translation.size)) {
+        bad("translation size must be from 0.3 to 1 of the caption size");
+    }
     if !(size.is_finite() && *size > 0.0) {
         bad("caption size must be a positive fraction of the canvas height");
     }

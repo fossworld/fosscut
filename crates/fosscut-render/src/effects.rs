@@ -401,8 +401,14 @@ mod tests {
         assert_eq!(pass_for("blur.gaussian"), Some(Pass::Blur));
         assert_eq!(pass_for("detail.sharpen"), Some(Pass::Sharpen));
         assert_eq!(pass_for("color.unknown"), None);
+        // Every picture effect renders; sound effects belong to the mixer.
         for kind in fosscut_model::effect_types() {
-            assert!(pass_for(kind.name).is_some(), "{} renders", kind.name);
+            assert_eq!(
+                pass_for(kind.name).is_some(),
+                !kind.is_audio(),
+                "{} renders",
+                kind.name
+            );
         }
         let (lod, sigma, taps, level) = blur_plan(2.0, (1920, 1080), 11);
         assert_eq!((lod, sigma, taps, level), (0, 2.0, 6, (1920, 1080)));

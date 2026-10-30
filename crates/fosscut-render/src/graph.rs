@@ -20,6 +20,13 @@ pub trait FrameProvider {
     /// The frame of `source.asset` displayed at `source.time`.
     fn frame(&mut self, source: &SourceRef) -> Result<VideoFrame, RenderError>;
 
+    /// The data of the font file that has `family`, for text in a project font (ADR-0027);
+    /// `None` when no font asset has it.
+    fn font(&mut self, family: &str) -> Result<Option<Arc<[u8]>>, RenderError> {
+        let _ = family;
+        Ok(None)
+    }
+
     /// The table of a LUT asset, for `color.lut` effects. Providers without LUTs fail.
     fn lut(&mut self, asset: &Id) -> Result<Arc<Lut3d>, RenderError> {
         Err(RenderError::InvalidLut {
@@ -34,6 +41,7 @@ pub trait FrameProvider {
 pub struct DecoderFrames {
     decoders: HashMap<Id, Box<dyn VideoDecoder + Send>>,
     luts: HashMap<Id, Arc<Lut3d>>,
+    fonts: HashMap<String, Arc<[u8]>>,
 }
 
 impl DecoderFrames {
@@ -56,6 +64,18 @@ impl DecoderFrames {
     pub fn has_lut(&self, asset: &Id) -> bool {
         self.luts.contains_key(asset)
     }
+
+    /// Makes a font file's data available under each of its families.
+    pub fn insert_font(&mut self, families: &[String], data: Arc<[u8]>) {
+        for family in families {
+            self.fonts.insert(family.clone(), data.clone());
+        }
+    }
+
+    /// True when a font file with `family` is available.
+    pub fn has_font(&self, family: &str) -> bool {
+        self.fonts.contains_key(family)
+    }
 }
 
 impl FrameProvider for DecoderFrames {
@@ -71,6 +91,10 @@ impl FrameProvider for DecoderFrames {
         decoder
             .frame_at(source.time)
             .map_err(|e| missing(format!("{e} ({})", e.code())))
+    }
+
+    fn font(&mut self, family: &str) -> Result<Option<Arc<[u8]>>, RenderError> {
+        Ok(self.fonts.get(family).cloned())
     }
 
     fn lut(&mut self, asset: &Id) -> Result<Arc<Lut3d>, RenderError> {

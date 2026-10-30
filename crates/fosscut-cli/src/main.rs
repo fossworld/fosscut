@@ -10,10 +10,10 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    AdjustmentCommand, AnimationCommand, CaptionsCommand, Cli, ClipCommand, ClipsCommand,
-    ColorCommand, Command, EffectCommand, KeyframeCommand, LookCommand, MarkerCommand, MaskCommand,
-    MediaCommand, ModelsCommand, ProjectCommand, SkillTarget, SkillsCommand, TextCommand,
-    TimelineCommand, TrackCommand, TransitionCommand,
+    AdjustmentCommand, AnimationCommand, AudioCommand, CaptionsCommand, Cli, ClipCommand,
+    ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand, LookCommand,
+    MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand, RevealArgs,
+    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand, TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -582,36 +582,13 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("all", Some(json!(all))),
             ]),
         ),
-        Command::Text(TextCommand::Add {
-            text,
-            track,
-            start,
-            duration,
-            color,
-            size,
-            font,
-            timeline,
-        }) => {
-            let style = (color.is_some() || size.is_some() || font.is_some()).then(|| {
-                object(vec![
-                    ("color", some(color)),
-                    ("size", some(size)),
-                    ("font", some(font)),
-                ])
-            });
-            write(
-                cli,
-                "text.add",
-                object(vec![
-                    ("text", Some(json!(text.replace("\\n", "\n")))),
-                    ("track", some(track)),
-                    ("start", some(start)),
-                    ("duration", some(duration)),
-                    ("style", style),
-                    ("timeline", some(timeline)),
-                ]),
-            )
-        }
+        Command::Text(command) => text(cli, command),
+        Command::Audio(AudioCommand::Normalize {
+            clips,
+            target,
+            ceiling,
+            no_limit,
+        }) => normalize(cli, clips, *target, *ceiling, *no_limit),
         Command::Timeline(TimelineCommand::Read { detail, timeline }) => query(
             cli,
             "timeline.read",
@@ -1363,6 +1340,193 @@ fn color(cli: &Cli, command: &ColorCommand) -> Result<Outcome, ApiError> {
     write(cli, "effect.add", suggestion.effect_add)
 }
 
+/// JSON given inline, as `@file` or `-` for stdin, for option `what`.
+fn json_input(text: &Option<String>, what: &str) -> Result<Option<Value>, ApiError> {
+    text.as_deref()
+        .map(|text| {
+            let text = read_input(text)?;
+            serde_json::from_str::<Value>(&text)
+                .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+        })
+        .transpose()
+}
+
+/// The `reveal` argument of `text.add` and `text.set`, when one is asked for.
+fn reveal_of(reveal: &RevealArgs) -> Option<Value> {
+    let unit = reveal.reveal.as_ref()?;
+    Some(object(vec![
+        ("unit", Some(json!(unit))),
+        ("motion", some(&reveal.reveal_motion)),
+        (
+            "duration",
+            Some(json!(
+                reveal
+                    .reveal_duration
+                    .clone()
+                    .unwrap_or_else(|| { TimeInput::Seconds("1".into()) })
+            )),
+        ),
+        ("exit", reveal.reveal_exit.then_some(json!(true))),
+    ]))
+}
+
+fn text(cli: &Cli, command: &TextCommand) -> Result<Outcome, ApiError> {
+    let lines = |text: &str| text.replace("\\n", "\n");
+    match command {
+        TextCommand::Add {
+            text,
+            track,
+            start,
+            duration,
+            color,
+            size,
+            font,
+            preset,
+            style,
+            spans,
+            reveal,
+            timeline,
+        } => {
+            // Single options are merged over the style patch.
+            let mut patch = json_input(style, "style")?.unwrap_or_else(|| json!({}));
+            for (key, value) in [
+                ("color", some(color)),
+                ("size", some(size)),
+                ("font", some(font)),
+            ] {
+                if let Some(value) = value {
+                    patch[key] = value;
+                }
+            }
+            let patch = (patch != json!({})).then_some(patch);
+            write(
+                cli,
+                "text.add",
+                object(vec![
+                    ("text", Some(json!(lines(text)))),
+                    ("track", some(track)),
+                    ("start", some(start)),
+                    ("duration", some(duration)),
+                    ("preset", some(preset)),
+                    ("style", patch),
+                    ("spans", json_input(spans, "spans")?),
+                    ("reveal", reveal_of(reveal)),
+                    ("timeline", some(timeline)),
+                ]),
+            )
+        }
+        TextCommand::Set {
+            clip,
+            text,
+            preset,
+            style,
+            spans,
+            reveal,
+            no_reveal,
+        } => {
+            let reveal = if *no_reveal {
+                Some(Value::Null)
+            } else {
+                reveal_of(reveal)
+            };
+            let mut args = object(vec![
+                ("clip", Some(json!(clip))),
+                ("text", text.as_deref().map(|t| json!(lines(t)))),
+                ("preset", some(preset)),
+                ("style", json_input(style, "style")?),
+                ("spans", json_input(spans, "spans")?),
+            ]);
+            if let Some(reveal) = reveal {
+                args["reveal"] = reveal;
+            }
+            write(cli, "text.set", args)
+        }
+        TextCommand::SavePreset {
+            name,
+            clip,
+            style,
+            replace,
+        } => write(
+            cli,
+            "text.preset_save",
+            object(vec![
+                ("name", Some(json!(name))),
+                ("clip", some(clip)),
+                ("style", json_input(style, "style")?),
+                ("replace", replace.then_some(json!(true))),
+            ]),
+        ),
+        TextCommand::RemovePreset { name } => {
+            write(cli, "text.preset_remove", json!({ "name": name }))
+        }
+        TextCommand::Template {
+            template,
+            lines: texts,
+            track,
+            start,
+            duration,
+            style,
+            timeline,
+        } => write(
+            cli,
+            "text.template",
+            object(vec![
+                ("template", Some(json!(template))),
+                (
+                    "lines",
+                    (!texts.is_empty())
+                        .then(|| json!(texts.iter().map(|t| lines(t)).collect::<Vec<_>>())),
+                ),
+                ("track", some(track)),
+                ("start", some(start)),
+                ("duration", some(duration)),
+                ("style", json_input(style, "style")?),
+                ("timeline", some(timeline)),
+            ]),
+        ),
+    }
+}
+
+/// `fosscut audio normalize`: measures the clips and sets their volumes in one change.
+fn normalize(
+    cli: &Cli,
+    clips: &[String],
+    target: Option<f64>,
+    ceiling: Option<f64>,
+    no_limit: bool,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::loudness;
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let ids = clips
+        .iter()
+        .map(|c| {
+            Id::parse(c).map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("clip: {e}")))
+        })
+        .collect::<Result<Vec<Id>, ApiError>>()?;
+    let measured = loudness::normalize(
+        &snapshot,
+        &path,
+        &ids,
+        target.unwrap_or(loudness::DEFAULT_TARGET_LUFS),
+        ceiling.unwrap_or(loudness::DEFAULT_CEILING_DBFS),
+        !no_limit,
+    )
+    .map_err(|e| engine_error(&e))?;
+    let response = if measured.commands.is_empty() {
+        None
+    } else {
+        let mut request: Request = serde_json::from_value(json!({ "commands": measured.commands }))
+            .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+        apply_options(cli, &mut request, true);
+        Some(bundle::execute(&path, request)?)
+    };
+    Ok(Outcome::Query(
+        "audio.normalize".to_string(),
+        json!({ "normalization": measured, "response": response }),
+    ))
+}
+
 fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
     match command {
@@ -1376,6 +1540,8 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
             model,
             language,
             min_pause_ms,
+            skip_fillers,
+            lyrics,
             replace,
         } => {
             let snapshot = bundle::snapshot(&path)?;
@@ -1402,13 +1568,27 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                     transcript,
                     cache: fosscut_engine::cache_dir(),
                     models: fosscut_engine::models_dir(),
+                    skip_fillers: *skip_fillers,
+                    lyrics: *lyrics,
                 },
             )
             .map_err(|e| engine_error(&e))?;
-            let paging = object(vec![
+            let mut paging = if *lyrics {
+                fosscut_engine::captions::lyrics_paging()
+            } else {
+                json!({})
+            };
+            for (key, value) in [
                 ("max_words", some(max_words)),
                 ("max_lines", some(max_lines)),
-            ]);
+            ] {
+                if let Some(value) = value {
+                    paging[key] = value;
+                }
+            }
+            let preset = preset
+                .clone()
+                .or_else(|| lyrics.then(|| "karaoke".to_string()));
             write(
                 cli,
                 "captions.add",
@@ -1416,7 +1596,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                     ("words", Some(json!(generated.words))),
                     ("timeline", Some(json!(generated.timeline))),
                     ("track", some(track)),
-                    ("preset", some(preset)),
+                    ("preset", some(&preset)),
                     ("paging", Some(paging)),
                     ("replace", replace.then_some(json!(true))),
                 ]),
@@ -1457,6 +1637,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
         }
         CaptionsCommand::Export {
             file,
+            subtitles,
             track,
             timeline,
         } => {
@@ -1469,9 +1650,15 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                 ids(track)
                     .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("track: {e}")))?,
             );
-            let srt =
-                fosscut_engine::captions::export_srt(&snapshot, timeline.as_ref(), track.as_ref())
-                    .map_err(|e| engine_error(&e))?;
+            let text = fosscut_engine::captions::SrtText::named(subtitles)
+                .map_err(|e| engine_error(&e))?;
+            let srt = fosscut_engine::captions::export_srt(
+                &snapshot,
+                timeline.as_ref(),
+                track.as_ref(),
+                text,
+            )
+            .map_err(|e| engine_error(&e))?;
             if file.exists() && !cli.write.allow_destructive {
                 return Err(engine_error(&EngineError::OutputExists {
                     path: file.display().to_string(),
@@ -1526,6 +1713,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
             clip,
             text,
             emphasis,
+            translation,
         } => write(
             cli,
             "captions.edit",
@@ -1533,6 +1721,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                 ("clip", Some(json!(clip))),
                 ("text", some(&text.as_ref().map(|t| t.replace("\\n", "\n")))),
                 ("emphasis", some(emphasis)),
+                ("translation", some(translation)),
             ]),
         ),
     }

@@ -8,6 +8,7 @@ import type {
   ColorSuggestion,
   EditRequest,
   EditResponse,
+  Normalization,
   Opened,
   ProjectSummary,
   TrashEntry,
@@ -131,6 +132,29 @@ export class FakeEngine implements EngineClient {
     this.record("colorSuggest", clip, reference);
     const params = reference ? { saturation: -0.1 } : { temperature: 0.2 };
     return { effect_add: { clip, type: "color.adjust", params, index: 0 } };
+  }
+
+  /**
+   * Levels every clip by the same 3 dB to the target, -14 LUFS unless asked, from a
+   * loudness of 3 dB under it: one `clip.set` per clip.
+   */
+  async audioNormalize(clips: string[], targetLufs?: number): Promise<Normalization> {
+    this.record("audioNormalize", clips, targetLufs);
+    const target = targetLufs ?? -14;
+    const volume = 1.413;
+    return {
+      target_lufs: target,
+      ceiling_dbfs: -1,
+      clips: clips.map((clip) => ({
+        clip,
+        measured_lufs: target - 3,
+        peak_dbfs: -9,
+        gain_db: 3,
+        volume,
+        limited: false,
+      })),
+      commands: clips.map((clip) => ({ command: "clip.set", args: { clip, set: { volume } } })),
+    };
   }
 
   /** What relinking answers: true for a file chosen, false for a cancel. */

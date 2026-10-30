@@ -5,10 +5,14 @@ import type { Editor } from "../app/editor";
 import type { Catalog, ClipView, EffectSpec, EffectView, ParamSpec } from "../engine/types";
 import {
   type Point,
+  type Targets,
   addPoint,
   animated,
+  isSoundEffect,
   keyed,
+  keyframeable,
   movePoint,
+  offeredEffects,
   paramAt,
   paramChange,
   removePoint,
@@ -162,7 +166,7 @@ function Param({
     const command = paramChange(clip, effect, spec, next, playhead);
     if (command) void editor.edit([command]);
   };
-  const diamond = spec.animatable ? (
+  const diamond = keyframeable(spec) ? (
     <Diamond
       on={keyed(effect, spec.name, playhead)}
       animated={animated(effect, spec.name)}
@@ -196,6 +200,16 @@ function Param({
     );
   } else if (spec.kind === "bool") {
     control = <input type="checkbox" checked={value === true} onChange={(event) => commit(event.target.checked)} />;
+  } else if (spec.kind === "choice") {
+    control = (
+      <select value={String(value)} onChange={(event) => commit(event.target.value)}>
+        {(spec.choices ?? []).map((choice) => (
+          <option key={choice} value={choice}>
+            {words(choice)}
+          </option>
+        ))}
+      </select>
+    );
   } else {
     return null;
   }
@@ -280,9 +294,28 @@ function EffectCard({
   );
 }
 
+/** The effect types to add, as one list, or grouped when there are both kinds. */
+function EffectOptions({ offered }: { offered: EffectSpec[] }) {
+  const option = (e: EffectSpec) => (
+    <option key={e.type} value={e.type} title={e.summary}>
+      {e.title}
+    </option>
+  );
+  const sound = offered.filter(isSoundEffect);
+  const picture = offered.filter((e) => !isSoundEffect(e));
+  if (sound.length === 0 || picture.length === 0) return <>{offered.map(option)}</>;
+  return (
+    <>
+      <optgroup label="Picture">{picture.map(option)}</optgroup>
+      <optgroup label="Sound">{sound.map(option)}</optgroup>
+    </>
+  );
+}
+
 /**
  * The selected clip's effects in the order they apply, each with its parameters at the
- * playhead, plus adding effects and looks and automatic color.
+ * playhead, plus adding effects and looks and automatic color. Sound effects show for
+ * clips with sound and picture effects for clips with a picture.
  */
 export function Effects({
   editor,
@@ -291,6 +324,7 @@ export function Effects({
   catalog,
   luts,
   others,
+  targets = { picture: true, sound: false },
 }: {
   editor: Editor;
   clip: ClipView;
@@ -299,9 +333,12 @@ export function Effects({
   luts: { id: string; name: string }[];
   /** Other video clips, to match the color of. */
   others: ClipView[];
+  /** What effects can change on this clip. */
+  targets?: Targets;
 }) {
   const effects = clip.effects ?? [];
   const pictures = clip.kind === "video" || clip.kind === "image";
+  const offered = catalog ? offeredEffects(catalog.effects, targets) : [];
   return (
     <section className="effects">
       <h2>Effects</h2>
@@ -324,25 +361,23 @@ export function Effects({
           aria-label="Add an effect"
           onChange={(event) => event.target.value && void editor.addEffect(clip.id, event.target.value)}
         >
-          <option value="">Add an effect</option>
-          {catalog?.effects.map((e) => (
-            <option key={e.type} value={e.type} title={e.summary}>
-              {e.title}
-            </option>
-          ))}
+          <option value="">{targets.picture ? "Add an effect" : "Add a sound effect"}</option>
+          <EffectOptions offered={offered} />
         </select>
-        <select
-          value=""
-          aria-label="Apply a look"
-          onChange={(event) => event.target.value && void editor.applyLook(clip.id, event.target.value)}
-        >
-          <option value="">Apply a look</option>
-          {catalog?.looks.map((l) => (
-            <option key={l.name} value={l.name} title={l.description}>
-              {l.title}
-            </option>
-          ))}
-        </select>
+        {targets.picture && (
+          <select
+            value=""
+            aria-label="Apply a look"
+            onChange={(event) => event.target.value && void editor.applyLook(clip.id, event.target.value)}
+          >
+            <option value="">Apply a look</option>
+            {catalog?.looks.map((l) => (
+              <option key={l.name} value={l.name} title={l.description}>
+                {l.title}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {pictures && (
         <div className="add">

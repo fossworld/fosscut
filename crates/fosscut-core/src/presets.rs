@@ -1,9 +1,10 @@
-//! Built-in caption presets (ADR-0021 item 4): data documents written for FossCut. A
-//! preset's values are copied into the caption track, so projects never depend on them.
+//! Built-in caption presets (ADR-0021 item 4), text style presets and title templates
+//! (ADR-0027): data documents written for FossCut. A preset's values are copied into the
+//! project, so projects never depend on them.
 
 use fosscut_model::{
-    Animator, CaptionStyle, PageFade, PagePop, WordEmphasis, WordHighlight, WordKaraoke, WordPop,
-    WordReveal,
+    Animator, CaptionStyle, Color, PageFade, PagePop, RevealMotion, RevealUnit, TextSpan,
+    TextStyle, WordEmphasis, WordHighlight, WordKaraoke, WordPop, WordReveal,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,154 @@ const SOURCES: [&str; 4] = [
     include_str!("../presets/captions/karaoke.json"),
     include_str!("../presets/captions/boxed.json"),
 ];
+
+const TEXT_STYLES: &str = include_str!("../presets/text/styles.json");
+const TITLE_TEMPLATES: &str = include_str!("../presets/text/templates.json");
+
+/// A built-in text style.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextStylePreset {
+    /// Stable name, for example `neon`.
+    pub name: String,
+    /// What it looks like and what it suits.
+    pub description: String,
+    /// The style it gives a text clip.
+    pub style: TextStyle,
+}
+
+/// A built-in title: lines with their own look, a style, a place and a reveal.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TitleTemplate {
+    /// Stable name, for example `lower-third`.
+    pub name: String,
+    /// What it shows and when to use it.
+    pub description: String,
+    /// Its lines, top to bottom.
+    pub lines: Vec<TemplateLine>,
+    /// The style of the whole title.
+    pub style: TextStyle,
+    /// Where it sits, as a clip's `transform.position`.
+    pub position: [f64; 2],
+    /// How it appears.
+    #[serde(default)]
+    pub reveal: Option<TemplateReveal>,
+}
+
+/// One line of a title template.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateLine {
+    /// Text shown when the caller gives none.
+    pub placeholder: String,
+    /// How the line differs from the title's style.
+    #[serde(default)]
+    pub span: LineLook,
+}
+
+/// How a template line differs from its title's style.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LineLook {
+    /// Fill colour.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// Bold weight.
+    #[serde(default)]
+    pub bold: Option<bool>,
+    /// Italic style.
+    #[serde(default)]
+    pub italic: Option<bool>,
+    /// Underlined.
+    #[serde(default)]
+    pub underline: Option<bool>,
+    /// Font family.
+    #[serde(default)]
+    pub font: Option<String>,
+    /// Font size as a fraction of the canvas height.
+    #[serde(default)]
+    pub size: Option<f64>,
+}
+
+impl LineLook {
+    /// The look as a span over characters `start` to `end`.
+    pub fn at(&self, start: usize, end: usize) -> TextSpan {
+        TextSpan {
+            start,
+            end,
+            color: self.color.clone(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            font: self.font.clone(),
+            size: self.size,
+        }
+    }
+}
+
+/// How a template's title appears.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateReveal {
+    /// What appears at a time.
+    pub unit: RevealUnit,
+    /// How each one appears.
+    #[serde(default)]
+    pub motion: RevealMotion,
+    /// Until the whole title shows, in milliseconds.
+    pub duration_ms: i64,
+    /// Also leave the same way.
+    #[serde(default)]
+    pub exit: bool,
+}
+
+/// Every built-in text style preset.
+pub fn text_style_presets() -> Vec<TextStylePreset> {
+    serde_json::from_str(TEXT_STYLES).unwrap_or_default()
+}
+
+/// The style of the built-in text preset called `name`.
+pub fn text_style_preset(name: &str) -> Result<TextStyle, ApiError> {
+    let presets = text_style_presets();
+    presets
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| p.style.clone())
+        .ok_or_else(|| {
+            let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
+            ApiError::new(
+                codes::TEXT_UNKNOWN_PRESET,
+                format!("there is no text preset {name}"),
+            )
+            .with_hint(format!(
+                "Built-in presets: {}; text.preset_save adds the project's own.",
+                names.join(", ")
+            ))
+        })
+}
+
+/// Every built-in title template.
+pub fn text_templates() -> Vec<TitleTemplate> {
+    serde_json::from_str(TITLE_TEMPLATES).unwrap_or_default()
+}
+
+/// The built-in title template called `name`.
+pub fn text_template(name: &str) -> Result<TitleTemplate, ApiError> {
+    let templates = text_templates();
+    templates
+        .iter()
+        .find(|t| t.name == name)
+        .cloned()
+        .ok_or_else(|| {
+            let names: Vec<&str> = templates.iter().map(|t| t.name.as_str()).collect();
+            ApiError::new(
+                codes::TEXT_UNKNOWN_TEMPLATE,
+                format!("there is no title template {name}"),
+            )
+            .with_hint(format!("Templates: {}.", names.join(", ")))
+        })
+}
 
 /// A built-in caption look.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
