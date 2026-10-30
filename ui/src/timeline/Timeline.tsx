@@ -75,12 +75,13 @@ export function Timeline({ editor, state }: Props) {
     drawTimeline(ctx, timeline, { ...view, width: size.width }, size.height, {
       playhead: state.playhead,
       selection: state.selection,
+      also: state.also,
       drag:
         drag && target
           ? { clip: drag.clip.id, start: target.start, end: target.end, track: target.track.id }
           : null,
     });
-  }, [timeline, view, size, state.playhead, state.selection, target]);
+  }, [timeline, view, size, state.playhead, state.selection, state.also, target]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -118,6 +119,10 @@ export function Timeline({ editor, state }: Props) {
             return;
           }
           const hit = hitTest(timeline, view, x, y);
+          if (event.shiftKey && hit?.clip) {
+            editor.toggleSelected(hit.clip.id);
+            return;
+          }
           editor.select(hit?.clip?.id ?? null);
           if (hit?.clip) {
             dragging.current = { clip: hit.clip, track: hit.track, mode: grabAt(hit.clip, view, x), fromX: x };

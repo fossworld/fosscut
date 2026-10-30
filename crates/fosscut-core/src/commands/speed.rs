@@ -316,6 +316,7 @@ impl Command for ClipFreeze {
             let split = ClipSplit {
                 clip: original.id.clone(),
                 at: TimeInput::Flicks(at.get()),
+                linked: false,
             }
             .apply(ctx)?;
             Some(split.right.clip)

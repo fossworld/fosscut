@@ -361,6 +361,101 @@ describe("editor", () => {
     ]);
   });
 
+  it("copies, cuts and pastes clips, and pastes attributes", async () => {
+    const fake = engine();
+    fake.answers["clips.copy"] = { clips: [{ track: "track_0002", clip: { id: "clip_0003" } }] };
+    const { editor } = await started(fake);
+    await editor.paste();
+    editor.select("clip_0003");
+    await editor.copy();
+    expect(editor.getState().clipboard).toHaveLength(1);
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.paste();
+    editor.copyAttributes();
+    editor.select("clip_0005");
+    await editor.pasteAttributes();
+    await editor.cut();
+    expect(fake.callsOf("query").filter(([name]) => name === "clips.copy")).toEqual([
+      ["clips.copy", { clips: ["clip_0003"] }],
+      ["clips.copy", { clips: ["clip_0005"] }],
+    ]);
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands);
+    expect(commands).toEqual([
+      [
+        {
+          command: "clips.paste",
+          args: { clips: [{ track: "track_0002", clip: { id: "clip_0003" } }], at: { flicks: FLICKS_PER_SECOND } },
+        },
+      ],
+      [{ command: "clip.copy_attributes", args: { from: "clip_0003", to: ["clip_0005"] } }],
+      [{ command: "clip.remove", args: { clip: "clip_0005" } }],
+    ]);
+  });
+
+  it("groups selections, follows the linkage and magnet switches, and edits around the playhead", async () => {
+    const { editor, fake } = await started();
+    editor.select("clip_0003");
+    await editor.group();
+    expect(editor.getState().notice?.text).toContain("two or more");
+    editor.toggleSelected("clip_0005");
+    expect(editor.selected()).toEqual(["clip_0003", "clip_0005"]);
+    await editor.group();
+    await editor.ungroup();
+    editor.toggleSelected("clip_0005");
+    expect(editor.selected()).toEqual(["clip_0003"]);
+    editor.setLinkage(false);
+    editor.setMagnet(true);
+    await editor.moveClip("clip_0003", FLICKS_PER_SECOND);
+    await editor.deleteSide("left");
+    expect(editor.getState().notice?.text).toContain("inside the selected clip");
+    await editor.seek(2 * FLICKS_PER_SECOND);
+    await editor.deleteSide("left");
+    await editor.deleteSide("right");
+    await editor.splitAll();
+    await editor.toggleExtractedAudio("clip_0003");
+    await editor.align("clip_0003", { horizontal: "left" });
+    await editor.deleteSelection();
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands);
+    const at = { flicks: 2 * FLICKS_PER_SECOND };
+    expect(commands).toEqual([
+      [{ command: "clip.group", args: { clips: ["clip_0003", "clip_0005"] } }],
+      [{ command: "clip.ungroup", args: { clips: ["clip_0003", "clip_0005"] } }],
+      [{ command: "clip.move", args: { clip: "clip_0003", start: { flicks: FLICKS_PER_SECOND }, linked: false } }],
+      [{ command: "clip.trim", args: { clip: "clip_0003", start: at, ripple: true, linked: false } }],
+      [{ command: "clip.trim", args: { clip: "clip_0003", end: at, ripple: true, linked: false } }],
+      [{ command: "timeline.split", args: { at } }],
+      [{ command: "clip.extract_audio", args: { clip: "clip_0003" } }],
+      [{ command: "clip.align", args: { clip: "clip_0003", horizontal: "left" } }],
+      [{ command: "clip.remove", args: { clip: "clip_0003", linked: false, ripple: true } }],
+    ]);
+  });
+
+  it("adds, removes and jumps between markers", async () => {
+    const fake = engine();
+    fake.answers["timeline.read"] = () => ({
+      ...timeline(fake.revision),
+      markers: [
+        { id: "marker_0010", at: moment(1) },
+        { id: "marker_0011", at: moment(3) },
+      ],
+    });
+    const { editor } = await started(fake);
+    await editor.seekMarker(1);
+    expect(editor.getState().playhead).toBe(FLICKS_PER_SECOND);
+    await editor.seekMarker(1);
+    expect(editor.getState().playhead).toBe(3 * FLICKS_PER_SECOND);
+    await editor.seekMarker(-1);
+    expect(editor.getState().playhead).toBe(FLICKS_PER_SECOND);
+    await editor.toggleMarker();
+    await editor.seek(2 * FLICKS_PER_SECOND);
+    await editor.toggleMarker();
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "marker.remove", args: { marker: "marker_0010" } },
+      { command: "marker.add", args: { at: { flicks: 2 * FLICKS_PER_SECOND } } },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

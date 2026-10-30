@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.7.0
+Demo (project_<random>)  revision 0  format 0.8.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.7.0
+Demo (project_<random>)  revision 8  format 0.8.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.7.0
+API 0.1.0  project format 0.8.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -106,13 +106,21 @@ commands:
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
   clip.add       Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  clip.align     Align a clip on the canvas: put the visible part of its picture against the left, right, top or bottom edge, or centre it, taking its scale, crop, flips and rotation into account. Text and captions can only be centred.
+  clip.copy_attributes Paste attributes: copy one clip's placement, crop, opacity, blend mode, volume and sound settings, effects, masks or animations (with their keyframes) to other clips, keeping their media. Effects and masks skip audio clips.
+  clip.extract_audio Extract a video clip's sound into an audio clip of its own, on the first audio track free over its span (or a new one), grouped with the video so they stay in sync. The video clip is no longer heard; clip.restore_audio undoes it.
   clip.freeze    Insert a freeze frame: hold the frame of a video clip at a time for a duration (two seconds by default), splitting the clip there and moving what follows on its track later. The held frame is silent.
-  clip.move      Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap.
-  clip.remove    Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
+  clip.group     Group two or more clips of a timeline so clip.move, clip.split, clip.trim and clip.remove edit them together (pass linked: false to edit one). They leave any group they were in.
+  clip.move      Move a clip to a new position and/or a compatible track; its group moves by the same time unless linked: false. Never overwrites: fails with fosscut.clip.overlap.
+  clip.remove    Remove a clip, and its group unless linked: false. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
+  clip.replace   Replace a clip's media with another asset, keeping its place, length, speed, effects, masks, keyframes and animations. The new media must be long enough (fosscut.clip.source_range).
+  clip.restore_audio Put a video clip's extracted sound back: remove the audio clips of its group that play the same media, and hear the video clip again.
   clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
   clip.speed     Change a video or audio clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
-  clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
-  clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.
+  clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source. Clips of its group spanning the time split too unless linked: false.
+  clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.
+  clip.ungroup   Take clips out of their groups, so each edits on its own again.
+  clips.paste    Paste clips copied with the clips.copy query at a time, keeping their arrangement: new ids, the same media, effects, masks and keyframes, and groups among them kept. Never overwrites: fails with fosscut.clip.overlap.
   effect.add     Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it.
   effect.copy    Apply one clip's effects (with their keyframes) to other clips, replacing theirs or, with append, after them: the way to grade every clip alike.
   effect.move    Move an effect to another position in its clip's order; effects apply first to last.
@@ -123,6 +131,9 @@ commands:
   keyframe.remove Remove a keyframe of a clip property at a time, or all of its keyframes (all: true), which stops the animation; with all and a time, the property keeps the value it had then.
   keyframe.set   Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan, numeric effect parameters as effects.<id>.<param>, and mask placement as masks.<id>.<property>.
   look.apply     Apply a built-in look (a filter such as warm, cool, teal_orange, vintage, noir, faded, vivid) as ordinary effects the clip owns, so it can be adjusted afterwards.
+  marker.add     Add a marker to a timeline at a time, with an optional name and color: a beat, a cue, a note to come back to.
+  marker.remove  Remove a marker.
+  marker.set     Move a marker, or change its name or color.
   mask.add       Add a mask to a clip's picture: rectangle (round corners), ellipse, linear, mirror (a band), star, heart, path (pen, with Bezier handles), text or brush (painted strokes), placed by center and size as fractions of the picture, with rotation, feather, expansion and invert. Several masks combine in order (add, subtract, intersect); on an adjustment clip they limit where its effects apply.
   mask.remove    Remove a mask and its keyframes from a clip.
   mask.set       Change a mask: shape, placement (center, size, rotation), feather, expansion, roundness, invert, mode, path points, text or brush strokes, or turn it off (enabled: false). Animated values are set with keyframe.set as masks.<id>.<property>.
@@ -130,11 +141,13 @@ commands:
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
   timeline.remove_ranges Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.
+  timeline.split Split all: cut every clip under a time on every unlocked track (or the tracks named) in one step. Grouped clips' right parts form new groups.
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
   transition.remove Remove the transition from a clip into the next one: a plain cut again.
   transition.set Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it.
 queries:
   capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.
+  clips.copy     Copy clips as documents (media, effects, masks, keyframes, groups) to pass to clips.paste, in this project or another with the same media.
   history.list   Most recent operation log entries, newest first.
   media.list     Assets in the media table with durations and stream details.
   project.info   Project name, revision, timelines and undo state.

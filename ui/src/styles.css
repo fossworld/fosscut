@@ -213,6 +213,7 @@ main {
 
 .transport {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
@@ -223,6 +224,15 @@ main {
 
 .transport .play {
   padding: 4px 14px;
+}
+
+.transport .toggle {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.timecode {
+  white-space: nowrap;
 }
 
 .timecode {

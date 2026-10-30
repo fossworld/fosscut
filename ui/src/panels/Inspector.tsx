@@ -252,6 +252,32 @@ export function Inspector({
             </button>
           </div>
           <Choice label="Blend" value={clip.blend ?? "normal"} options={BLENDS} onChange={(blend) => set({ blend })} />
+          <div className="buttons align" aria-label="Align on the canvas">
+            {hasPicture(clip) && (
+              <button title="Against the left edge" onClick={() => void editor.align(clip.id, { horizontal: "left" })}>
+                Left
+              </button>
+            )}
+            <button
+              title="Centre on the canvas"
+              onClick={() => void editor.align(clip.id, { horizontal: "center", vertical: "center" })}
+            >
+              Centre
+            </button>
+            {hasPicture(clip) && (
+              <>
+                <button title="Against the right edge" onClick={() => void editor.align(clip.id, { horizontal: "right" })}>
+                  Right
+                </button>
+                <button title="Against the top edge" onClick={() => void editor.align(clip.id, { vertical: "top" })}>
+                  Top
+                </button>
+                <button title="Against the bottom edge" onClick={() => void editor.align(clip.id, { vertical: "bottom" })}>
+                  Bottom
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
       {hasSound(clip) && (
@@ -262,6 +288,30 @@ export function Inspector({
             options={CHANNELS}
             onChange={(channels) => set({ "audio.channels": channels })}
           />
+          {clip.kind === "video" && (
+            <div className="buttons">
+              <button
+                title={
+                  clip.audio_detached
+                    ? "Put the sound back into the video clip"
+                    : "Move the sound to an audio clip of its own, linked to this one"
+                }
+                onClick={() => void editor.toggleExtractedAudio(clip.id)}
+              >
+                {clip.audio_detached ? "Restore audio" : "Extract audio"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {clip.group && (
+        <div className="options">
+          <div className="buttons">
+            <span className="muted">Grouped</span>
+            <button title="Take it out of its group (Mod+Shift+G)" onClick={() => void editor.ungroup()}>
+              Ungroup
+            </button>
+          </div>
         </div>
       )}
       {hasPicture(clip) && (

@@ -105,6 +105,64 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
         }
         "clip.speed" => json!({ "clip": clip, "rate": 2, "pitch": "shift" }),
         "clip.freeze" => json!({ "clip": clip, "at": "3s", "duration": "1s" }),
+        "clip.replace" => {
+            let mut other = test_pattern_args();
+            other["identity"]["size"] = json!(7);
+            other["name"] = json!("other.mp4");
+            let added = run(&mut session, "media.add", other);
+            json!({ "clip": clip, "asset": added.results[0]["asset"], "source_in": "0s" })
+        }
+        "clip.align" => {
+            run(
+                &mut session,
+                "clip.set",
+                json!({ "clip": clip, "set": { "transform.scale": 0.5 } }),
+            );
+            json!({ "clip": clip, "horizontal": "left", "vertical": "center" })
+        }
+        "clip.group" | "clip.ungroup" | "clip.copy_attributes" => {
+            let title = run(&mut session, "text.add", json!({ "text": "Linked" }));
+            let title = title.results[0]["clip"].clone();
+            if command == "clip.copy_attributes" {
+                run(
+                    &mut session,
+                    "clip.set",
+                    json!({ "clip": clip, "set": { "opacity": 0.5 } }),
+                );
+                json!({ "from": clip, "to": [title], "attributes": ["opacity", "transform"] })
+            } else {
+                if command == "clip.ungroup" {
+                    run(
+                        &mut session,
+                        "clip.group",
+                        json!({ "clips": [clip, title] }),
+                    );
+                }
+                json!({ "clips": [clip, title] })
+            }
+        }
+        "clip.extract_audio" => json!({ "clip": clip }),
+        "clip.restore_audio" => {
+            run(&mut session, "clip.extract_audio", json!({ "clip": clip }));
+            json!({ "clip": clip })
+        }
+        "clips.paste" => {
+            let copied = session
+                .query("clips.copy", json!({ "clips": [clip] }))
+                .unwrap();
+            json!({ "clips": copied["clips"], "at": "10s" })
+        }
+        "marker.add" => json!({ "at": "2s", "name": "drop", "color": "#ff0000" }),
+        "marker.set" | "marker.remove" => {
+            let added = run(&mut session, "marker.add", json!({ "at": "1s" }));
+            let marker = added.results[0]["marker"].clone();
+            if command == "marker.set" {
+                json!({ "marker": marker, "at": "3s", "name": "beat" })
+            } else {
+                json!({ "marker": marker })
+            }
+        }
+        "timeline.split" => json!({ "at": "4s" }),
         "animation.set" => {
             json!({ "clip": clip, "in": { "preset": "fade" }, "combo": { "preset": "pulse", "duration": "2s" } })
         }

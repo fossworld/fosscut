@@ -10,10 +10,10 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    AdjustmentCommand, AnimationCommand, CaptionsCommand, Cli, ClipCommand, ColorCommand, Command,
-    EffectCommand, KeyframeCommand, LookCommand, MaskCommand, MediaCommand, ModelsCommand,
-    ProjectCommand, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
-    TransitionCommand,
+    AdjustmentCommand, AnimationCommand, CaptionsCommand, Cli, ClipCommand, ClipsCommand,
+    ColorCommand, Command, EffectCommand, KeyframeCommand, LookCommand, MarkerCommand, MaskCommand,
+    MediaCommand, ModelsCommand, ProjectCommand, SkillTarget, SkillsCommand, TextCommand,
+    TimelineCommand, TrackCommand, TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -221,16 +221,26 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("timeline", some(timeline)),
             ]),
         ),
-        Command::Clip(ClipCommand::Split { clip, at }) => {
-            write(cli, "clip.split", json!({ "clip": clip, "at": at }))
-        }
-        Command::Clip(ClipCommand::Trim { clip, start, end }) => write(
+        Command::Clip(ClipCommand::Split { clip, at, unlinked }) => write(
+            cli,
+            "clip.split",
+            json!({ "clip": clip, "at": at, "linked": !unlinked }),
+        ),
+        Command::Clip(ClipCommand::Trim {
+            clip,
+            start,
+            end,
+            ripple,
+            unlinked,
+        }) => write(
             cli,
             "clip.trim",
             object(vec![
                 ("clip", Some(json!(clip))),
                 ("start", some(start)),
                 ("end", some(end)),
+                ("ripple", ripple.then(|| json!(true))),
+                ("linked", unlinked.then(|| json!(false))),
             ]),
         ),
         Command::Clip(ClipCommand::Speed {
@@ -303,20 +313,132 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("duration", some(duration)),
             ]),
         ),
-        Command::Clip(ClipCommand::Move { clip, start, track }) => write(
+        Command::Clip(ClipCommand::Move {
+            clip,
+            start,
+            track,
+            unlinked,
+        }) => write(
             cli,
             "clip.move",
             object(vec![
                 ("clip", Some(json!(clip))),
                 ("start", some(start)),
                 ("track", some(track)),
+                ("linked", unlinked.then(|| json!(false))),
             ]),
         ),
-        Command::Clip(ClipCommand::Remove { clip, ripple }) => write(
+        Command::Clip(ClipCommand::Remove {
+            clip,
+            ripple,
+            unlinked,
+        }) => write(
             cli,
             "clip.remove",
-            json!({ "clip": clip, "ripple": ripple }),
+            json!({ "clip": clip, "ripple": ripple, "linked": !unlinked }),
         ),
+        Command::Clip(ClipCommand::Group { clips }) => {
+            write(cli, "clip.group", json!({ "clips": clips }))
+        }
+        Command::Clip(ClipCommand::Ungroup { clips }) => {
+            write(cli, "clip.ungroup", json!({ "clips": clips }))
+        }
+        Command::Clip(ClipCommand::ExtractAudio { clip }) => {
+            write(cli, "clip.extract_audio", json!({ "clip": clip }))
+        }
+        Command::Clip(ClipCommand::RestoreAudio { clip }) => {
+            write(cli, "clip.restore_audio", json!({ "clip": clip }))
+        }
+        Command::Clip(ClipCommand::Replace {
+            clip,
+            asset,
+            source_in,
+        }) => write(
+            cli,
+            "clip.replace",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("asset", Some(json!(asset))),
+                ("source_in", some(source_in)),
+            ]),
+        ),
+        Command::Clip(ClipCommand::Align {
+            clip,
+            horizontal,
+            vertical,
+        }) => write(
+            cli,
+            "clip.align",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("horizontal", some(horizontal)),
+                ("vertical", some(vertical)),
+            ]),
+        ),
+        Command::Clip(ClipCommand::CopyAttributes {
+            from,
+            to,
+            attributes,
+        }) => write(
+            cli,
+            "clip.copy_attributes",
+            json!({ "from": from, "to": to, "attributes": attributes }),
+        ),
+        Command::Clips(ClipsCommand::Copy { clips }) => {
+            query(cli, "clips.copy", json!({ "clips": clips }))
+        }
+        Command::Clips(ClipsCommand::Paste { at, from, track }) => {
+            let copied: Value = serde_json::from_str(&read_input(from)?)
+                .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("--from: {e}")))?;
+            // Accept the query's JSON output as is, or just its result.
+            let clips = copied
+                .get("result")
+                .unwrap_or(&copied)
+                .get("clips")
+                .cloned()
+                .ok_or_else(|| {
+                    ApiError::new(
+                        codes::INVALID_ARGUMENTS,
+                        "--from: expected the output of `fosscut clips copy --json`",
+                    )
+                })?;
+            write(
+                cli,
+                "clips.paste",
+                object(vec![
+                    ("clips", Some(clips)),
+                    ("at", Some(json!(at))),
+                    ("track", some(track)),
+                ]),
+            )
+        }
+        Command::Marker(MarkerCommand::Add { at, name, color }) => write(
+            cli,
+            "marker.add",
+            object(vec![
+                ("at", Some(json!(at))),
+                ("name", some(name)),
+                ("color", some(color)),
+            ]),
+        ),
+        Command::Marker(MarkerCommand::Set {
+            marker,
+            at,
+            name,
+            color,
+        }) => write(
+            cli,
+            "marker.set",
+            object(vec![
+                ("marker", Some(json!(marker))),
+                ("at", some(at)),
+                ("name", some(name)),
+                ("color", some(color)),
+            ]),
+        ),
+        Command::Marker(MarkerCommand::Remove { marker }) => {
+            write(cli, "marker.remove", json!({ "marker": marker }))
+        }
         Command::Clip(ClipCommand::Set {
             clip,
             position,
@@ -428,6 +550,9 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("timeline", some(timeline)),
             ]),
         ),
+        Command::Timeline(TimelineCommand::Split { at, tracks }) => {
+            write(cli, "timeline.split", json!({ "at": at, "tracks": tracks }))
+        }
         Command::Timeline(TimelineCommand::Duplicate {
             width,
             height,

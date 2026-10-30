@@ -94,6 +94,7 @@ impl Project {
             name: timeline_name.clone(),
             format,
             tracks: Vec::new(),
+            markers: Vec::new(),
         };
         Project {
             manifest: Manifest {

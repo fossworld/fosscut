@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use fosscut_time::Flicks;
@@ -125,6 +125,18 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                 "canvas width and height must be positive",
             );
         }
+        for marker in &timeline.markers {
+            let marker_path = format!("{timeline_path}/{}", marker.id);
+            expect_kind(&mut issues, &marker.id, IdKind::Marker, &marker_path);
+            unique(&mut issues, &marker.id, &marker_path);
+            if marker.at.is_negative() {
+                issues.push(
+                    &marker_path,
+                    "fosscut.model.marker",
+                    "a marker cannot be before zero",
+                );
+            }
+        }
         for track in &timeline.tracks {
             let track_path = format!("{timeline_path}/{}", track.id);
             expect_kind(&mut issues, &track.id, IdKind::Track, &track_path);
@@ -205,6 +217,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
             }
         }
     }
+    check_groups(&mut issues, project);
     issues.0
 }
 
@@ -243,6 +256,12 @@ fn check_properties(issues: &mut Issues, clip: &Clip, path: &str) {
         );
     }
     let a = &clip.audio;
+    if a.detached && !matches!(clip.content, ClipContent::Video { .. }) {
+        bad(
+            "fosscut.model.detached",
+            "only a video clip's sound can be detached".into(),
+        );
+    }
     if a.fade_in.is_negative() || a.fade_out.is_negative() {
         bad("fosscut.model.fade", "fades cannot be negative".into());
     }
@@ -474,6 +493,44 @@ fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
                     "{} is not a positive-length {place} animation",
                     animation.preset
                 ),
+            );
+        }
+    }
+}
+
+/// A group has two or more clips, all on one timeline (ADR-0024).
+fn check_groups(issues: &mut Issues, project: &Project) {
+    let mut groups: BTreeMap<&Id, (Vec<&Id>, BTreeSet<&Id>, String)> = BTreeMap::new();
+    for (timeline_id, timeline) in &project.timelines {
+        for track in &timeline.tracks {
+            for clip in &track.clips {
+                if let Some(group) = &clip.group {
+                    let entry = groups.entry(group).or_insert_with(|| {
+                        (
+                            Vec::new(),
+                            BTreeSet::new(),
+                            format!("{timeline_id}/{}/{}", track.id, clip.id),
+                        )
+                    });
+                    entry.0.push(&clip.id);
+                    entry.1.insert(timeline_id);
+                }
+            }
+        }
+    }
+    for (group, (clips, timelines, path)) in groups {
+        if group.prefix() != IdKind::Group.prefix() {
+            issues.push(
+                &path,
+                "fosscut.model.id_kind",
+                format!("{group} is not a group id"),
+            );
+        }
+        if clips.len() < 2 || timelines.len() > 1 {
+            issues.push(
+                &path,
+                "fosscut.model.group",
+                format!("group {group} needs two or more clips on one timeline"),
             );
         }
     }

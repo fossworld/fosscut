@@ -210,3 +210,40 @@ pub(crate) fn renew_effect_ids(project: &mut Project, clip: &mut Clip) {
         mask.id = project.allocate_id(fosscut_model::IdKind::Mask);
     }
 }
+
+/// The other clips in `clip`'s group on its timeline (ADR-0024), when `linked`.
+pub(crate) fn group_members(project: &Project, clip: &Id, linked: bool) -> Vec<Id> {
+    if !linked {
+        return Vec::new();
+    }
+    let Ok(location) = locate_clip(project, clip) else {
+        return Vec::new();
+    };
+    let timeline = &project.timelines[&location.timeline];
+    let Some(group) = &timeline.tracks[location.track].clips[location.clip].group else {
+        return Vec::new();
+    };
+    timeline
+        .tracks
+        .iter()
+        .flat_map(|t| &t.clips)
+        .filter(|c| c.group.as_ref() == Some(group) && &c.id != clip)
+        .map(|c| c.id.clone())
+        .collect()
+}
+
+/// Takes the group id off clips left alone in their group, so every group keeps two or
+/// more clips (ADR-0024, item 1).
+pub(crate) fn tidy_groups(timeline: &mut Timeline) {
+    let mut counts: std::collections::BTreeMap<Id, usize> = std::collections::BTreeMap::new();
+    for clip in timeline.tracks.iter().flat_map(|t| &t.clips) {
+        if let Some(group) = &clip.group {
+            *counts.entry(group.clone()).or_default() += 1;
+        }
+    }
+    for clip in timeline.tracks.iter_mut().flat_map(|t| &mut t.clips) {
+        if clip.group.as_ref().is_some_and(|g| counts[g] < 2) {
+            clip.group = None;
+        }
+    }
+}

@@ -137,6 +137,8 @@ pub mod codes {
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The clip has no mask with this id.
     pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
+    /// No timeline has a marker with this id.
+    pub const MARKER_NOT_FOUND: &str = "fosscut.marker.not_found";
     /// No transition type has this name.
     pub const TRANSITION_UNKNOWN_TYPE: &str = "fosscut.transition.unknown_type";
     /// No clip starts where the clip ends, so there is no cut to transition over.
@@ -322,6 +324,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             MASK_NOT_FOUND,
             "The clip has no mask with this id.",
             "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
+        ),
+        entry(
+            MARKER_NOT_FOUND,
+            "No timeline has a marker with this id.",
+            "Read the markers with timeline.read; marker ids look like marker_0007.",
         ),
         entry(
             LOOK_UNKNOWN,

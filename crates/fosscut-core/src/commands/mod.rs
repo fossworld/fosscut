@@ -1,9 +1,13 @@
 //! Built-in commands.
 
+mod arrange;
 mod caption;
 mod clip;
+mod clipboard;
 mod effect;
+mod group;
 mod keyframe;
+mod marker;
 mod mask;
 mod media;
 mod motion;
@@ -13,6 +17,7 @@ mod timeline;
 mod track;
 mod util;
 
+pub use arrange::{Aligned, ClipAlign, ClipReplace, Horizontal, SplitAll, TimelineSplit, Vertical};
 pub use caption::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, Paging,
     WordInput,
@@ -20,14 +25,21 @@ pub use caption::{
 pub use clip::{
     ClipAdd, ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult, ClipTrim,
 };
+pub(crate) use clipboard::copied;
+pub use clipboard::{AttributesCopied, ClipCopyAttributes, ClipsPaste, CopiedClip, Pasted};
 pub use effect::{
     AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
     EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
+};
+pub use group::{
+    AudioExtracted, AudioRestored, ClipExtractAudio, ClipGroup, ClipRestoreAudio, ClipUngroup,
+    Grouped,
 };
 pub use keyframe::{
     ClipProperties, ClipSet, Easing, KeyframeRemove, KeyframeReport, KeyframeSet, KeyframesChanged,
 };
 pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
+pub use marker::{MarkerAdd, MarkerRemove, MarkerReport, MarkerSet};
 pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
 pub(crate) use motion::motion_capabilities;
@@ -53,6 +65,17 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ClipRemove>();
     registry.register::<ClipSpeed>();
     registry.register::<ClipFreeze>();
+    registry.register::<ClipReplace>();
+    registry.register::<ClipAlign>();
+    registry.register::<ClipGroup>();
+    registry.register::<ClipUngroup>();
+    registry.register::<ClipExtractAudio>();
+    registry.register::<ClipRestoreAudio>();
+    registry.register::<ClipCopyAttributes>();
+    registry.register::<ClipsPaste>();
+    registry.register::<MarkerAdd>();
+    registry.register::<MarkerSet>();
+    registry.register::<MarkerRemove>();
     registry.register::<ClipSet>();
     registry.register::<KeyframeSet>();
     registry.register::<KeyframeRemove>();
@@ -75,4 +98,5 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<CaptionsStyle>();
     registry.register::<TimelineDuplicate>();
     registry.register::<TimelineRemoveRanges>();
+    registry.register::<TimelineSplit>();
 }

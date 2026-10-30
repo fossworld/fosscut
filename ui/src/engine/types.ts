@@ -111,6 +111,10 @@ export interface ClipView {
   masks?: MaskView[];
   /** Width and height of the picture as displayed (video and image clips). */
   picture?: [number, number];
+  /** The group of clips it edits together with (ADR-0024). */
+  group?: string;
+  /** A video clip whose sound plays from an extracted audio clip. */
+  audio_detached?: boolean;
   /** How the clip plays its media (ADR-0023); absent at normal speed. */
   speed?: SpeedView;
   /** How much media a clip with speed plays. */
@@ -267,6 +271,17 @@ export interface TimelineView {
   format: Format;
   duration: Moment;
   tracks: TrackView[];
+  /** Points to come back to, in time order; omitted when there are none. */
+  markers?: MarkerView[];
+}
+
+/** A timeline marker. */
+export interface MarkerView {
+  id: string;
+  at: Moment;
+  name?: string;
+  /** `#RRGGBB`; the default marker color when omitted. */
+  color?: string;
 }
 
 /** One entry of `history.list`. */

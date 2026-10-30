@@ -7,7 +7,8 @@ use serde_json::json;
 use super::caption::split_caption;
 use super::util::{
     ensure_free, ensure_kind, ensure_unlocked, ensure_valid_range, find_or_create_track,
-    insert_sorted, locate_clip, resolve, timeline_id, timeline_mut, track_index, track_kind_for,
+    group_members, insert_sorted, locate_clip, resolve, tidy_groups, timeline_id, timeline_mut,
+    track_index, track_kind_for,
 };
 use crate::{ApiError, Command, Context, codes};
 
@@ -24,6 +25,9 @@ pub struct ClipPlacement {
     pub end: TimeReport,
     /// Length on the timeline.
     pub duration: TimeReport,
+    /// The other clips of its group that the edit changed too (ADR-0024).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linked: Vec<ClipPlacement>,
 }
 
 impl ClipPlacement {
@@ -34,8 +38,13 @@ impl ClipPlacement {
             start: TimeReport::new(clip.start, rate),
             end: TimeReport::new(clip.end(), rate),
             duration: TimeReport::new(clip.duration, rate),
+            linked: Vec::new(),
         }
     }
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Places a section of a media asset on a track.
@@ -160,6 +169,10 @@ pub struct ClipSplit {
     pub clip: Id,
     /// Timeline position of the cut, strictly inside the clip; snapped to the nearest frame.
     pub at: TimeInput,
+    /// Also split the clips of its group that span the cut (the default); their right
+    /// parts form a new group (ADR-0024).
+    #[serde(default = "yes")]
+    pub linked: bool,
 }
 
 /// Result of `clip.split`.
@@ -169,14 +182,59 @@ pub struct ClipSplitResult {
     pub left: ClipPlacement,
     /// The right part, with a new id.
     pub right: ClipPlacement,
+    /// The clips of its group split at the same time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linked: Vec<ClipSplitResult>,
 }
 
 impl Command for ClipSplit {
     const NAME: &'static str = "clip.split";
-    const SUMMARY: &'static str = "Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.";
+    const SUMMARY: &'static str = "Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source. Clips of its group spanning the time split too unless linked: false.";
     type Output = ClipSplitResult;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipSplitResult, ApiError> {
+        let members = group_members(ctx.project, &self.clip, self.linked);
+        let location = locate_clip(ctx.project, &self.clip)?;
+        let rate = ctx.project.timelines[&location.timeline].format.rate;
+        let at = resolve(&self.at, rate)?;
+        let mut result = self.split_one(ctx)?;
+        // Members that span the cut split too; the right parts form a new group.
+        for member in members {
+            let spans = locate_clip(ctx.project, &member).is_ok_and(|l| {
+                let c = &ctx.project.timelines[&l.timeline].tracks[l.track].clips[l.clip];
+                c.start < at && at < c.end()
+            });
+            if spans {
+                let split = ClipSplit {
+                    clip: member,
+                    at: TimeInput::Flicks(at.get()),
+                    linked: false,
+                }
+                .split_one(ctx)?;
+                result.linked.push(split);
+            }
+        }
+        if !result.linked.is_empty() {
+            let group = ctx.project.allocate_id(IdKind::Group);
+            let rights: Vec<Id> = std::iter::once(&result)
+                .chain(&result.linked)
+                .map(|r| r.right.clip.clone())
+                .collect();
+            let timeline = timeline_mut(ctx.project, &location.timeline)?;
+            for clip in timeline.tracks.iter_mut().flat_map(|t| &mut t.clips) {
+                if rights.contains(&clip.id) {
+                    clip.group = Some(group.clone());
+                }
+            }
+        }
+        tidy_groups(timeline_mut(ctx.project, &location.timeline)?);
+        Ok(result)
+    }
+}
+
+impl ClipSplit {
+    /// Splits this clip alone; its right part leaves any group.
+    pub(crate) fn split_one(self, ctx: &mut Context<'_>) -> Result<ClipSplitResult, ApiError> {
         let location = locate_clip(ctx.project, &self.clip)?;
         let right_id = ctx.project.allocate_id(IdKind::Clip);
         let effects = ctx.project.timelines[&location.timeline].tracks[location.track].clips
@@ -262,6 +320,7 @@ impl Command for ClipSplit {
             .collect();
         right.audio.fade_in = Flicks::ZERO;
         right.animations.entrance = None;
+        right.group = None;
         track.clips[location.clip].audio.fade_out = Flicks::ZERO;
         // The transition and the exit animation belong to the end, now the right part's.
         track.clips[location.clip].transition = None;
@@ -274,6 +333,7 @@ impl Command for ClipSplit {
         Ok(ClipSplitResult {
             left,
             right: right_placement,
+            linked: Vec::new(),
         })
     }
 }
@@ -290,11 +350,15 @@ pub struct ClipMove {
     /// Target track in the same timeline; unchanged when omitted.
     #[serde(default)]
     pub track: Option<Id>,
+    /// Move the clips of its group by the same time (the default); only this clip changes
+    /// track (ADR-0024).
+    #[serde(default = "yes")]
+    pub linked: bool,
 }
 
 impl Command for ClipMove {
     const NAME: &'static str = "clip.move";
-    const SUMMARY: &'static str = "Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap.";
+    const SUMMARY: &'static str = "Move a clip to a new position and/or a compatible track; its group moves by the same time unless linked: false. Never overwrites: fails with fosscut.clip.overlap.";
     type Output = ClipPlacement;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
@@ -304,6 +368,7 @@ impl Command for ClipMove {
                 "clip.move: give a new start, a new track, or both",
             ));
         }
+        let members = group_members(ctx.project, &self.clip, self.linked);
         let location = locate_clip(ctx.project, &self.clip)?;
         let timeline = timeline_mut(ctx.project, &location.timeline)?;
         let rate = timeline.format.rate;
@@ -315,13 +380,47 @@ impl Command for ClipMove {
         ensure_unlocked(&timeline.tracks[target])?;
         let mut clip = timeline.tracks[location.track].clips.remove(location.clip);
         ensure_kind(&timeline.tracks[target], &clip.content)?;
+        let before = clip.start;
         if let Some(start) = &self.start {
             clip.start = resolve(start, rate)?;
         }
+        let shift = clip.start - before;
+        // The group moves as one: every member comes out first, so members on one track
+        // never collide with each other's old places.
+        let mut taken = Vec::new();
+        for member in &members {
+            let found = timeline.tracks.iter().enumerate().find_map(|(t, track)| {
+                track
+                    .clips
+                    .iter()
+                    .position(|c| &c.id == member)
+                    .map(|i| (t, i))
+            });
+            let Some((track, index)) = found else {
+                continue;
+            };
+            ensure_unlocked(&timeline.tracks[track])?;
+            taken.push((track, timeline.tracks[track].clips.remove(index)));
+        }
         ensure_valid_range(clip.start, clip.duration)?;
         ensure_free(&timeline.tracks[target], clip.start, clip.end(), None, rate)?;
-        let placement = ClipPlacement::of(&clip, &timeline.tracks[target].id, rate);
+        let mut placement = ClipPlacement::of(&clip, &timeline.tracks[target].id, rate);
         insert_sorted(&mut timeline.tracks[target], clip);
+        for (track, mut member) in taken {
+            member.start = member.start + shift;
+            ensure_valid_range(member.start, member.duration)?;
+            ensure_free(
+                &timeline.tracks[track],
+                member.start,
+                member.end(),
+                None,
+                rate,
+            )?;
+            placement
+                .linked
+                .push(ClipPlacement::of(&member, &timeline.tracks[track].id, rate));
+            insert_sorted(&mut timeline.tracks[track], member);
+        }
         Ok(placement)
     }
 }
@@ -340,14 +439,60 @@ pub struct ClipTrim {
     /// New timeline position just after the clip's last frame; unchanged when omitted.
     #[serde(default)]
     pub end: Option<TimeInput>,
+    /// Keep the clip's start where it is and move the later clips on its track by the
+    /// change in length, so no gap opens and nothing is covered: trimming the start with
+    /// ripple removes the clip's beginning and pulls everything after it earlier.
+    #[serde(default)]
+    pub ripple: bool,
+    /// Trim the same edge of the clips of its group that share it (the default, ADR-0024).
+    #[serde(default = "yes")]
+    pub linked: bool,
 }
 
 impl Command for ClipTrim {
     const NAME: &'static str = "clip.trim";
-    const SUMMARY: &'static str = "Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.";
+    const SUMMARY: &'static str = "Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.";
     type Output = ClipPlacement;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
+        let members = group_members(ctx.project, &self.clip, self.linked);
+        let location = locate_clip(ctx.project, &self.clip)?;
+        let before = ctx.project.timelines[&location.timeline].tracks[location.track].clips
+            [location.clip]
+            .clone();
+        let rate = ctx.project.timelines[&location.timeline].format.rate;
+        let start = self.start.as_ref().map(|t| resolve(t, rate)).transpose()?;
+        let end = self.end.as_ref().map(|t| resolve(t, rate)).transpose()?;
+        let ripple = self.ripple;
+        let mut placement = self.trim_one(ctx)?;
+        // Members sharing a moved edge move it too.
+        for member in members {
+            let Ok(l) = locate_clip(ctx.project, &member) else {
+                continue;
+            };
+            let clip = &ctx.project.timelines[&l.timeline].tracks[l.track].clips[l.clip];
+            let start = start.filter(|s| *s != before.start && clip.start == before.start);
+            let end = end.filter(|e| *e != before.end() && clip.end() == before.end());
+            if start.is_none() && end.is_none() {
+                continue;
+            }
+            let trimmed = ClipTrim {
+                clip: member,
+                start: start.map(|s| TimeInput::Flicks(s.get())),
+                end: end.map(|e| TimeInput::Flicks(e.get())),
+                ripple,
+                linked: false,
+            }
+            .trim_one(ctx)?;
+            placement.linked.push(trimmed);
+        }
+        Ok(placement)
+    }
+}
+
+impl ClipTrim {
+    /// Trims this clip alone.
+    fn trim_one(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
         if self.start.is_none() && self.end.is_none() {
             return Err(ApiError::new(
                 codes::INVALID_ARGUMENTS,
@@ -417,7 +562,17 @@ impl Command for ClipTrim {
             }
             ClipContent::Image { .. } | ClipContent::Text(_) | ClipContent::Adjustment => {}
         }
-        ensure_free(track, start, end, Some(&original.id), rate)?;
+        if self.ripple {
+            // The clip stays at its start; what follows moves by the change in length.
+            let change = duration - original.duration;
+            // Keyframes already follow the content: it moves by as much as the start did.
+            trimmed.start = original.start;
+            for clip in track.clips.iter_mut().skip(location.clip + 1) {
+                clip.start = clip.start + change;
+            }
+        } else {
+            ensure_free(track, start, end, Some(&original.id), rate)?;
+        }
         track.clips.remove(location.clip);
         let placement = ClipPlacement::of(&trimmed, &track.id, rate);
         insert_sorted(track, trimmed);
@@ -464,6 +619,9 @@ pub struct ClipRemove {
     /// Shift later clips on the same track left to close the gap.
     #[serde(default)]
     pub ripple: bool,
+    /// Remove the clips of its group too (the default, ADR-0024).
+    #[serde(default = "yes")]
+    pub linked: bool,
 }
 
 /// Result of `clip.remove`.
@@ -476,14 +634,37 @@ pub struct ClipRemoved {
     /// Clips shifted left by the ripple.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shifted: Vec<Id>,
+    /// The clips of its group removed with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub linked: Vec<Id>,
 }
 
 impl Command for ClipRemove {
     const NAME: &'static str = "clip.remove";
-    const SUMMARY: &'static str = "Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.";
+    const SUMMARY: &'static str = "Remove a clip, and its group unless linked: false. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.";
     type Output = ClipRemoved;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipRemoved, ApiError> {
+        let members = group_members(ctx.project, &self.clip, self.linked);
+        let ripple = self.ripple;
+        let mut removed = self.remove_one(ctx)?;
+        for member in members {
+            let gone = ClipRemove {
+                clip: member,
+                ripple,
+                linked: false,
+            }
+            .remove_one(ctx)?;
+            removed.shifted.retain(|id| id != &gone.removed);
+            removed.linked.push(gone.removed);
+        }
+        Ok(removed)
+    }
+}
+
+impl ClipRemove {
+    /// Removes this clip alone; a group left with one clip dissolves.
+    fn remove_one(self, ctx: &mut Context<'_>) -> Result<ClipRemoved, ApiError> {
         let location = locate_clip(ctx.project, &self.clip)?;
         let timeline = &ctx.project.timelines[&location.timeline];
         let track = &timeline.tracks[location.track];
@@ -508,10 +689,13 @@ impl Command for ClipRemove {
                 shifted.push(clip.id.clone());
             }
         }
+        let track = track.id.clone();
+        tidy_groups(timeline);
         Ok(ClipRemoved {
             removed: removed.id,
-            track: track.id.clone(),
+            track,
             shifted,
+            linked: Vec::new(),
         })
     }
 }
