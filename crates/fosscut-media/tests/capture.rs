@@ -403,13 +403,18 @@ fn check_camera_with_sound(recording: &Recording, report: &OutputReport, what: &
 /// Records until another thread sets `stop` half a second after the recording reported
 /// its first progress (opening encoders and devices comes first and takes longer on a busy
 /// machine). Returns the report and how long `record` took to return after the stop.
-fn stopped_after_half_a_second(recording: &Recording) -> (OutputReport, Duration) {
+/// Records until about half a second after the recording starts, then stops. Returns the
+/// report, how long `record` took to return after the stop, and how long the recording
+/// ran before the stop: on a loaded machine the half-second sleep can run late, and a
+/// real-time source records for as long as it actually ran.
+fn stopped_after_half_a_second(recording: &Recording) -> (OutputReport, Duration, Duration) {
     let stop = AtomicBool::new(false);
-    let recording_started = AtomicBool::new(false);
+    let started = std::sync::OnceLock::new();
     let mut stopped_at = None;
+    let mut ran = None;
     let report = std::thread::scope(|scope| {
         let stopper = scope.spawn(|| {
-            while !recording_started.load(Ordering::Relaxed) {
+            while started.get().is_none() {
                 std::thread::sleep(Duration::from_millis(1));
             }
             std::thread::sleep(Duration::from_millis(500));
@@ -417,16 +422,23 @@ fn stopped_after_half_a_second(recording: &Recording) -> (OutputReport, Duration
             Instant::now()
         });
         let report = record(recording, &stop, &mut |_| {
-            recording_started.store(true, Ordering::Relaxed)
+            started.get_or_init(Instant::now);
         })
         .unwrap();
         let returned = Instant::now();
-        stopped_at = Some(returned.duration_since(stopper.join().unwrap()));
+        let stopped = stopper.join().unwrap();
+        stopped_at = Some(returned.duration_since(stopped));
+        ran = started.get().map(|start| stopped.duration_since(*start));
         report
     });
     assert!(recording.output.exists());
     assert!(!partial(&recording.output).exists(), "no partial file");
-    (report, stopped_at.unwrap())
+    (report, stopped_at.unwrap(), ran.unwrap())
+}
+
+/// `duration` in flicks.
+fn flicks_of(duration: Duration) -> Flicks {
+    Flicks::from_millis(i64::try_from(duration.as_millis()).unwrap())
 }
 
 #[test]
@@ -441,12 +453,12 @@ fn stopping_ends_a_recording_without_a_duration() {
     };
     let mut voice = recording(&format!("{TONE},arealtime"), "stopped.wav", settings);
     voice.duration = None;
-    let (report, latency) = stopped_after_half_a_second(&voice);
+    let (report, latency, ran) = stopped_after_half_a_second(&voice);
     let audio = report.audio.as_ref().unwrap();
-    println!("stopped sound: returned {latency:?} after the stop");
+    println!("stopped sound: ran {ran:?}, returned {latency:?} after the stop");
     within(
         audio.duration,
-        Flicks::from_millis(500),
+        flicks_of(ran),
         Flicks::from_millis(100),
         "stopped sound",
     );
@@ -460,7 +472,7 @@ fn stopping_ends_a_recording_without_a_duration() {
     let graph = format!("{PICTURES},realtime [out0]; {TONE},arealtime [out1]");
     let mut camera = recording(&graph, "stopped.mp4", settings);
     camera.duration = None;
-    let (report, latency) = stopped_after_half_a_second(&camera);
+    let (report, latency, ran) = stopped_after_half_a_second(&camera);
     let got = report.video.as_ref().unwrap();
     println!(
         "stopped camera: {} frames, returned {latency:?} after the stop",
@@ -468,7 +480,7 @@ fn stopping_ends_a_recording_without_a_duration() {
     );
     within(
         got.duration.or(report.duration),
-        Flicks::from_millis(500),
+        flicks_of(ran),
         Flicks::from_millis(100),
         "stopped pictures",
     );
