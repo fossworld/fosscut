@@ -93,6 +93,7 @@ button.link {
 
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -228,6 +229,11 @@ main {
 
 .transport .toggle {
   margin: 0;
+  white-space: nowrap;
+}
+
+header button,
+.transport button {
   white-space: nowrap;
 }
 
@@ -661,4 +667,66 @@ body.browser .preview-hole::after {
 .overlay-buttons {
   display: flex;
   gap: 6px;
+}
+
+.guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.guides.on {
+  pointer-events: auto;
+}
+
+.guides .ruler {
+  fill: rgba(20, 21, 25, 0.8);
+  cursor: copy;
+}
+
+.guides .tick {
+  stroke: var(--muted, #8d8f98);
+}
+
+.guides text {
+  fill: var(--muted, #8d8f98);
+  font: 9px system-ui, sans-serif;
+}
+
+.guides .guide {
+  stroke: #4fb8ff;
+  stroke-width: 1;
+  cursor: move;
+}
+
+/* Full screen: the preview fills the window above the transport bar. */
+.app.fullscreen {
+  grid-template-rows: 0 1fr auto 0;
+}
+
+.app.fullscreen header,
+.app.fullscreen .activity,
+.app.fullscreen .timeline {
+  display: none;
+}
+
+.app.fullscreen main {
+  grid-template-columns: 1fr;
+}
+
+.transport .tools {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.transport .tools button.active {
+  background: var(--accent, #ff7a45);
+  color: #fff;
+}
+
+.transport .rate {
+  color: var(--accent, #ff7a45);
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }

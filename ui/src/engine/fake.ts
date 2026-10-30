@@ -100,7 +100,12 @@ export class FakeEngine implements EngineClient {
     show: async (flicks: number): Promise<void> => this.record("preview.show", flicks),
     play: async (): Promise<void> => this.record("preview.play"),
     pause: async (): Promise<void> => this.record("preview.pause"),
+    shuttle: async (rate: number): Promise<void> => this.record("preview.shuttle", rate),
   };
+
+  async fullscreen(on: boolean): Promise<void> {
+    this.record("fullscreen", on);
+  }
 
   on<E extends keyof EngineEvents>(event: E, handler: (payload: EngineEvents[E]) => void): Unsubscribe {
     const set = this.handlers.get(event) ?? new Set<Handler>();

@@ -61,7 +61,12 @@ export class TauriEngine implements EngineClient {
     show: (flicks: number): Promise<void> => invoke("preview_show", { flicks: Math.round(flicks) }),
     play: (): Promise<void> => invoke("preview_play"),
     pause: (): Promise<void> => invoke("preview_pause"),
+    shuttle: (rate: number): Promise<void> => invoke("preview_shuttle", { rate }),
   };
+
+  fullscreen(on: boolean): Promise<void> {
+    return invoke("window_fullscreen", { on });
+  }
 
   on<E extends keyof EngineEvents>(
     event: E,

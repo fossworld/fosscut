@@ -13,6 +13,24 @@ const key = (k: string, extra: Partial<Keystroke> = {}): Keystroke => ({
 });
 
 describe("keyboard", () => {
+  it("maps tools, shuttle, zoom and view keys", () => {
+    expect(actionFor(key("a"), true)).toBe("select-tool");
+    expect(actionFor(key("b"), true)).toBe("blade-tool");
+    expect(actionFor(key("n"), true)).toBe("snapping");
+    expect(actionFor(key("s"), true)).toBe("skimming");
+    expect([actionFor(key("j"), true), actionFor(key("k"), true), actionFor(key("l"), true)]).toEqual([
+      "shuttle-back",
+      "shuttle-stop",
+      "shuttle-forward",
+    ]);
+    expect(actionFor(key("=", { metaKey: true }), true)).toBe("zoom-in");
+    expect(actionFor(key("-", { ctrlKey: true }), false)).toBe("zoom-out");
+    expect(actionFor(key("Z", { shiftKey: true }), true)).toBe("zoom-fit");
+    expect(actionFor(key("F", { metaKey: true, shiftKey: true }), true)).toBe("fullscreen");
+    expect(actionFor(key("R", { metaKey: true, shiftKey: true }), true)).toBe("rulers");
+    expect(actionFor(key("z"), true), "plain z does nothing").toBeNull();
+  });
+
   it("maps clipboard, timeline and marker keys", () => {
     expect(actionFor(key("c", { metaKey: true }), true)).toBe("copy");
     expect(actionFor(key("x", { ctrlKey: true }), false)).toBe("cut");

@@ -19,6 +19,7 @@ const COLORS = {
   playhead: "#ff7a45",
   selection: "#ffffff",
   marker: "#4fb8ff",
+  skim: "rgba(255, 255, 255, 0.5)",
   group: "rgba(255, 255, 255, 0.55)",
 } as const;
 
@@ -39,6 +40,8 @@ const KIND_NAMES: Record<string, string> = {
 
 export interface DrawState {
   playhead: number;
+  /** The time the preview shows while skimming. */
+  skim?: number | null;
   selection: string | null;
   /** More selected clips. */
   also?: string[];
@@ -224,6 +227,15 @@ export function drawTimeline(
     ctx.closePath();
     ctx.fill();
     ctx.fillRect(Math.round(mx), RULER - 12, 1, 12);
+  }
+
+  // The skimming line: where the preview shows while hovering.
+  if (state.skim != null) {
+    const sx = timeToX(state.skim, view);
+    if (sx >= HEADER && sx <= width) {
+      ctx.fillStyle = COLORS.skim;
+      ctx.fillRect(Math.round(sx), RULER, 1, height - RULER);
+    }
   }
 
   // Playhead.

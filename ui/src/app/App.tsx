@@ -4,6 +4,7 @@ import { type Action, actionFor, isTyping } from "../keyboard";
 import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
 import { who } from "../panels/runs";
+import { Guides } from "../preview/Guides";
 import { MaskOverlay } from "../preview/MaskOverlay";
 import { PreviewHole } from "../preview/PreviewHole";
 import { findClip } from "../timeline/geometry";
@@ -30,7 +31,7 @@ function run(editor: Editor, action: Action): void {
     redo: () => editor.redo(),
     delete: () => editor.deleteSelection(),
     split: () => editor.splitAtPlayhead(),
-    deselect: () => editor.select(null),
+    deselect: () => (editor.getState().fullscreen ? editor.toggleFullscreen() : editor.select(null)),
     "toggle-enabled": () => editor.toggleEnabled(),
     copy: () => editor.copy(),
     cut: () => editor.cut(),
@@ -46,6 +47,18 @@ function run(editor: Editor, action: Action): void {
     "previous-marker": () => editor.seekMarker(-1),
     "next-marker": () => editor.seekMarker(1),
     magnet: () => editor.setMagnet(!editor.getState().magnet),
+    "select-tool": () => editor.setTool("select"),
+    "blade-tool": () => editor.setTool("blade"),
+    snapping: () => editor.setSnapping(!editor.getState().snapping),
+    skimming: () => editor.setSkimming(!editor.getState().skimming),
+    "shuttle-back": () => editor.shuttle(-1),
+    "shuttle-stop": () => editor.shuttle(0),
+    "shuttle-forward": () => editor.shuttle(1),
+    "zoom-in": () => editor.zoom("in"),
+    "zoom-out": () => editor.zoom("out"),
+    "zoom-fit": () => editor.zoom("fit"),
+    fullscreen: () => editor.toggleFullscreen(),
+    rulers: () => editor.toggleRulers(),
   };
   void actions[action]();
 }
@@ -90,7 +103,7 @@ export function App({ editor }: { editor: Editor }) {
   const agents = state.clients.filter((c) => c.name.startsWith("agent:"));
   const selected = state.timeline && state.selection ? findClip(state.timeline, state.selection) : null;
   return (
-    <div className={open ? "app" : "app empty"}>
+    <div className={open ? (state.fullscreen ? "app fullscreen" : "app") : "app empty"}>
       {state.notice && (
         <div className={`notice ${state.notice.kind}`} role="status">
           <span>{state.notice.text}</span>
@@ -117,11 +130,18 @@ export function App({ editor }: { editor: Editor }) {
             <button onClick={() => void editor.redo()} disabled={!state.opened.info.can_redo} title="Redo (Mod+Shift+Z)">
               Redo
             </button>
+            <button onClick={() => editor.toggleRulers()} aria-pressed={state.rulers} title="Rulers and guides (Mod+Shift+R)">
+              Rulers
+            </button>
+            <button onClick={() => void editor.toggleFullscreen()} title="Full screen (Mod+Shift+F; Escape leaves)">
+              Full screen
+            </button>
             <button onClick={() => void editor.close()}>Close</button>
           </header>
           <main>
             <PreviewHole editor={editor}>
               <MaskOverlay editor={editor} state={state} />
+              <Guides editor={editor} state={state} />
             </PreviewHole>
             <aside className="activity">
               {selected && (

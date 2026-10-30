@@ -49,6 +49,9 @@ pub enum Job {
     Show(Flicks),
     /// Play from the playhead.
     Play,
+    /// Shuttle at this rate from the playhead, without sound unless it is 1: 2 is twice as
+    /// fast, -1 backwards. 0 pauses.
+    Shuttle(f64),
     /// Stop playing.
     Pause,
 }
@@ -117,19 +120,36 @@ impl Preview {
 pub struct Clock {
     started: Instant,
     from: Flicks,
+    rate: f64,
 }
 
 impl Clock {
-    /// Starts at `from` now.
+    /// Starts at `from` now, in real time.
     pub fn start(from: Flicks, now: Instant) -> Clock {
-        Clock { started: now, from }
+        Clock::at_rate(from, now, 1.0)
+    }
+
+    /// Starts at `from` now, moving `rate` seconds of timeline per second (negative runs
+    /// backwards).
+    pub fn at_rate(from: Flicks, now: Instant, rate: f64) -> Clock {
+        Clock {
+            started: now,
+            from,
+            rate,
+        }
     }
 
     /// The time to show at `now`.
     pub fn at(&self, now: Instant) -> Flicks {
         let elapsed = now.saturating_duration_since(self.started);
-        let elapsed = Flicks::from_seconds_f64(elapsed.as_secs_f64()).unwrap_or(Flicks::ZERO);
-        self.from + elapsed
+        let moved =
+            Flicks::from_seconds_f64(elapsed.as_secs_f64() * self.rate).unwrap_or(Flicks::ZERO);
+        self.from + moved
+    }
+
+    /// True when the clock runs backwards.
+    pub fn backwards(&self) -> bool {
+        self.rate < 0.0
     }
 }
 
@@ -217,6 +237,13 @@ impl Engine {
                     self.time = (end - frame).max(Flicks::ZERO);
                     self.stop();
                 }
+                // Shuttling backwards stops on the first frame.
+                if matches!(pace, Pace::Wall(clock) if clock.backwards())
+                    && !self.time.is_positive()
+                {
+                    self.time = Flicks::ZERO;
+                    self.stop();
+                }
             }
             if changed {
                 self.draw();
@@ -270,6 +297,13 @@ impl Engine {
                     }
                     _ => Some(Pace::Wall(Clock::start(self.time, Instant::now()))),
                 };
+            }
+            Job::Shuttle(1.0) => return self.apply(Job::Play),
+            Job::Shuttle(rate) if rate == 0.0 || !rate.is_finite() => self.stop(),
+            Job::Shuttle(rate) => {
+                // Other rates follow the wall clock, without sound.
+                self.stop();
+                self.pace = Some(Pace::Wall(Clock::at_rate(self.time, Instant::now(), rate)));
             }
             Job::Pause => self.stop(),
         }
@@ -347,6 +381,22 @@ mod tests {
         );
         assert_eq!(fit([5.0, 5.0, 0.0, 900.0], 2.0), [5.0, 5.0, 0.0, 0.0]);
         assert_eq!(fit([5.0, 5.0, 100.0, 100.0], 0.0)[2], 0.0);
+    }
+
+    #[test]
+    fn shuttle_clocks_run_at_their_rate_and_backwards() {
+        let now = Instant::now();
+        let fast = Clock::at_rate(Flicks::from_millis(1000), now, 4.0);
+        assert_eq!(
+            fast.at(now + Duration::from_millis(250)),
+            Flicks::from_millis(2000)
+        );
+        let back = Clock::at_rate(Flicks::from_millis(1000), now, -2.0);
+        assert!(back.backwards() && !fast.backwards());
+        assert_eq!(
+            back.at(now + Duration::from_millis(250)),
+            Flicks::from_millis(500)
+        );
     }
 
     #[test]
@@ -622,6 +672,38 @@ mod thread_tests {
         let restarted = run.heads.recv_timeout(WAIT).unwrap();
         assert!(restarted.time.frames < 7, "{restarted:?}");
         run.preview.send(Job::Pause);
+    }
+
+    #[test]
+    fn shuttling_runs_fast_forwards_and_back_to_the_start() {
+        let Some(run) = running() else {
+            return;
+        };
+        run.preview.send(Job::Viewport([0.0, 0.0, 320.0, 180.0]));
+        run.preview.send(Job::Scene(Some(titled("shuttle", 30))));
+        run.heads.recv_timeout(WAIT).unwrap();
+        run.preview.send(Job::Shuttle(8.0));
+        let ahead: Vec<i64> = std::iter::from_fn(|| run.heads.recv_timeout(WAIT).ok())
+            .take_while(|head| head.playing)
+            .map(|head| head.time.frames)
+            .collect();
+        assert!(
+            ahead.windows(2).all(|w| w[0] <= w[1]),
+            "forwards: {ahead:?}"
+        );
+        run.preview.send(Job::Shuttle(-8.0));
+        let back: Vec<i64> = std::iter::from_fn(|| run.heads.recv_timeout(WAIT).ok())
+            .take_while(|head| head.playing)
+            .map(|head| head.time.frames)
+            .collect();
+        assert!(back.windows(2).all(|w| w[0] >= w[1]), "backwards: {back:?}");
+        run.preview.send(Job::Shuttle(0.0));
+        let stopped = run.heads.recv_timeout(WAIT).unwrap();
+        assert_eq!(
+            (stopped.time.frames, stopped.playing),
+            (0, false),
+            "on the first frame"
+        );
     }
 
     #[test]
