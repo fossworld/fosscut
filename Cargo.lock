@@ -762,6 +762,7 @@ dependencies = [
  "fosscut-render",
  "fosscut-time",
  "insta",
+ "png",
  "rmcp",
  "serde",
  "serde_json",
@@ -845,6 +846,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "cosmic-text",
+ "fosscut-core",
  "fosscut-media",
  "fosscut-model",
  "fosscut-time",

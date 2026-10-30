@@ -49,6 +49,173 @@ expression: listing
     "read_only": true
   },
   {
+    "description": "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. generate and import are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+    "input": {
+      "$defs": {
+        "CaptionsAction": {
+          "description": "What the `captions` tool does.",
+          "oneOf": [
+            {
+              "const": "generate",
+              "description": "Caption the clips of a track from their cached transcripts.",
+              "type": "string"
+            },
+            {
+              "const": "import",
+              "description": "Add caption pages from an SRT file, one page per cue.",
+              "type": "string"
+            },
+            {
+              "const": "export",
+              "description": "Write a caption track to an SRT file.",
+              "type": "string"
+            }
+          ]
+        },
+        "TranscriptOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `transcript` analyzer.",
+          "properties": {
+            "keep_fillers": {
+              "default": true,
+              "description": "Prompt the model to write fillers such as \"um\" instead of tidying them away\n(default true).",
+              "type": "boolean"
+            },
+            "language": {
+              "description": "Spoken language as a two-letter code such as `en`; detected when omitted, and always\nEnglish with English-only (`.en`) models.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "min_pause_ms": {
+              "default": 300,
+              "description": "Gaps between words reported as pauses, in milliseconds (default 300).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "model": {
+              "description": "Model name, for example `whisper-base.en`; the most capable installed speech model\nfor the language when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/CaptionsAction",
+          "description": "`generate` (from transcripts), `import` (an SRT file) or `export` (to an SRT file)."
+        },
+        "allow_destructive": {
+          "default": false,
+          "description": "Allow replacing captions or overwriting an existing file. Ask the user first.",
+          "type": "boolean"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Report what would change without committing it (or, for export, without writing).",
+          "type": "boolean"
+        },
+        "expected_revision": {
+          "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "The SRT file to import or to write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paging": {
+          "description": "generate: paging limits, for example `{\"max_words\": 3, \"max_lines\": 1}`."
+        },
+        "preset": {
+          "description": "A built-in look: `bold-pop`, `highlight`, `karaoke` or `boxed` (capabilities lists\nthem with descriptions).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Path of a `.fosscut` bundle; the open project when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "description": "Why, recorded in the project's history.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replace": {
+          "default": false,
+          "description": "Replace the caption track's existing captions; also needs allow_destructive.",
+          "type": "boolean"
+        },
+        "request_id": {
+          "description": "Retry key for generate and import.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_track": {
+          "description": "generate: the track whose clips are captioned; the first video or audio track with\nsound when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "style": {
+          "description": "Changes to the caption track's look as a JSON merge patch, for example\n`{\"placement\": \"middle\", \"size\": 0.07}`."
+        },
+        "timeline": {
+          "description": "Timeline; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "track": {
+          "description": "Caption track; the first caption track (created when adding) when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transcript": {
+          "$ref": "#/$defs/TranscriptOptions",
+          "default": {
+            "keep_fillers": true,
+            "min_pause_ms": 300
+          },
+          "description": "generate: the transcript options the media was analyzed with (`model`, `language`,\n`min_pause_ms`), if not the defaults."
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "name": "captions",
+    "read_only": false
+  },
+  {
     "description": "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

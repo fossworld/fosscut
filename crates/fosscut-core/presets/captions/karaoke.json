@@ -1,0 +1,11 @@
+{
+  "name": "karaoke",
+  "description": "Bold white words with an outline that fill with cyan from left to right while they are spoken. Suits lyrics and paced narration.",
+  "style": {
+    "stroke": { "enabled": true },
+    "animators": [
+      { "type": "page.fade", "version": 1, "enabled": true, "params": { "in_ms": 100, "out_ms": 100 } },
+      { "type": "word.karaoke", "version": 1, "enabled": true, "params": { "color": "#4DD2FF" } }
+    ]
+  }
+}

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use fosscut_media::{PixelFormat, VideoFrame};
 use wgpu::util::DeviceExt;
 
+use crate::caption::{CaptionLayer, CaptionRaster, PageLook, anchor, evaluate};
 use crate::color::{TransferFunction, yuv_to_rgb};
 use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
@@ -129,6 +130,7 @@ pub struct Renderer {
     textures: HashMap<TextureKey, wgpu::Texture>,
     text: TextEngine,
     text_cache: HashMap<String, Arc<TextRaster>>,
+    caption_cache: HashMap<String, Arc<CaptionRaster>>,
 }
 
 /// Rasterized text kept between frames; titles usually stay the same for many frames.
@@ -266,6 +268,7 @@ impl Renderer {
             textures: HashMap::new(),
             text: TextEngine::new(),
             text_cache: HashMap::new(),
+            caption_cache: HashMap::new(),
         }
     }
 
@@ -414,6 +417,7 @@ impl Renderer {
     ) -> Result<(), RenderError> {
         let mut draws = Vec::with_capacity(plan.layers.len());
         for (index, layer) in plan.layers.iter().enumerate() {
+            let mut opacity = layer.opacity;
             let (layer_view, vertices) = match &layer.source {
                 LayerSource::Frame(source) => {
                     let frame = frames.frame(source)?;
@@ -451,6 +455,37 @@ impl Renderer {
                         placed_quad(plan.canvas, natural, offset, &layer.transform),
                     )
                 }
+                LayerSource::Caption(caption) => {
+                    let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
+                    let look = evaluate(caption);
+                    if look.alpha <= 0.0 {
+                        continue;
+                    }
+                    let raster = self.caption_raster(caption, &look, plan.canvas, scale);
+                    if raster.is_empty() {
+                        continue;
+                    }
+                    opacity *= look.alpha;
+                    let view = self.upload_caption(encoder, index, &raster);
+                    let scale = f64::from(scale);
+                    let natural = (
+                        f64::from(raster.width) / scale,
+                        f64::from(raster.height) / scale,
+                    );
+                    // The page sits in the safe area; the clip's transform moves it from
+                    // there, and a page pop scales it around its own centre.
+                    let (x, y) = anchor(
+                        plan.canvas,
+                        caption.style.placement,
+                        f64::from(raster.lines_height),
+                    );
+                    let (w, h) = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
+                    let mut placed = layer.transform.clone();
+                    placed.position[0] += (x - w / 2.0) / w;
+                    placed.position[1] += (y - h / 2.0) / h;
+                    placed.scale *= f64::from(look.scale);
+                    (view, placed_quad(plan.canvas, natural, (0.0, 0.0), &placed))
+                }
             };
             let (mask_kind, mask) = match &layer.mask {
                 Some(mask) => (
@@ -464,7 +499,7 @@ impl Renderer {
             };
             let uniform = LayerUniform {
                 params: [
-                    layer.opacity,
+                    opacity,
                     mask_kind,
                     mask.map_or(0.0, |m| m.feather.clamp(0.0, 1.0)),
                     mask.map_or(0.0, |m| if m.invert { 1.0 } else { 0.0 }),
@@ -712,6 +747,49 @@ impl Renderer {
         raster
     }
 
+    /// A composed caption page, cached by its words, look and output size.
+    fn caption_raster(
+        &mut self,
+        layer: &CaptionLayer,
+        look: &PageLook,
+        canvas: (u32, u32),
+        scale: f32,
+    ) -> Arc<CaptionRaster> {
+        let key = format!(
+            "{:?}|{:?}|{look:?}|{}x{}|{}",
+            layer.style,
+            layer.content,
+            canvas.0,
+            canvas.1,
+            scale.to_bits()
+        );
+        if let Some(raster) = self.caption_cache.get(&key) {
+            return raster.clone();
+        }
+        if self.caption_cache.len() >= TEXT_CACHE_LIMIT {
+            self.caption_cache.clear();
+        }
+        let raster = Arc::new(self.text.caption(layer, look, canvas, scale));
+        self.caption_cache.insert(key, raster.clone());
+        raster
+    }
+
+    /// Uploads a composed caption page (premultiplied linear RGBA) and mipmaps it.
+    fn upload_caption(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        raster: &CaptionRaster,
+    ) -> wgpu::TextureView {
+        let texels: Vec<u16> = raster
+            .pixels
+            .iter()
+            .flatten()
+            .map(|&v| half::f16::from_f32(v).to_bits())
+            .collect();
+        self.upload_texels(encoder, index, (raster.width, raster.height), &texels)
+    }
+
     /// Uploads glyph coverage as premultiplied linear color and mipmaps it.
     fn upload_text(
         &mut self,
@@ -720,16 +798,6 @@ impl Renderer {
         raster: &TextRaster,
         color: [f32; 4],
     ) -> wgpu::TextureView {
-        let mips = (raster.width.max(raster.height) as f32).log2().floor() as u32 + 1;
-        let texture = self.texture(
-            Slot::Text(index),
-            (raster.width, raster.height),
-            CANVAS_FORMAT,
-            mips,
-            wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT
-                | wgpu::TextureUsages::COPY_DST,
-        );
         let texels: Vec<u16> = raster
             .coverage
             .iter()
@@ -739,17 +807,39 @@ impl Renderer {
             })
             .map(|v| half::f16::from_f32(v).to_bits())
             .collect();
+        self.upload_texels(encoder, index, (raster.width, raster.height), &texels)
+    }
+
+    /// Uploads premultiplied linear RGBA16F texels into the text slot of layer `index` and
+    /// mipmaps them.
+    fn upload_texels(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        (width, height): (u32, u32),
+        texels: &[u16],
+    ) -> wgpu::TextureView {
+        let mips = (width.max(height) as f32).log2().floor() as u32 + 1;
+        let texture = self.texture(
+            Slot::Text(index),
+            (width, height),
+            CANVAS_FORMAT,
+            mips,
+            wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_DST,
+        );
         self.queue.write_texture(
             texture.as_image_copy(),
-            bytemuck::cast_slice(&texels),
+            bytemuck::cast_slice(texels),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(raster.width * 8),
-                rows_per_image: Some(raster.height),
+                bytes_per_row: Some(width * 8),
+                rows_per_image: Some(height),
             },
             wgpu::Extent3d {
-                width: raster.width,
-                height: raster.height,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
         );

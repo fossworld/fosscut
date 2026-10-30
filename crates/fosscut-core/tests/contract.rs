@@ -32,6 +32,21 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             json!({ "clip": title.results[0]["clip"] })
         }
         "text.add" => json!({ "text": "Hello", "start": "0f", "duration": "1.5s" }),
+        "captions.add" => json!({
+            "words": [
+                { "text": "Hello", "start": { "seconds": "0.5" }, "end": { "seconds": "0.9" } },
+                { "text": "world.", "start": { "seconds": "0.9" }, "end": { "seconds": "1.4" } }
+            ],
+            "preset": "highlight"
+        }),
+        "captions.edit" => {
+            let added = run(&mut session, "captions.add", captions_sample());
+            json!({ "clip": added.results[0]["pages"][0]["clip"], "text": "Hi there", "emphasis": [1] })
+        }
+        "captions.style" => {
+            run(&mut session, "captions.add", captions_sample());
+            json!({ "preset": "boxed", "style": { "size": 0.07 } })
+        }
         "history.undo" => json!({}),
         "history.redo" => {
             run(&mut session, "history.undo", json!({}));
@@ -46,6 +61,10 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             args,
         },
     )
+}
+
+fn captions_sample() -> Value {
+    json!({ "words": [{ "text": "Caption", "start": { "seconds": "2" }, "end": { "seconds": "2.5" } }] })
 }
 
 fn command_names() -> Vec<String> {

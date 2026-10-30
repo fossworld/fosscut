@@ -10,8 +10,8 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    Cli, ClipCommand, Command, MediaCommand, ModelsCommand, ProjectCommand, SkillTarget,
-    SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    CaptionsCommand, Cli, ClipCommand, Command, MediaCommand, ModelsCommand, ProjectCommand,
+    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -281,6 +281,7 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             dir,
             skill,
         }) => install_skills(cli, *target, *user, dir.as_deref(), skill.as_deref()),
+        Command::Captions(command) => captions(cli, command),
         Command::Models(ModelsCommand::List) => Ok(Outcome::Query(
             "models.list".into(),
             json!({
@@ -642,6 +643,186 @@ fn preset_for(output: &Path) -> Result<Preset, ApiError> {
             "this machine cannot encode video",
         )
     })
+}
+
+/// `fosscut captions ...`: generate and import become `captions.add` with the global write
+/// options; export writes an SRT file; style and edit run their commands.
+fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    match command {
+        CaptionsCommand::Generate {
+            preset,
+            source_track,
+            track,
+            timeline,
+            max_words,
+            max_lines,
+            model,
+            language,
+            min_pause_ms,
+            replace,
+        } => {
+            let session = bundle::open(&path)?;
+            let mut transcript = fosscut_engine::analysis::TranscriptOptions {
+                model: model.clone(),
+                language: language.clone(),
+                ..Default::default()
+            };
+            if let Some(ms) = min_pause_ms {
+                transcript.min_pause_ms = *ms;
+            }
+            let parse = |id: &Option<String>, what: &str| {
+                id.as_deref()
+                    .map(Id::parse)
+                    .transpose()
+                    .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+            };
+            let generated = fosscut_engine::captions::generate(
+                session.project(),
+                &fosscut_engine::captions::GenerateRequest {
+                    bundle: path.clone(),
+                    timeline: parse(timeline, "timeline")?,
+                    source_track: parse(source_track, "source track")?,
+                    transcript,
+                    cache: fosscut_engine::cache_dir(),
+                    models: fosscut_engine::models_dir(),
+                },
+            )
+            .map_err(|e| engine_error(&e))?;
+            let paging = object(vec![
+                ("max_words", some(max_words)),
+                ("max_lines", some(max_lines)),
+            ]);
+            write(
+                cli,
+                "captions.add",
+                object(vec![
+                    ("words", Some(json!(generated.words))),
+                    ("timeline", Some(json!(generated.timeline))),
+                    ("track", some(track)),
+                    ("preset", some(preset)),
+                    ("paging", Some(paging)),
+                    ("replace", replace.then_some(json!(true))),
+                ]),
+            )
+        }
+        CaptionsCommand::Import {
+            file,
+            preset,
+            track,
+            timeline,
+            replace,
+        } => {
+            let text = std::fs::read_to_string(file).map_err(|e| {
+                ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!("cannot read {}: {e}", file.display()),
+                )
+            })?;
+            let cues = fosscut_engine::captions::parse_srt(&text).map_err(|e| engine_error(&e))?;
+            let session = bundle::open(&path)?;
+            let (timeline_id, _) = timeline_of(session.project(), timeline.as_deref())?;
+            let rate = session.project().timelines[&timeline_id].format.rate;
+            write(
+                cli,
+                "captions.add",
+                object(vec![
+                    (
+                        "words",
+                        Some(json!(fosscut_engine::captions::cue_words(&cues, rate))),
+                    ),
+                    ("timeline", Some(json!(timeline_id))),
+                    ("track", some(track)),
+                    ("preset", some(preset)),
+                    ("paging", Some(fosscut_engine::captions::cue_paging())),
+                    ("replace", replace.then_some(json!(true))),
+                ]),
+            )
+        }
+        CaptionsCommand::Export {
+            file,
+            track,
+            timeline,
+        } => {
+            let session = bundle::open(&path)?;
+            let ids = |id: &Option<String>| id.as_deref().map(Id::parse).transpose();
+            let (timeline, track) = (
+                ids(timeline).map_err(|e| {
+                    ApiError::new(codes::INVALID_ARGUMENTS, format!("timeline: {e}"))
+                })?,
+                ids(track)
+                    .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("track: {e}")))?,
+            );
+            let srt = fosscut_engine::captions::export_srt(
+                session.project(),
+                timeline.as_ref(),
+                track.as_ref(),
+            )
+            .map_err(|e| engine_error(&e))?;
+            if file.exists() && !cli.write.allow_destructive {
+                return Err(engine_error(&EngineError::OutputExists {
+                    path: file.display().to_string(),
+                }));
+            }
+            let cues = srt.matches(" --> ").count();
+            if !cli.write.dry_run {
+                std::fs::write(file, &srt).map_err(|e| {
+                    ApiError::new(
+                        "fosscut.media.write_failed",
+                        format!("cannot write {}: {e}", file.display()),
+                    )
+                })?;
+            }
+            Ok(Outcome::Query(
+                "captions.export".into(),
+                json!({
+                    "file": file.display().to_string(),
+                    "cues": cues,
+                    "bytes": srt.len(),
+                    "dry_run": cli.write.dry_run,
+                    "preview": fosscut_engine::captions::srt_preview(&srt, 5),
+                }),
+            ))
+        }
+        CaptionsCommand::Style {
+            preset,
+            style,
+            track,
+            timeline,
+        } => {
+            let style = style
+                .as_deref()
+                .map(|text| {
+                    let text = read_input(text)?;
+                    serde_json::from_str::<Value>(&text)
+                        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("style: {e}")))
+                })
+                .transpose()?;
+            write(
+                cli,
+                "captions.style",
+                object(vec![
+                    ("preset", some(preset)),
+                    ("style", style),
+                    ("track", some(track)),
+                    ("timeline", some(timeline)),
+                ]),
+            )
+        }
+        CaptionsCommand::Edit {
+            clip,
+            text,
+            emphasis,
+        } => write(
+            cli,
+            "captions.edit",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("text", some(&text.as_ref().map(|t| t.replace("\\n", "\n")))),
+                ("emphasis", some(emphasis)),
+            ]),
+        ),
+    }
 }
 
 /// `fosscut models install`: a download needs `--yes`; a local file does not.

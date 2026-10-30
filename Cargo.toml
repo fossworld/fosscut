@@ -65,3 +65,10 @@ expect_used = "warn"
 dbg_macro = "warn"
 # An ignored test must say why (`#[ignore = "reason"]`), so skipped tests stay visible in review.
 ignore_without_reason = "warn"
+
+# whisper.cpp (ADR-0020) asks CMake for an optimised build, but the Visual Studio generator
+# takes its configuration from the cmake crate, which follows this opt-level: at 0, tests on
+# Windows ran unoptimised speech recognition past their time limit. Optimising the package
+# builds it as RelWithDebInfo on every platform.
+[profile.dev.package.whisper-rs-sys]
+opt-level = 3

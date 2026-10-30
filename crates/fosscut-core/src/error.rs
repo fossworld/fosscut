@@ -129,6 +129,10 @@ pub mod codes {
     pub const MEDIA_INCOMPLETE: &str = "fosscut.media.incomplete_info";
     /// Text is empty.
     pub const TEXT_EMPTY: &str = "fosscut.text.empty";
+    /// Caption words are empty, out of order, overlapping or outside their page.
+    pub const CAPTIONS_INVALID_WORDS: &str = "fosscut.captions.invalid_words";
+    /// No caption preset has this name.
+    pub const CAPTIONS_UNKNOWN_PRESET: &str = "fosscut.captions.unknown_preset";
     /// No media prober (ffprobe) is available to the front end.
     pub const PROBE_UNAVAILABLE: &str = "fosscut.media.probe_unavailable";
     /// The media file could not be probed.
@@ -272,6 +276,16 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             "Import the file with a front end that probes it (fosscut media import).",
         ),
         entry(TEXT_EMPTY, "Text is empty.", "Provide non-empty text."),
+        entry(
+            CAPTIONS_INVALID_WORDS,
+            "Caption words are empty, out of order, overlapping or outside their page.",
+            "Give words in order with start before end and no overlaps; details name the word.",
+        ),
+        entry(
+            CAPTIONS_UNKNOWN_PRESET,
+            "No caption preset has this name.",
+            "capabilities lists the caption presets.",
+        ),
         entry(
             PROBE_UNAVAILABLE,
             "No media prober is available.",

@@ -1,6 +1,1521 @@
 {
   "api_version": "0.1.0",
+  "captions": {
+    "animators": [
+      {
+        "params_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `page.fade`.",
+          "properties": {
+            "in_ms": {
+              "default": 120,
+              "description": "Fade-in length in milliseconds.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "out_ms": {
+              "default": 120,
+              "description": "Fade-out length in milliseconds.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "title": "PageFade",
+          "type": "object"
+        },
+        "summary": "The page fades in and out.",
+        "type": "page.fade",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `page.pop`.",
+          "properties": {
+            "duration_ms": {
+              "default": 150,
+              "description": "Length in milliseconds.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "from": {
+              "default": 0.8,
+              "description": "Scale the page starts from.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "title": "PagePop",
+          "type": "object"
+        },
+        "summary": "The page scales in from a smaller size.",
+        "type": "page.pop",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `word.reveal`.",
+          "properties": {
+            "fade_ms": {
+              "default": 80,
+              "description": "Fade-in length of each word in milliseconds; 0 shows it at once.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "title": "WordReveal",
+          "type": "object"
+        },
+        "summary": "Each word appears when it is spoken.",
+        "type": "word.reveal",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$defs": {
+            "Color": {
+              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `word.highlight`.",
+          "properties": {
+            "box_color": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Color"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Colour of a box behind the spoken word; none when omitted."
+            },
+            "color": {
+              "$ref": "#/$defs/Color",
+              "default": "#FFE14D",
+              "description": "Colour of the spoken word."
+            },
+            "scale": {
+              "default": 1.0,
+              "description": "Scale of the spoken word.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "title": "WordHighlight",
+          "type": "object"
+        },
+        "summary": "The spoken word changes colour, gains a box or grows.",
+        "type": "word.highlight",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `word.pop`.",
+          "properties": {
+            "duration_ms": {
+              "default": 200,
+              "description": "Length in milliseconds from the word's start.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "scale": {
+              "default": 1.2,
+              "description": "Largest scale, reached halfway.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "title": "WordPop",
+          "type": "object"
+        },
+        "summary": "Each word pops up and back as it is spoken.",
+        "type": "word.pop",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$defs": {
+            "Color": {
+              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `word.karaoke`.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "default": "#FFE14D",
+              "description": "Colour that fills each word while it is spoken."
+            }
+          },
+          "title": "WordKaraoke",
+          "type": "object"
+        },
+        "summary": "Each word fills with a colour from left to right while it is spoken.",
+        "type": "word.karaoke",
+        "version": 1
+      },
+      {
+        "params_schema": {
+          "$defs": {
+            "Color": {
+              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+              "type": "string"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `word.emphasis`.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "default": "#FFE14D",
+              "description": "Colour of emphasised words."
+            },
+            "scale": {
+              "default": 1.1,
+              "description": "Scale of emphasised words.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "title": "WordEmphasis",
+          "type": "object"
+        },
+        "summary": "Words marked emphasis (captions.edit) stand out in colour and size.",
+        "type": "word.emphasis",
+        "version": 1
+      }
+    ],
+    "presets": [
+      {
+        "description": "Heavy white capitals with a black outline; each page pops in and each word pops as it is spoken. Punchy short-form style.",
+        "name": "bold-pop",
+        "style": {
+          "animators": [
+            {
+              "enabled": true,
+              "params": {
+                "duration_ms": 120,
+                "from": 0.85
+              },
+              "type": "page.pop",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "duration_ms": 180,
+                "scale": 1.15
+              },
+              "type": "word.pop",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "color": "#FFE14D",
+                "scale": 1.0
+              },
+              "type": "word.emphasis",
+              "version": 1
+            }
+          ],
+          "size": 0.06,
+          "stroke": {
+            "enabled": true,
+            "width": 0.14
+          },
+          "uppercase": true,
+          "weight": "black"
+        }
+      },
+      {
+        "description": "Extra-bold white words with an outline; the spoken word turns yellow and grows slightly. Easy to follow for talking heads.",
+        "name": "highlight",
+        "style": {
+          "animators": [
+            {
+              "enabled": true,
+              "params": {
+                "in_ms": 100,
+                "out_ms": 100
+              },
+              "type": "page.fade",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "color": "#FFE14D",
+                "scale": 1.08
+              },
+              "type": "word.highlight",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "color": "#FF6B4D",
+                "scale": 1.0
+              },
+              "type": "word.emphasis",
+              "version": 1
+            }
+          ],
+          "weight": "extra_bold"
+        }
+      },
+      {
+        "description": "Bold white words with an outline that fill with cyan from left to right while they are spoken. Suits lyrics and paced narration.",
+        "name": "karaoke",
+        "style": {
+          "animators": [
+            {
+              "enabled": true,
+              "params": {
+                "in_ms": 100,
+                "out_ms": 100
+              },
+              "type": "page.fade",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "color": "#4DD2FF"
+              },
+              "type": "word.karaoke",
+              "version": 1
+            }
+          ]
+        }
+      },
+      {
+        "description": "Bold white words on a rounded dark box, without an outline; the spoken word turns yellow. Readable over busy footage.",
+        "name": "boxed",
+        "style": {
+          "animators": [
+            {
+              "enabled": true,
+              "type": "page.fade",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "type": "word.highlight",
+              "version": 1
+            }
+          ],
+          "box": {
+            "enabled": true,
+            "padding": 0.3
+          },
+          "size": 0.05,
+          "stroke": {
+            "enabled": false
+          }
+        }
+      }
+    ]
+  },
   "commands": [
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Paging": {
+            "additionalProperties": false,
+            "description": "How words are grouped into pages and lines (ADR-0021 item 6).",
+            "properties": {
+              "linger_ms": {
+                "default": 300,
+                "description": "How long a page stays after its last word, in milliseconds, if the next page\ndoes not start first.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_chars_per_line": {
+                "description": "Most characters on a line; by default as many as fit the safe width in the track's\nstyle, at most 18 on canvases taller than wide and 32 otherwise.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_gap_ms": {
+                "default": 600,
+                "description": "A pause at least this long, in milliseconds, starts a new page.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_lines": {
+                "default": 2,
+                "description": "Most lines on a page.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_words": {
+                "default": 4,
+                "description": "Most words on a page.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          },
+          "WordInput": {
+            "additionalProperties": false,
+            "description": "A word to caption, in timeline time.",
+            "properties": {
+              "emphasis": {
+                "default": false,
+                "description": "A keyword the `word.emphasis` animator styles.",
+                "type": "boolean"
+              },
+              "end": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "When it ends on the timeline."
+              },
+              "new_line": {
+                "default": false,
+                "description": "Start a new line at this word.",
+                "type": "boolean"
+              },
+              "new_page": {
+                "default": false,
+                "description": "Start a new page at this word, whatever the paging limits say.",
+                "type": "boolean"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "When it is spoken on the timeline; kept exact, not snapped to frames."
+              },
+              "text": {
+                "description": "The word as shown, with attached punctuation.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "start",
+              "end"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Pages timed words into caption clips on a caption track.",
+        "properties": {
+          "paging": {
+            "$ref": "#/$defs/Paging",
+            "default": {
+              "linger_ms": 300,
+              "max_gap_ms": 600,
+              "max_lines": 2,
+              "max_words": 4
+            },
+            "description": "How words are grouped into pages and lines."
+          },
+          "preset": {
+            "default": null,
+            "description": "A built-in look for the track (`capabilities` lists them), applied before `style`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replace": {
+            "default": false,
+            "description": "Remove the track's existing captions first; destructive.",
+            "type": "boolean"
+          },
+          "style": {
+            "default": null,
+            "description": "Changes to the track's look as a JSON merge patch, for example\n`{\"size\": 0.07, \"placement\": \"middle\"}`."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Target caption track; the first caption track (created on top if needed) when\nomitted."
+          },
+          "words": {
+            "description": "Words in timeline order with timeline times, for example\n`[{\"text\": \"Hello\", \"start\": {\"seconds\": \"1.2\"}, \"end\": {\"seconds\": \"1.5\"}}]`.",
+            "items": {
+              "$ref": "#/$defs/WordInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "words"
+        ],
+        "title": "CaptionsAdd",
+        "type": "object"
+      },
+      "name": "captions.add",
+      "output_schema": {
+        "$defs": {
+          "CaptionPage": {
+            "description": "A caption page as commands report it.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "text": {
+                "description": "The page's text; lines are separated by `\\n`.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "clip",
+              "start",
+              "end",
+              "text"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `captions.add`.",
+        "properties": {
+          "pages": {
+            "description": "The pages, in order.",
+            "items": {
+              "$ref": "#/$defs/CaptionPage"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "description": "Captions removed first because of `replace`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "The caption track."
+          },
+          "words": {
+            "description": "Number of words captioned.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "timeline",
+          "words",
+          "pages",
+          "removed"
+        ],
+        "title": "CaptionsAdded",
+        "type": "object"
+      },
+      "summary": "Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          },
+          "WordInput": {
+            "additionalProperties": false,
+            "description": "A word to caption, in timeline time.",
+            "properties": {
+              "emphasis": {
+                "default": false,
+                "description": "A keyword the `word.emphasis` animator styles.",
+                "type": "boolean"
+              },
+              "end": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "When it ends on the timeline."
+              },
+              "new_line": {
+                "default": false,
+                "description": "Start a new line at this word.",
+                "type": "boolean"
+              },
+              "new_page": {
+                "default": false,
+                "description": "Start a new page at this word, whatever the paging limits say.",
+                "type": "boolean"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "When it is spoken on the timeline; kept exact, not snapped to frames."
+              },
+              "text": {
+                "description": "The word as shown, with attached punctuation.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "start",
+              "end"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes the words of one caption page.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The caption clip."
+          },
+          "emphasis": {
+            "default": null,
+            "description": "Indexes of the words (counting from 0 over the whole page) to emphasise; every\nother word loses its emphasis.",
+            "items": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "text": {
+            "default": null,
+            "description": "New wording for the page, `\\n` between lines; the page's time is shared across the\nnew words by their length. Use instead of `words`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "words": {
+            "description": "New timed words in timeline time, inside the clip; replaces the page's words.",
+            "items": {
+              "$ref": "#/$defs/WordInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "CaptionsEdit",
+        "type": "object"
+      },
+      "name": "captions.edit",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A caption page as commands report it.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "text": {
+            "description": "The page's text; lines are separated by `\\n`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "start",
+          "end",
+          "text"
+        ],
+        "title": "CaptionPage",
+        "type": "object"
+      },
+      "summary": "Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Gives a caption track its look.",
+        "properties": {
+          "preset": {
+            "default": null,
+            "description": "A built-in look (`capabilities` lists them); replaces the current look before\n`style` is applied.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "style": {
+            "default": null,
+            "description": "Changes as a JSON merge patch over the preset or the current look, for example\n`{\"size\": 0.07, \"stroke\": {\"enabled\": false}}`; `animators` replaces the whole list."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The caption track; the timeline's first caption track when omitted."
+          }
+        },
+        "title": "CaptionsStyle",
+        "type": "object"
+      },
+      "name": "captions.style",
+      "output_schema": {
+        "$defs": {
+          "Align": {
+            "description": "Horizontal text alignment.",
+            "oneOf": [
+              {
+                "const": "left",
+                "description": "Left aligned.",
+                "type": "string"
+              },
+              {
+                "const": "center",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "Right aligned.",
+                "type": "string"
+              }
+            ]
+          },
+          "Animator": {
+            "description": "A caption animator (ADR-0021 item 3): its type, version, switch and parameters.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "description": "The page fades in and out.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/PageFade",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "page.fade",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The page scales in.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/PagePop",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "page.pop",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Each word appears when it is spoken.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/WordReveal",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "word.reveal",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The spoken word changes colour, gains a box or grows.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/WordHighlight",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "word.highlight",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Each word pops up and back as it is spoken.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/WordPop",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "word.pop",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Each word fills from left to right while it is spoken.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/WordKaraoke",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "word.karaoke",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Words marked `emphasis` stand out.",
+                "properties": {
+                  "enabled": {
+                    "default": true,
+                    "description": "Whether it is applied; on when omitted.",
+                    "type": "boolean"
+                  },
+                  "params": {
+                    "$ref": "#/$defs/WordEmphasis",
+                    "description": "Parameters; defaults when omitted."
+                  },
+                  "type": {
+                    "const": "word.emphasis",
+                    "type": "string"
+                  },
+                  "version": {
+                    "default": 1,
+                    "description": "Parameter version; 1 when omitted.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "CaptionBox": {
+            "additionalProperties": false,
+            "description": "A box behind each line of text.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "padding": {
+                "description": "Space around the text as a fraction of the font size (0.25 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "description": "Corner radius as a fraction of the box height (0.3 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "CaptionStyle": {
+            "additionalProperties": false,
+            "description": "How a caption track's captions look and move; every field has a default.",
+            "properties": {
+              "align": {
+                "$ref": "#/$defs/Align",
+                "description": "Horizontal alignment of lines."
+              },
+              "animators": {
+                "description": "Animation, evaluated per frame from word times.",
+                "items": {
+                  "$ref": "#/$defs/Animator"
+                },
+                "type": "array"
+              },
+              "box": {
+                "$ref": "#/$defs/CaptionBox",
+                "description": "Background box behind each line (off when omitted)."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Text colour (white when omitted)."
+              },
+              "font": {
+                "description": "Font family; the bundled sans-serif when omitted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "italic": {
+                "description": "Italic style.",
+                "type": "boolean"
+              },
+              "placement": {
+                "$ref": "#/$defs/Placement",
+                "description": "Where the page sits inside the safe area (bottom when omitted)."
+              },
+              "size": {
+                "description": "Font size as a fraction of the canvas height (0.055 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke",
+                "description": "Outline around the letters (black, on, when omitted)."
+              },
+              "uppercase": {
+                "description": "Show words in capitals.",
+                "type": "boolean"
+              },
+              "weight": {
+                "$ref": "#/$defs/FontWeight",
+                "description": "Font weight (bold when omitted)."
+              }
+            },
+            "type": "object"
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "FontWeight": {
+            "description": "Font weights of the bundled fonts.",
+            "oneOf": [
+              {
+                "const": "regular",
+                "description": "Regular (400).",
+                "type": "string"
+              },
+              {
+                "const": "bold",
+                "description": "Bold (700).",
+                "type": "string"
+              },
+              {
+                "const": "extra_bold",
+                "description": "Extra bold (800).",
+                "type": "string"
+              },
+              {
+                "const": "black",
+                "description": "Black (900).",
+                "type": "string"
+              }
+            ]
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "PageFade": {
+            "additionalProperties": false,
+            "description": "Parameters of `page.fade`.",
+            "properties": {
+              "in_ms": {
+                "default": 120,
+                "description": "Fade-in length in milliseconds.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "out_ms": {
+                "default": 120,
+                "description": "Fade-out length in milliseconds.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "PagePop": {
+            "additionalProperties": false,
+            "description": "Parameters of `page.pop`.",
+            "properties": {
+              "duration_ms": {
+                "default": 150,
+                "description": "Length in milliseconds.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "from": {
+                "default": 0.8,
+                "description": "Scale the page starts from.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Placement": {
+            "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",
+            "oneOf": [
+              {
+                "const": "top",
+                "description": "At the top of the safe area.",
+                "type": "string"
+              },
+              {
+                "const": "middle",
+                "description": "Centred.",
+                "type": "string"
+              },
+              {
+                "const": "bottom",
+                "description": "At the bottom of the safe area.",
+                "type": "string"
+              }
+            ]
+          },
+          "Stroke": {
+            "additionalProperties": false,
+            "description": "An outline around the letters.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "width": {
+                "description": "Its width as a fraction of the font size (0.12 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
+          },
+          "WordEmphasis": {
+            "additionalProperties": false,
+            "description": "Parameters of `word.emphasis`.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFE14D",
+                "description": "Colour of emphasised words."
+              },
+              "scale": {
+                "default": 1.1,
+                "description": "Scale of emphasised words.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "WordHighlight": {
+            "additionalProperties": false,
+            "description": "Parameters of `word.highlight`.",
+            "properties": {
+              "box_color": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Color"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Colour of a box behind the spoken word; none when omitted."
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFE14D",
+                "description": "Colour of the spoken word."
+              },
+              "scale": {
+                "default": 1.0,
+                "description": "Scale of the spoken word.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "WordKaraoke": {
+            "additionalProperties": false,
+            "description": "Parameters of `word.karaoke`.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFE14D",
+                "description": "Colour that fills each word while it is spoken."
+              }
+            },
+            "type": "object"
+          },
+          "WordPop": {
+            "additionalProperties": false,
+            "description": "Parameters of `word.pop`.",
+            "properties": {
+              "duration_ms": {
+                "default": 200,
+                "description": "Length in milliseconds from the word's start.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "scale": {
+                "default": 1.2,
+                "description": "Largest scale, reached halfway.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "WordReveal": {
+            "additionalProperties": false,
+            "description": "Parameters of `word.reveal`.",
+            "properties": {
+              "fade_ms": {
+                "default": 80,
+                "description": "Fade-in length of each word in milliseconds; 0 shows it at once.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `captions.style`.",
+        "properties": {
+          "style": {
+            "$ref": "#/$defs/CaptionStyle",
+            "description": "Its look now; fields at their defaults are omitted, as in the project."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "The caption track."
+          }
+        },
+        "required": [
+          "track",
+          "style"
+        ],
+        "title": "CaptionsStyled",
+        "type": "object"
+      },
+      "summary": "Set how a caption track's captions look and move: a built-in preset, a style patch, or both."
+    },
     {
       "input_schema": {
         "$defs": {
@@ -1404,7 +2919,12 @@
               },
               {
                 "const": "text",
-                "description": "Text clips: titles and captions.",
+                "description": "Text clips: titles.",
+                "type": "string"
+              },
+              {
+                "const": "caption",
+                "description": "Caption clips: pages of timed words, with the look in the track (ADR-0021).",
                 "type": "string"
               }
             ]
@@ -1610,6 +3130,16 @@
       "meaning": "Text is empty."
     },
     {
+      "code": "fosscut.captions.invalid_words",
+      "hint": "Give words in order with start before end and no overlaps; details name the word.",
+      "meaning": "Caption words are empty, out of order, overlapping or outside their page."
+    },
+    {
+      "code": "fosscut.captions.unknown_preset",
+      "hint": "capabilities lists the caption presets.",
+      "meaning": "No caption preset has this name."
+    },
+    {
       "code": "fosscut.media.probe_unavailable",
       "hint": "Install FFmpeg so that ffprobe is on PATH, or set FOSSCUT_FFPROBE to its location.",
       "meaning": "No media prober is available."
@@ -1685,7 +3215,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.1.0",
+  "format_version": "0.2.0",
   "queries": [
     {
       "input_schema": {

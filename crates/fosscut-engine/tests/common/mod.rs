@@ -128,6 +128,7 @@ pub fn project(relative: &str) -> Project {
         muted: false,
         hidden: false,
         locked: false,
+        caption_style: None,
         clips: vec![Clip {
             id: Id::new(IdKind::Clip, 3),
             start: Flicks::ZERO,
@@ -148,6 +149,7 @@ pub fn project(relative: &str) -> Project {
         muted: false,
         hidden: false,
         locked: false,
+        caption_style: None,
         clips: vec![Clip {
             id: Id::new(IdKind::Clip, 5),
             start: Flicks::ZERO,

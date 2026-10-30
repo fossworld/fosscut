@@ -76,9 +76,12 @@ pub enum Command {
     /// Place, split, move and remove clips.
     #[command(subcommand)]
     Clip(ClipCommand),
-    /// Add titles and captions.
+    /// Add titles.
     #[command(subcommand)]
     Text(TextCommand),
+    /// Caption speech word by word, style captions, and read or write SRT subtitle files.
+    #[command(subcommand)]
+    Captions(CaptionsCommand),
     /// Read timelines.
     #[command(subcommand)]
     Timeline(TimelineCommand),
@@ -374,6 +377,104 @@ pub enum ClipCommand {
         /// Shift later clips left to close the gap.
         #[arg(long)]
         ripple: bool,
+    },
+}
+
+/// `fosscut captions ...`
+#[derive(Debug, Subcommand)]
+pub enum CaptionsCommand {
+    /// Caption the clips of a track from their cached transcripts: run `fosscut media
+    /// analyze <asset> transcript` first. Words become pages of a few words on a caption
+    /// track.
+    Generate {
+        /// Built-in look: bold-pop, highlight, karaoke or boxed (see `fosscut capabilities`).
+        #[arg(long)]
+        preset: Option<String>,
+        /// Track whose clips are captioned; the first video or audio track with sound when
+        /// omitted.
+        #[arg(long)]
+        source_track: Option<String>,
+        /// Caption track to add to; the first caption track (created if needed) when
+        /// omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+        /// Most words on a page (default 4).
+        #[arg(long)]
+        max_words: Option<u32>,
+        /// Most lines on a page (default 2).
+        #[arg(long)]
+        max_lines: Option<u32>,
+        /// The speech model the media was transcribed with, if not the default.
+        #[arg(long)]
+        model: Option<String>,
+        /// The language the media was transcribed with, if given then.
+        #[arg(long)]
+        language: Option<String>,
+        /// The pause length the media was transcribed with, if not 300.
+        #[arg(long)]
+        min_pause_ms: Option<u32>,
+        /// Replace the track's captions; needs --allow-destructive.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Import an SRT subtitle file: one caption page per cue, lines kept.
+    Import {
+        /// The .srt file.
+        file: PathBuf,
+        /// Built-in look for the caption track.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Caption track to add to; the first caption track (created if needed) when
+        /// omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+        /// Replace the track's captions; needs --allow-destructive.
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Write a caption track as an SRT file. Overwriting needs --allow-destructive.
+    Export {
+        /// The .srt file to write.
+        file: PathBuf,
+        /// Caption track; the timeline's first caption track when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Set how a caption track looks and moves: a preset, a style patch, or both.
+    Style {
+        /// Built-in look: bold-pop, highlight, karaoke or boxed.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Changes as a JSON merge patch (text, @file or - for stdin), for example
+        /// '{"size": 0.07, "placement": "middle"}'.
+        #[arg(long)]
+        style: Option<String>,
+        /// Caption track; the timeline's first caption track when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Change one caption page: new wording that keeps its timing, or which words stand out.
+    Edit {
+        /// The caption clip, for example clip_0012.
+        clip: String,
+        /// New wording; `\n` between lines.
+        #[arg(long)]
+        text: Option<String>,
+        /// Words to emphasise, counted from 0 over the page, for example 1,3.
+        #[arg(long, value_delimiter = ',')]
+        emphasis: Option<Vec<usize>>,
     },
 }
 

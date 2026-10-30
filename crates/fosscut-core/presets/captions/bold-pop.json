@@ -1,0 +1,15 @@
+{
+  "name": "bold-pop",
+  "description": "Heavy white capitals with a black outline; each page pops in and each word pops as it is spoken. Punchy short-form style.",
+  "style": {
+    "weight": "black",
+    "size": 0.06,
+    "uppercase": true,
+    "stroke": { "enabled": true, "width": 0.14 },
+    "animators": [
+      { "type": "page.pop", "version": 1, "enabled": true, "params": { "from": 0.85, "duration_ms": 120 } },
+      { "type": "word.pop", "version": 1, "enabled": true, "params": { "scale": 1.15, "duration_ms": 180 } },
+      { "type": "word.emphasis", "version": 1, "enabled": true, "params": { "color": "#FFE14D", "scale": 1.0 } }
+    ]
+  }
+}

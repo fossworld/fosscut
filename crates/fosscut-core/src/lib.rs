@@ -25,18 +25,21 @@ mod commands;
 mod envelope;
 mod error;
 mod history;
+mod presets;
 mod queries;
 mod session;
 
 pub use changes::ChangeSummary;
 pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry};
 pub use commands::{
-    ClipAdd, ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult,
-    MediaAdd, MediaAdded, TextAdd, TrackAdd, TrackAdded,
+    CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
+    ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult, MediaAdd,
+    MediaAdded, Paging, TextAdd, TrackAdd, TrackAdded, WordInput,
 };
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};
+pub use presets::{CaptionPreset, caption_animators, caption_preset, caption_presets};
 pub use session::Session;
 
 /// Version of the command and query API reported by `capabilities`.

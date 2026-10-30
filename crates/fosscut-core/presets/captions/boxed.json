@@ -1,0 +1,13 @@
+{
+  "name": "boxed",
+  "description": "Bold white words on a rounded dark box, without an outline; the spoken word turns yellow. Readable over busy footage.",
+  "style": {
+    "size": 0.05,
+    "stroke": { "enabled": false },
+    "box": { "enabled": true, "padding": 0.3 },
+    "animators": [
+      { "type": "page.fade", "version": 1, "enabled": true, "params": { "in_ms": 120, "out_ms": 120 } },
+      { "type": "word.highlight", "version": 1, "enabled": true, "params": { "color": "#FFE14D" } }
+    ]
+  }
+}

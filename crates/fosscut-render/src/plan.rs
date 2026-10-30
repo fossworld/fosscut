@@ -7,6 +7,7 @@ use fosscut_model::{ClipContent, Id, Project, TextContent, TrackKind, Transform}
 use fosscut_time::Flicks;
 
 use crate::RenderError;
+use crate::caption::CaptionLayer;
 use crate::geometry::clockwise_rotation;
 use crate::lut::Lut3d;
 
@@ -26,6 +27,8 @@ pub enum LayerSource {
     Frame(SourceRef),
     /// Styled text, rasterized at the output resolution.
     Text(TextContent),
+    /// A caption page at one moment (ADR-0021), composed at the output resolution.
+    Caption(Box<CaptionLayer>),
 }
 
 /// Mask shape, in the layer's displayed coordinates.
@@ -82,6 +85,11 @@ impl Layer {
         Layer::with_source(LayerSource::Text(content))
     }
 
+    /// A full-opacity caption page, placed in the canvas's safe area.
+    pub fn caption(caption: CaptionLayer) -> Layer {
+        Layer::with_source(LayerSource::Caption(Box::new(caption)))
+    }
+
     fn with_source(source: LayerSource) -> Layer {
         Layer {
             clip: None,
@@ -136,8 +144,8 @@ pub fn source_geometry(project: &Project, asset: &Id) -> Option<((u32, u32), u16
     ))
 }
 
-/// Plans the frame of `timeline` displayed at `time`: every visible video, image and text
-/// clip that covers `time`, bottom track first.
+/// Plans the frame of `timeline` displayed at `time`: every visible video, image, text and
+/// caption clip that covers `time`, bottom track first.
 pub fn plan_frame(
     project: &Project,
     timeline: &Id,
@@ -176,6 +184,20 @@ pub fn plan_frame(
                 });
                 continue;
             }
+            (ClipContent::Caption(caption), _) => {
+                plan.layers.push(Layer {
+                    clip: Some(clip.id.clone()),
+                    transform: clip.transform.clone(),
+                    opacity: clip.opacity.clamp(0.0, 1.0) as f32,
+                    ..Layer::caption(CaptionLayer {
+                        style: track.caption_style.clone().unwrap_or_default(),
+                        content: caption.clone(),
+                        time: time - clip.start,
+                        duration: clip.duration,
+                    })
+                });
+                continue;
+            }
             _ => continue,
         };
         let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
@@ -209,7 +231,7 @@ mod tests {
     fn time(layer: &Layer) -> Option<Flicks> {
         match &layer.source {
             LayerSource::Frame(source) => Some(source.time),
-            LayerSource::Text(_) => None,
+            LayerSource::Text(_) | LayerSource::Caption(_) => None,
         }
     }
 
@@ -301,6 +323,7 @@ mod tests {
                     muted: false,
                     hidden,
                     locked: false,
+                    caption_style: None,
                     clips,
                 });
         }
@@ -369,5 +392,63 @@ mod tests {
             time: Flicks::ZERO,
         });
         assert_eq!((layer.opacity, layer.mask, layer.clip), (1.0, None, None));
+    }
+
+    #[test]
+    fn caption_clips_carry_their_track_style_and_local_time() {
+        let (mut project, timeline) = project();
+        let page = clip(
+            &mut project,
+            30,
+            45,
+            ClipContent::Caption(fosscut_model::CaptionContent {
+                lines: vec![fosscut_model::CaptionLine {
+                    words: vec![fosscut_model::CaptionWord {
+                        text: "Hello".into(),
+                        start: Flicks::ZERO,
+                        end: frames(20),
+                        emphasis: false,
+                    }],
+                }],
+            }),
+        );
+        let style = fosscut_model::CaptionStyle {
+            uppercase: true,
+            ..fosscut_model::CaptionStyle::default()
+        };
+        let id = project.allocate_id(fosscut_model::IdKind::Track);
+        project
+            .timelines
+            .get_mut(&timeline)
+            .unwrap()
+            .tracks
+            .push(Track {
+                id,
+                kind: TrackKind::Caption,
+                name: None,
+                muted: false,
+                hidden: false,
+                locked: false,
+                caption_style: Some(style.clone()),
+                clips: vec![page],
+            });
+        let plan = plan_frame(&project, &timeline, frames(40)).unwrap();
+        let caption = plan.layers.last().unwrap();
+        let LayerSource::Caption(layer) = &caption.source else {
+            panic!("expected a caption layer, got {:?}", caption.source);
+        };
+        assert_eq!(layer.style, style);
+        assert_eq!(layer.time, frames(10), "time from the clip's start");
+        assert_eq!(layer.duration, frames(45));
+        assert_eq!(layer.content.text(), "Hello");
+        assert!(time(caption).is_none());
+        // Outside the page there is no caption layer.
+        let later = plan_frame(&project, &timeline, frames(80)).unwrap();
+        assert!(
+            later
+                .layers
+                .iter()
+                .all(|l| !matches!(l.source, LayerSource::Caption(_)))
+        );
     }
 }

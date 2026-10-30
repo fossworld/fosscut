@@ -36,6 +36,21 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut media analyze <asset> [loudness|silences|scenes|transcript ...] [--refresh]",
         ),
         (
+            "captions.generate",
+            "Caption the clips of a track word by word from their cached transcripts, as pages on a caption track with a preset look; one undoable step.",
+            "fosscut captions generate [--preset NAME] [--source-track ID] [--replace]",
+        ),
+        (
+            "captions.import",
+            "Add caption pages from an SRT subtitle file, one page per cue with its lines kept.",
+            "fosscut captions import <file.srt> [--preset NAME] [--replace]",
+        ),
+        (
+            "captions.export",
+            "Write a caption track to an SRT subtitle file, one cue per page.",
+            "fosscut captions export <file.srt> [--track ID]",
+        ),
+        (
             "models.install",
             "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",

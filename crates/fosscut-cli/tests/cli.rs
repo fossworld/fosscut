@@ -880,6 +880,7 @@ fn skills_install_into_agent_folders() {
     .unwrap();
     let listed = ok(&dir, &["skills", "list"]);
     assert_eq!(listed["skills"][0]["name"], json!("fosscut-basics"));
+    assert_eq!(listed["skills"][1]["name"], json!("viral-captions"));
     assert!(listed["skills"][0]["description"].as_str().unwrap().len() > 40);
     let nowhere = fails(&dir, &["skills", "install"]);
     assert_eq!(nowhere["code"], json!("fosscut.request.invalid_arguments"));
@@ -945,12 +946,17 @@ fn skills_install_into_agent_folders() {
     // Any folder, and the human output.
     let human = fosscut(&dir, &["skills", "install", "--dir", "custom"]);
     assert!(human.status.success());
-    let expected = format!(
-        "installed fosscut-basics in {}",
-        Path::new("custom").join("fosscut-basics").display()
-    );
+    let expected = ["fosscut-basics", "viral-captions"]
+        .map(|skill| {
+            format!(
+                "installed {skill} in {}",
+                Path::new("custom").join(skill).display()
+            )
+        })
+        .join("\n");
     assert_eq!(String::from_utf8_lossy(&human.stdout).trim(), expected);
     assert!(dir.join("custom/fosscut-basics/SKILL.md").is_file());
+    assert!(dir.join("custom/viral-captions/SKILL.md").is_file());
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -1237,5 +1243,361 @@ fn transcripts_from_the_command_line() {
         "{text}"
     );
     assert!(text.contains("sandy shore"), "{text}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+const SUBTITLES: &str = "1\n00:00:00,500 --> 00:00:01,800\n<i>Most people</i> never\nnotice this.\n\n2\n00:00:02,000 --> 00:00:03,250\nBut once you do,\n\n3\n00:00:03,300 --> 00:00:04,500\neverything changes.\n";
+
+#[test]
+fn captions_from_subtitle_files() {
+    let dir = workspace("captions-srt");
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Short.fosscut",
+            "--width",
+            "1080",
+            "--height",
+            "1920",
+        ],
+    );
+    std::fs::write(dir.join("subs.srt"), SUBTITLES).unwrap();
+    let imported = ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "import",
+            "subs.srt",
+            "--preset",
+            "highlight",
+        ],
+    );
+    assert_eq!(imported["committed"], json!(true));
+    let pages = imported["results"][0]["pages"].as_array().unwrap();
+    let texts: Vec<&str> = pages.iter().map(|p| p["text"].as_str().unwrap()).collect();
+    assert_eq!(
+        texts,
+        [
+            "Most people never\nnotice this.",
+            "But once you do,",
+            "everything changes."
+        ]
+    );
+    assert_eq!(pages[0]["start"]["frames"], 15);
+
+    // Export, import into a second project and export again: the same file.
+    ok(
+        &dir,
+        &["-p", "Short.fosscut", "captions", "export", "out.srt"],
+    );
+    let first = std::fs::read_to_string(dir.join("out.srt")).unwrap();
+    assert!(
+        first.starts_with(
+            "1\n00:00:00,500 --> 00:00:01,800\nMost people never\nnotice this.\n\n2\n"
+        ),
+        "{first}"
+    );
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Copy.fosscut",
+            "--width",
+            "1080",
+            "--height",
+            "1920",
+        ],
+    );
+    ok(
+        &dir,
+        &["-p", "Copy.fosscut", "captions", "import", "out.srt"],
+    );
+    ok(
+        &dir,
+        &["-p", "Copy.fosscut", "captions", "export", "again.srt"],
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("again.srt")).unwrap(),
+        first
+    );
+
+    // Exports never overwrite unless allowed; a dry run writes nothing.
+    let guarded = fails(
+        &dir,
+        &["-p", "Short.fosscut", "captions", "export", "out.srt"],
+    );
+    assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    let dry = ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "export",
+            "dry.srt",
+            "--dry-run",
+        ],
+    );
+    assert_eq!(dry["cues"], json!(3));
+    assert!(!dir.join("dry.srt").exists());
+    ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "export",
+            "out.srt",
+            "--allow-destructive",
+        ],
+    );
+
+    // Restyle and reword.
+    let styled = ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "style",
+            "--preset",
+            "boxed",
+            "--style",
+            r#"{"placement": "top"}"#,
+        ],
+    );
+    assert_eq!(styled["results"][0]["style"]["placement"], json!("top"));
+    let clip = pages[1]["clip"].as_str().unwrap();
+    let edited = ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "edit",
+            clip,
+            "--text",
+            "Once you see it,\\nyou can't unsee it",
+            "--emphasis",
+            "4,7",
+        ],
+    );
+    assert_eq!(
+        edited["results"][0]["text"],
+        json!("Once you see it,\nyou can't unsee it")
+    );
+    let timeline = ok(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "timeline",
+            "read",
+            "--detail",
+            "full",
+        ],
+    );
+    let track = &timeline["tracks"][0];
+    assert_eq!(track["kind"], json!("caption"));
+    assert_eq!(track["caption_style"]["box"]["enabled"], json!(true));
+    assert_eq!(track["clips"][1]["lines"][1][0]["emphasis"], json!(true));
+
+    // Readable output and errors.
+    let human = fosscut(
+        &dir,
+        &[
+            "-p",
+            "Short.fosscut",
+            "captions",
+            "export",
+            "out.srt",
+            "--allow-destructive",
+        ],
+    );
+    assert!(String::from_utf8_lossy(&human.stdout).contains("out.srt"));
+    std::fs::write(dir.join("bad.srt"), "1\n00:00:01,000 --> soon\nHi\n").unwrap();
+    let bad = fails(
+        &dir,
+        &["-p", "Short.fosscut", "captions", "import", "bad.srt"],
+    );
+    assert_eq!(bad["code"], json!("fosscut.captions.invalid_srt"));
+    assert_eq!(bad["details"]["line"], json!(2));
+    let missing = fails(
+        &dir,
+        &["-p", "Short.fosscut", "captions", "import", "none.srt"],
+    );
+    assert_eq!(missing["code"], json!("fosscut.request.invalid_arguments"));
+    ok(&dir, &["project", "new", "Empty.fosscut"]);
+    let empty = fails(
+        &dir,
+        &["-p", "Empty.fosscut", "captions", "export", "e.srt"],
+    );
+    assert_eq!(empty["code"], json!("fosscut.captions.none"));
+    let nothing = fails(&dir, &["-p", "Empty.fosscut", "captions", "generate"]);
+    assert_eq!(nothing["code"], json!("fosscut.captions.no_transcript"));
+    let no_track = fails(
+        &dir,
+        &[
+            "-p",
+            "Empty.fosscut",
+            "captions",
+            "generate",
+            "--source-track",
+            "track_0099",
+        ],
+    );
+    assert_eq!(no_track["code"], json!("fosscut.request.invalid_arguments"));
+
+    // The caption shows up in a frame, inside the bottom of the tall canvas.
+    if can_render() {
+        ok(
+            &dir,
+            &[
+                "-p",
+                "Short.fosscut",
+                "captions",
+                "style",
+                "--style",
+                r#"{"placement": "bottom"}"#,
+            ],
+        );
+        ok(
+            &dir,
+            &[
+                "-p",
+                "Short.fosscut",
+                "frame",
+                "1s",
+                "--out",
+                "caption.png",
+                "--width",
+                "270",
+            ],
+        );
+        let png = std::fs::read(dir.join("caption.png")).unwrap();
+        let decoder = png::Decoder::new(std::io::Cursor::new(png));
+        let mut reader = decoder.read_info().unwrap();
+        let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut pixels).unwrap();
+        let (width, height) = (info.width as usize, info.height as usize);
+        let bright_rows: Vec<usize> = (0..height)
+            .filter(|&y| {
+                (0..width).any(|x| pixels[(y * width + x) * info.color_type.samples() + 1] > 200)
+            })
+            .collect();
+        assert!(!bright_rows.is_empty(), "the caption is drawn");
+        let (top, bottom) = (bright_rows[0], *bright_rows.last().unwrap());
+        assert!(
+            top > height / 2 && bottom < height * 78 / 100,
+            "inside the safe area: rows {top} to {bottom} of {height}"
+        );
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn captions_generated_from_a_transcript() {
+    let models = std::env::var_os("FOSSCUT_MODELS_DIR")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| {
+            std::fs::metadata(dir.join("ggml-tiny.en.bin")).is_ok_and(|m| m.len() == 77_704_715)
+        });
+    let required =
+        std::env::var_os("FOSSCUT_REQUIRE_SPEECH").is_some_and(|v| !v.is_empty() && v != "0");
+    assert!(
+        models.is_some() || !required,
+        "FOSSCUT_REQUIRE_SPEECH is set but whisper-tiny.en is not in FOSSCUT_MODELS_DIR"
+    );
+    let Some(models) = models else {
+        return;
+    };
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("captions-generate");
+    import_speech(&dir);
+    let with_models = |args: &[&str]| {
+        let output = command(&dir)
+            .env("FOSSCUT_MODELS_DIR", &models)
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    // Show 1 s to 7 s of the recording from 2 s on the timeline.
+    ok(
+        &dir,
+        &[
+            "clip",
+            "add",
+            "--asset",
+            "asset_0001",
+            "--source-in",
+            "1s",
+            "--start",
+            "2s",
+            "--duration",
+            "6s",
+        ],
+    );
+    let missing = fails(&dir, &["captions", "generate"]);
+    assert_eq!(missing["code"], json!("fosscut.captions.no_transcript"));
+    assert_eq!(missing["details"]["assets"], json!(["asset_0001"]));
+    let analysis = with_models(&["media", "analyze", "asset_0001", "transcript"]);
+    let generated = with_models(&["captions", "generate", "--preset", "bold-pop"]);
+    assert_eq!(generated["committed"], json!(true));
+
+    // Every word spoken in the shown part, at its media time moved onto the timeline.
+    let seconds = |v: &Value| v["seconds"].as_str().unwrap().parse::<f64>().unwrap();
+    let expected: Vec<(String, f64)> = analysis["results"]["transcript"]["words"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|w| (1.0..7.0).contains(&seconds(&w["start"])))
+        .map(|w| {
+            (
+                w["text"].as_str().unwrap().to_string(),
+                seconds(&w["start"]) + 1.0,
+            )
+        })
+        .collect();
+    let timeline = ok(&dir, &["timeline", "read", "--detail", "full"]);
+    let captions = timeline["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == json!("caption"))
+        .unwrap();
+    let shown: Vec<(String, f64)> = captions["clips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["lines"].as_array().unwrap().iter())
+        .flat_map(|l| l.as_array().unwrap().iter())
+        .map(|w| {
+            (
+                w["text"].as_str().unwrap().to_string(),
+                seconds(&w["start"]),
+            )
+        })
+        .collect();
+    assert!(expected.len() > 10, "{expected:?}");
+    assert_eq!(shown.len(), expected.len());
+    for ((word, at), (want, want_at)) in shown.iter().zip(&expected) {
+        assert_eq!(word, want);
+        assert!((at - want_at).abs() < 1e-5, "{word}: {at} vs {want_at}");
+    }
+    assert_eq!(captions["caption_style"]["weight"], json!("black"));
     std::fs::remove_dir_all(&dir).unwrap();
 }

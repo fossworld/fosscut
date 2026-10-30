@@ -25,7 +25,7 @@ use std::time::Duration;
 use base64::Engine;
 use fosscut_core::{ApiError, CommandCall, REDO, Request, UNDO, codes};
 use fosscut_engine::jobs::Jobs;
-use fosscut_engine::{ExportRequest, Preset, project};
+use fosscut_engine::{EngineError, ExportRequest, Preset, project};
 use fosscut_model::TimelineFormat;
 use fosscut_render::Renderer;
 use fosscut_time::Rate;
@@ -42,9 +42,9 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler,
 use serde_json::{Value, json};
 
 use params::{
-    CapabilitiesArgs, Detail, EditArgs, ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs,
-    JobArgs, MediaAnalyzeArgs, MediaImportArgs, ModelsArgs, ProjectArgs, ProjectNewArgs,
-    ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
+    CapabilitiesArgs, CaptionsAction, CaptionsArgs, Detail, EditArgs, ExportArgs, FrameArgs,
+    HistoryArgs, HistoryStepArgs, JobArgs, MediaAnalyzeArgs, MediaImportArgs, ModelsArgs,
+    ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -525,6 +525,143 @@ impl FosscutServer {
         );
         request.allow_destructive = args.allow_destructive;
         reply(self.execute(args.project, request).await)
+    }
+
+    /// Captions from transcripts and SRT files.
+    #[tool(
+        description = "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. generate and import are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
+    async fn captions(
+        &self,
+        params: Parameters<CaptionsArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let bundle = match self.bundle(args.project.clone()) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let actor = actor(&context);
+        let state = Arc::clone(&self.state);
+        reply(
+            blocking(move || {
+                let session = project::open(&bundle)?;
+                let id = |value: &Option<String>, what: &str| {
+                    value
+                        .as_deref()
+                        .map(fosscut_model::Id::parse)
+                        .transpose()
+                        .map_err(|e| {
+                            ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}"))
+                        })
+                };
+                let timeline = id(&args.timeline, "timeline")?;
+                let track = id(&args.track, "track")?;
+                let file = |what: &str| {
+                    args.file.clone().map(PathBuf::from).ok_or_else(|| {
+                        ApiError::new(codes::INVALID_ARGUMENTS, format!("{what} needs file"))
+                    })
+                };
+                let words = match args.action {
+                    CaptionsAction::Export => {
+                        let path = file("export")?;
+                        let srt = fosscut_engine::captions::export_srt(
+                            session.project(),
+                            timeline.as_ref(),
+                            track.as_ref(),
+                        )?;
+                        if path.exists() && !args.allow_destructive {
+                            return Err(EngineError::OutputExists {
+                                path: path.display().to_string(),
+                            }
+                            .into());
+                        }
+                        if !args.dry_run {
+                            std::fs::write(&path, &srt).map_err(|e| {
+                                ApiError::new(
+                                    "fosscut.media.write_failed",
+                                    format!("cannot write {}: {e}", path.display()),
+                                )
+                            })?;
+                        }
+                        return Ok(json!({
+                            "file": path.display().to_string(),
+                            "cues": srt.matches(" --> ").count(),
+                            "dry_run": args.dry_run,
+                            "preview": fosscut_engine::captions::srt_preview(&srt, 5),
+                        }));
+                    }
+                    CaptionsAction::Generate => {
+                        let generated = fosscut_engine::captions::generate(
+                            session.project(),
+                            &fosscut_engine::captions::GenerateRequest {
+                                bundle: bundle.clone(),
+                                timeline: timeline.clone(),
+                                source_track: id(&args.source_track, "source_track")?,
+                                transcript: args.transcript.clone(),
+                                cache: state.cache.clone(),
+                                models: state.models.clone(),
+                            },
+                        )?;
+                        (generated.words, args.paging.clone())
+                    }
+                    CaptionsAction::Import => {
+                        let path = file("import")?;
+                        let text = std::fs::read_to_string(&path).map_err(|e| {
+                            ApiError::new(
+                                codes::INVALID_ARGUMENTS,
+                                format!("cannot read {}: {e}", path.display()),
+                            )
+                        })?;
+                        let cues = fosscut_engine::captions::parse_srt(&text)?;
+                        let timeline_id = timeline
+                            .clone()
+                            .unwrap_or_else(|| session.project().manifest.primary_timeline.clone());
+                        let rate = session
+                            .project()
+                            .timelines
+                            .get(&timeline_id)
+                            .map(|t| t.format.rate)
+                            .ok_or_else(|| {
+                                ApiError::new(
+                                    "fosscut.timeline.not_found",
+                                    format!("timeline {timeline_id} does not exist"),
+                                )
+                            })?;
+                        (
+                            fosscut_engine::captions::cue_words(&cues, rate),
+                            Some(fosscut_engine::captions::cue_paging()),
+                        )
+                    }
+                };
+                let (words, paging) = words;
+                let mut add = json!({ "words": words });
+                for (key, value) in [
+                    ("timeline", timeline.map(|t| json!(t))),
+                    ("track", track.map(|t| json!(t))),
+                    ("preset", args.preset.map(|p| json!(p))),
+                    ("style", args.style),
+                    ("paging", paging),
+                    ("replace", args.replace.then_some(json!(true))),
+                ] {
+                    if let Some(value) = value {
+                        add[key] = value;
+                    }
+                }
+                let mut write = Request::single("captions.add", add);
+                write.expected_revision = args.expected_revision;
+                write.dry_run = args.dry_run;
+                write.request_id = args.request_id;
+                write.allow_destructive = args.allow_destructive;
+                write.reason = args.reason;
+                write.actor = actor;
+                write.at_ms = project::now_ms();
+                drop(session);
+                project::execute(&bundle, write).map(|response| as_value(&response))
+            })
+            .await,
+        )
     }
 
     /// Undoes the last change.

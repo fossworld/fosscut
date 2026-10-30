@@ -242,6 +242,7 @@ mod tests {
                 muted,
                 hidden: false,
                 locked: false,
+                caption_style: None,
                 clips,
             });
     }

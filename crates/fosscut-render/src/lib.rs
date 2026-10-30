@@ -7,6 +7,7 @@
 //! [`ExportGraph`] and [`PreviewGraph`] drive the same evaluation for export and preview,
 //! which is what makes preview/export parity testable.
 
+pub mod caption;
 pub mod color;
 mod error;
 pub mod geometry;

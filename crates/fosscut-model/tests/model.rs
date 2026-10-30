@@ -63,6 +63,7 @@ fn round_one_project() -> Project {
         muted: false,
         hidden: false,
         locked: false,
+        caption_style: None,
         clips: vec![
             Clip {
                 id: clip_a,
@@ -97,6 +98,7 @@ fn round_one_project() -> Project {
         muted: false,
         hidden: false,
         locked: false,
+        caption_style: None,
         clips: vec![Clip {
             id: title,
             start: Flicks::ZERO,
@@ -380,6 +382,7 @@ fn each_validation_rule_reports_its_code() {
                     muted: false,
                     hidden: false,
                     locked: false,
+                    caption_style: None,
                     clips: vec![Clip {
                         id: Id::new(IdKind::Clip, 7),
                         start: Flicks::ZERO,
@@ -489,4 +492,230 @@ proptest! {
         project.save_all(&mut store).unwrap();
         prop_assert_eq!(Project::load(&store).unwrap(), project);
     }
+}
+
+/// The round 1 project with a caption track holding one styled page.
+fn captioned_project() -> Project {
+    let mut project = round_one_project();
+    let track = project.allocate_id(IdKind::Track);
+    let clip = project.allocate_id(IdKind::Clip);
+    let timeline_id = project.manifest.primary_timeline.clone();
+    let style = CaptionStyle {
+        weight: FontWeight::Black,
+        uppercase: true,
+        animators: vec![
+            Animator::WordHighlight(Animated {
+                params: WordHighlight {
+                    scale: 1.1,
+                    ..WordHighlight::default()
+                },
+                ..Animated::default()
+            }),
+            Animator::PageFade(Animated::default()),
+        ],
+        ..CaptionStyle::default()
+    };
+    project
+        .timelines
+        .get_mut(&timeline_id)
+        .unwrap()
+        .tracks
+        .push(Track {
+            id: track,
+            kind: TrackKind::Caption,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: Some(style),
+            clips: vec![Clip {
+                id: clip,
+                start: frames(12),
+                duration: frames(30),
+                content: ClipContent::Caption(CaptionContent {
+                    lines: vec![
+                        CaptionLine {
+                            words: vec![
+                                CaptionWord {
+                                    text: "This".into(),
+                                    start: Flicks::ZERO,
+                                    end: frames(6),
+                                    emphasis: false,
+                                },
+                                CaptionWord {
+                                    text: "changes".into(),
+                                    start: frames(6),
+                                    end: frames(15),
+                                    emphasis: true,
+                                },
+                            ],
+                        },
+                        CaptionLine {
+                            words: vec![CaptionWord {
+                                text: "everything.".into(),
+                                start: frames(16),
+                                end: frames(28),
+                                emphasis: false,
+                            }],
+                        },
+                    ],
+                }),
+                transform: Transform::default(),
+                opacity: 1.0,
+                volume: 1.0,
+            }],
+        });
+    project
+}
+
+fn caption_track(project: &mut Project) -> &mut Track {
+    primary(project)
+        .tracks
+        .iter_mut()
+        .find(|t| t.kind == TrackKind::Caption)
+        .unwrap()
+}
+
+fn caption(project: &mut Project) -> &mut CaptionContent {
+    match &mut caption_track(project).clips[0].content {
+        ClipContent::Caption(caption) => caption,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn captions_round_trip_sparsely() {
+    let project = captioned_project();
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let timeline = &project.timelines[&project.manifest.primary_timeline];
+    let json = serde_json::to_value(timeline).unwrap();
+    let track = &json["tracks"][2];
+    assert_eq!(track["kind"], "caption");
+    assert_eq!(
+        track["caption_style"],
+        serde_json::json!({
+            "weight": "black",
+            "uppercase": true,
+            "animators": [
+                { "type": "word.highlight", "version": 1, "enabled": true,
+                  "params": { "color": "#FFE14D", "scale": 1.1 } },
+                { "type": "page.fade", "version": 1, "enabled": true }
+            ]
+        })
+    );
+    let page = &track["clips"][0];
+    assert_eq!(page["kind"], "caption");
+    assert_eq!(page["lines"][0]["words"][1]["emphasis"], true);
+    assert!(page["lines"][0]["words"][0].get("emphasis").is_none());
+    let content = match &timeline.tracks[2].clips[0].content {
+        ClipContent::Caption(caption) => caption,
+        _ => unreachable!(),
+    };
+    assert_eq!(content.text(), "This changes\neverything.");
+    assert_eq!(content.words().count(), 3);
+    assert!(timeline.tracks[2].clips[0].content.asset().is_none());
+    assert_eq!(timeline.tracks[2].clips[0].content.kind_name(), "caption");
+    assert_eq!(
+        safe_margins(1080, 1920),
+        [0.06, 0.10, 0.06, 0.22],
+        "tall canvases keep clear of platform controls"
+    );
+    assert_eq!(safe_margins(1920, 1080), [0.05; 4]);
+}
+
+#[test]
+fn older_formats_load_and_save_as_the_current_version() {
+    let project = round_one_project();
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&store.read(MANIFEST_PATH).unwrap()).unwrap();
+    assert_eq!(manifest["format_version"], FORMAT_VERSION);
+    manifest["format_version"] = "0.1.0".into();
+    store
+        .write_atomic(MANIFEST_PATH, manifest.to_string().as_bytes())
+        .unwrap();
+    let loaded = Project::load(&store).unwrap();
+    assert_eq!(loaded.manifest.format_version, "0.2.0");
+    assert_eq!(loaded, project, "nothing else changes");
+    assert!(READABLE_VERSIONS.contains(&"0.1.0"));
+}
+
+#[test]
+fn caption_rules_report_their_codes() {
+    let codes = |project: &Project| -> Vec<String> {
+        validate(project).into_iter().map(|i| i.code).collect()
+    };
+
+    let mut unordered = captioned_project();
+    caption(&mut unordered).lines[0].words[1].start = frames(3);
+    assert_eq!(codes(&unordered), ["fosscut.model.caption_words"]);
+
+    let mut outside = captioned_project();
+    caption(&mut outside).lines[1].words[0].end = frames(31);
+    assert_eq!(codes(&outside), ["fosscut.model.caption_words"]);
+
+    let mut blank = captioned_project();
+    caption(&mut blank).lines[1].words[0].text = "  ".into();
+    assert_eq!(codes(&blank), ["fosscut.model.caption_words"]);
+
+    let mut empty = captioned_project();
+    caption(&mut empty).lines[1].words.clear();
+    assert_eq!(codes(&empty), ["fosscut.model.caption_words"]);
+
+    let mut wrong_track = captioned_project();
+    caption_track(&mut wrong_track).kind = TrackKind::Text;
+    assert_eq!(
+        codes(&wrong_track),
+        ["fosscut.model.caption_style", "fosscut.model.track_kind"]
+    );
+
+    let mut sizes = captioned_project();
+    let style = caption_track(&mut sizes).caption_style.as_mut().unwrap();
+    style.size = 0.0;
+    style.stroke.width = -1.0;
+    style.background.radius = f64::NAN;
+    assert_eq!(codes(&sizes), ["fosscut.model.caption_style"; 3]);
+
+    let mut versions = captioned_project();
+    let style = caption_track(&mut versions).caption_style.as_mut().unwrap();
+    style.animators = vec![
+        Animator::WordPop(Animated {
+            version: 2,
+            ..Animated::default()
+        }),
+        Animator::PagePop(Animated {
+            params: PagePop {
+                from: 0.0,
+                ..PagePop::default()
+            },
+            ..Animated::default()
+        }),
+    ];
+    assert_eq!(
+        codes(&versions),
+        [
+            "fosscut.model.animator_version",
+            "fosscut.model.caption_style"
+        ]
+    );
+    let issue = &validate(&versions)[0];
+    assert!(issue.message.contains("word.pop version 2"), "{issue}");
+
+    // Animators read sparsely and keep their type names.
+    let sparse: Animator = serde_json::from_str(r#"{ "type": "word.karaoke" }"#).unwrap();
+    assert_eq!(
+        (sparse.type_name(), sparse.version(), sparse.enabled()),
+        ("word.karaoke", 1, true)
+    );
+    for (name, _) in Animator::TYPES {
+        let animator: Animator =
+            serde_json::from_value(serde_json::json!({ "type": name, "enabled": false })).unwrap();
+        assert_eq!(animator.type_name(), name);
+        assert!(!animator.enabled());
+    }
+    assert!(serde_json::from_str::<Animator>(r#"{ "type": "word.wobble" }"#).is_err());
 }

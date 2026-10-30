@@ -20,6 +20,8 @@ thiserror.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
+# Built-in caption presets for golden frames.
+fosscut-core.workspace = true
 png.workspace = true
 wgpu.workspace = true
 proptest.workspace = true

@@ -62,6 +62,7 @@ impl Command for TrackAdd {
                 muted: false,
                 hidden: false,
                 locked: false,
+                caption_style: None,
                 clips: Vec::new(),
             },
         );

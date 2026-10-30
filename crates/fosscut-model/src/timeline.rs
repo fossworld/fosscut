@@ -2,6 +2,7 @@ use fosscut_time::{Flicks, Rate};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::caption::{CaptionContent, CaptionStyle};
 use crate::{Id, is_default};
 
 /// A timeline document (`timelines/<id>.json`).
@@ -80,8 +81,10 @@ pub enum TrackKind {
     Video,
     /// Audio clips.
     Audio,
-    /// Text clips: titles and captions.
+    /// Text clips: titles.
     Text,
+    /// Caption clips: pages of timed words, with the look in the track (ADR-0021).
+    Caption,
 }
 
 /// A track: clips ordered by start time that never overlap.
@@ -103,6 +106,10 @@ pub struct Track {
     /// Prevents edits to the track.
     #[serde(default, skip_serializing_if = "is_default")]
     pub locked: bool,
+    /// How the captions of a caption track look and move; defaults when omitted. Only
+    /// caption tracks have it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption_style: Option<CaptionStyle>,
     /// Clips sorted by start time, without overlaps.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub clips: Vec<Clip>,
@@ -178,8 +185,10 @@ pub enum ClipContent {
         /// The asset (`asset_…`).
         asset: Id,
     },
-    /// A text title or caption.
+    /// A text title.
     Text(TextContent),
+    /// A caption page: lines of timed words (ADR-0021).
+    Caption(CaptionContent),
 }
 
 impl ClipContent {
@@ -189,7 +198,7 @@ impl ClipContent {
             ClipContent::Video { asset, .. }
             | ClipContent::Audio { asset, .. }
             | ClipContent::Image { asset } => Some(asset),
-            ClipContent::Text(_) => None,
+            ClipContent::Text(_) | ClipContent::Caption(_) => None,
         }
     }
 
@@ -203,13 +212,14 @@ impl ClipContent {
         }
     }
 
-    /// The content kind as used in JSON (`video`, `audio`, `image`, `text`).
+    /// The content kind as used in JSON (`video`, `audio`, `image`, `text`, `caption`).
     pub fn kind_name(&self) -> &'static str {
         match self {
             ClipContent::Video { .. } => "video",
             ClipContent::Audio { .. } => "audio",
             ClipContent::Image { .. } => "image",
             ClipContent::Text(_) => "text",
+            ClipContent::Caption(_) => "caption",
         }
     }
 }

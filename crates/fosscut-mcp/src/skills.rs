@@ -13,13 +13,22 @@ pub struct Skill {
 }
 
 /// Every built-in skill.
-pub const SKILLS: &[Skill] = &[Skill {
-    name: "fosscut-basics",
-    files: &[(
-        "SKILL.md",
-        include_str!("../../../skills/fosscut-basics/SKILL.md"),
-    )],
-}];
+pub const SKILLS: &[Skill] = &[
+    Skill {
+        name: "fosscut-basics",
+        files: &[(
+            "SKILL.md",
+            include_str!("../../../skills/fosscut-basics/SKILL.md"),
+        )],
+    },
+    Skill {
+        name: "viral-captions",
+        files: &[(
+            "SKILL.md",
+            include_str!("../../../skills/viral-captions/SKILL.md"),
+        )],
+    },
+];
 
 impl Skill {
     /// The `SKILL.md` text.

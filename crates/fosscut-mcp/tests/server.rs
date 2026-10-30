@@ -408,7 +408,7 @@ async fn skills_are_prompts_and_resources_for_any_client() {
 
     let prompts = client.list_all_prompts().await.unwrap();
     let names: Vec<&str> = prompts.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, ["fosscut-basics"]);
+    assert_eq!(names, ["fosscut-basics", "viral-captions"]);
     assert_eq!(prompts[0].description.as_deref(), Some(skill.description()));
     let prompt = client
         .get_prompt(GetPromptRequestParams::new("fosscut-basics"))
@@ -424,9 +424,20 @@ async fn skills_are_prompts_and_resources_for_any_client() {
             .is_err()
     );
 
+    let captions = client
+        .get_prompt(GetPromptRequestParams::new("viral-captions"))
+        .await
+        .unwrap();
+    let message = serde_json::to_value(&captions.messages[0]).unwrap();
+    assert_eq!(
+        message["content"]["text"],
+        fosscut_mcp::skills::skill("viral-captions").unwrap().text()
+    );
+
     let resources = client.list_all_resources().await.unwrap();
-    assert_eq!(resources.len(), 1);
+    assert_eq!(resources.len(), 2);
     assert_eq!(resources[0].uri, "fosscut://skills/fosscut-basics");
+    assert_eq!(resources[1].uri, "fosscut://skills/viral-captions");
     assert_eq!(resources[0].mime_type.as_deref(), Some("text/markdown"));
     let read = client
         .read_resource(ReadResourceRequestParams::new(
@@ -643,6 +654,143 @@ async fn models_install_only_with_confirmation() {
         .await;
         assert_eq!(missing["code"], "fosscut.model.not_installed");
     }
+    client.cancel().await.unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn captions_import_export_and_explain_what_is_missing() {
+    let dir = workspace("captions");
+    let client = connect(None).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Short.fosscut"), "width": 1080, "height": 1920 }),
+    )
+    .await;
+    std::fs::write(
+        dir.join("subs.srt"),
+        "1\n00:00:00,500 --> 00:00:01,800\nMost people never\nnotice this.\n\n2\n00:00:02,000 --> 00:00:03,250\nBut once you do,\n",
+    )
+    .unwrap();
+    let planned = ok(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("subs.srt"), "preset": "karaoke", "dry_run": true }),
+    )
+    .await;
+    assert_eq!(planned["committed"], false);
+    let imported = ok(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("subs.srt"), "preset": "karaoke", "request_id": "subs-1", "reason": "add subtitles" }),
+    )
+    .await;
+    assert_eq!(imported["committed"], true);
+    assert_eq!(
+        imported["results"][0]["pages"][1]["text"],
+        "But once you do,"
+    );
+    let again = ok(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("subs.srt"), "preset": "karaoke", "request_id": "subs-1", "reason": "add subtitles" }),
+    )
+    .await;
+    assert_eq!(
+        again["replayed"], true,
+        "a retry does not add the captions twice"
+    );
+    let history = ok(&client, "history", json!({})).await;
+    assert!(history.to_string().contains("agent:fosscut-test"));
+
+    let out = dir.join("out.srt");
+    let exported = ok(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": out }),
+    )
+    .await;
+    assert_eq!(exported["cues"], 2);
+    assert!(
+        exported["preview"]
+            .as_str()
+            .unwrap()
+            .starts_with("1\n00:00:00,500 --> 00:00:01,800\nMost people never\nnotice this."),
+        "an agent without file access can read what was written: {exported}"
+    );
+    // Cue edges sit on frames: 3.25 s is between frames 97 and 98 at 30 fps.
+    assert!(
+        std::fs::read_to_string(&out)
+            .unwrap()
+            .contains("00:00:02,000 --> 00:00:03,267")
+    );
+    let guarded = fails(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": out }),
+    )
+    .await;
+    assert_eq!(guarded["code"], "fosscut.guard.destructive");
+    let dry = ok(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": dir.join("dry.srt"), "dry_run": true }),
+    )
+    .await;
+    assert_eq!(dry["dry_run"], true);
+    assert!(!dir.join("dry.srt").exists());
+    ok(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": out, "allow_destructive": true }),
+    )
+    .await;
+
+    // What is missing comes back as typed errors with hints.
+    let no_file = fails(&client, "captions", json!({ "action": "export" })).await;
+    assert_eq!(no_file["code"], "fosscut.request.invalid_arguments");
+    let no_import = fails(&client, "captions", json!({ "action": "import" })).await;
+    assert_eq!(no_import["code"], "fosscut.request.invalid_arguments");
+    let unreadable = fails(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("missing.srt") }),
+    )
+    .await;
+    assert_eq!(unreadable["code"], "fosscut.request.invalid_arguments");
+    std::fs::write(dir.join("bad.srt"), "1\nsoon --> later\nHi\n").unwrap();
+    let bad = fails(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("bad.srt") }),
+    )
+    .await;
+    assert_eq!(bad["code"], "fosscut.captions.invalid_srt");
+    let wrong_timeline = fails(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("subs.srt"), "timeline": "timeline_0042" }),
+    )
+    .await;
+    assert_eq!(wrong_timeline["code"], "fosscut.timeline.not_found");
+    let malformed = fails(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": out, "track": "nonsense" }),
+    )
+    .await;
+    assert_eq!(malformed["code"], "fosscut.request.invalid_arguments");
+    let generate = fails(&client, "captions", json!({ "action": "generate" })).await;
+    assert_eq!(generate["code"], "fosscut.captions.no_transcript");
+    assert!(generate["hint"].as_str().unwrap().contains("media_analyze"));
+    let no_project = fails(
+        &client,
+        "captions",
+        json!({ "action": "export", "file": out, "project": dir.join("None.fosscut") }),
+    )
+    .await;
+    assert_eq!(no_project["code"], "fosscut.project.not_found");
     client.cancel().await.unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 }

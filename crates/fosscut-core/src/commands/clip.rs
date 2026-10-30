@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use super::caption::split_caption;
 use super::util::{
     ensure_free, ensure_kind, ensure_unlocked, ensure_valid_range, find_or_create_track,
     insert_sorted, locate_clip, resolve, timeline_id, timeline_mut, track_index, track_kind_for,
@@ -198,6 +199,22 @@ impl Command for ClipSplit {
             })));
         }
         let offset = at - original.start;
+        let pages = match &original.content {
+            ClipContent::Caption(caption) => {
+                Some(split_caption(caption, offset).ok_or_else(|| {
+                    ApiError::new(
+                        codes::CAPTIONS_INVALID_WORDS,
+                        format!(
+                            "splitting {} at {} would leave a part without words",
+                            original.id,
+                            TimeReport::new(at, rate).timecode
+                        ),
+                    )
+                    .with_hint("Split between words, or remove the caption clip instead.")
+                })?)
+            }
+            _ => None,
+        };
         let mut right = original.clone();
         right.id = right_id;
         right.start = at;
@@ -206,7 +223,11 @@ impl Command for ClipSplit {
             ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
                 *source_in = *source_in + offset
             }
-            ClipContent::Image { .. } | ClipContent::Text(_) => {}
+            ClipContent::Image { .. } | ClipContent::Text(_) | ClipContent::Caption(_) => {}
+        }
+        if let Some((left, right_words)) = pages {
+            right.content = ClipContent::Caption(right_words);
+            track.clips[location.clip].content = ClipContent::Caption(left);
         }
         track.clips[location.clip].duration = offset;
         let left = ClipPlacement::of(&track.clips[location.clip], &track.id, rate);

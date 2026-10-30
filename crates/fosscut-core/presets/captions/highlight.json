@@ -1,0 +1,13 @@
+{
+  "name": "highlight",
+  "description": "Extra-bold white words with an outline; the spoken word turns yellow and grows slightly. Easy to follow for talking heads.",
+  "style": {
+    "weight": "extra_bold",
+    "stroke": { "enabled": true },
+    "animators": [
+      { "type": "page.fade", "version": 1, "enabled": true, "params": { "in_ms": 100, "out_ms": 100 } },
+      { "type": "word.highlight", "version": 1, "enabled": true, "params": { "color": "#FFE14D", "scale": 1.08 } },
+      { "type": "word.emphasis", "version": 1, "enabled": true, "params": { "color": "#FF6B4D", "scale": 1.0 } }
+    ]
+  }
+}

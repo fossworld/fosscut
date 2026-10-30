@@ -257,3 +257,60 @@ pub struct ModelsArgs {
     /// Install from this local file instead of downloading; it is verified the same way.
     pub from: Option<String>,
 }
+
+/// What the `captions` tool does.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CaptionsAction {
+    /// Caption the clips of a track from their cached transcripts.
+    Generate,
+    /// Add caption pages from an SRT file, one page per cue.
+    Import,
+    /// Write a caption track to an SRT file.
+    Export,
+}
+
+/// Arguments of `captions`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CaptionsArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// `generate` (from transcripts), `import` (an SRT file) or `export` (to an SRT file).
+    pub action: CaptionsAction,
+    /// The SRT file to import or to write.
+    pub file: Option<String>,
+    /// Timeline; the primary timeline when omitted.
+    pub timeline: Option<String>,
+    /// Caption track; the first caption track (created when adding) when omitted.
+    pub track: Option<String>,
+    /// generate: the track whose clips are captioned; the first video or audio track with
+    /// sound when omitted.
+    pub source_track: Option<String>,
+    /// A built-in look: `bold-pop`, `highlight`, `karaoke` or `boxed` (capabilities lists
+    /// them with descriptions).
+    pub preset: Option<String>,
+    /// Changes to the caption track's look as a JSON merge patch, for example
+    /// `{"placement": "middle", "size": 0.07}`.
+    pub style: Option<serde_json::Value>,
+    /// generate: paging limits, for example `{"max_words": 3, "max_lines": 1}`.
+    pub paging: Option<serde_json::Value>,
+    /// generate: the transcript options the media was analyzed with (`model`, `language`,
+    /// `min_pause_ms`), if not the defaults.
+    #[serde(default)]
+    pub transcript: fosscut_engine::analysis::TranscriptOptions,
+    /// Replace the caption track's existing captions; also needs allow_destructive.
+    #[serde(default)]
+    pub replace: bool,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+    /// Report what would change without committing it (or, for export, without writing).
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Retry key for generate and import.
+    pub request_id: Option<String>,
+    /// Allow replacing captions or overwriting an existing file. Ask the user first.
+    #[serde(default)]
+    pub allow_destructive: bool,
+    /// Why, recorded in the project's history.
+    pub reason: Option<String>,
+}

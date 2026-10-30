@@ -31,6 +31,12 @@ impl Flicks {
         self.0
     }
 
+    /// Whole milliseconds as flicks; exact, since a millisecond is 705,600 flicks.
+    /// Saturates on overflow.
+    pub const fn from_millis(millis: i64) -> Self {
+        Flicks(millis.saturating_mul(FLICKS_PER_SECOND / 1000))
+    }
+
     /// Whole seconds as flicks, or `None` on overflow.
     pub fn from_seconds(seconds: i64) -> Option<Self> {
         seconds.checked_mul(FLICKS_PER_SECOND).map(Flicks)
