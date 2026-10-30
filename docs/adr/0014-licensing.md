@@ -13,7 +13,7 @@ FossCut is open source and wants wide adoption: by individual creators, by agent
 1. **Project license: `MIT OR Apache-2.0`** for all code, schemas and documentation written for FossCut, with `LICENSE-MIT` and `LICENSE-APACHE` at the root. Copyright is held by "The FossCut Contributors".
 2. **Contributions use the Developer Certificate of Origin** (`Signed-off-by` on every commit), enforced in CI. No contributor license agreement.
 3. **Dependency policy, enforced by `cargo-deny` and an npm license check:**
-   - allowed: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, MPL-2.0 (file-level copyleft), CC0-1.0, and the Unlicense (a public-domain dedication like CC0, added for the whisper.cpp bindings in [ADR-0020](0020-speech-recognition-with-whisper-cpp.md));
+   - allowed: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, Unicode-3.0, MPL-2.0 (file-level copyleft), CC0-1.0, and the Unlicense (a public-domain dedication like CC0, added for the whisper.cpp bindings in [ADR-0020](0020-speech-recognition-with-whisper-cpp.md)), and 0BSD (public-domain-equivalent, added for the local socket transport in [ADR-0022](0022-live-sessions-over-a-local-socket.md));
    - allowed only as dynamically linked system or runtime libraries: LGPL (for example FFmpeg built without GPL parts);
    - not allowed in distributed builds: GPL, AGPL, SSPL, non-commercial or field-of-use restricted licenses.
 4. **Models, fonts, LUTs, sound effects and other content** carry a license and source in their manifests. Only content with licenses compatible with commercial use is offered by default. Fonts: OFL or Apache-2.0 only (for example Noto and Source Han); no proprietary fonts.
