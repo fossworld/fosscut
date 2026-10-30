@@ -247,8 +247,10 @@ impl Library {
             trashed_ms,
         };
         let folder = self.trash.join(&id);
-        move_dir(bundle, &folder.join(format!("{name}.fosscut")))?;
+        // The lock showed nobody holds the project. Windows cannot move a folder with an
+        // open file in it, so it is released just before the move.
         drop(lock);
+        move_dir(bundle, &folder.join(format!("{name}.fosscut")))?;
         let record = serde_json::to_vec_pretty(&entry).unwrap_or_default();
         std::fs::write(folder.join("entry.json"), record)
             .map_err(|e| io("cannot record the trashed project", e))?;
@@ -388,12 +390,13 @@ mod tests {
         let root = scratch("held");
         let library = Library::new(&root.join("data"), &root.join("cache"));
         let bundle = project(&root, "Busy");
-        let _held = WriterLock::acquire(&bundle).unwrap();
+        let held = WriterLock::acquire(&bundle).unwrap();
         assert_eq!(
             library.trash(&bundle).unwrap_err().code,
             "fosscut.session.already_hosted"
         );
         assert!(bundle.exists());
+        drop(held);
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

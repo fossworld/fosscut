@@ -36,7 +36,21 @@ enum Outcome {
     Served,
 }
 
+/// Stack for the thread that parses and runs commands.
+const STACK: usize = 16 * 1024 * 1024;
+
 fn main() -> ExitCode {
+    // The command line's argument types are large, and Windows gives the main thread 1 MiB
+    // of stack, so parsing and running happen on a thread with room.
+    match std::thread::Builder::new().stack_size(STACK).spawn(cli_main) {
+        Ok(worker) => worker
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+        Err(_) => cli_main(),
+    }
+}
+
+fn cli_main() -> ExitCode {
     let cli = Cli::parse();
     match run(&cli) {
         Ok(outcome) => {
