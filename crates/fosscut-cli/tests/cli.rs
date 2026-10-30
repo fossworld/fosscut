@@ -3532,11 +3532,12 @@ fn recordings_go_into_the_project_and_onto_the_timeline() {
         .concat(),
     );
     let output = recorded["recording"]["output"].as_str().unwrap();
-    assert!(
-        output.starts_with("Voice.fosscut/recordings/Voiceover "),
-        "{output}"
-    );
-    assert!(output.ends_with(".wav"));
+    // A native path: compare by components, so either separator works.
+    let written = Path::new(output);
+    assert!(written.starts_with("Voice.fosscut/recordings"), "{output}");
+    let name = written.file_name().unwrap().to_string_lossy();
+    assert!(name.starts_with("Voiceover "), "{output}");
+    assert!(name.ends_with(".wav"), "{output}");
     assert!(dir.join(output).is_file());
     assert_eq!(recorded["recording"]["duration"], 705_600_000);
     assert_eq!(recorded["import"]["results"][0]["asset"], "asset_0001");
