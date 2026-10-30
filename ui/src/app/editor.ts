@@ -161,6 +161,7 @@ export class Editor {
           looks: caps.looks ?? [],
           transitions: caps.transitions ?? [],
           animations: caps.animations ?? [],
+          speed_presets: caps.speed_presets ?? [],
         },
       });
     } catch {
@@ -435,6 +436,24 @@ export class Editor {
         if (made) this.set({ maskTool: { ...tool, mask: made.id } });
       }
     }
+  }
+
+  /**
+   * Changes a clip's speed with `clip.speed`: `rate`, `preset`, `reverse`, `pitch`,
+   * `interpolate` or `reset`. Later clips on the track move to make room.
+   */
+  async setSpeed(clip: string, change: Record<string, unknown>): Promise<void> {
+    await this.edit([{ command: "clip.speed", args: { clip, ripple: true, ...change } }]);
+  }
+
+  /** Holds the frame of a video clip at the playhead for `seconds`. */
+  async freeze(clip: string, seconds = 2): Promise<void> {
+    await this.edit([
+      {
+        command: "clip.freeze",
+        args: { clip, at: { flicks: this.getState().playhead }, duration: { seconds: String(seconds) } },
+      },
+    ]);
   }
 
   /** Sets the transition from a clip into the next, or removes it when `type` is empty. */

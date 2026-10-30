@@ -232,17 +232,10 @@ impl Command for ClipSplit {
         };
         let mut right = original.clone();
         right.id = right_id;
+        // Through the speed map: each part keeps its stretch of the curve (ADR-0023).
+        right.retime_part(offset, original.duration - offset);
         right.start = at;
         right.duration = original.duration - offset;
-        match &mut right.content {
-            ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
-                *source_in = *source_in + offset
-            }
-            ClipContent::Image { .. }
-            | ClipContent::Text(_)
-            | ClipContent::Caption(_)
-            | ClipContent::Adjustment => {}
-        }
         if let Some((left, right_words)) = pages {
             right.content = ClipContent::Caption(right_words);
             track.clips[location.clip].content = ClipContent::Caption(left);
@@ -273,6 +266,7 @@ impl Command for ClipSplit {
         // The transition and the exit animation belong to the end, now the right part's.
         track.clips[location.clip].transition = None;
         track.clips[location.clip].animations.exit = None;
+        track.clips[location.clip].retime_part(Flicks::ZERO, offset);
         track.clips[location.clip].duration = offset;
         let left = ClipPlacement::of(&track.clips[location.clip], &track.id, rate);
         let right_placement = ClipPlacement::of(&right, &track.id, rate);
@@ -388,14 +382,17 @@ impl Command for ClipTrim {
         ensure_valid_range(start, duration)?;
         let shift = start - original.start;
         let mut trimmed = original.clone();
+        // The edges move in timeline time; the source follows the speed map (ADR-0023).
+        trimmed.retime_part(shift, duration);
         trimmed.start = start;
         trimmed.duration = duration;
         // Keyframes stay where they are on the timeline.
         trimmed.shift_keyframes(Flicks::ZERO - shift);
         match &mut trimmed.content {
             ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
-                let moved = *source_in + shift;
-                if moved.is_negative() || total.is_some_and(|total| moved + duration > total) {
+                let moved = *source_in;
+                let used = trimmed.source_length();
+                if moved.is_negative() || total.is_some_and(|total| moved + used > total) {
                     return Err(ApiError::new(
                         codes::CLIP_SOURCE_RANGE,
                         format!("{} would read outside its media", original.id),
@@ -403,11 +400,11 @@ impl Command for ClipTrim {
                     .with_details(json!({
                         "source_in": TimeReport::new(moved, rate),
                         "duration": TimeReport::new(duration, rate),
+                        "source_used": TimeReport::new(used, rate),
                         "asset_duration": total.map(|t| TimeReport::new(t, rate)),
                     }))
                     .with_hint("Keep the edges within the media: the clip can start no earlier than the media's first frame and end no later than its last."));
                 }
-                *source_in = moved;
             }
             ClipContent::Caption(caption) => {
                 *caption = trim_caption(caption, shift, duration).ok_or_else(|| {

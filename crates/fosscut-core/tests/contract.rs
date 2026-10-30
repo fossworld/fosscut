@@ -103,6 +103,8 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
                 json!({ "clip": clip, "type": "wipe", "duration": "1s", "params": { "direction": "up" } })
             }
         }
+        "clip.speed" => json!({ "clip": clip, "rate": 2, "pitch": "shift" }),
+        "clip.freeze" => json!({ "clip": clip, "at": "3s", "duration": "1s" }),
         "animation.set" => {
             json!({ "clip": clip, "in": { "preset": "fade" }, "combo": { "preset": "pulse", "duration": "2s" } })
         }

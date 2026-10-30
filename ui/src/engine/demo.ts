@@ -53,7 +53,11 @@ export function demoEngine(): FakeEngine {
             ],
           },
         }),
-        clip("clip_0007", "video", 15, 24, { asset_name: "interview.mp4" }),
+        clip("clip_0007", "video", 15, 24, {
+          asset_name: "interview.mp4",
+          speed: { rate: 1.5, interpolate: "blend" },
+          source_used: moment(13.5),
+        }),
       ]),
       track("track_0004", "audio", 1, [
         clip("clip_0008", "audio", 0, 24, {
@@ -126,6 +130,11 @@ export function demoEngine(): FakeEngine {
         summary: "The next clip pushes this one out.",
         params: [{ name: "direction", kind: "choice", default: "left", choices: ["left", "right", "up", "down"], animatable: false, meaning: "where it moves" }],
       },
+    ],
+    speed_presets: [
+      { preset: "montage", meaning: "alternates fast and slow" },
+      { preset: "hero", meaning: "slow motion through the middle" },
+      { preset: "bullet", meaning: "very slow through the middle" },
     ],
     animations: [
       { preset: "fade", applies: "in or out", meaning: "from or to transparent" },

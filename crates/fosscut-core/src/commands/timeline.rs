@@ -395,15 +395,10 @@ fn cut_track(
         let mut first = true;
         for (from, to) in parts {
             let offset = from - clip.start;
+            // Media pieces move their source through the speed map (ADR-0023).
+            let mut piece = clip.clone();
+            piece.retime_part(offset, to - from);
             let content = match &clip.content {
-                ClipContent::Video { asset, source_in } => ClipContent::Video {
-                    asset: asset.clone(),
-                    source_in: *source_in + offset,
-                },
-                ClipContent::Audio { asset, source_in } => ClipContent::Audio {
-                    asset: asset.clone(),
-                    source_in: *source_in + offset,
-                },
                 ClipContent::Caption(caption) => {
                     match window_caption(caption, offset, to - clip.start) {
                         Some(caption) => ClipContent::Caption(caption),
@@ -411,7 +406,7 @@ fn cut_track(
                         None => continue,
                     }
                 }
-                other => other.clone(),
+                _ => piece.content.clone(),
             };
             let id = if first {
                 clip.id.clone()
@@ -435,6 +430,7 @@ fn cut_track(
                 start: from - shift,
                 duration: to - from,
                 content,
+                speed: piece.speed.clone(),
                 ..clip.clone()
             };
             // Keyframes stay with the content; fades stay at the clip's outer edges.

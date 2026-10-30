@@ -201,14 +201,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                     unique(&mut issues, &effect.id, &effect_path);
                     check_effect(&mut issues, project, effect, &effect_path);
                 }
-                check_content(
-                    &mut issues,
-                    project,
-                    track.kind,
-                    &clip.content,
-                    clip.duration,
-                    &clip_path,
-                );
+                check_content(&mut issues, project, track.kind, clip, &clip_path);
             }
         }
     }
@@ -428,6 +421,9 @@ fn check_effect(issues: &mut Issues, project: &Project, effect: &Effect, path: &
 /// A transition needs a known type, valid parameters and a positive length no longer than
 /// its clip; animations need known presets in their places and positive lengths.
 fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
+    if let Some(speed) = &clip.speed {
+        check_speed(issues, clip, speed, path);
+    }
     let mut bad = |code: &str, message: String| issues.push(path, code, message);
     if let Some(t) = &clip.transition {
         match crate::transition_type(&t.transition_type) {
@@ -480,6 +476,38 @@ fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
                 ),
             );
         }
+    }
+}
+
+/// Speed applies to video and audio clips, with a rate from 0.05 to 100 (or 0, a freeze)
+/// or a curve of at least two points in order (ADR-0023).
+fn check_speed(issues: &mut Issues, clip: &Clip, speed: &crate::Speed, path: &str) {
+    let mut bad = |message: &str| issues.push(path, "fosscut.model.speed", message.to_string());
+    let in_range = |rate: f64| (crate::MIN_RATE..=crate::MAX_RATE).contains(&rate);
+    if !matches!(
+        clip.content,
+        ClipContent::Video { .. } | ClipContent::Audio { .. }
+    ) {
+        bad("only video and audio clips have a speed");
+    }
+    if speed.curve.is_empty() {
+        if !(speed.rate == 0.0 || in_range(speed.rate)) {
+            bad("a speed rate is 0 (a freeze) or from 0.05 to 100");
+        }
+        return;
+    }
+    if speed.rate != 1.0 {
+        bad("a speed has a rate or a curve, not both");
+    }
+    let ordered = speed.curve.windows(2).all(|p| p[0].at < p[1].at);
+    let inside = speed
+        .curve
+        .iter()
+        .all(|p| (0.0..=1.0).contains(&p.at) && in_range(p.rate));
+    if speed.curve.len() < 2 || !ordered || !inside {
+        bad(
+            "a speed curve has two or more points in order, at 0 to 1, with rates from 0.05 to 100",
+        );
     }
 }
 
@@ -572,10 +600,10 @@ fn check_content(
     issues: &mut Issues,
     project: &Project,
     track_kind: TrackKind,
-    content: &ClipContent,
-    duration: Flicks,
+    clip: &Clip,
     path: &str,
 ) {
+    let (content, duration) = (&clip.content, clip.duration);
     let allowed = match content {
         ClipContent::Video { .. } | ClipContent::Image { .. } | ClipContent::Adjustment => {
             track_kind == TrackKind::Video
@@ -631,8 +659,9 @@ fn check_content(
             ),
         );
     }
+    // With speed, the clip uses more or less source than its duration (ADR-0023).
     if let (Some(source_in), Some(asset_duration)) = (content.source_in(), asset.info.duration)
-        && (source_in.is_negative() || source_in + duration > asset_duration)
+        && (source_in.is_negative() || source_in + clip.source_length() > asset_duration)
     {
         issues.push(
             path,

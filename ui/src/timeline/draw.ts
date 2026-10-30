@@ -2,6 +2,7 @@
 // timelines with thousands of clips stay smooth.
 
 import { keyTimes } from "../app/animation";
+import { speedLabel } from "../app/speed";
 import type { ClipView, TimelineView } from "../engine/types";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import { HEADER, ROW, RULER, type View, rowY, rows, rulerLabel, rulerStep, timeToX } from "./geometry";
@@ -88,7 +89,9 @@ function bowTie(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, y: nu
 
 function label(clip: ClipView): string {
   const name = clip.text ?? clip.asset_name ?? clip.kind;
-  return clip.enabled === false ? `${name} (off)` : name;
+  const speed = speedLabel(clip);
+  const shown = speed ? `${name} (${speed})` : name;
+  return clip.enabled === false ? `${shown} (off)` : shown;
 }
 
 /** Fade ramps at the clip's edges and diamonds at its keyframes. */

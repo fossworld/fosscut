@@ -2467,3 +2467,86 @@ fn transitions_animations_and_effects_from_the_command_line() {
     assert_eq!(exported["frames"], json!(120), "{exported}");
     ok(&dir, &["transition", "remove", "--clip", &first]);
 }
+
+/// ADR-0023: a clip at twice the speed exports half as many frames, a reversed clip shows
+/// its last frame first, and a freeze frame holds one picture and pushes the rest later.
+#[test]
+fn speed_reverse_and_freeze_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("speed");
+    // Brightness rises with time, so the frame shown tells the source time.
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("nullsrc=s=160x90:r=30:d=2,geq=lum='16+T*100':cb=128:cr=128,format=yuv420p")
+        .args(["-c:v", "mpeg4", "-q:v", "2", "ramp.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let new = [
+        "project",
+        "new",
+        "Speed.fosscut",
+        "--width",
+        "160",
+        "--height",
+        "90",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "ramp.mp4"]);
+    let added = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let clip = added["results"][0]["clip"].as_str().unwrap().to_string();
+    let fast = ok(&dir, &["clip", "speed", "--clip", &clip, "--rate", "2"]);
+    assert_eq!(
+        fast["results"][0]["placement"]["duration"]["seconds"], "1",
+        "{fast}"
+    );
+    let exported = ok_with_progress(&dir, &["export", "Fast.mp4"]);
+    assert_eq!(exported["frames"], json!(30), "{exported}");
+    let level = |time: &str, out: &str| {
+        ok(&dir, &["frame", time, "--out", out, "--width", "80"]);
+        mean_channel(&dir.join(out), 1)
+    };
+    ok(&dir, &["clip", "speed", "--clip", &clip, "--reset"]);
+    ok(&dir, &["clip", "speed", "--clip", &clip, "--reverse"]);
+    let (start, end) = (level("0s", "start.png"), level("1.9s", "end.png"));
+    assert!(
+        start > end + 100.0,
+        "bright first, dark last: {start} then {end}"
+    );
+    ok(&dir, &["clip", "speed", "--clip", &clip, "--forward"]);
+    let frozen = ok(
+        &dir,
+        &[
+            "clip",
+            "freeze",
+            "--clip",
+            &clip,
+            "--at",
+            "1s",
+            "--duration",
+            "1s",
+        ],
+    );
+    assert_eq!(frozen["results"][0]["moved"].as_array().unwrap().len(), 1);
+    let (a, b) = (level("1.1s", "held-a.png"), level("1.9s", "held-b.png"));
+    assert!((a - b).abs() < 1.0, "one picture while frozen: {a} and {b}");
+    let after = level("2.5s", "after.png");
+    assert!(
+        after > a + 20.0,
+        "the clip goes on after the freeze: {after}"
+    );
+    let exported = ok_with_progress(&dir, &["export", "Frozen.mp4"]);
+    assert_eq!(exported["frames"], json!(90), "three seconds now");
+    let curved = ok(
+        &dir,
+        &[
+            "clip", "speed", "--clip", &clip, "--curve", "0:1,1:3", "--pitch", "shift",
+        ],
+    );
+    assert_eq!(curved["results"][0]["speed"]["pitch"], "shift", "{curved}");
+    let bad = fails(&dir, &["clip", "speed", "--clip", &clip, "--curve", "half"]);
+    assert_eq!(bad["code"], "fosscut.request.invalid_arguments", "{bad}");
+}

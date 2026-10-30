@@ -405,6 +405,56 @@ pub enum ClipCommand {
         #[arg(long, value_parser = parse_time)]
         end: Option<TimeInput>,
     },
+    /// Change a video or audio clip's speed: a rate, a curve or a preset, reverse, pitch
+    /// and smooth slow motion. The clip keeps the media it plays, so faster clips get
+    /// shorter.
+    Speed {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// A constant rate from 0.05 to 100, for example 2 (twice as fast).
+        #[arg(long)]
+        rate: Option<f64>,
+        /// A speed curve as AT:RATE points, for example `0:1,0.5:3,1:1`.
+        #[arg(long)]
+        curve: Option<String>,
+        /// A built-in curve: montage, hero, bullet, jump_cut, flash_in or flash_out.
+        #[arg(long)]
+        preset: Option<String>,
+        /// Play backwards.
+        #[arg(long, conflicts_with = "forward")]
+        reverse: bool,
+        /// Play forwards again.
+        #[arg(long)]
+        forward: bool,
+        /// `preserve` keeps the sound's pitch; `shift` lets it follow the speed.
+        #[arg(long)]
+        pitch: Option<String>,
+        /// Smooth slow motion: blend neighbouring frames.
+        #[arg(long, conflicts_with = "nearest")]
+        blend: bool,
+        /// Show the nearest frame again.
+        #[arg(long)]
+        nearest: bool,
+        /// Move later clips on the track when the clip's length changes.
+        #[arg(long)]
+        ripple: bool,
+        /// Back to normal speed.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Hold one frame of a video clip, moving what follows later.
+    Freeze {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Timeline time of the frame to hold.
+        #[arg(long, value_parser = parse_time)]
+        at: TimeInput,
+        /// How long to hold it (two seconds by default).
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+    },
     /// Move a clip in time and/or to another track.
     Move {
         /// Clip id.

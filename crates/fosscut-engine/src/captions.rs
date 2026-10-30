@@ -90,11 +90,11 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
     let mut missing = Vec::new();
     let mut clips = 0;
     for clip in &track.clips {
-        let (asset, source_in) = match &clip.content {
-            ClipContent::Video { asset, source_in } | ClipContent::Audio { asset, source_in }
+        let asset = match &clip.content {
+            ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. }
                 if has_audio(asset) =>
             {
-                (asset, *source_in)
+                asset
             }
             _ => continue,
         };
@@ -123,16 +123,27 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
             continue;
         };
         clips += 1;
-        let shown_end = source_in + clip.duration;
+        // Words map to the timeline through the clip's speed (ADR-0023); a reversed clip
+        // plays a word's end first. Frozen clips are silent and caption nothing.
         for word in &transcript.words {
-            let (start, end) = (word.start.flicks, word.end.flicks);
-            if start < source_in || start >= shown_end {
+            let (Some(a), Some(b)) = (
+                clip.offset_of_source(word.start.flicks),
+                clip.offset_of_source(
+                    word.end
+                        .flicks
+                        .min(clip.content.source_in().unwrap_or_default() + clip.source_length()),
+                ),
+            ) else {
+                continue;
+            };
+            let (from, to) = (a.min(b), a.max(b));
+            if from >= clip.duration || to <= from {
                 continue;
             }
             words.push(json!({
                 "text": word.text,
-                "start": flicks(clip.start + (start - source_in)),
-                "end": flicks(clip.start + (end.min(shown_end) - source_in)),
+                "start": flicks(clip.start + from),
+                "end": flicks(clip.start + to.min(clip.duration)),
             }));
         }
     }

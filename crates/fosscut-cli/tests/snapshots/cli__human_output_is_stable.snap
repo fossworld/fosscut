@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.6.0
+Demo (project_<random>)  revision 0  format 0.7.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.6.0
+Demo (project_<random>)  revision 8  format 0.7.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.6.0
+API 0.1.0  project format 0.7.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -106,9 +106,11 @@ commands:
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, or which words are emphasised.
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
   clip.add       Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  clip.freeze    Insert a freeze frame: hold the frame of a video clip at a time for a duration (two seconds by default), splitting the clip there and moving what follows on its track later. The held frame is silent.
   clip.move      Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap.
   clip.remove    Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
   clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
+  clip.speed     Change a video or audio clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media.
   effect.add     Add an effect to a clip's picture: color.adjust (exposure, white balance, contrast, tone, saturation), color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain. Effects apply in order; on an adjustment clip they apply to everything below it.

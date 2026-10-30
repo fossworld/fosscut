@@ -179,9 +179,9 @@ pub fn clip_stats(
         .ok_or_else(|| EngineError::InvalidArguments {
             message: format!("clip {clip} does not exist"),
         })?;
-    let (asset, source_in) = match &found.content {
-        ClipContent::Video { asset, source_in } => (asset.clone(), *source_in),
-        ClipContent::Image { asset } => (asset.clone(), Flicks::ZERO),
+    let asset = match &found.content {
+        ClipContent::Video { asset, .. } => asset.clone(),
+        ClipContent::Image { asset } => asset.clone(),
         other => {
             return Err(EngineError::InvalidArguments {
                 message: format!(
@@ -210,11 +210,8 @@ pub fn clip_stats(
             )
             .unwrap_or(0),
         );
-        let time = if matches!(found.content, ClipContent::Image { .. }) {
-            Flicks::ZERO
-        } else {
-            source_in + offset
-        };
+        // Through the clip's speed (ADR-0023); images have one frame.
+        let time = found.source_at(offset).unwrap_or(Flicks::ZERO);
         let plan = RenderPlan {
             canvas: (w, h),
             layers: vec![Layer {

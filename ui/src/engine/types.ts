@@ -111,6 +111,10 @@ export interface ClipView {
   masks?: MaskView[];
   /** Width and height of the picture as displayed (video and image clips). */
   picture?: [number, number];
+  /** How the clip plays its media (ADR-0023); absent at normal speed. */
+  speed?: SpeedView;
+  /** How much media a clip with speed plays. */
+  source_used?: Moment;
   /** The transition into the next clip on the track. */
   transition?: { type: string; duration: Moment; params?: Record<string, unknown> };
   /** How the clip moves in, out and while it shows; durations in flicks. */
@@ -199,6 +203,25 @@ export interface LookView {
   description: string;
 }
 
+/** A clip's speed as `timeline.read` reports it. */
+export interface SpeedView {
+  /** Constant rate; 0 is a freeze. Omitted (1) with a curve. */
+  rate?: number;
+  curve?: { at: number; rate: number }[];
+  reverse?: boolean;
+  pitch?: "preserve" | "shift";
+  interpolate?: "nearest" | "blend";
+  /** For curves, the rates at the clip's start and end. */
+  start_rate?: number;
+  end_rate?: number;
+}
+
+/** A built-in speed curve. */
+export interface SpeedPreset {
+  preset: string;
+  meaning: string;
+}
+
 /** A transition type. */
 export interface TransitionSpec {
   type: string;
@@ -220,6 +243,7 @@ export interface Catalog {
   looks: LookView[];
   transitions: TransitionSpec[];
   animations: AnimationPreset[];
+  speed_presets: SpeedPreset[];
 }
 
 /** A color correction measured by the engine, ready for `effect.add`. */

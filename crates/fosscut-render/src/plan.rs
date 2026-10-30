@@ -4,7 +4,8 @@
 use std::sync::Arc;
 
 use fosscut_model::{
-    BlendMode, Clip, ClipContent, Id, Project, TextContent, Track, TrackKind, Transform, animate,
+    BlendMode, Clip, ClipContent, Id, Interpolate, Project, TextContent, Track, TrackKind,
+    Transform, animate,
 };
 use fosscut_time::Flicks;
 
@@ -107,6 +108,9 @@ pub struct Layer {
     /// The clip's enabled masks at the frame's time, combined in order; on an adjustment
     /// layer they limit where its effects apply.
     pub masks: Vec<fosscut_model::Mask>,
+    /// For smooth slow motion (ADR-0023 item 8): the next source frame, and how much of it
+    /// mixes into the frame the source shows, 0 to 1.
+    pub next_frame: Option<(SourceRef, f32)>,
 }
 
 impl Layer {
@@ -138,6 +142,7 @@ impl Layer {
             lut: None,
             effects: Vec::new(),
             masks: Vec::new(),
+            next_frame: None,
         }
     }
 }
@@ -235,19 +240,29 @@ fn layer_for(
         lut: None,
         effects: effects.clone(),
         masks: masks.clone(),
+        next_frame: None,
     };
+    let mut next_frame = None;
     let source = match (&clip.content, track.kind) {
-        (ClipContent::Video { asset, source_in }, TrackKind::Video) => {
-            let last = project
-                .media
-                .get(asset)
-                .and_then(|a| a.info.duration)
+        (ClipContent::Video { asset, .. }, TrackKind::Video) => {
+            let info = project.media.get(asset).map(|a| &a.info);
+            let last = info
+                .and_then(|i| i.duration)
                 .map(|d| d - format.rate.frame_duration())
                 .unwrap_or(Flicks::new(i64::MAX));
-            let wanted = *source_in + offset;
+            let held = |t: Flicks| t.max(Flicks::ZERO).min(last.max(Flicks::ZERO));
+            // Through the clip's speed map (ADR-0023).
+            let position = clip.source_position(offset).unwrap_or(0.0);
+            let source_rate = info.and_then(|i| i.video.as_ref()).and_then(|v| v.rate);
+            if let (Some(speed), Some(source_rate)) = (&clip.speed, source_rate)
+                && speed.interpolate == Interpolate::Blend
+                && !speed.is_frozen()
+            {
+                next_frame = between_frames(asset, position, source_rate, held);
+            }
             SourceRef {
                 asset: asset.clone(),
-                time: wanted.max(Flicks::ZERO).min(last.max(Flicks::ZERO)),
+                time: held(Flicks::new(position.round() as i64)),
             }
         }
         (ClipContent::Image { asset }, TrackKind::Video) => SourceRef {
@@ -270,7 +285,39 @@ fn layer_for(
         _ => return None,
     };
     let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
-    Some(placed(LayerSource::Frame(source), rotation))
+    Some(Layer {
+        next_frame,
+        ..placed(LayerSource::Frame(source), rotation)
+    })
+}
+
+/// The source frame after the one at `position` and how far `position` lies towards it,
+/// when it falls between two frames of a `rate` source; times are frame middles, held
+/// within the media by `held`.
+fn between_frames(
+    asset: &Id,
+    position: f64,
+    rate: fosscut_time::Rate,
+    held: impl Fn(Flicks) -> Flicks,
+) -> Option<(SourceRef, f32)> {
+    let index = rate.frame_at(Flicks::new(position.floor() as i64));
+    let (this, next) = (
+        rate.frames_to_flicks(index),
+        rate.frames_to_flicks(index + 1),
+    );
+    let width = (next - this).get() as f64;
+    let amount = (position - this.get() as f64) / width;
+    let middle = |start: Flicks| start + Flicks::new((width / 2.0) as i64);
+    let time = held(middle(next));
+    (amount > 1e-3 && amount < 1.0 - 1e-3 && time > held(middle(this))).then(|| {
+        (
+            SourceRef {
+                asset: asset.clone(),
+                time,
+            },
+            amount as f32,
+        )
+    })
 }
 
 /// The transition playing on `track` at `time`: the clip it leaves, the clip it enters,
@@ -673,6 +720,71 @@ mod tests {
                 .layers
                 .iter()
                 .all(|l| !matches!(l.source, LayerSource::Caption(_)))
+        );
+    }
+
+    #[test]
+    fn video_follows_the_speed_map_and_blends_between_frames() {
+        let (mut project, timeline) = project();
+        fn base<'a>(project: &'a mut Project, timeline: &Id) -> &'a mut Clip {
+            &mut project.timelines.get_mut(timeline).unwrap().tracks[0].clips[0]
+        }
+        // Only the bottom clip: it starts at frame 30 of its media.
+        project
+            .timelines
+            .get_mut(&timeline)
+            .unwrap()
+            .tracks
+            .truncate(1);
+        base(&mut project, &timeline).speed = Some(fosscut_model::Speed::constant(2.0));
+        let at = |project: &Project, n: i64| plan_frame(project, &timeline, frames(n)).unwrap();
+        assert_eq!(
+            time(&at(&project, 10).layers[0]),
+            Some(frames(50)),
+            "30 + 2 x 10"
+        );
+        assert!(
+            at(&project, 10).layers[0].next_frame.is_none(),
+            "nearest by default"
+        );
+        base(&mut project, &timeline)
+            .speed
+            .as_mut()
+            .unwrap()
+            .reverse = true;
+        assert_eq!(
+            time(&at(&project, 0).layers[0]),
+            Some(frames(230)),
+            "reversed: the end of the 200 frames it uses"
+        );
+        base(&mut project, &timeline).speed = Some(fosscut_model::Speed {
+            interpolate: Interpolate::Blend,
+            ..fosscut_model::Speed::constant(0.5)
+        });
+        let half = at(&project, 1);
+        let shown = time(&half.layers[0]).unwrap();
+        assert_eq!(
+            shown,
+            frames(30) + Flicks::new(frames(1).get() / 2),
+            "half a frame in"
+        );
+        assert_eq!(Rate::FPS_30.frame_at(shown), 30, "which shows frame 30");
+        let (next, amount) = half.layers[0].next_frame.clone().unwrap();
+        assert!((amount - 0.5).abs() < 1e-6, "{amount}");
+        assert_eq!(
+            Rate::FPS_30.frame_at(next.time),
+            31,
+            "the next source frame"
+        );
+        assert!(
+            at(&project, 2).layers[0].next_frame.is_none(),
+            "on a source frame, nothing to blend"
+        );
+        base(&mut project, &timeline).speed = Some(fosscut_model::Speed::constant(0.0));
+        assert_eq!(
+            time(&at(&project, 50).layers[0]),
+            Some(frames(30)),
+            "frozen"
         );
     }
 }

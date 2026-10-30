@@ -4,10 +4,13 @@
 //! count: audio clips and the embedded audio of video clips on unmuted tracks, placed to
 //! the sample. Each enabled clip plays its chosen channels, scaled by its volume (keyframed
 //! per sample) and its fades, and balanced by its pan. Sources come from an
-//! [`AudioSource`], so the mixer is independent of decoders and fully testable. Effects,
-//! buses and loudness normalization come later.
+//! [`AudioSource`], so the mixer is independent of decoders and fully testable. Clips with
+//! speed are resampled or time-stretched (ADR-0023). Effects, buses and loudness
+//! normalization come later.
 
 #![forbid(unsafe_code)]
+
+mod stretch;
 
 use fosscut_media::AudioBuffer;
 use fosscut_model::{AssetKind, ChannelMode, Clip, ClipContent, Id, Project, TrackKind};
@@ -110,7 +113,7 @@ pub fn mix(
             }
             // Before the media's start there is nothing to read: begin later, in silence.
             let wanted = source_in + (from - clip.start);
-            let skip = if wanted.is_negative() {
+            let skip = if wanted.is_negative() && clip.speed.is_none() {
                 Flicks::ZERO - wanted
             } else {
                 Flicks::ZERO
@@ -119,19 +122,34 @@ pub fn mix(
             if read_from >= to {
                 continue;
             }
-            let audio = source.read(
-                asset,
-                source_in + (read_from - clip.start),
-                to - read_from,
-                sample_rate,
-                channels,
-            )?;
             // Positions in samples on the timeline, so clips meet without gaps or overlaps.
             let offset = (samples_in(read_from, sample_rate) - first).max(0) as usize;
             let count =
                 (samples_in(to, sample_rate) - samples_in(read_from, sample_rate)).max(0) as usize;
-            let shaped = Shaping::of(clip);
             let clip_first = samples_in(read_from - clip.start, sample_rate);
+            let audio = match &clip.speed {
+                Some(_) => AudioBuffer {
+                    sample_rate,
+                    channels,
+                    samples: stretch::clip_audio(
+                        source,
+                        asset,
+                        clip,
+                        clip_first,
+                        count,
+                        sample_rate,
+                        channels,
+                    )?,
+                },
+                None => source.read(
+                    asset,
+                    source_in + (read_from - clip.start),
+                    to - read_from,
+                    sample_rate,
+                    channels,
+                )?,
+            };
+            let shaped = Shaping::of(clip);
             let mut frame = vec![0.0f32; channels_n];
             for i in 0..count.min(audio.frames()) {
                 let target = offset + i;
@@ -799,5 +817,234 @@ mod tests {
     fn crossfade_out(frame: i64) -> f32 {
         let p = (frame - 45) as f64 / 30.0;
         (p * std::f64::consts::FRAC_PI_2).cos() as f32
+    }
+
+    /// A sine tone of `hz` in every channel, from the asset's start for `seconds`.
+    struct Tone {
+        hz: f64,
+        seconds: f64,
+    }
+
+    impl AudioSource for Tone {
+        fn read(
+            &mut self,
+            _asset: &Id,
+            start: Flicks,
+            duration: Flicks,
+            sample_rate: u32,
+            channels: u16,
+        ) -> Result<AudioBuffer, AudioError> {
+            let first = samples_in(start, sample_rate);
+            let frames = samples_in(duration, sample_rate) as usize;
+            let mut samples = Vec::with_capacity(frames * usize::from(channels));
+            for i in 0..frames as i64 {
+                let t = (first + i) as f64 / f64::from(sample_rate);
+                let value = if (0.0..self.seconds).contains(&t) {
+                    (std::f64::consts::TAU * self.hz * t).sin() as f32 * 0.5
+                } else {
+                    0.0
+                };
+                samples.extend(std::iter::repeat_n(value, usize::from(channels)));
+            }
+            Ok(AudioBuffer {
+                sample_rate,
+                channels,
+                samples,
+            })
+        }
+    }
+
+    /// A project with one audio clip of `length` frames playing a tone asset at `speed`.
+    fn tone_project(speed: fosscut_model::Speed, length: i64) -> (Project, Id) {
+        let format = TimelineFormat {
+            width: 1920,
+            height: 1080,
+            rate: Rate::FPS_30,
+            sample_rate: RATE,
+        };
+        let mut project = Project::new(Id::new(IdKind::Project, 1), "Speed", format);
+        let tone = asset(&mut project, AssetKind::Audio, true);
+        let mut clip = clip(
+            &mut project,
+            ClipContent::Audio {
+                asset: tone,
+                source_in: Flicks::ZERO,
+            },
+            0,
+            length,
+            1.0,
+        );
+        clip.speed = Some(speed);
+        track(&mut project, TrackKind::Audio, false, vec![clip]);
+        let timeline = project.manifest.primary_timeline.clone();
+        (project, timeline)
+    }
+
+    /// The frequency of the first channel of `buffer` between `from` and `to` seconds,
+    /// from its zero crossings.
+    fn frequency(buffer: &AudioBuffer, from: f64, to: f64) -> f64 {
+        let channels = usize::from(buffer.channels);
+        let at = |s: f64| (s * f64::from(buffer.sample_rate)) as usize;
+        let mono: Vec<f32> = (at(from)..at(to))
+            .map(|i| buffer.samples[i * channels])
+            .collect();
+        let crossings = mono
+            .windows(2)
+            .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+            .count();
+        crossings as f64 / 2.0 / (to - from)
+    }
+
+    #[test]
+    fn speed_keeps_or_shifts_the_pitch() {
+        use fosscut_model::{Pitch, Speed};
+        let mut tone = Tone {
+            hz: 440.0,
+            seconds: 10.0,
+        };
+        let mixed = |speed: Speed, source: &mut Tone| {
+            let (project, timeline) = tone_project(speed, 60);
+            mix(
+                &project,
+                &timeline,
+                Flicks::ZERO,
+                frames(60),
+                RATE,
+                2,
+                source,
+            )
+            .unwrap()
+        };
+        let kept = mixed(Speed::constant(2.0), &mut tone);
+        let f = frequency(&kept, 0.2, 1.8);
+        assert!((f - 440.0).abs() < 10.0, "2x keeps the pitch: {f} Hz");
+        let slow = mixed(Speed::constant(0.5), &mut tone);
+        let f = frequency(&slow, 0.2, 1.8);
+        assert!(
+            (f - 440.0).abs() < 10.0,
+            "half speed keeps the pitch: {f} Hz"
+        );
+        let shifted = mixed(
+            Speed {
+                pitch: Pitch::Shift,
+                ..Speed::constant(2.0)
+            },
+            &mut tone,
+        );
+        let f = frequency(&shifted, 0.2, 1.8);
+        assert!((f - 880.0).abs() < 10.0, "2x shifted doubles it: {f} Hz");
+        // At rate 1 the windows line up with the source and add back to it.
+        let same = mixed(Speed::constant(1.0), &mut tone);
+        let plain = Tone {
+            hz: 440.0,
+            seconds: 10.0,
+        }
+        .read(
+            &Id::new(IdKind::Asset, 1),
+            Flicks::ZERO,
+            frames(60),
+            RATE,
+            2,
+        )
+        .unwrap();
+        let worst = same
+            .samples
+            .iter()
+            .zip(&plain.samples)
+            .skip(2 * 2000)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(worst < 1e-3, "rate 1 reproduces the source: {worst}");
+        let frozen = mixed(Speed::constant(0.0), &mut tone);
+        assert!(
+            frozen.samples.iter().all(|s| *s == 0.0),
+            "a freeze is silent"
+        );
+    }
+
+    #[test]
+    fn reversed_sound_plays_backwards_and_windows_do_not_matter() {
+        use fosscut_model::{Pitch, Speed};
+        // A rising tone: reversed, it falls.
+        struct Sweep;
+        impl AudioSource for Sweep {
+            fn read(
+                &mut self,
+                _asset: &Id,
+                start: Flicks,
+                duration: Flicks,
+                sample_rate: u32,
+                channels: u16,
+            ) -> Result<AudioBuffer, AudioError> {
+                let first = samples_in(start, sample_rate);
+                let frames = samples_in(duration, sample_rate) as usize;
+                let samples = (0..frames as i64)
+                    .flat_map(|i| {
+                        let t = (first + i) as f64 / f64::from(sample_rate);
+                        let v = if (0.0..2.0).contains(&t) {
+                            (std::f64::consts::TAU * (200.0 * t + 100.0 * t * t)).sin() as f32
+                        } else {
+                            0.0
+                        };
+                        std::iter::repeat_n(v * 0.5, usize::from(channels))
+                    })
+                    .collect();
+                Ok(AudioBuffer {
+                    sample_rate,
+                    channels,
+                    samples,
+                })
+            }
+        }
+        for pitch in [Pitch::Preserve, Pitch::Shift] {
+            let (project, timeline) = tone_project(
+                Speed {
+                    reverse: true,
+                    pitch,
+                    ..Speed::constant(1.0)
+                },
+                60,
+            );
+            let whole = mix(
+                &project,
+                &timeline,
+                Flicks::ZERO,
+                frames(60),
+                RATE,
+                2,
+                &mut Sweep,
+            )
+            .unwrap();
+            let early = frequency(&whole, 0.1, 0.5);
+            let late = frequency(&whole, 1.5, 1.9);
+            // The sweep runs from 200 Hz up to 600 Hz over two seconds.
+            assert!(
+                early > 500.0 && late < 300.0,
+                "{pitch:?}: {early} then {late} Hz"
+            );
+            // Mixing in two windows gives the same samples as one.
+            let a = mix(
+                &project,
+                &timeline,
+                Flicks::ZERO,
+                frames(25),
+                RATE,
+                2,
+                &mut Sweep,
+            )
+            .unwrap();
+            let b = mix(
+                &project,
+                &timeline,
+                frames(25),
+                frames(35),
+                RATE,
+                2,
+                &mut Sweep,
+            )
+            .unwrap();
+            let joined: Vec<f32> = a.samples.iter().chain(&b.samples).copied().collect();
+            assert_eq!(joined, whole.samples, "{pitch:?}");
+        }
     }
 }
