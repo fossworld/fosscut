@@ -58,6 +58,14 @@ The owner wants a desktop app first and possibly a web version later. Establishe
   - **Motion:** the inspector's Motion section picks the transition into the next clip (offered only when one starts at the cut) with its duration and direction, and the clip's entrance, exit and loop animations with their durations. The timeline draws each transition as a bow tie across its cut, as wide as it lasts.
   - **Speed:** for video and audio clips, the inspector's Speed section sets a rate or a curve preset, reverse, pitch and smooth slow motion with `clip.speed` (rippling what follows), and Freeze frame holds the picture at the playhead with `clip.freeze`. Timeline labels show the speed, such as `1.5x` or `curve, reversed` (ADR-0023).
   - **Timeline editing:** Mod+C, Mod+X and Mod+V copy, cut and paste clips through `clips.copy` and `clips.paste` at the playhead, and Mod+Alt+C and Mod+Alt+V copy and paste attributes. Q and W delete the selected clip's part before or after the playhead and close the gap. Mod+Shift+B splits every track, M adds or removes a marker at the playhead (markers show as flags on the ruler), and `[` and `]` jump between markers. Shift-click selects several clips. The transport bar holds the linkage and magnet switches (P toggles the magnet), and the inspector aligns a clip with the canvas's edges or centre (ADR-0024).
+  - **Editor tools:**
+    - **Tools:** A and B switch between selecting and the blade, which splits a clip where it is clicked.
+    - **Snapping:** N toggles snapping of dragged edges to other clips' edges, the playhead and markers, within eight pixels.
+    - **Skimming:** S toggles skimming (the preview axis): hovering over the timeline shows that frame without moving the playhead, and a line marks it.
+    - **Shuttle:** J, K and L shuttle backwards, stop and forwards, doubling the speed with each press up to 8x. The preview's render thread paces speeds other than 1x by the wall clock, without sound, and stops backwards playback on the first frame.
+    - **Zoom:** Mod+= and Mod+- zoom the timeline, and Shift+Z fits the edit.
+    - **Full screen:** Mod+Shift+F (or the header button) shows the preview full screen above the transport bar, through the app's `window_fullscreen` command; Escape leaves.
+    - **Rulers and guides:** Mod+Shift+R shows rulers in canvas pixels along the preview. Dragging from a ruler adds a guide, dragging a guide moves it, and dropping it on its ruler or double-clicking removes it. Guides belong to the window, not the project.
   - **Sound:** playback follows the sound (ADR-0008, implementation notes).
 - **Releases** are not set up yet. Debug builds load the interface from the Vite server (`devUrl`). No crate feature may enable `tauri/custom-protocol`, because CI builds with `--all-features` and that feature needs the built interface.
 

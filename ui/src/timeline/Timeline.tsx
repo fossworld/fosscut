@@ -12,6 +12,7 @@ import {
   hitTest,
   onRuler,
   scrollBy,
+  snapPoints,
   unchanged,
   xToTime,
   zoomAround,
@@ -23,9 +24,10 @@ interface Props {
   state: EditorState;
 }
 
-/** The timeline: click a clip to select it, drag it to move it, drag its edges to trim it,
- * drag on the ruler to move the playhead, scroll to move along it, and pinch or Mod+scroll
- * to zoom. */
+/** The timeline: click a clip to select it (or split it, with the blade), drag it to move
+ * it, drag its edges to trim it, drag on the ruler to move the playhead, scroll to move
+ * along it, and pinch or Mod+scroll to zoom. Dragged edges snap when snapping is on, and
+ * hovering shows the frame there when skimming is on. */
 export function Timeline({ editor, state }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -39,6 +41,7 @@ export function Timeline({ editor, state }: Props) {
   // release can arrive before the last move has rendered.
   const [target, setTarget] = useState<DragTarget | null>(null);
   const latest = useRef<DragTarget | null>(null);
+  const snaps = useRef<number[]>([]);
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -52,6 +55,18 @@ export function Timeline({ editor, state }: Props) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  // Zooms asked for from the keyboard, each applied once while rendering.
+  const request = state.zoomRequest;
+  const [zoomed, setZoomed] = useState(0);
+  if (request && request.seq !== zoomed && state.timeline && size.width > 0) {
+    setZoomed(request.seq);
+    setView(
+      request.kind === "fit"
+        ? zoomToFit(state.timeline, size.width)
+        : zoomAround(view, request.kind === "in" ? 1.5 : 1 / 1.5, size.width / 2),
+    );
+  }
 
   // Show the whole timeline when a project opens.
   const timeline = state.timeline;
@@ -74,6 +89,7 @@ export function Timeline({ editor, state }: Props) {
     const drag = dragging.current;
     drawTimeline(ctx, timeline, { ...view, width: size.width }, size.height, {
       playhead: state.playhead,
+      skim: state.skim,
       selection: state.selection,
       also: state.also,
       drag:
@@ -81,7 +97,7 @@ export function Timeline({ editor, state }: Props) {
           ? { clip: drag.clip.id, start: target.start, end: target.end, track: target.track.id }
           : null,
     });
-  }, [timeline, view, size, state.playhead, state.selection, state.also, target]);
+  }, [timeline, view, size, state.playhead, state.skim, state.selection, state.also, target]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -119,6 +135,10 @@ export function Timeline({ editor, state }: Props) {
             return;
           }
           const hit = hitTest(timeline, view, x, y);
+          if (state.tool === "blade" && hit?.clip) {
+            void editor.bladeAt(hit.clip.id, xToTime(x, view));
+            return;
+          }
           if (event.shiftKey && hit?.clip) {
             editor.toggleSelected(hit.clip.id);
             return;
@@ -126,6 +146,7 @@ export function Timeline({ editor, state }: Props) {
           editor.select(hit?.clip?.id ?? null);
           if (hit?.clip) {
             dragging.current = { clip: hit.clip, track: hit.track, mode: grabAt(hit.clip, view, x), fromX: x };
+            snaps.current = state.snapping ? snapPoints(timeline, hit.clip.id, state.playhead) : [];
             event.currentTarget.setPointerCapture(event.pointerId);
           }
         }}
@@ -137,15 +158,23 @@ export function Timeline({ editor, state }: Props) {
           }
           const drag = dragging.current;
           if (drag && timeline) {
-            const next = dragTarget(drag, timeline, view, x, y, parseRate(timeline.format.rate));
+            const next = dragTarget(drag, timeline, view, x, y, parseRate(timeline.format.rate), snaps.current);
             latest.current = unchanged(drag, next) ? null : next;
             setTarget(latest.current);
             return;
           }
-          // Show what a press would grab.
+          // Show what a press would grab, and the frame under the pointer when skimming.
           const hit = timeline ? hitTest(timeline, view, x, y) : null;
           const grab = hit?.clip ? grabAt(hit.clip, view, x) : null;
-          event.currentTarget.style.cursor = grab === "move" ? "grab" : grab ? "ew-resize" : "default";
+          event.currentTarget.style.cursor =
+            state.tool === "blade" && hit?.clip
+              ? "crosshair"
+              : grab === "move"
+                ? "grab"
+                : grab
+                  ? "ew-resize"
+                  : "default";
+          if (state.skimming && !onRuler(y)) void editor.skim(Math.max(0, xToTime(x, view)));
         }}
         onPointerUp={() => {
           scrubbing.current = false;
@@ -164,6 +193,7 @@ export function Timeline({ editor, state }: Props) {
             void editor.trimClip(drag.clip.id, { end: target.end });
           }
         }}
+        onPointerLeave={() => void editor.skim(null)}
         onPointerCancel={() => {
           scrubbing.current = false;
           dragging.current = null;

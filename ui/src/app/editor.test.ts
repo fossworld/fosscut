@@ -456,6 +456,49 @@ describe("editor", () => {
     ]);
   });
 
+  it("shuttles, skims, cuts with the blade and changes the view", async () => {
+    const { editor, fake } = await started();
+    const rates: number[] = [];
+    for (const press of [1, 1, 1, 1, -1, -1, 0] as const) {
+      await editor.shuttle(press);
+      rates.push(editor.getState().shuttle);
+    }
+    expect(rates, "L doubles to 8x, J turns back and doubles, K stops").toEqual([1, 2, 4, 8, -1, -2, 0]);
+    expect(fake.callsOf("preview.shuttle").map(([rate]) => rate)).toEqual([1, 2, 4, 8, -1, -2, 0]);
+    await editor.shuttle(1);
+    fake.emit("playhead", { time: moment(3), playing: false });
+    expect(editor.getState().shuttle, "stopping at an end resets the shuttle").toBe(0);
+    await editor.skim(2 * FLICKS_PER_SECOND);
+    expect(editor.getState().skim, "skimming is off").toBeNull();
+    editor.setSkimming(true);
+    await editor.skim(2 * FLICKS_PER_SECOND);
+    await editor.skim(2 * FLICKS_PER_SECOND);
+    await editor.skim(null);
+    expect(fake.callsOf("preview.show").slice(-2), "the frame under the pointer, then back").toEqual([
+      [2 * FLICKS_PER_SECOND],
+      [3 * FLICKS_PER_SECOND],
+    ]);
+    editor.setTool("blade");
+    await editor.bladeAt("clip_0003", FLICKS_PER_SECOND);
+    expect(editor.getState().tool).toBe("blade");
+    await editor.toggleFullscreen();
+    await editor.toggleFullscreen();
+    expect(fake.callsOf("fullscreen")).toEqual([[true], [false]]);
+    editor.toggleRulers();
+    editor.setGuide(0, { axis: "x", at: 0.5 });
+    editor.setGuide(1, { axis: "y", at: 0.25 });
+    editor.setGuide(0, { axis: "x", at: 0.6 });
+    editor.setGuide(1, null);
+    expect(editor.getState().guides).toEqual([{ axis: "x", at: 0.6 }]);
+    editor.zoom("fit");
+    editor.zoom("in");
+    expect(editor.getState().zoomRequest).toEqual({ kind: "in", seq: 2 });
+    editor.setSnapping(false);
+    expect(editor.getState().snapping).toBe(false);
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([{ command: "clip.split", args: { clip: "clip_0003", at: { flicks: FLICKS_PER_SECOND } } }]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

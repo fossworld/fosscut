@@ -28,7 +28,19 @@ export type Action =
   | "marker"
   | "previous-marker"
   | "next-marker"
-  | "magnet";
+  | "magnet"
+  | "select-tool"
+  | "blade-tool"
+  | "snapping"
+  | "skimming"
+  | "shuttle-back"
+  | "shuttle-stop"
+  | "shuttle-forward"
+  | "zoom-in"
+  | "zoom-out"
+  | "zoom-fit"
+  | "fullscreen"
+  | "rulers";
 
 export interface Keystroke {
   key: string;
@@ -58,6 +70,10 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
     if (key === "y" && !mac && !stroke.shiftKey) return "redo";
     if (key === "b") return stroke.shiftKey ? "split-all" : "split";
     if (key === "g") return stroke.shiftKey ? "ungroup" : "group";
+    if (key === "f" && stroke.shiftKey) return "fullscreen";
+    if (key === "r" && stroke.shiftKey) return "rulers";
+    if (key === "=" || key === "+") return "zoom-in";
+    if (key === "-" || key === "_") return "zoom-out";
     if (stroke.shiftKey) return null;
     if (key === "c") return "copy";
     if (key === "x") return "cut";
@@ -95,6 +111,22 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
       return "next-marker";
     case "p":
       return stroke.shiftKey ? null : "magnet";
+    case "a":
+      return stroke.shiftKey ? null : "select-tool";
+    case "b":
+      return stroke.shiftKey ? null : "blade-tool";
+    case "n":
+      return stroke.shiftKey ? null : "snapping";
+    case "s":
+      return stroke.shiftKey ? null : "skimming";
+    case "j":
+      return stroke.shiftKey ? null : "shuttle-back";
+    case "k":
+      return stroke.shiftKey ? null : "shuttle-stop";
+    case "l":
+      return stroke.shiftKey ? null : "shuttle-forward";
+    case "z":
+      return stroke.shiftKey ? "zoom-fit" : null;
     default:
       return null;
   }

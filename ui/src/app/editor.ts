@@ -53,6 +53,31 @@ export interface EditorState {
   clipboard: unknown[] | null;
   /** The clip whose attributes Mod+Alt+V pastes. */
   attributesFrom: string | null;
+  /** What a click on a clip does: select it, or split it there (blade). */
+  tool: "select" | "blade";
+  /** Dragged edges snap to clip edges, the playhead and markers. */
+  snapping: boolean;
+  /** Hovering over the timeline shows that frame in the preview (the preview axis). */
+  skimming: boolean;
+  /** The time the preview shows while skimming, or null. */
+  skim: number | null;
+  /** The shuttle rate (J, K, L): 0 when not shuttling, negative backwards. */
+  shuttle: number;
+  /** The window is in full screen. */
+  fullscreen: boolean;
+  /** Rulers along the preview's edges, and guides dragged from them. */
+  rulers: boolean;
+  /** Guides as fractions of the canvas: vertical lines at x, horizontal ones at y. */
+  guides: Guide[];
+  /** A zoom asked of the timeline, applied by it; seq tells repeats apart. */
+  zoomRequest: { kind: "in" | "out" | "fit"; seq: number } | null;
+}
+
+/** A guide line on the preview. */
+export interface Guide {
+  axis: "x" | "y";
+  /** Where, as a fraction of the canvas's width (x) or height (y). */
+  at: number;
 }
 
 /** What drawing on the preview edits. */
@@ -80,6 +105,15 @@ const EMPTY: EditorState = {
   magnet: false,
   clipboard: null,
   attributesFrom: null,
+  tool: "select",
+  snapping: true,
+  skimming: false,
+  skim: null,
+  shuttle: 0,
+  fullscreen: false,
+  rulers: false,
+  guides: [],
+  zoomRequest: null,
   notice: null,
   catalog: null,
   luts: [],
@@ -138,7 +172,11 @@ export class Editor {
       this.engine.on("project-changed", () => void this.refresh()),
       this.engine.on("project-closed", () => this.set({ ...EMPTY, recent: this.state.recent })),
       this.engine.on("playhead", (playhead) =>
-        this.set({ playhead: playhead.time.flicks, playing: playhead.playing }),
+        this.set({
+          playhead: playhead.time.flicks,
+          playing: playhead.playing,
+          shuttle: playhead.playing ? this.state.shuttle : 0,
+        }),
       ),
       this.engine.on("preview-error", (message) =>
         this.set({ playing: false, notice: { kind: "error", text: message } }),
@@ -297,12 +335,83 @@ export class Editor {
 
   async togglePlay(): Promise<void> {
     if (this.state.playing) {
-      this.set({ playing: false });
+      this.set({ playing: false, shuttle: 0 });
       await this.engine.preview.pause();
     } else if (this.state.timeline) {
-      this.set({ playing: true });
+      this.set({ playing: true, shuttle: 1 });
       await this.engine.preview.play();
     }
+  }
+
+  /**
+   * J, K and L: L plays forwards and doubles the speed each press (to 8x), J the same
+   * backwards, K stops. Speeds other than 1x play without sound.
+   */
+  async shuttle(direction: -1 | 0 | 1): Promise<void> {
+    if (!this.state.timeline) return;
+    const rate = this.state.shuttle;
+    const next =
+      direction === 0
+        ? 0
+        : direction > 0
+          ? rate <= 0
+            ? 1
+            : Math.min(rate * 2, 8)
+          : rate >= 0
+            ? -1
+            : Math.max(rate * 2, -8);
+    this.set({ shuttle: next, playing: next !== 0 });
+    await this.engine.preview.shuttle(next);
+  }
+
+  setTool(tool: "select" | "blade"): void {
+    this.set({ tool });
+  }
+
+  setSnapping(on: boolean): void {
+    this.set({ snapping: on });
+  }
+
+  setSkimming(on: boolean): void {
+    this.set({ skimming: on, skim: null });
+    if (!on) void this.engine.preview.show(this.state.playhead);
+  }
+
+  /** While skimming, shows the frame at `time` without moving the playhead; null goes back. */
+  async skim(time: number | null): Promise<void> {
+    if (!this.state.skimming || this.state.playing) return;
+    if (time === this.state.skim) return;
+    this.set({ skim: time });
+    await this.engine.preview.show(time ?? this.state.playhead);
+  }
+
+  async toggleFullscreen(): Promise<void> {
+    const on = !this.state.fullscreen;
+    this.set({ fullscreen: on });
+    await this.engine.fullscreen(on);
+  }
+
+  toggleRulers(): void {
+    this.set({ rulers: !this.state.rulers });
+  }
+
+  /** Adds a guide, moves guide `index` to `at`, or removes it when `at` is null. */
+  setGuide(index: number, guide: Guide | null): void {
+    const guides = [...this.state.guides];
+    if (guide === null) guides.splice(index, 1);
+    else if (index >= guides.length) guides.push(guide);
+    else guides[index] = guide;
+    this.set({ guides });
+  }
+
+  /** Asks the timeline to zoom in, out or to fit the whole edit. */
+  zoom(kind: "in" | "out" | "fit"): void {
+    this.set({ zoomRequest: { kind, seq: (this.state.zoomRequest?.seq ?? 0) + 1 } });
+  }
+
+  /** The blade: splits a clip at a time. */
+  async bladeAt(clip: string, flicks: number): Promise<void> {
+    await this.edit([{ command: "clip.split", args: { clip, at: { flicks }, ...this.linked() } }]);
   }
 
   /** Tells the preview where it shows through the page, in CSS pixels. */

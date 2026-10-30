@@ -47,7 +47,34 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
         {now}
         <span className="muted"> / {timeline?.duration.timecode ?? "00:00:00:00"}</span>
       </span>
+      {state.shuttle !== 0 && state.shuttle !== 1 && <span className="rate">{state.shuttle}x</span>}
       <span className="spacer" />
+      <span className="tools" role="group" aria-label="Tool">
+        <button
+          className={state.tool === "select" ? "active" : ""}
+          aria-pressed={state.tool === "select"}
+          title="Select and drag clips (A)"
+          onClick={() => editor.setTool("select")}
+        >
+          Select
+        </button>
+        <button
+          className={state.tool === "blade" ? "active" : ""}
+          aria-pressed={state.tool === "blade"}
+          title="Click a clip to split it there (B)"
+          onClick={() => editor.setTool("blade")}
+        >
+          Blade
+        </button>
+      </span>
+      <label className="toggle" title="Dragged edges snap to clip edges, the playhead and markers (N)">
+        <input type="checkbox" checked={state.snapping} onChange={(e) => editor.setSnapping(e.target.checked)} />
+        <span>Snap</span>
+      </label>
+      <label className="toggle" title="Hovering over the timeline shows that frame (S)">
+        <input type="checkbox" checked={state.skimming} onChange={(e) => editor.setSkimming(e.target.checked)} />
+        <span>Skim</span>
+      </label>
       <label className="toggle" title="Edits of a grouped clip edit its whole group">
         <input type="checkbox" checked={state.linkage} onChange={(e) => editor.setLinkage(e.target.checked)} />
         <span>Linkage</span>

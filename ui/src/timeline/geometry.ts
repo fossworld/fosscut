@@ -166,22 +166,61 @@ function framesMoved(drag: Drag, x: number, view: View, rate: Rate): number {
  * track of the same kind under the pointer, when there is one), or with one edge moved,
  * never shorter than a frame or before zero.
  */
-export function dragTarget(drag: Drag, timeline: TimelineView, view: View, x: number, y: number, rate: Rate): DragTarget {
+export function dragTarget(
+  drag: Drag,
+  timeline: TimelineView,
+  view: View,
+  x: number,
+  y: number,
+  rate: Rate,
+  snaps: number[] = [],
+): DragTarget {
   const { clip } = drag;
   const frame = framesToFlicks(1, rate);
   const delta = framesToFlicks(framesMoved(drag, x, view, rate), rate);
   if (drag.mode === "trim-start") {
-    const start = Math.min(Math.max(0, clip.start.flicks + delta), clip.end.flicks - frame);
+    const wanted = snap(clip.start.flicks + delta, snaps, view);
+    const start = Math.min(Math.max(0, wanted), clip.end.flicks - frame);
     return { start, end: clip.end.flicks, track: drag.track };
   }
   if (drag.mode === "trim-end") {
-    const end = Math.max(clip.start.flicks + frame, clip.end.flicks + delta);
+    const end = Math.max(clip.start.flicks + frame, snap(clip.end.flicks + delta, snaps, view));
     return { start: clip.start.flicks, end, track: drag.track };
   }
-  const start = Math.max(0, clip.start.flicks + delta);
+  // A moved clip snaps by whichever edge lands nearer a snap point.
+  const moved = clip.start.flicks + delta;
+  const byStart = snap(moved, snaps, view) - moved;
+  const byEnd = snap(moved + clip.duration.flicks, snaps, view) - (moved + clip.duration.flicks);
+  const shift = byStart === 0 ? byEnd : byEnd === 0 ? byStart : Math.abs(byStart) <= Math.abs(byEnd) ? byStart : byEnd;
+  const start = Math.max(0, moved + shift);
   const under = rows(timeline)[Math.floor((y - RULER) / ROW)];
   const track = under && under.kind === drag.track.kind ? under : drag.track;
   return { start, end: start + clip.duration.flicks, track };
+}
+
+/** Where dragged edges snap: every other clip's edges, the playhead, markers and zero. */
+export function snapPoints(timeline: TimelineView, except: string, playhead: number): number[] {
+  const points = [0, playhead, ...(timeline.markers ?? []).map((m) => m.at.flicks)];
+  for (const track of timeline.tracks) {
+    for (const clip of track.clips) {
+      if (clip.id !== except) points.push(clip.start.flicks, clip.end.flicks);
+    }
+  }
+  return points;
+}
+
+/** `time`, or the nearest of `points` within `pixels` of it on screen. */
+export function snap(time: number, points: number[], view: View, pixels = 8): number {
+  let best = time;
+  let distance = pixels;
+  for (const point of points) {
+    const away = (Math.abs(point - time) / FLICKS_PER_SECOND) * view.zoom;
+    if (away <= distance) {
+      best = point;
+      distance = away;
+    }
+  }
+  return best;
 }
 
 /** True when a drag would change nothing. */

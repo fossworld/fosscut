@@ -20,6 +20,8 @@ import {
   rulerLabel,
   rulerStep,
   scrollBy,
+  snap,
+  snapPoints,
   timeToX,
   unchanged,
   xToTime,
@@ -133,5 +135,24 @@ describe("dragging clips", () => {
     expect(dragTarget(end, t, flat, HEADER + 400, 0, rate)).toMatchObject({ start: 0, end: 4 * second });
     expect(dragTarget(end, t, flat, HEADER + 800, 0, rate).end, "longer, if the media allows").toBe(8 * second);
     expect(dragTarget(end, t, flat, HEADER - 1000, 0, rate).end).toBe(framesToFlicks(1, rate));
+  });
+
+  it("snaps dragged edges to nearby clip edges, the playhead and markers", () => {
+    const t = { ...timeline(), markers: [{ id: "marker_0001", at: { flicks: 3 * second, frames: 90, seconds: "3", timecode: "" } }] };
+    const video = t.tracks[0]!;
+    const clip = video.clips[0]!;
+    const points = snapPoints(t, clip.id, 7 * second);
+    expect(points).toContain(2 * second);
+    expect(points, "markers").toContain(3 * second);
+    expect(points, "the playhead").toContain(7 * second);
+    expect(points, "not its own edges").not.toContain(6 * second);
+    // 8 pixels at 100 pixels a second is 0.08 s.
+    expect(snap(2.05 * second, points, flat)).toBe(2 * second);
+    expect(snap(2.1 * second, points, flat), "too far").toBe(2.1 * second);
+    const end = { clip, track: video, mode: "trim-end" as const, fromX: HEADER + 600 };
+    expect(dragTarget(end, t, flat, HEADER + 696, 0, rate, points).end, "onto the playhead").toBe(7 * second);
+    const move = { clip, track: video, mode: "move" as const, fromX: HEADER };
+    expect(dragTarget(move, t, flat, HEADER + 296, RULER + 5, rate, points).start, "the start onto the marker").toBe(3 * second);
+    expect(dragTarget(move, t, flat, HEADER + 296, RULER + 5, rate).start, "no snapping without points").not.toBe(3 * second);
   });
 });

@@ -64,7 +64,11 @@ export interface EngineClient {
     show(flicks: number): Promise<void>;
     play(): Promise<void>;
     pause(): Promise<void>;
+    /** Plays at `rate` without sound unless it is 1: 2 is twice as fast, -1 backwards. */
+    shuttle(rate: number): Promise<void>;
   };
+  /** Puts the window in full screen, or back. */
+  fullscreen(on: boolean): Promise<void>;
   on<E extends keyof EngineEvents>(
     event: E,
     handler: (payload: EngineEvents[E]) => void,

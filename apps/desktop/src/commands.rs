@@ -240,3 +240,17 @@ pub fn preview_play(state: State<'_, AppState>) {
 pub fn preview_pause(state: State<'_, AppState>) {
     state.preview.send(Job::Pause);
 }
+
+/// Shuttles at `rate` from the playhead: 2 is twice as fast, -1 backwards, 0 pauses.
+#[tauri::command]
+pub fn preview_shuttle(state: State<'_, AppState>, rate: f64) {
+    state.preview.send(Job::Shuttle(rate));
+}
+
+/// Puts the window in full screen, or back.
+#[tauri::command]
+pub fn window_fullscreen(app: AppHandle, on: bool) {
+    if let Some(window) = tauri::Manager::get_webview_window(&app, "main") {
+        let _ = window.set_fullscreen(on);
+    }
+}

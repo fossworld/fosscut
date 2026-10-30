@@ -42,6 +42,8 @@ describe("the Tauri engine client", () => {
     await engine.preview.show(1234.6);
     await engine.preview.play();
     await engine.preview.pause();
+    await engine.preview.shuttle(-2);
+    await engine.fullscreen(true);
     expect(invoke.mock.calls).toEqual([
       ["app_info"],
       ["recent_projects"],
@@ -61,6 +63,8 @@ describe("the Tauri engine client", () => {
       ["preview_show", { flicks: 1235 }],
       ["preview_play"],
       ["preview_pause"],
+      ["preview_shuttle", { rate: -2 }],
+      ["window_fullscreen", { on: true }],
     ]);
   });
 

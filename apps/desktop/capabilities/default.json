@@ -19,6 +19,8 @@
     "allow-preview-viewport",
     "allow-preview-show",
     "allow-preview-play",
-    "allow-preview-pause"
+    "allow-preview-pause",
+    "allow-preview-shuttle",
+    "allow-window-fullscreen"
   ]
 }
