@@ -204,6 +204,27 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             "clip.remove",
             json!({ "clip": clip, "ripple": ripple }),
         ),
+        Command::Clip(ClipCommand::Set {
+            clip,
+            position,
+            scale,
+            rotation,
+            opacity,
+            volume,
+        }) => write(
+            cli,
+            "clip.set",
+            json!({
+                "clip": clip,
+                "set": object(vec![
+                    ("transform.position", some(position)),
+                    ("transform.scale", some(scale)),
+                    ("transform.rotation", some(rotation)),
+                    ("opacity", some(opacity)),
+                    ("volume", some(volume)),
+                ]),
+            }),
+        ),
         Command::Text(TextCommand::Add {
             text,
             track,
@@ -242,6 +263,62 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("timeline", some(timeline)),
             ]),
         ),
+        Command::Timeline(TimelineCommand::Duplicate {
+            width,
+            height,
+            fill,
+            name,
+            primary,
+            timeline,
+        }) => write(
+            cli,
+            "timeline.duplicate",
+            object(vec![
+                ("width", some(width)),
+                ("height", some(height)),
+                ("fit", fill.then_some(json!("fill"))),
+                ("name", some(name)),
+                ("primary", primary.then_some(json!(true))),
+                ("timeline", some(timeline)),
+            ]),
+        ),
+        Command::Timeline(TimelineCommand::RemoveRanges {
+            ranges,
+            tracks,
+            no_ripple,
+            timeline,
+        }) => {
+            let ranges = ranges
+                .iter()
+                .map(|range| {
+                    let (start, end) = range.split_once("..").ok_or_else(|| {
+                        ApiError::new(
+                            codes::INVALID_ARGUMENTS,
+                            format!("range {range:?} is not START..END"),
+                        )
+                        .with_hint(
+                            "For example 3.4s..4.1s, 102f..123f or 00:00:03:12..00:00:04:03.",
+                        )
+                    })?;
+                    let time = |text: &str| {
+                        text.trim().parse::<TimeInput>().map_err(|e| {
+                            ApiError::new(codes::INVALID_ARGUMENTS, format!("range {range:?}: {e}"))
+                        })
+                    };
+                    Ok(json!({ "start": time(start)?, "end": time(end)? }))
+                })
+                .collect::<Result<Vec<Value>, ApiError>>()?;
+            write(
+                cli,
+                "timeline.remove_ranges",
+                object(vec![
+                    ("ranges", Some(json!(ranges))),
+                    ("tracks", some(tracks)),
+                    ("ripple", no_ripple.then_some(json!(false))),
+                    ("timeline", some(timeline)),
+                ]),
+            )
+        }
         Command::History { limit } => {
             query(cli, "history.list", object(vec![("limit", some(limit))]))
         }

@@ -1,0 +1,602 @@
+//! Commands that reshape a whole edit or set clip properties: `clip.set` changes placement,
+//! opacity or volume through property paths (ADR-0011 item 3), `timeline.duplicate` copies
+//! a timeline onto a canvas of another shape, and `timeline.remove_ranges` cuts time ranges
+//! out of every track and closes the gaps (the cut and ripple of ADR-0007's patches).
+
+use std::collections::BTreeMap;
+
+use fosscut_model::{
+    ClipContent, Id, IdKind, Project, Timeline, TimelineEntry, TimelineFormat, TrackKind, Transform,
+};
+use fosscut_time::{Flicks, Rate, TimeInput, TimeReport};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use super::caption::window_caption;
+use super::util::{ensure_unlocked, locate_clip, resolve, timeline_id, timeline_mut, track_index};
+use crate::{ApiError, Command, Context, codes};
+
+/// The property paths `clip.set` accepts, with what each takes.
+pub const CLIP_PROPERTIES: [(&str, &str); 5] = [
+    (
+        "transform.position",
+        "[x, y]: offset of the clip's centre from the canvas centre, as fractions of the canvas width and height; y grows downwards",
+    ),
+    (
+        "transform.scale",
+        "size relative to the fitted size, greater than 0",
+    ),
+    ("transform.rotation", "degrees clockwise"),
+    ("opacity", "0 (invisible) to 1"),
+    ("volume", "linear gain: 1 unchanged, 0 silent"),
+];
+
+fn invalid(message: impl Into<String>) -> ApiError {
+    ApiError::new(codes::INVALID_ARGUMENTS, message)
+}
+
+fn number(path: &str, value: &Value) -> Result<f64, ApiError> {
+    value
+        .as_f64()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| invalid(format!("clip.set: {path} must be a number, not {value}")))
+}
+
+/// Changes a clip's placement, opacity or volume.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClipSet {
+    /// The clip.
+    pub clip: Id,
+    /// Property paths with their new values, for example
+    /// `{"transform.position": [0.2, 0], "transform.scale": 1.8}`. Paths:
+    /// `transform.position`, `transform.scale`, `transform.rotation`, `opacity`, `volume`.
+    pub set: BTreeMap<String, Value>,
+}
+
+/// A clip's properties after `clip.set`.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ClipProperties {
+    /// The clip.
+    pub clip: Id,
+    /// Its track.
+    pub track: Id,
+    /// Placement on the canvas.
+    pub transform: Transform,
+    /// Opacity, 0 to 1.
+    pub opacity: f64,
+    /// Linear audio gain.
+    pub volume: f64,
+}
+
+impl Command for ClipSet {
+    const NAME: &'static str = "clip.set";
+    const SUMMARY: &'static str = "Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it.";
+    type Output = ClipProperties;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<ClipProperties, ApiError> {
+        if self.set.is_empty() {
+            return Err(invalid("clip.set: give at least one property").with_hint(paths_hint()));
+        }
+        let location = locate_clip(ctx.project, &self.clip)?;
+        let timeline = timeline_mut(ctx.project, &location.timeline)?;
+        let track = &mut timeline.tracks[location.track];
+        ensure_unlocked(track)?;
+        let track_id = track.id.clone();
+        let clip = &mut track.clips[location.clip];
+        let visual = !matches!(clip.content, ClipContent::Audio { .. });
+        let audible = matches!(
+            clip.content,
+            ClipContent::Audio { .. } | ClipContent::Video { .. }
+        );
+        for (path, value) in &self.set {
+            match path.as_str() {
+                "transform.position" | "transform.scale" | "transform.rotation" | "opacity"
+                    if !visual =>
+                {
+                    return Err(invalid(format!(
+                        "clip.set: {} is an audio clip; it has no {path}",
+                        self.clip
+                    )));
+                }
+                "volume" if !audible => {
+                    return Err(invalid(format!(
+                        "clip.set: {} is a {} clip; it has no sound",
+                        self.clip,
+                        clip.content.kind_name()
+                    )));
+                }
+                "transform.position" => {
+                    let pair = value.as_array().filter(|a| a.len() == 2).ok_or_else(|| {
+                        invalid(format!(
+                            "clip.set: transform.position must be [x, y], not {value}"
+                        ))
+                    })?;
+                    clip.transform.position = [number(path, &pair[0])?, number(path, &pair[1])?];
+                }
+                "transform.scale" => {
+                    let scale = number(path, value)?;
+                    if scale <= 0.0 {
+                        return Err(invalid("clip.set: transform.scale must be greater than 0"));
+                    }
+                    clip.transform.scale = scale;
+                }
+                "transform.rotation" => clip.transform.rotation = number(path, value)?,
+                "opacity" => clip.opacity = number(path, value)?,
+                "volume" => clip.volume = number(path, value)?,
+                other => {
+                    return Err(invalid(format!("clip.set: there is no property {other}"))
+                        .with_hint(paths_hint())
+                        .with_details(json!({ "unknown": other })));
+                }
+            }
+        }
+        Ok(ClipProperties {
+            clip: clip.id.clone(),
+            track: track_id,
+            transform: clip.transform.clone(),
+            opacity: clip.opacity,
+            volume: clip.volume,
+        })
+    }
+}
+
+fn paths_hint() -> String {
+    let paths: Vec<String> = CLIP_PROPERTIES
+        .iter()
+        .map(|(path, meaning)| format!("{path} ({meaning})"))
+        .collect();
+    format!("Properties: {}.", paths.join("; "))
+}
+
+/// How pictures meet a canvas of another shape.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Fit {
+    /// Keep each clip's placement: pictures stay fitted inside the canvas, with bars.
+    #[default]
+    Keep,
+    /// Scale video and image clips to cover the canvas, cropping what falls outside.
+    Fill,
+}
+
+/// Copies a timeline, optionally onto a canvas of another size.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimelineDuplicate {
+    /// The timeline to copy; the primary timeline when omitted.
+    #[serde(default)]
+    pub timeline: Option<Id>,
+    /// Name of the copy; the original's name with the canvas size when omitted.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Canvas width of the copy in pixels; the original's when omitted.
+    #[serde(default)]
+    pub width: Option<u32>,
+    /// Canvas height of the copy in pixels; the original's when omitted.
+    #[serde(default)]
+    pub height: Option<u32>,
+    /// `keep` (default) or `fill`: scale video and image clips to cover the new canvas.
+    #[serde(default)]
+    pub fit: Fit,
+    /// Make the copy the primary timeline, which commands, frames and exports use when
+    /// they are given no timeline.
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// Result of `timeline.duplicate`.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TimelineDuplicated {
+    /// The copy.
+    pub timeline: Id,
+    /// Its name.
+    pub name: String,
+    /// The timeline it was copied from.
+    pub source: Id,
+    /// Its canvas, rate and sample rate.
+    pub format: TimelineFormat,
+    /// Clips copied.
+    pub clips: usize,
+    /// Whether it is now the primary timeline.
+    pub primary: bool,
+}
+
+/// The scale that makes a picture of `size` (fitted inside the canvas at scale 1) cover
+/// `canvas` instead.
+fn fill_scale(size: (u32, u32), canvas: (u32, u32)) -> f64 {
+    let (w, h) = (f64::from(size.0.max(1)), f64::from(size.1.max(1)));
+    let (cw, ch) = (f64::from(canvas.0), f64::from(canvas.1));
+    let fit = (cw / w).min(ch / h);
+    let cover = (cw / w).max(ch / h);
+    cover / fit
+}
+
+impl Command for TimelineDuplicate {
+    const NAME: &'static str = "timeline.duplicate";
+    const SUMMARY: &'static str = "Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.";
+    type Output = TimelineDuplicated;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<TimelineDuplicated, ApiError> {
+        let source = timeline_id(ctx.project, self.timeline.as_ref())?;
+        let original = ctx.project.timelines[&source].clone();
+        let format = TimelineFormat {
+            width: self.width.unwrap_or(original.format.width),
+            height: self.height.unwrap_or(original.format.height),
+            ..original.format.clone()
+        };
+        if format.width == 0 || format.height == 0 {
+            return Err(invalid(
+                "timeline.duplicate: width and height must be at least 1",
+            ));
+        }
+        let name = self
+            .name
+            .clone()
+            .unwrap_or_else(|| format!("{} {}x{}", original.name, format.width, format.height));
+        let id = ctx.project.allocate_id(IdKind::Timeline);
+        let mut copy = Timeline {
+            id: id.clone(),
+            name: name.clone(),
+            format: format.clone(),
+            tracks: Vec::with_capacity(original.tracks.len()),
+        };
+        let mut clips = 0;
+        for track in &original.tracks {
+            let mut track = track.clone();
+            track.id = ctx.project.allocate_id(IdKind::Track);
+            for clip in &mut track.clips {
+                clip.id = ctx.project.allocate_id(IdKind::Clip);
+                clips += 1;
+                let asset = match &clip.content {
+                    ClipContent::Video { asset, .. } | ClipContent::Image { asset } => asset,
+                    _ => continue,
+                };
+                if self.fit == Fit::Fill
+                    && let Some(video) = ctx
+                        .project
+                        .media
+                        .get(asset)
+                        .and_then(|a| a.info.video.as_ref())
+                {
+                    let turned = video.rotation.rem_euclid(180) == 90;
+                    let size = if turned {
+                        (video.height, video.width)
+                    } else {
+                        (video.width, video.height)
+                    };
+                    clip.transform.scale *= fill_scale(size, (format.width, format.height));
+                }
+            }
+            copy.tracks.push(track);
+        }
+        ctx.project.manifest.timelines.push(TimelineEntry {
+            id: id.clone(),
+            name: name.clone(),
+        });
+        ctx.project.timelines.insert(id.clone(), copy);
+        if self.primary {
+            ctx.project.manifest.primary_timeline = id.clone();
+        }
+        Ok(TimelineDuplicated {
+            timeline: id,
+            name,
+            source,
+            format,
+            clips,
+            primary: self.primary,
+        })
+    }
+}
+
+/// A time range on the timeline.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RangeInput {
+    /// Where it starts; snapped to the nearest frame.
+    pub start: TimeInput,
+    /// Where it ends (exclusive); snapped to the nearest frame.
+    pub end: TimeInput,
+}
+
+/// Removes time ranges from a timeline.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TimelineRemoveRanges {
+    /// Timeline; the primary timeline when omitted.
+    #[serde(default)]
+    pub timeline: Option<Id>,
+    /// Time ranges to remove, for example
+    /// `[{"start": {"seconds": "3.4"}, "end": {"seconds": "4.1"}}]`. Overlapping and
+    /// touching ranges are merged.
+    pub ranges: Vec<RangeInput>,
+    /// Tracks to cut; every track when omitted. Tracks left out keep their timing and can
+    /// fall out of sync with the others.
+    #[serde(default)]
+    pub tracks: Option<Vec<Id>>,
+    /// Move everything after each range left to close the gap (default true).
+    #[serde(default = "yes")]
+    pub ripple: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// A range as reported.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RangeReport {
+    /// Start.
+    pub start: TimeReport,
+    /// End (exclusive).
+    pub end: TimeReport,
+}
+
+/// Result of `timeline.remove_ranges`.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RangesRemoved {
+    /// The timeline.
+    pub timeline: Id,
+    /// The ranges removed, merged and on frames.
+    pub ranges: Vec<RangeReport>,
+    /// Their total length.
+    pub removed: TimeReport,
+    /// The timeline's length before.
+    pub duration_before: TimeReport,
+    /// Its length after.
+    pub duration_after: TimeReport,
+    /// Clips removed entirely.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clips_removed: Vec<Id>,
+    /// Clips shortened or moved.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clips_changed: Vec<Id>,
+    /// New clips: the later parts of clips a range cut through.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub clips_added: Vec<Id>,
+}
+
+/// Sorted, merged, frame-aligned ranges.
+fn merged(ranges: &[RangeInput], rate: Rate) -> Result<Vec<(Flicks, Flicks)>, ApiError> {
+    if ranges.is_empty() {
+        return Err(invalid("timeline.remove_ranges: give at least one range"));
+    }
+    let mut spans = Vec::with_capacity(ranges.len());
+    for (index, range) in ranges.iter().enumerate() {
+        let (start, end) = (
+            resolve(&range.start, rate)?.max(Flicks::ZERO),
+            resolve(&range.end, rate)?,
+        );
+        if end <= start {
+            return Err(invalid(format!(
+                "timeline.remove_ranges: range {index} is shorter than a frame or ends before it starts"
+            ))
+            .with_details(json!({ "range": index })));
+        }
+        spans.push((start, end));
+    }
+    spans.sort();
+    let mut out: Vec<(Flicks, Flicks)> = Vec::with_capacity(spans.len());
+    for (start, end) in spans {
+        match out.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => out.push((start, end)),
+        }
+    }
+    Ok(out)
+}
+
+/// The parts of `[start, end)` outside every range.
+fn kept(start: Flicks, end: Flicks, ranges: &[(Flicks, Flicks)]) -> Vec<(Flicks, Flicks)> {
+    let mut parts = Vec::new();
+    let mut from = start;
+    for &(a, b) in ranges {
+        if b <= from || a >= end {
+            continue;
+        }
+        if a > from {
+            parts.push((from, a));
+        }
+        from = from.max(b);
+    }
+    if from < end {
+        parts.push((from, end));
+    }
+    parts
+}
+
+/// How much of the ranges lies before `time`.
+fn removed_before(time: Flicks, ranges: &[(Flicks, Flicks)]) -> Flicks {
+    ranges
+        .iter()
+        .filter(|(a, _)| *a < time)
+        .map(|&(a, b)| b.min(time) - a)
+        .fold(Flicks::ZERO, |sum, part| sum + part)
+}
+
+impl Command for TimelineRemoveRanges {
+    const NAME: &'static str = "timeline.remove_ranges";
+    const SUMMARY: &'static str = "Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.";
+    type Output = RangesRemoved;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<RangesRemoved, ApiError> {
+        let timeline = timeline_id(ctx.project, self.timeline.as_ref())?;
+        let rate = ctx.project.timelines[&timeline].format.rate;
+        let ranges = merged(&self.ranges, rate)?;
+        let doc = &ctx.project.timelines[&timeline];
+        let chosen: Vec<usize> = match &self.tracks {
+            Some(ids) => ids
+                .iter()
+                .map(|id| track_index(doc, id))
+                .collect::<Result<_, _>>()?,
+            None => (0..doc.tracks.len()).collect(),
+        };
+        let first_range = ranges.first().map_or(Flicks::ZERO, |r| r.0);
+        let primary_video = doc.tracks.iter().position(|t| t.kind == TrackKind::Video);
+        for &index in &chosen {
+            let track = &doc.tracks[index];
+            // A track whose clips would be cut or moved must be unlocked.
+            if track.clips.iter().any(|c| c.end() > first_range) {
+                ensure_unlocked(track)?;
+            }
+            let cuts_footage = track
+                .clips
+                .iter()
+                .any(|c| ranges.iter().any(|&(a, b)| a < c.end() && c.start < b));
+            if Some(index) == primary_video && cuts_footage {
+                ctx.require_destructive(
+                    "Removing time from the primary video track",
+                    json!({
+                        "track": track.id,
+                        "ranges": ranges.iter().map(|&(a, b)| json!({
+                            "start": TimeReport::new(a, rate),
+                            "end": TimeReport::new(b, rate),
+                        })).collect::<Vec<_>>(),
+                    }),
+                )?;
+            }
+        }
+        let duration_before = doc.duration();
+        let mut report = RangesRemoved {
+            timeline: timeline.clone(),
+            ranges: ranges
+                .iter()
+                .map(|&(a, b)| RangeReport {
+                    start: TimeReport::new(a, rate),
+                    end: TimeReport::new(b, rate),
+                })
+                .collect(),
+            removed: TimeReport::new(
+                ranges
+                    .iter()
+                    .fold(Flicks::ZERO, |sum, &(a, b)| sum + (b - a)),
+                rate,
+            ),
+            duration_before: TimeReport::new(duration_before, rate),
+            duration_after: TimeReport::new(duration_before, rate),
+            clips_removed: Vec::new(),
+            clips_changed: Vec::new(),
+            clips_added: Vec::new(),
+        };
+        for index in chosen {
+            cut_track(
+                ctx.project,
+                &timeline,
+                index,
+                &ranges,
+                self.ripple,
+                &mut report,
+            )?;
+        }
+        let after = ctx.project.timelines[&timeline].duration();
+        report.duration_after = TimeReport::new(after, rate);
+        Ok(report)
+    }
+}
+
+/// Cuts `ranges` out of one track, splitting clips a range falls inside, and moves what
+/// follows left when rippling.
+fn cut_track(
+    project: &mut Project,
+    timeline: &Id,
+    index: usize,
+    ranges: &[(Flicks, Flicks)],
+    ripple: bool,
+    report: &mut RangesRemoved,
+) -> Result<(), ApiError> {
+    let clips = std::mem::take(&mut timeline_mut(project, timeline)?.tracks[index].clips);
+    let mut out = Vec::with_capacity(clips.len());
+    for clip in clips {
+        let parts = kept(clip.start, clip.end(), ranges);
+        let untouched = parts.len() == 1 && parts[0] == (clip.start, clip.end());
+        let mut first = true;
+        for (from, to) in parts {
+            let offset = from - clip.start;
+            let content = match &clip.content {
+                ClipContent::Video { asset, source_in } => ClipContent::Video {
+                    asset: asset.clone(),
+                    source_in: *source_in + offset,
+                },
+                ClipContent::Audio { asset, source_in } => ClipContent::Audio {
+                    asset: asset.clone(),
+                    source_in: *source_in + offset,
+                },
+                ClipContent::Caption(caption) => {
+                    match window_caption(caption, offset, to - clip.start) {
+                        Some(caption) => ClipContent::Caption(caption),
+                        // A piece of a caption page with no words left is dropped.
+                        None => continue,
+                    }
+                }
+                other => other.clone(),
+            };
+            let id = if first {
+                clip.id.clone()
+            } else {
+                let id = project.allocate_id(IdKind::Clip);
+                report.clips_added.push(id.clone());
+                id
+            };
+            first = false;
+            let shift = if ripple {
+                removed_before(from, ranges)
+            } else {
+                Flicks::ZERO
+            };
+            if !(untouched && shift == Flicks::ZERO) && id == clip.id {
+                report.clips_changed.push(id.clone());
+            }
+            out.push(fosscut_model::Clip {
+                id,
+                start: from - shift,
+                duration: to - from,
+                content,
+                ..clip.clone()
+            });
+        }
+        if first {
+            report.clips_removed.push(clip.id.clone());
+        }
+    }
+    out.sort_by_key(|c| c.start);
+    timeline_mut(project, timeline)?.tracks[index].clips = out;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ms(n: i64) -> Flicks {
+        Flicks::from_millis(n)
+    }
+
+    #[test]
+    fn kept_parts_and_shifts_follow_the_ranges() {
+        let ranges = [(ms(1000), ms(2000)), (ms(3000), ms(3500))];
+        assert_eq!(
+            kept(ms(0), ms(4000), &ranges),
+            [
+                (ms(0), ms(1000)),
+                (ms(2000), ms(3000)),
+                (ms(3500), ms(4000))
+            ]
+        );
+        assert_eq!(kept(ms(1200), ms(1800), &ranges), []);
+        assert_eq!(kept(ms(4000), ms(5000), &ranges), [(ms(4000), ms(5000))]);
+        assert_eq!(removed_before(ms(500), &ranges), ms(0));
+        assert_eq!(removed_before(ms(1500), &ranges), ms(500));
+        assert_eq!(removed_before(ms(3500), &ranges), ms(1500));
+        assert_eq!(removed_before(ms(9000), &ranges), ms(1500));
+    }
+
+    #[test]
+    fn fill_covers_the_canvas() {
+        // A 16:9 picture on a 9:16 canvas: fitted to the width, it must grow by (16/9)^2.
+        let scale = fill_scale((1920, 1080), (1080, 1920));
+        assert!((scale - (16.0f64 / 9.0).powi(2)).abs() < 1e-9);
+        assert!((fill_scale((1920, 1080), (1920, 1080)) - 1.0).abs() < 1e-12);
+        assert!((fill_scale((1080, 1080), (1080, 1920)) - 16.0 / 9.0).abs() < 1e-9);
+    }
+}

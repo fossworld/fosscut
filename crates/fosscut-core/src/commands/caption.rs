@@ -344,6 +344,38 @@ pub(crate) fn split_caption(
     ))
 }
 
+/// The part of a caption page between `from` and `to` (from its start), as a page of its
+/// own starting at `from`: words whose middle lies inside are kept, cut to the window and
+/// shifted. `None` when no word is left.
+pub(crate) fn window_caption(
+    caption: &CaptionContent,
+    from: Flicks,
+    to: Flicks,
+) -> Option<CaptionContent> {
+    let inside = |w: &CaptionWord| {
+        let middle = i128::from(w.start.get()) + i128::from(w.end.get());
+        middle >= 2 * i128::from(from.get()) && middle < 2 * i128::from(to.get())
+    };
+    let lines: Vec<CaptionLine> = caption
+        .lines
+        .iter()
+        .map(|line| CaptionLine {
+            words: line
+                .words
+                .iter()
+                .filter(|w| inside(w))
+                .map(|w| CaptionWord {
+                    start: w.start.max(from).min(to) - from,
+                    end: w.end.max(from).min(to) - from,
+                    ..w.clone()
+                })
+                .collect(),
+        })
+        .filter(|line| !line.words.is_empty())
+        .collect();
+    (!lines.is_empty()).then_some(CaptionContent { lines })
+}
+
 /// Applies a JSON merge patch (RFC 7396) to `target`.
 fn merge(target: &mut Value, patch: &Value) {
     match patch {

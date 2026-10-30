@@ -43,6 +43,28 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             let added = run(&mut session, "captions.add", captions_sample());
             json!({ "clip": added.results[0]["pages"][0]["clip"], "text": "Hi there", "emphasis": [1] })
         }
+        "clip.set" => json!({ "clip": clip, "set": { "transform.scale": 1.5, "opacity": 0.8 } }),
+        "timeline.duplicate" => json!({ "width": 1080, "height": 1920, "fit": "fill" }),
+        "timeline.remove_ranges" => {
+            // Cut from the text track only, so the primary video guard does not apply.
+            let title = run(
+                &mut session,
+                "text.add",
+                json!({ "text": "Long title", "duration": "4s" }),
+            );
+            let doc = session
+                .query("timeline.read", json!({ "detail": "outline" }))
+                .unwrap();
+            let track = doc["tracks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|t| t["kind"] == "text")
+                .unwrap()["id"]
+                .clone();
+            let _ = title;
+            json!({ "ranges": [{ "start": "1s", "end": "2s" }], "tracks": [track] })
+        }
         "captions.style" => {
             run(&mut session, "captions.add", captions_sample());
             json!({ "preset": "boxed", "style": { "size": 0.07 } })

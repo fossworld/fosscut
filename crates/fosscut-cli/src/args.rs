@@ -378,6 +378,29 @@ pub enum ClipCommand {
         #[arg(long)]
         ripple: bool,
     },
+    /// Set a clip's placement, opacity or volume. Position and scale are relative to the
+    /// canvas and the fitted picture, so the same values work at any output size.
+    Set {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Offset of the clip's centre from the canvas centre as fractions of its width and
+        /// height, for example 0.2,0 (right) or 0,-0.3 (up).
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        position: Option<Vec<f64>>,
+        /// Size relative to the fitted picture, for example 1.5.
+        #[arg(long)]
+        scale: Option<f64>,
+        /// Degrees clockwise.
+        #[arg(long, allow_hyphen_values = true)]
+        rotation: Option<f64>,
+        /// Opacity from 0 to 1.
+        #[arg(long)]
+        opacity: Option<f64>,
+        /// Linear audio gain: 1 unchanged, 0 silent.
+        #[arg(long)]
+        volume: Option<f64>,
+    },
 }
 
 /// `fosscut captions ...`
@@ -517,6 +540,44 @@ pub enum TimelineCommand {
         /// Amount of detail.
         #[arg(long, value_enum, default_value_t = Detail::Normal)]
         detail: Detail,
+        /// Timeline id; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Copy a timeline, for example onto a 1080x1920 canvas for a vertical version.
+    Duplicate {
+        /// Canvas width of the copy; the original's when omitted.
+        #[arg(long)]
+        width: Option<u32>,
+        /// Canvas height of the copy; the original's when omitted.
+        #[arg(long)]
+        height: Option<u32>,
+        /// Scale video and image clips to cover the new canvas instead of fitting inside it.
+        #[arg(long)]
+        fill: bool,
+        /// Name of the copy.
+        #[arg(long)]
+        name: Option<String>,
+        /// Make the copy the primary timeline.
+        #[arg(long)]
+        primary: bool,
+        /// Timeline to copy; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Cut time ranges out of every track and close the gaps, keeping picture, sound and
+    /// captions in sync. Cutting the primary video track needs --allow-destructive.
+    RemoveRanges {
+        /// Ranges as START..END, for example 3.4s..4.1s or 00:00:10:00..00:00:12:15.
+        #[arg(required = true)]
+        ranges: Vec<String>,
+        /// Cut only these tracks, for example track_0002,track_0004; every track when
+        /// omitted.
+        #[arg(long, value_delimiter = ',')]
+        tracks: Option<Vec<String>>,
+        /// Leave the gaps instead of closing them.
+        #[arg(long)]
+        no_ripple: bool,
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,

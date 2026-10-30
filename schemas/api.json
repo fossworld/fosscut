@@ -2001,6 +2001,109 @@
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
             "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Changes a clip's placement, opacity or volume.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "set": {
+            "additionalProperties": true,
+            "description": "Property paths with their new values, for example\n`{\"transform.position\": [0.2, 0], \"transform.scale\": 1.8}`. Paths:\n`transform.position`, `transform.scale`, `transform.rotation`, `opacity`, `volume`.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "clip",
+          "set"
+        ],
+        "title": "ClipSet",
+        "type": "object"
+      },
+      "name": "clip.set",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's properties after `clip.set`.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "opacity": {
+            "description": "Opacity, 0 to 1.",
+            "format": "double",
+            "type": "number"
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Its track."
+          },
+          "transform": {
+            "$ref": "#/$defs/Transform",
+            "description": "Placement on the canvas."
+          },
+          "volume": {
+            "description": "Linear audio gain.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "transform",
+          "opacity",
+          "volume"
+        ],
+        "title": "ClipProperties",
+        "type": "object"
+      },
+      "summary": "Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
           },
           "TimeInput": {
             "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
@@ -2895,6 +2998,442 @@
         "type": "object"
       },
       "summary": "Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Fit": {
+            "description": "How pictures meet a canvas of another shape.",
+            "oneOf": [
+              {
+                "const": "keep",
+                "description": "Keep each clip's placement: pictures stay fitted inside the canvas, with bars.",
+                "type": "string"
+              },
+              {
+                "const": "fill",
+                "description": "Scale video and image clips to cover the canvas, cropping what falls outside.",
+                "type": "string"
+              }
+            ]
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Copies a timeline, optionally onto a canvas of another size.",
+        "properties": {
+          "fit": {
+            "$ref": "#/$defs/Fit",
+            "default": "keep",
+            "description": "`keep` (default) or `fill`: scale video and image clips to cover the new canvas."
+          },
+          "height": {
+            "default": null,
+            "description": "Canvas height of the copy in pixels; the original's when omitted.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "default": null,
+            "description": "Name of the copy; the original's name with the canvas size when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primary": {
+            "default": false,
+            "description": "Make the copy the primary timeline, which commands, frames and exports use when\nthey are given no timeline.",
+            "type": "boolean"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The timeline to copy; the primary timeline when omitted."
+          },
+          "width": {
+            "default": null,
+            "description": "Canvas width of the copy in pixels; the original's when omitted.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "TimelineDuplicate",
+        "type": "object"
+      },
+      "name": "timeline.duplicate",
+      "output_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Rate": {
+            "description": "Exact frame rate as an integer or a fraction string, for example \"30\" or \"30000/1001\" (29.97). Decimals are not accepted.",
+            "oneOf": [
+              {
+                "pattern": "^[1-9][0-9]*(/[1-9][0-9]*)?$",
+                "type": "string"
+              },
+              {
+                "minimum": 1,
+                "type": "integer"
+              }
+            ]
+          },
+          "TimelineFormat": {
+            "description": "Output format of a timeline.",
+            "properties": {
+              "height": {
+                "description": "Canvas height in pixels.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "rate": {
+                "$ref": "#/$defs/Rate",
+                "description": "Frame rate; edits snap to its frames."
+              },
+              "sample_rate": {
+                "description": "Audio sample rate in Hz.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "width": {
+                "description": "Canvas width in pixels.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "width",
+              "height",
+              "rate"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `timeline.duplicate`.",
+        "properties": {
+          "clips": {
+            "description": "Clips copied.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "format": {
+            "$ref": "#/$defs/TimelineFormat",
+            "description": "Its canvas, rate and sample rate."
+          },
+          "name": {
+            "description": "Its name.",
+            "type": "string"
+          },
+          "primary": {
+            "description": "Whether it is now the primary timeline.",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline it was copied from."
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The copy."
+          }
+        },
+        "required": [
+          "timeline",
+          "name",
+          "source",
+          "format",
+          "clips",
+          "primary"
+        ],
+        "title": "TimelineDuplicated",
+        "type": "object"
+      },
+      "summary": "Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "RangeInput": {
+            "additionalProperties": false,
+            "description": "A time range on the timeline.",
+            "properties": {
+              "end": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "Where it ends (exclusive); snapped to the nearest frame."
+              },
+              "start": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "Where it starts; snapped to the nearest frame."
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes time ranges from a timeline.",
+        "properties": {
+          "ranges": {
+            "description": "Time ranges to remove, for example\n`[{\"start\": {\"seconds\": \"3.4\"}, \"end\": {\"seconds\": \"4.1\"}}]`. Overlapping and\ntouching ranges are merged.",
+            "items": {
+              "$ref": "#/$defs/RangeInput"
+            },
+            "type": "array"
+          },
+          "ripple": {
+            "default": true,
+            "description": "Move everything after each range left to close the gap (default true).",
+            "type": "boolean"
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline; the primary timeline when omitted."
+          },
+          "tracks": {
+            "default": null,
+            "description": "Tracks to cut; every track when omitted. Tracks left out keep their timing and can\nfall out of sync with the others.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ranges"
+        ],
+        "title": "TimelineRemoveRanges",
+        "type": "object"
+      },
+      "name": "timeline.remove_ranges",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "RangeReport": {
+            "description": "A range as reported.",
+            "properties": {
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "End (exclusive)."
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Start."
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `timeline.remove_ranges`.",
+        "properties": {
+          "clips_added": {
+            "description": "New clips: the later parts of clips a range cut through.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "clips_changed": {
+            "description": "Clips shortened or moved.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "clips_removed": {
+            "description": "Clips removed entirely.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "duration_after": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Its length after."
+          },
+          "duration_before": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "The timeline's length before."
+          },
+          "ranges": {
+            "description": "The ranges removed, merged and on frames.",
+            "items": {
+              "$ref": "#/$defs/RangeReport"
+            },
+            "type": "array"
+          },
+          "removed": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Their total length."
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "ranges",
+          "removed",
+          "duration_before",
+          "duration_after"
+        ],
+        "title": "RangesRemoved",
+        "type": "object"
+      },
+      "summary": "Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive."
     },
     {
       "input_schema": {

@@ -32,9 +32,11 @@ mod session;
 pub use changes::ChangeSummary;
 pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry};
 pub use commands::{
-    CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
-    ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult, MediaAdd,
-    MediaAdded, Paging, TextAdd, TrackAdd, TrackAdded, WordInput,
+    CLIP_PROPERTIES, CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle,
+    CaptionsStyled, ClipAdd, ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved,
+    ClipSet, ClipSplit, ClipSplitResult, Fit, MediaAdd, MediaAdded, Paging, RangeInput,
+    RangeReport, RangesRemoved, TextAdd, TimelineDuplicate, TimelineDuplicated,
+    TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
 };
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};

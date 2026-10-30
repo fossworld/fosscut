@@ -408,7 +408,9 @@ async fn skills_are_prompts_and_resources_for_any_client() {
 
     let prompts = client.list_all_prompts().await.unwrap();
     let names: Vec<&str> = prompts.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, ["fosscut-basics", "viral-captions"]);
+    let built_in: Vec<&str> = fosscut_mcp::skills::SKILLS.iter().map(|s| s.name).collect();
+    assert_eq!(names, built_in);
+    assert!(built_in.contains(&"fosscut-basics") && built_in.contains(&"viral-captions"));
     assert_eq!(prompts[0].description.as_deref(), Some(skill.description()));
     let prompt = client
         .get_prompt(GetPromptRequestParams::new("fosscut-basics"))
@@ -435,9 +437,12 @@ async fn skills_are_prompts_and_resources_for_any_client() {
     );
 
     let resources = client.list_all_resources().await.unwrap();
-    assert_eq!(resources.len(), 2);
-    assert_eq!(resources[0].uri, "fosscut://skills/fosscut-basics");
-    assert_eq!(resources[1].uri, "fosscut://skills/viral-captions");
+    let uris: Vec<String> = resources.iter().map(|r| r.uri.to_string()).collect();
+    let expected: Vec<String> = built_in
+        .iter()
+        .map(|name| format!("fosscut://skills/{name}"))
+        .collect();
+    assert_eq!(uris, expected);
     assert_eq!(resources[0].mime_type.as_deref(), Some("text/markdown"));
     let read = client
         .read_resource(ReadResourceRequestParams::new(

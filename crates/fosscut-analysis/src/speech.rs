@@ -168,6 +168,9 @@ pub fn timed_tokens(aligned: &[Aligned]) -> Vec<Token> {
         .collect()
 }
 
+/// Windows at or below this level, in dBFS, are digital silence rather than a recording.
+const DIGITAL_SILENCE: f32 = -100.0;
+
 /// Levels in dBFS of consecutive 10 ms windows of 16 kHz audio.
 pub fn levels(samples: &[f32]) -> Vec<f32> {
     samples
@@ -182,10 +185,16 @@ pub fn levels(samples: &[f32]) -> Vec<f32> {
 /// Moves each word's start later and end earlier past quiet 10 ms windows, keeping at least
 /// 30 ms of every word, and keeps words inside the audio. A window is quiet below both 10 dB
 /// over the background (the 10th percentile level) and 30 dB under the loud parts (the 95th
-/// percentile). Alignment smears words over the pauses around them; trimming makes pauses
-/// between words match the silence or room tone.
+/// percentile), both measured without digital silence. Alignment smears words over the pauses
+/// around them; trimming makes pauses between words match the silence or room tone.
 pub fn trim_quiet(words: &mut [Word], levels: &[f32]) {
-    let mut sorted = levels.to_vec();
+    // Digital silence (inserted by an earlier edit) says nothing about the room's
+    // background, so it is left out of both levels; it still counts as quiet below.
+    let mut sorted: Vec<f32> = levels
+        .iter()
+        .copied()
+        .filter(|&level| level > DIGITAL_SILENCE)
+        .collect();
     sorted.sort_by(f32::total_cmp);
     let (Some(&background), Some(&loud)) = (
         sorted.get(sorted.len() / 10),
@@ -691,6 +700,14 @@ mod tests {
         let mut words = vec![word(30, 100)];
         trim_quiet(&mut words, &levels);
         assert_eq!(spans(&words), [("0.5", "0.8")]);
+
+        // Digital silence inserted into a recording does not lower the threshold below
+        // the room's background: room tone at a word's edge still counts as quiet.
+        let mut edited = levels_with(-45.0, -20.0, &[(50, 80), (150, 180)]);
+        edited[90..120].fill(-120.0);
+        let mut words = vec![word(50, 140), word(140, 180)];
+        trim_quiet(&mut words, &edited);
+        assert_eq!(spans(&words), [("0.5", "0.8"), ("1.5", "1.8")]);
 
         // Audio too quiet to tell speech from silence keeps the alignment.
         let levels = vec![-90.0; 200];

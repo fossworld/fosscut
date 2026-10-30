@@ -51,6 +51,10 @@ The forces:
    Both are reported and never removed; cleanup is the agent's decision (ADR-0019 item 6). Unless `keep_fillers` is false, recognition starts from a short prompt written with disfluencies, so the model keeps writing them.
 6. **Jobs.** Long media runs as an analysis job (ADR-0019 item 4), with progress from whisper.cpp's callback and cancellation through its abort callback. whisper.cpp's own logging is switched off; failures surface as `fosscut.analysis.speech_failed`.
 
+## Implementation notes
+
+- **Transcript version 2** (milestone 6): the background and loud levels that trimming uses leave out digital silence. Silence inserted by an earlier edit had pushed the threshold below a recording's room tone, so words stretched over long pauses. The version bump recomputes cached transcripts.
+
 ## Consequences
 
 - Captions and cleanup get word times and filler candidates on the user's machine, offline once a model is installed and free of charge.
