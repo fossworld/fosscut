@@ -12,8 +12,8 @@ pub const KINDS: [&str; 10] = [
     "dissolve", "dip", "wipe", "slide", "push", "zoom", "blur", "iris", "clock", "spin",
 ];
 
-/// The uniform of the transition pass. p[0]: case, progress, softness, direction (0 left,
-/// 1 right, 2 up, 3 down); p[1]: the dip color, sRGB-encoded.
+/// The uniform of the transition pass. `p[0]`: case, progress, softness, direction (0 left,
+/// 1 right, 2 up, 3 down); `p[1]`: the dip color, sRGB-encoded.
 pub fn pack(transition: &TransitionLayer) -> [[f32; 4]; SLOTS] {
     let mut p = [[0.0f32; 4]; SLOTS];
     let kind = KINDS

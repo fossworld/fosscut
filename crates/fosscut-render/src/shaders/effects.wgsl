@@ -361,8 +361,24 @@ fn sample_at(uv: vec2f) -> vec4f {
     return textureSampleLevel(input_texture, linear_sampler, uv, 0.0);
 }
 
-fn noise1(x: f32) -> f32 {
-    return fract(sin(x * 12.9898) * 43758.547);
+// An integer hash (PCG3D, Jarzynski and Olano, "Hash Functions for GPU Rendering", 2020).
+// Integer arithmetic gives the same bits on every GPU, which sine-based hashes do not.
+fn pcg3d(input: vec3u) -> vec3u {
+    var v = input * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> vec3u(16u);
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
+}
+
+// A value from 0 to 1 for three whole numbers.
+fn noise3(a: f32, b: f32, c: f32) -> f32 {
+    let v = vec3u(bitcast<u32>(i32(floor(a))), bitcast<u32>(i32(floor(b))), bitcast<u32>(i32(floor(c))));
+    return f32(pcg3d(v).x >> 8u) / 16777216.0;
 }
 
 // Bands jump sideways and colors split; p[0]: amount, band height, frame seed.
@@ -373,12 +389,12 @@ fn fs_glitch(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let uv = position.xy / size;
     let step = floor(p.z / 3.0);
     let band = floor(uv.y / max(p.y, 0.001));
-    let chance = noise1(band * 7.31 + step * 1.17);
+    let chance = noise3(band, step, 1.0);
     var shifted = uv;
     if chance > 1.0 - p.x * 0.4 {
-        shifted.x = shifted.x + (noise1(band + step * 3.7) - 0.5) * p.x * 0.2;
+        shifted.x = shifted.x + (noise3(band, step, 2.0) - 0.5) * p.x * 0.2;
     }
-    let split = p.x * 0.012 * (noise1(step * 5.3) - 0.5);
+    let split = p.x * 0.012 * (noise3(0.0, step, 3.0) - 0.5);
     let r = sample_at(shifted + vec2f(split, 0.0));
     let g = sample_at(shifted);
     let b = sample_at(shifted - vec2f(split, 0.0));
@@ -413,14 +429,14 @@ fn fs_vhs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let size = input_size();
     let uv = position.xy / size;
     let line = floor(position.y);
-    let wobble = (noise1(line * 0.37 + p.y) - 0.5) * 0.004 * p.x;
+    let wobble = (noise3(line, p.y, 4.0) - 0.5) * 0.004 * p.x;
     let bleed = 0.006 * p.x;
     let base = sample_at(uv + vec2f(wobble, 0.0));
     let r = sample_at(uv + vec2f(wobble + bleed, 0.0)).r;
     let b = sample_at(uv + vec2f(wobble - bleed, 0.0)).b;
     var v = to_display(unpremultiply(vec4f(r, base.g, b, base.a)));
     let scan = 1.0 - 0.15 * p.x * (0.5 + 0.5 * sin(position.y * 3.14159));
-    let grain = (noise1(position.x * 1.3 + line * 7.1 + p.y) - 0.5) * 0.1 * p.x;
+    let grain = (noise3(position.x, line, p.y + 5.0) - 0.5) * 0.1 * p.x;
     v = v * scan + vec3f(grain);
     return finish(from_display(v), base.a);
 }
@@ -467,8 +483,8 @@ fn fs_shake(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let t = p.z * p.y;
     let k = floor(t);
     let f = smoothstep(0.0, 1.0, fract(t));
-    let x = mix(noise1(k), noise1(k + 1.0), f) - 0.5;
-    let y = mix(noise1(k + 51.0), noise1(k + 52.0), f) - 0.5;
+    let x = mix(noise3(k, 0.0, 6.0), noise3(k + 1.0, 0.0, 6.0), f) - 0.5;
+    let y = mix(noise3(k, 0.0, 7.0), noise3(k + 1.0, 0.0, 7.0), f) - 0.5;
     let uv = position.xy / input_size() + vec2f(x, y) * 2.0 * p.x;
     return sample_at(uv);
 }
