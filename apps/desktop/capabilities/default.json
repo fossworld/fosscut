@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window: core events and the app's own commands, nothing else",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-app-info",
+    "allow-recent-projects",
+    "allow-project-current",
+    "allow-project-open",
+    "allow-project-pick",
+    "allow-project-new",
+    "allow-project-close",
+    "allow-query",
+    "allow-execute",
+    "allow-clients",
+    "allow-preview-viewport",
+    "allow-preview-show",
+    "allow-preview-play",
+    "allow-preview-pause"
+  ]
+}

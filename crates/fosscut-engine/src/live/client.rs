@@ -81,10 +81,15 @@ impl Connection {
             },
             notifications: VecDeque::new(),
         };
+        // The host checks the bundle from its own working directory, so the path goes
+        // over the wire absolute.
+        let bundle = std::fs::canonicalize(bundle)
+            .or_else(|_| std::path::absolute(bundle))
+            .unwrap_or_else(|_| bundle.to_path_buf());
         let hello = Hello {
             protocol: PROTOCOL,
             client: client.to_string(),
-            bundle: bundle.to_path_buf(),
+            bundle,
             nonce: auth::to_hex(&client_nonce),
         };
         let welcome: Welcome = connection

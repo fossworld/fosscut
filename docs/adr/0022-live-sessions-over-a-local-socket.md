@@ -87,6 +87,7 @@ The forces:
   - Windows pipe handles have no read timeout; a client there waits until the host answers or the pipe breaks.
   - Closing wakes the host's accept loop with a connection that stays open until the loop ends. Windows discards a pipe client that leaves before the host waits for it, and the first CI run on Windows hung closing a host that had just started.
 - **Change kinds** are the operation log's: `commit`, `undo` and `redo`.
+- **Paths cross the wire absolute.** The host checks `hello`'s bundle from its own working directory, so a relative `-p Demo.fosscut` named another folder there and every edit came back `fosscut.project.busy`. The first run of the desktop app showed it; the CLI tests now start the host from another folder than their clients.
 
 ## Validation
 

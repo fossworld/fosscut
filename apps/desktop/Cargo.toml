@@ -1,0 +1,40 @@
+[package]
+name = "fosscut-desktop"
+description = "FossCut's desktop app: a Tauri shell that hosts projects live and previews them on the GPU (ADR-0010, ADR-0022)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "fosscut_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fosscut-desktop"
+path = "src/main.rs"
+
+# No feature here may enable `tauri/custom-protocol`: CI builds with --all-features, and
+# that feature embeds the built UI, which only release builds (`cargo tauri build`) have.
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+fosscut-core.workspace = true
+fosscut-engine.workspace = true
+fosscut-model.workspace = true
+fosscut-render.workspace = true
+fosscut-time.workspace = true
+pollster.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+wgpu.workspace = true
+
+[lints]
+workspace = true
