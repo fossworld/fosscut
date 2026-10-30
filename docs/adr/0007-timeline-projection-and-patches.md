@@ -31,6 +31,13 @@ The full project document is too verbose for an agent's context on long timeline
 4. **Selectors** are a small, documented JSON language: by id, kind, track, time range, text match, marker, or effect type, combinable with `and`. No embedded scripting.
 5. **Patches compile to ordinary commands.** There is one execution path; the patch layer adds no capabilities that commands lack.
 
+## Implementation notes
+
+- **The commands patches compile to** (milestone 6), usable on their own through `edit` until the patch layer exists:
+  - `clip.set` sets a clip's `transform.position`, `transform.scale`, `transform.rotation`, `opacity` and `volume` by property path (the `set` op);
+  - `timeline.remove_ranges` cuts time ranges from every track, or chosen tracks, with ripple (the range `remove` op with `ripple: true`);
+  - `timeline.duplicate` copies a timeline onto another canvas, optionally scaling pictures to fill it.
+
 ## Consequences
 
 - Agents can choose precise commands or declarative restructuring, and both get the same validation, guards, undo and logging.

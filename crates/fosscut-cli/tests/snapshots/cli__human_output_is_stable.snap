@@ -106,11 +106,14 @@ commands:
   clip.add       Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   clip.move      Move a clip to a new position and/or a compatible track. Never overwrites: fails with fosscut.clip.overlap.
   clip.remove    Remove a clip. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
+  clip.set       Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source.
   history.redo   Redo the most recently undone transaction. Must be the only command in its request.
   history.undo   Undo the most recent committed transaction. Must be the only command in its request.
   media.add      Add a probed media file to the media table (front ends call this after probing; the CLI's `media import` does both).
   text.add       Add a text clip. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
+  timeline.duplicate Copy a timeline, for example onto a 1080x1920 canvas for a vertical version; fit fill scales the pictures to cover the new canvas. The original stays as it is.
+  timeline.remove_ranges Cut time ranges (pauses, fillers, retakes) out of every track at once and close the gaps, keeping picture, sound and captions in sync. Cutting the primary video track needs allow_destructive.
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
 queries:
   capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.

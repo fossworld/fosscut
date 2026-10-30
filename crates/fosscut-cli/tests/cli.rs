@@ -880,7 +880,21 @@ fn skills_install_into_agent_folders() {
     .unwrap();
     let listed = ok(&dir, &["skills", "list"]);
     assert_eq!(listed["skills"][0]["name"], json!("fosscut-basics"));
-    assert_eq!(listed["skills"][1]["name"], json!("viral-captions"));
+    let names: Vec<&str> = listed["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "fosscut-basics",
+            "talking-head-cleanup",
+            "vertical-reframe",
+            "viral-captions"
+        ]
+    );
     assert!(listed["skills"][0]["description"].as_str().unwrap().len() > 40);
     let nowhere = fails(&dir, &["skills", "install"]);
     assert_eq!(nowhere["code"], json!("fosscut.request.invalid_arguments"));
@@ -946,13 +960,16 @@ fn skills_install_into_agent_folders() {
     // Any folder, and the human output.
     let human = fosscut(&dir, &["skills", "install", "--dir", "custom"]);
     assert!(human.status.success());
-    let expected = ["fosscut-basics", "viral-captions"]
+    let expected = fosscut_mcp::skills::SKILLS
+        .iter()
         .map(|skill| {
             format!(
-                "installed {skill} in {}",
-                Path::new("custom").join(skill).display()
+                "installed {} in {}",
+                skill.name,
+                Path::new("custom").join(skill.name).display()
             )
         })
+        .collect::<Vec<_>>()
         .join("\n");
     assert_eq!(String::from_utf8_lossy(&human.stdout).trim(), expected);
     assert!(dir.join("custom/fosscut-basics/SKILL.md").is_file());
@@ -1599,5 +1616,273 @@ fn captions_generated_from_a_transcript() {
         assert!((at - want_at).abs() < 1e-5, "{word}: {at} vs {want_at}");
     }
     assert_eq!(captions["caption_style"]["weight"], json!("black"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cleanup_and_reframe_from_the_command_line() {
+    if !has_ffmpeg() {
+        assert!(
+            !ffmpeg_required(),
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+        );
+        return;
+    }
+    let dir = workspace("cleanup-reframe");
+    test_pattern(&dir);
+    ok(&dir, &["project", "new", "Talk.fosscut"]);
+    ok(&dir, &["media", "import", "test-pattern.mp4"]);
+    ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+
+    // Cut two ranges; the primary video needs permission.
+    let guarded = fails(&dir, &["timeline", "remove-ranges", "1s..2s", "4s..4.5s"]);
+    assert_eq!(guarded["code"], json!("fosscut.guard.destructive"));
+    let cut = ok(
+        &dir,
+        &[
+            "timeline",
+            "remove-ranges",
+            "1s..2s",
+            "00:00:04:00..00:00:04:15",
+            "--allow-destructive",
+        ],
+    );
+    let result = &cut["results"][0];
+    assert_eq!(result["removed"]["seconds"], json!("1.5"));
+    assert_eq!(result["duration_after"]["seconds"], json!("6.5"));
+    let gaps = ok(
+        &dir,
+        &[
+            "timeline",
+            "remove-ranges",
+            "5s..6s",
+            "--no-ripple",
+            "--allow-destructive",
+            "--dry-run",
+        ],
+    );
+    assert_eq!(
+        gaps["results"][0]["duration_after"]["seconds"],
+        json!("6.5")
+    );
+    let bad = fails(&dir, &["timeline", "remove-ranges", "1s-2s"]);
+    assert_eq!(bad["code"], json!("fosscut.request.invalid_arguments"));
+    let unreadable = fails(&dir, &["timeline", "remove-ranges", "soon..later"]);
+    assert_eq!(
+        unreadable["code"],
+        json!("fosscut.request.invalid_arguments")
+    );
+
+    // A vertical copy that fills the canvas, then one shot moved to show its left side.
+    let copy = ok(
+        &dir,
+        &[
+            "timeline",
+            "duplicate",
+            "--width",
+            "1080",
+            "--height",
+            "1920",
+            "--fill",
+            "--name",
+            "Vertical",
+        ],
+    );
+    let vertical = copy["results"][0]["timeline"].as_str().unwrap().to_string();
+    let view = ok(
+        &dir,
+        &[
+            "timeline",
+            "read",
+            "--timeline",
+            &vertical,
+            "--detail",
+            "full",
+        ],
+    );
+    let shot = view["tracks"][0]["clips"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let moved = ok(
+        &dir,
+        &[
+            "clip",
+            "set",
+            "--clip",
+            &shot,
+            "--position",
+            "0.4,0",
+            "--scale",
+            "3.2",
+            "--opacity",
+            "1",
+        ],
+    );
+    assert_eq!(
+        moved["results"][0]["transform"]["position"],
+        json!([0.4, 0.0])
+    );
+    let human = fosscut(
+        &dir,
+        &["clip", "set", "--clip", &shot, "--position", "-0.1,0.05"],
+    );
+    assert!(
+        human.status.success(),
+        "{}",
+        String::from_utf8_lossy(&human.stderr)
+    );
+    let tilted = ok(&dir, &["clip", "set", "--clip", &shot, "--rotation", "-2"]);
+    assert_eq!(
+        tilted["results"][0]["transform"]["position"],
+        json!([-0.1, 0.05])
+    );
+    let single = fails(&dir, &["clip", "set", "--clip", &shot, "--position", "0.3"]);
+    assert_eq!(single["code"], json!("fosscut.request.invalid_arguments"));
+
+    if can_render() {
+        ok(
+            &dir,
+            &[
+                "frame",
+                "0.5s",
+                "--timeline",
+                &vertical,
+                "--out",
+                "vertical.png",
+                "--width",
+                "270",
+            ],
+        );
+        assert_eq!(png_size(&dir.join("vertical.png")), (270, 480));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Columns of a PNG frame grab where most of a row band is white.
+fn white_columns(path: &Path) -> Vec<usize> {
+    let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+    let mut reader = decoder.read_info().unwrap();
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut pixels).unwrap();
+    let (width, height, samples) = (
+        info.width as usize,
+        info.height as usize,
+        info.color_type.samples(),
+    );
+    let middle = height / 2;
+    (0..width)
+        .filter(|&x| {
+            let at = (middle * width + x) * samples;
+            pixels[at..at + 3].iter().all(|&c| c > 220)
+        })
+        .collect()
+}
+
+#[test]
+fn a_reframed_subject_stays_in_the_vertical_frame() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("reframe-subject");
+    // Two shots with a white square at the left, then at the right, cut at frame 45.
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("color=c=0x203050:s=640x360:r=30:d=1.5,drawbox=x=60:y=140:w=80:h=80:color=white:t=fill[a];color=c=0x503040:s=640x360:r=30:d=1.5,drawbox=x=500:y=140:w=80:h=80:color=white:t=fill[b];[a][b]concat=n=2:v=1:a=0")
+        .args(["-c:v", "mpeg4", "-q:v", "2", "shots.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Wide.fosscut",
+            "--width",
+            "640",
+            "--height",
+            "360",
+        ],
+    );
+    ok(&dir, &["media", "import", "shots.mp4"]);
+    ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let copy = ok(
+        &dir,
+        &[
+            "timeline",
+            "duplicate",
+            "--width",
+            "360",
+            "--height",
+            "640",
+            "--fill",
+        ],
+    );
+    let vertical = copy["results"][0]["timeline"].as_str().unwrap().to_string();
+    let grab = |time: &str, out: &str| {
+        ok(
+            &dir,
+            &[
+                "frame",
+                time,
+                "--timeline",
+                &vertical,
+                "--out",
+                out,
+                "--width",
+                "180",
+            ],
+        );
+        white_columns(&dir.join(out))
+    };
+    // Filled but not yet framed, the centre of the 3.16x picture shows neither square.
+    assert!(grab("0.7s", "before.png").is_empty());
+
+    // The skill's formula: x = -(u - 0.5) * s within (s - 1) / 2, for u = 0.156 and 0.844.
+    let view = ok(
+        &dir,
+        &[
+            "timeline",
+            "read",
+            "--timeline",
+            &vertical,
+            "--detail",
+            "full",
+        ],
+    );
+    let clip = view["tracks"][0]["clips"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let scale = view["tracks"][0]["clips"][0]["transform"]["scale"]
+        .as_f64()
+        .unwrap();
+    let split = ok(&dir, &["clip", "split", "--clip", &clip, "--at", "1.5s"]);
+    let second = split["results"][0]["right"]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let frame = |u: f64| {
+        let x: f64 = -(u - 0.5) * scale;
+        x.clamp(-(scale - 1.0) / 2.0, (scale - 1.0) / 2.0)
+    };
+    for (shot, u) in [(&clip, 100.0 / 640.0), (&second, 540.0 / 640.0)] {
+        let position = format!("{},0", frame(u));
+        ok(
+            &dir,
+            &["clip", "set", "--clip", shot, "--position", &position],
+        );
+    }
+    for (time, out) in [("0.7s", "first.png"), ("2.2s", "second.png")] {
+        let columns = grab(time, out);
+        assert!(!columns.is_empty(), "{out}: the square is in frame");
+        let centre = columns.iter().sum::<usize>() / columns.len();
+        assert!(
+            (30..150).contains(&centre),
+            "{out}: square centred at column {centre} of 180"
+        );
+    }
     std::fs::remove_dir_all(&dir).unwrap();
 }

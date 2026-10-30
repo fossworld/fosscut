@@ -4,6 +4,7 @@ mod caption;
 mod clip;
 mod media;
 mod text;
+mod timeline;
 mod track;
 mod util;
 
@@ -16,6 +17,10 @@ pub use clip::{
 };
 pub use media::{MediaAdd, MediaAdded};
 pub use text::TextAdd;
+pub use timeline::{
+    CLIP_PROPERTIES, ClipProperties, ClipSet, Fit, RangeInput, RangeReport, RangesRemoved,
+    TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges,
+};
 pub use track::{TrackAdd, TrackAdded};
 
 use crate::Registry;
@@ -27,8 +32,11 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ClipSplit>();
     registry.register::<ClipMove>();
     registry.register::<ClipRemove>();
+    registry.register::<ClipSet>();
     registry.register::<TextAdd>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();
     registry.register::<CaptionsStyle>();
+    registry.register::<TimelineDuplicate>();
+    registry.register::<TimelineRemoveRanges>();
 }

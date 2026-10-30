@@ -24,6 +24,8 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | What is said, with a time for every word, fillers and pauses | `media_analyze` with `analyzers: ["transcript"]` | `fosscut media analyze <asset> transcript` |
 | Speech models (installing downloads; ask the user first) | `models` | `fosscut models list`, `fosscut models install <name> --yes` |
 | Word-timed captions, SRT files (the `viral-captions` skill has the flow) | `captions` | `fosscut captions generate`, `fosscut captions import <file.srt>` |
+| Cut pauses or retakes from every track at once (`talking-head-cleanup` skill) | `edit` with `timeline.remove_ranges` | `fosscut timeline remove-ranges 3.4s..4.1s` |
+| A vertical copy, framed shot by shot (`vertical-reframe` skill) | `edit` with `timeline.duplicate` and `clip.set` | `fosscut timeline duplicate --width 1080 --height 1920 --fill`, `fosscut clip set` |
 | Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 

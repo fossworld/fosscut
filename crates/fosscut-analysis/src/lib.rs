@@ -127,7 +127,11 @@ impl Analyzer {
     /// Bumped whenever results for the same input and options can change; part of the
     /// cache key.
     pub fn version(self) -> u32 {
-        1
+        match self {
+            // 2: background and loud levels leave digital silence out (ADR-0020).
+            Analyzer::Transcript => 2,
+            _ => 1,
+        }
     }
 
     /// What it measures, for `capabilities`.

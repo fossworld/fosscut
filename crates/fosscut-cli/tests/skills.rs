@@ -271,6 +271,8 @@ async fn every_skill_is_well_formed() {
                         "wait_seconds",
                         "clip_count",
                         "source_track",
+                        "source_in",
+                        "duration_after",
                     ]
                     .contains(&tool);
                 assert!(
