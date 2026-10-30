@@ -191,6 +191,7 @@ impl Command for TimelineAdd {
             });
         }
         ctx.project.manifest.timelines.push(TimelineEntry {
+            role: Default::default(),
             id: id.clone(),
             name,
         });
@@ -286,6 +287,22 @@ impl Command for TimelineRemove {
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<TimelineRemoved, ApiError> {
         let id = timeline_id(ctx.project, Some(&self.timeline))?;
+        let shown_by: Vec<Id> = ctx
+            .project
+            .timelines
+            .values()
+            .flat_map(|t| t.tracks.iter().flat_map(|tr| &tr.clips))
+            .filter(|c| c.content.nested() == Some(&id))
+            .map(|c| c.id.clone())
+            .collect();
+        if !shown_by.is_empty() {
+            return Err(ApiError::new(
+                codes::TIMELINE_IN_USE,
+                format!("timeline.remove: compound clips show {id}"),
+            )
+            .with_details(json!({ "clips": shown_by }))
+            .with_hint("Remove or decompose those compound clips first."));
+        }
         if ctx.project.manifest.timelines.len() < 2 {
             return Err(invalid(
                 "timeline.remove: a project keeps at least one timeline",

@@ -57,6 +57,7 @@ pub use commands::{
     TextAdd, TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded,
     WordInput,
 };
+pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};

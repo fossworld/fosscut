@@ -29,6 +29,7 @@ const CLIP_COLORS: Record<string, string> = {
   audio: "#3f8a5a",
   text: "#8a5aa5",
   caption: "#a5793a",
+  timeline: "#5a6fa5",
 };
 
 const KIND_NAMES: Record<string, string> = {
@@ -95,7 +96,7 @@ function bowTie(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, y: nu
 }
 
 function label(clip: ClipView): string {
-  const name = clip.text ?? clip.asset_name ?? clip.kind;
+  const name = clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.kind;
   const speed = speedLabel(clip);
   const shown = speed ? `${name} (${speed})` : name;
   return clip.enabled === false ? `${shown} (off)` : shown;

@@ -12,6 +12,7 @@
 
 pub mod audio;
 pub mod commands;
+pub mod library;
 pub mod preview;
 pub mod surface;
 pub mod workspace;
@@ -20,6 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
+use crate::library::Library;
 use crate::preview::{Job, Preview, Scene};
 use crate::surface::Surface;
 use crate::workspace::Workspace;
@@ -30,6 +32,8 @@ pub struct AppState {
     pub workspace: Arc<Workspace>,
     /// The preview thread.
     pub preview: Preview,
+    /// Recent projects' summaries and the trash.
+    pub library: Arc<Library>,
     /// The thread that forwards the open project's changes, while one is open.
     follower: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
@@ -112,9 +116,18 @@ pub fn run() {
                     resized.send(Job::Resized);
                 }
             });
+            let data = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
+            let cache = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
             app.manage(AppState {
                 workspace: Arc::clone(&workspace),
                 preview,
+                library: Arc::new(Library::new(&data, &cache)),
                 follower: Mutex::new(None),
             });
             if let Some(path) = std::env::args_os().nth(1) {
@@ -146,6 +159,11 @@ pub fn run() {
             commands::window_fullscreen,
             commands::media_reveal,
             commands::media_relink,
+            commands::project_summaries,
+            commands::project_trash,
+            commands::trash_list,
+            commands::trash_restore,
+            commands::trash_delete,
         ])
         .build(tauri::generate_context!());
     match app {

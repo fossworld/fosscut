@@ -61,6 +61,7 @@ function run(editor: Editor, action: Action): void {
     "zoom-fit": () => editor.zoom("fit"),
     fullscreen: () => editor.toggleFullscreen(),
     rulers: () => editor.toggleRulers(),
+    compound: () => editor.compound(),
   };
   void actions[action]();
 }

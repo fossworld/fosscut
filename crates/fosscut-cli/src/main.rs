@@ -247,6 +247,7 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         ),
         Command::Clip(ClipCommand::Add {
             asset,
+            compound,
             track,
             start,
             source_in,
@@ -256,7 +257,8 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             cli,
             "clip.add",
             object(vec![
-                ("asset", Some(json!(asset))),
+                ("asset", some(asset)),
+                ("compound", some(compound)),
                 ("track", some(track)),
                 ("start", some(start)),
                 ("source_in", some(source_in)),
@@ -380,6 +382,14 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             "clip.remove",
             json!({ "clip": clip, "ripple": ripple, "linked": !unlinked }),
         ),
+        Command::Clip(ClipCommand::Compound { clips, name }) => write(
+            cli,
+            "clip.compound",
+            object(vec![("clips", Some(json!(clips))), ("name", some(name))]),
+        ),
+        Command::Clip(ClipCommand::Decompose { clip }) => {
+            write(cli, "clip.decompose", json!({ "clip": clip }))
+        }
         Command::Clip(ClipCommand::Group { clips }) => {
             write(cli, "clip.group", json!({ "clips": clips }))
         }

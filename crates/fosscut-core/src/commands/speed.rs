@@ -148,7 +148,7 @@ impl ClipSpeed {
 
 impl Command for ClipSpeed {
     const NAME: &'static str = "clip.speed";
-    const SUMMARY: &'static str = "Change a video or audio clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.";
+    const SUMMARY: &'static str = "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.";
     type Output = SpeedChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<SpeedChanged, ApiError> {
@@ -160,9 +160,13 @@ impl Command for ClipSpeed {
             ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
                 ctx.project.media.get(asset).and_then(|a| a.info.duration)
             }
+            // A compound clip plays its timeline at the speed (ADR-0025).
+            ClipContent::Timeline { timeline, .. } => {
+                ctx.project.timelines.get(timeline).map(|t| t.duration())
+            }
             _ => {
                 return Err(invalid(format!(
-                    "clip.speed: {} is not a video or audio clip",
+                    "clip.speed: {} is not a video, audio or compound clip",
                     original.id
                 )));
             }
@@ -282,9 +286,12 @@ impl Command for ClipFreeze {
         let original = ctx.project.timelines[&location.timeline].tracks[location.track].clips
             [location.clip]
             .clone();
-        if !matches!(original.content, ClipContent::Video { .. }) {
+        if !matches!(
+            original.content,
+            ClipContent::Video { .. } | ClipContent::Timeline { .. }
+        ) {
             return Err(invalid(format!(
-                "clip.freeze: {} is not a video clip",
+                "clip.freeze: {} is not a video or compound clip",
                 original.id
             )));
         }
@@ -331,6 +338,10 @@ impl Command for ClipFreeze {
         freeze.content = match &original.content {
             ClipContent::Video { asset, .. } => ClipContent::Video {
                 asset: asset.clone(),
+                source_in: source,
+            },
+            ClipContent::Timeline { timeline, .. } => ClipContent::Timeline {
+                timeline: timeline.clone(),
                 source_in: source,
             },
             other => other.clone(),

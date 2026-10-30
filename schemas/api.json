@@ -2278,8 +2278,28 @@
         "description": "Places a section of a media asset on a track.",
         "properties": {
           "asset": {
-            "$ref": "#/$defs/Id",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
             "description": "The asset to place."
+          },
+          "compound": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "A compound timeline to place instead of an asset (ADR-0025)."
           },
           "duration": {
             "anyOf": [
@@ -2342,9 +2362,6 @@
             "description": "Target track; the first track of the matching kind (created if needed) when omitted."
           }
         },
-        "required": [
-          "asset"
-        ],
         "title": "ClipAdd",
         "type": "object"
       },
@@ -2431,7 +2448,7 @@
         "title": "ClipPlacement",
         "type": "object"
       },
-      "summary": "Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
+      "summary": "Place a media asset (or, with compound, a compound timeline) on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken."
     },
     {
       "input_schema": {
@@ -2568,6 +2585,144 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
+        "description": "Turns chosen clips into one compound clip.",
+        "properties": {
+          "clips": {
+            "description": "Clips of one timeline, on any tracks.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "The compound timeline's name; `Compound N` when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "ClipCompound",
+        "type": "object"
+      },
+      "name": "clip.compound",
+      "output_schema": {
+        "$defs": {
+          "ClipPlacement": {
+            "description": "Where a clip ended up.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "duration": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Length on the timeline."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "linked": {
+                "description": "The other clips of its group that the edit changed too (ADR-0024).",
+                "items": {
+                  "$ref": "#/$defs/ClipPlacement"
+                },
+                "type": "array"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "track": {
+                "$ref": "#/$defs/Id",
+                "description": "Track id."
+              }
+            },
+            "required": [
+              "clip",
+              "track",
+              "start",
+              "end",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `clip.compound`.",
+        "properties": {
+          "compound": {
+            "$ref": "#/$defs/ClipPlacement",
+            "description": "The new compound clip."
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The compound timeline that holds the clips now."
+          }
+        },
+        "required": [
+          "compound",
+          "timeline"
+        ],
+        "title": "Compounded",
+        "type": "object"
+      },
+      "summary": "Make a compound clip: move chosen clips into a new compound timeline (keeping their tracks and timing) and put one clip showing it in their place, on the lowest of their video tracks. Trim, speed, effects and transitions then apply to it as a whole."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "description": "Copies a clip's look, sound or motion to other clips, without their media.",
         "properties": {
           "attributes": {
@@ -2632,6 +2787,142 @@
         "type": "object"
       },
       "summary": "Paste attributes: copy one clip's placement, crop, opacity, blend mode, volume and sound settings, effects, masks or animations (with their keyframes) to other clips, keeping their media. Effects and masks skip audio clips."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Puts a compound clip's contents back in its place.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The compound clip."
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "ClipDecompose",
+        "type": "object"
+      },
+      "name": "clip.decompose",
+      "output_schema": {
+        "$defs": {
+          "ClipPlacement": {
+            "description": "Where a clip ended up.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "duration": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Length on the timeline."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "linked": {
+                "description": "The other clips of its group that the edit changed too (ADR-0024).",
+                "items": {
+                  "$ref": "#/$defs/ClipPlacement"
+                },
+                "type": "array"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "track": {
+                "$ref": "#/$defs/Id",
+                "description": "Track id."
+              }
+            },
+            "required": [
+              "clip",
+              "track",
+              "start",
+              "end",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `clip.decompose`.",
+        "properties": {
+          "clips": {
+            "description": "The clips put back, with new ids.",
+            "items": {
+              "$ref": "#/$defs/ClipPlacement"
+            },
+            "type": "array"
+          },
+          "removed_timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The compound timeline, when it was removed because nothing else showed it."
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "Decomposed",
+        "type": "object"
+      },
+      "summary": "Break a compound clip apart: put the part of its timeline it shows back in its place, clip by clip, on tracks of the same kinds. The compound timeline goes when nothing else shows it. The compound clip must have no speed, effects, masks, keyframes or placement of its own."
     },
     {
       "input_schema": {
@@ -4341,7 +4632,7 @@
         "title": "SpeedChanged",
         "type": "object"
       },
-      "summary": "Change a video or audio clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it."
+      "summary": "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it."
     },
     {
       "input_schema": {
@@ -5168,6 +5459,28 @@
                 },
                 "required": [
                   "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "A compound clip: another timeline of the project, shown from `source_in`\n(ADR-0025).",
+                "properties": {
+                  "kind": {
+                    "const": "timeline",
+                    "type": "string"
+                  },
+                  "source_in": {
+                    "$ref": "#/$defs/Flicks",
+                    "description": "Where in that timeline the clip starts."
+                  },
+                  "timeline": {
+                    "$ref": "#/$defs/Id",
+                    "description": "The timeline it shows (`timeline_…`)."
+                  }
+                },
+                "required": [
+                  "kind",
+                  "timeline"
                 ],
                 "type": "object"
               }
@@ -14621,6 +14934,11 @@
       "meaning": "The clip has no mask with this id."
     },
     {
+      "code": "fosscut.timeline.in_use",
+      "hint": "Remove or decompose the compound clips in the error's details first.",
+      "meaning": "Compound clips show the timeline, so it cannot be removed."
+    },
+    {
       "code": "fosscut.marker.not_found",
       "hint": "Read the markers with timeline.read; marker ids look like marker_0007.",
       "meaning": "No timeline has a marker with this id."
@@ -14741,7 +15059,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.9.0",
+  "format_version": "0.10.0",
   "looks": [
     {
       "description": "A gentle warm cast with a little more color, for friendly, sunny footage.",

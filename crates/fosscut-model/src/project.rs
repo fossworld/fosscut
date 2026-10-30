@@ -29,4 +29,22 @@ pub struct TimelineEntry {
     pub id: Id,
     /// Timeline name.
     pub name: String,
+    /// What the timeline is for: an edit of its own, or the inside of compound clips.
+    #[serde(default, skip_serializing_if = "is_sequence")]
+    pub role: TimelineRole,
+}
+
+/// What a timeline is for (ADR-0025).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TimelineRole {
+    /// An edit of its own.
+    #[default]
+    Sequence,
+    /// The inside of compound clips, which show it.
+    Compound,
+}
+
+fn is_sequence(role: &TimelineRole) -> bool {
+    *role == TimelineRole::Sequence
 }

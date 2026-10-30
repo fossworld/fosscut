@@ -173,6 +173,7 @@ impl Command for TimelineDuplicate {
             copy.tracks.push(track);
         }
         ctx.project.manifest.timelines.push(TimelineEntry {
+            role: Default::default(),
             id: id.clone(),
             name: name.clone(),
         });

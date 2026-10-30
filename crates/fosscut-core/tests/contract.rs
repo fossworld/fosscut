@@ -163,6 +163,14 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             }
         }
         "timeline.split" => json!({ "at": "4s" }),
+        "clip.compound" => {
+            let title = run(&mut session, "text.add", json!({ "text": "Inside" }));
+            json!({ "clips": [clip, title.results[0]["clip"]], "name": "Intro" })
+        }
+        "clip.decompose" => {
+            let made = run(&mut session, "clip.compound", json!({ "clips": [clip] }));
+            json!({ "clip": made.results[0]["compound"]["clip"] })
+        }
         "media.rename" => json!({ "asset": asset, "name": "Interview" }),
         "media.move" => json!({ "assets": [asset], "folder": "B-roll/Day 1" }),
         "media.folder" => json!({ "action": "add", "folder": "Music" }),

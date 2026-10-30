@@ -629,7 +629,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.9.0");
+    assert_eq!(FORMAT_VERSION, "0.10.0");
 }
 
 #[test]
@@ -1043,6 +1043,7 @@ fn removed_timelines_lose_their_documents() {
     let mut copy = project.primary_timeline().unwrap().clone();
     copy.id = extra.clone();
     project.manifest.timelines.push(TimelineEntry {
+        role: Default::default(),
         id: extra.clone(),
         name: "Copy".into(),
     });
@@ -1069,4 +1070,125 @@ fn removed_timelines_lose_their_documents() {
     memory.write_atomic("a.json", b"{}").unwrap();
     memory.remove("a.json").unwrap();
     assert!(!memory.exists("a.json"));
+}
+
+/// A project whose primary timeline shows a compound timeline holding a copy of its clips.
+fn nested_project() -> (Project, Id, Id) {
+    let mut project = round_one_project();
+    let outer = project.manifest.primary_timeline.clone();
+    let inner = Id::new(IdKind::Timeline, 60);
+    let mut doc = project.timelines[&outer].clone();
+    doc.id = inner.clone();
+    for (n, clip) in doc.tracks.iter_mut().flat_map(|t| &mut t.clips).enumerate() {
+        clip.id = Id::new(IdKind::Clip, 200 + n as u64);
+    }
+    for (n, track) in doc.tracks.iter_mut().enumerate() {
+        track.id = Id::new(IdKind::Track, 300 + n as u64);
+    }
+    project.manifest.timelines.push(TimelineEntry {
+        id: inner.clone(),
+        name: "Inside".into(),
+        role: TimelineRole::Compound,
+    });
+    project.timelines.insert(inner.clone(), doc);
+    let shown = project.timelines[&inner].duration();
+    let compound = Clip::new(
+        Id::new(IdKind::Clip, 400),
+        frames(0),
+        shown,
+        ClipContent::Timeline {
+            timeline: inner.clone(),
+            source_in: Flicks::ZERO,
+        },
+    );
+    let track = Id::new(IdKind::Track, 401);
+    project
+        .timelines
+        .get_mut(&outer)
+        .unwrap()
+        .tracks
+        .push(Track {
+            id: track,
+            kind: TrackKind::Video,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: vec![compound],
+        });
+    (project, outer, inner)
+}
+
+#[test]
+fn compound_clips_round_trip_and_nesting_is_checked() {
+    let (project, outer, inner) = nested_project();
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+    let manifest = serde_json::to_value(&project.manifest).unwrap();
+    assert_eq!(manifest["timelines"][1]["role"], "compound");
+    assert!(
+        manifest["timelines"][0].get("role").is_none(),
+        "sequences are the default"
+    );
+    let codes = |p: &Project| -> Vec<String> { validate(p).into_iter().map(|i| i.code).collect() };
+    fn compound_clip<'a>(p: &'a mut Project, outer: &Id) -> &'a mut Clip {
+        p.timelines
+            .get_mut(outer)
+            .unwrap()
+            .tracks
+            .last_mut()
+            .unwrap()
+            .clips
+            .last_mut()
+            .unwrap()
+    }
+    let mut cycle = project.clone();
+    let back = Clip::new(
+        Id::new(IdKind::Clip, 500),
+        frames(0),
+        frames(10),
+        ClipContent::Timeline {
+            timeline: outer.clone(),
+            source_in: Flicks::ZERO,
+        },
+    );
+    cycle.manifest.timelines[0].role = TimelineRole::Compound;
+    cycle.timelines.get_mut(&inner).unwrap().tracks.push(Track {
+        id: Id::new(IdKind::Track, 501),
+        kind: TrackKind::Video,
+        name: None,
+        muted: false,
+        hidden: false,
+        locked: false,
+        caption_style: None,
+        clips: vec![back],
+    });
+    assert!(
+        codes(&cycle).contains(&"fosscut.model.nesting".to_string()),
+        "{:?}",
+        codes(&cycle)
+    );
+    let mut past = project.clone();
+    let longer = compound_clip(&mut past, &outer).duration + frames(1);
+    compound_clip(&mut past, &outer).duration = longer;
+    assert!(codes(&past).contains(&"fosscut.model.source_range".to_string()));
+    let mut plain = project.clone();
+    plain.manifest.timelines[1].role = TimelineRole::Sequence;
+    assert!(
+        codes(&plain).contains(&"fosscut.model.nesting".to_string()),
+        "not a compound timeline"
+    );
+    let mut faster = project.clone();
+    faster.timelines.get_mut(&inner).unwrap().format.rate = Rate::new(60, 1).unwrap();
+    assert!(
+        codes(&faster).contains(&"fosscut.model.nesting".to_string()),
+        "another rate"
+    );
+    let mut gone = project.clone();
+    gone.timelines.remove(&inner);
+    gone.manifest.timelines.truncate(1);
+    assert!(codes(&gone).contains(&"fosscut.model.nesting".to_string()));
 }

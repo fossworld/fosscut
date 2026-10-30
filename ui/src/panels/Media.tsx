@@ -92,6 +92,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
   const ids = new Set(state.media.map((a) => a.id));
   const picked = chosen.filter((id) => ids.has(id));
   const update = (change: Partial<MediaFilter>) => setFilter({ ...filter, ...change });
+  const compounds = (state.opened?.info.timelines ?? []).filter((t) => t.role === "compound");
   return (
     <section className="media">
       <h2>Media</h2>
@@ -141,6 +142,27 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
         ))}
         {assets.length === 0 && <li className="muted">{state.media.length === 0 ? "No media yet." : "Nothing matches."}</li>}
       </ul>
+      {compounds.length > 0 && (
+        <>
+          <h3>Compound clips</h3>
+          <ul className="assets">
+            {compounds.map((t) => (
+              <li key={t.id} className="asset">
+                <span className="name">{t.name}</span>
+                <span className="muted">{t.duration.timecode}</span>
+                <span className="actions">
+                  <button title="Add at the playhead" onClick={() => void editor.addCompound(t.id)}>
+                    Add
+                  </button>
+                  <button title="Edit the timeline inside it" onClick={() => void editor.showTimeline(t.id)}>
+                    Open
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <div className="buttons">
         <button disabled={picked.length === 0} onClick={() => void editor.addTimeline(picked)} title="A new timeline with the chosen media, one after another">
           New timeline

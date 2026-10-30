@@ -648,6 +648,28 @@
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "A compound clip: another timeline of the project, shown from `source_in`\n(ADR-0025).",
+          "properties": {
+            "kind": {
+              "const": "timeline",
+              "type": "string"
+            },
+            "source_in": {
+              "$ref": "#/$defs/Flicks",
+              "description": "Where in that timeline the clip starts."
+            },
+            "timeline": {
+              "$ref": "#/$defs/Id",
+              "description": "The timeline it shows (`timeline_…`)."
+            }
+          },
+          "required": [
+            "kind",
+            "timeline"
+          ],
+          "type": "object"
         }
       ],
       "properties": {

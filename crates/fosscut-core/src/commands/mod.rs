@@ -4,6 +4,7 @@ mod arrange;
 mod caption;
 mod clip;
 mod clipboard;
+mod compound;
 mod effect;
 mod group;
 mod keyframe;
@@ -29,6 +30,7 @@ pub use clip::{
 };
 pub(crate) use clipboard::copied;
 pub use clipboard::{AttributesCopied, ClipCopyAttributes, ClipsPaste, CopiedClip, Pasted};
+pub use compound::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use effect::{
     AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
     EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
@@ -82,6 +84,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ClipSpeed>();
     registry.register::<ClipFreeze>();
     registry.register::<ClipReplace>();
+    registry.register::<ClipCompound>();
+    registry.register::<ClipDecompose>();
     registry.register::<ClipAlign>();
     registry.register::<ClipGroup>();
     registry.register::<ClipUngroup>();

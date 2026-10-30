@@ -1420,6 +1420,7 @@ dependencies = [
 name = "fosscut-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "cpal",
  "fosscut-core",
  "fosscut-engine",

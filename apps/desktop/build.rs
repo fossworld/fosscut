@@ -22,6 +22,11 @@ fn main() {
         "window_fullscreen",
         "media_reveal",
         "media_relink",
+        "project_summaries",
+        "project_trash",
+        "trash_list",
+        "trash_restore",
+        "trash_delete",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

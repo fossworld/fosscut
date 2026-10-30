@@ -19,6 +19,8 @@ export interface Format {
 export interface TimelineSummary {
   id: string;
   name: string;
+  /** `compound` for the inside of compound clips; omitted for edits of their own. */
+  role?: "sequence" | "compound";
   format: Format;
   duration: Moment;
   tracks: number;
@@ -35,6 +37,28 @@ export interface ProjectInfo {
   primary_timeline: string;
   timelines: TimelineSummary[];
   assets: number;
+}
+
+/** A recent project in the browser. */
+export interface ProjectSummary {
+  path: string;
+  name: string;
+  duration: Moment;
+  timelines: number;
+  assets: number;
+  /** The bundle's size on disk in bytes. */
+  bytes: number;
+  modified_ms: number;
+  /** A PNG data URL of a frame, when one could be rendered. */
+  thumbnail?: string;
+}
+
+/** A project in the trash. */
+export interface TrashEntry {
+  id: string;
+  name: string;
+  original: string;
+  trashed_ms: number;
 }
 
 /** One asset of `media.list`. */
@@ -133,6 +157,9 @@ export interface ClipView {
   masks?: MaskView[];
   /** Width and height of the picture as displayed (video and image clips). */
   picture?: [number, number];
+  /** A compound clip's timeline, and its name (ADR-0025). */
+  timeline?: string;
+  timeline_name?: string;
   /** The group of clips it edits together with (ADR-0024). */
   group?: string;
   /** A video clip whose sound plays from an extracted audio clip. */

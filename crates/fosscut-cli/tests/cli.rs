@@ -2756,3 +2756,91 @@ fn media_bin_and_timelines_from_the_command_line() {
     let removed = ok(&dir, &["media", "remove", "asset_0001"]);
     assert_eq!(removed["results"][0]["asset"], "asset_0001");
 }
+
+/// ADR-0025: clips turned into a compound clip export the same picture, can be shown
+/// twice, and come back apart.
+#[test]
+fn compound_clips_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("compound");
+    for (name, source) in [
+        ("red.mp4", "color=c=0xff0000:s=160x90:r=30:d=2"),
+        ("blue.mp4", "color=c=0x0000ff:s=160x90:r=30:d=2"),
+    ] {
+        let status = Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args(["-v", "error", "-f", "lavfi", "-i", source])
+            .args(["-c:v", "mpeg4", "-q:v", "2", name])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let new = [
+        "project",
+        "new",
+        "Nest.fosscut",
+        "--width",
+        "160",
+        "--height",
+        "90",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "red.mp4"]);
+    ok(&dir, &["media", "import", "blue.mp4"]);
+    let red = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let red = red["results"][0]["clip"].as_str().unwrap().to_string();
+    let blue = ok(&dir, &["clip", "add", "--asset", "asset_0002"]);
+    let blue = blue["results"][0]["clip"].as_str().unwrap().to_string();
+    let channel = |time: &str, out: &str, c: usize| {
+        ok(&dir, &["frame", time, "--out", out, "--width", "80"]);
+        mean_channel(&dir.join(out), c)
+    };
+    let made = ok(
+        &dir,
+        &[
+            "clip", "compound", "--clip", &red, "--clip", &blue, "--name", "Colors",
+        ],
+    );
+    let nested = made["results"][0]["timeline"].as_str().unwrap().to_string();
+    let compound = made["results"][0]["compound"]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        channel("1s", "red.png", 0) > 200.0,
+        "red inside the compound clip"
+    );
+    assert!(channel("3s", "blue.png", 2) > 200.0, "then blue");
+    // Shown a second time, from the middle.
+    ok(
+        &dir,
+        &[
+            "clip",
+            "add",
+            "--compound",
+            &nested,
+            "--start",
+            "4s",
+            "--source-in",
+            "2s",
+            "--duration",
+            "2s",
+        ],
+    );
+    assert!(channel("5s", "again.png", 2) > 200.0, "the blue half again");
+    let exported = ok_with_progress(&dir, &["export", "Nest.mp4"]);
+    assert_eq!(exported["frames"], json!(180), "{exported}");
+    let busy = fails(
+        &dir,
+        &["timeline", "remove", &nested, "--allow-destructive"],
+    );
+    assert_eq!(busy["code"], "fosscut.timeline.in_use", "{busy}");
+    let apart = ok(&dir, &["clip", "decompose", "--clip", &compound]);
+    assert_eq!(apart["results"][0]["clips"].as_array().unwrap().len(), 2);
+    assert!(
+        channel("1s", "apart.png", 0) > 200.0,
+        "red again, now as its own clip"
+    );
+}

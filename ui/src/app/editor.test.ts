@@ -549,6 +549,57 @@ describe("editor", () => {
     ]);
   });
 
+  it("browses projects with thumbnails, and moves them to the trash and back", async () => {
+    const fake = new FakeEngine();
+    const summary = {
+      path: "/work/Old.fosscut",
+      name: "Old",
+      duration: moment(3),
+      timelines: 1,
+      assets: 2,
+      bytes: 4096,
+      modified_ms: 1,
+      thumbnail: "data:image/png;base64,AA==",
+    };
+    fake.summaries = [summary];
+    let asked = "";
+    const editor = new Editor(fake, (question) => {
+      asked = question;
+      return true;
+    });
+    await editor.start();
+    expect(editor.getState().projects[0]?.thumbnail).toBe("data:image/png;base64,AA==");
+    expect(fake.callsOf("projectSummaries"), "names first, then pictures").toEqual([[false], [true]]);
+    await editor.trashProject("/work/Old.fosscut");
+    expect(editor.getState().projects).toEqual([]);
+    expect(editor.getState().trash.map((t) => t.original)).toEqual(["/work/Old.fosscut"]);
+    await editor.restoreProject(editor.getState().trash[0]!.id);
+    expect(editor.getState().notice?.text).toContain("/work/Old.fosscut");
+    await editor.trashProject("/work/Old.fosscut");
+    await editor.deleteTrashed(editor.getState().trash[0]!.id);
+    expect(asked).toContain("cannot be undone");
+    expect(editor.getState().trash).toEqual([]);
+    expect(fake.callsOf("trash.remove")).toHaveLength(1);
+  });
+
+  it("makes, places and breaks compound clips", async () => {
+    const { editor, fake } = await started();
+    await editor.compound();
+    editor.select("clip_0003");
+    editor.toggleSelected("clip_0005");
+    await editor.compound();
+    expect(editor.selected(), "the clips are inside it now").toEqual([]);
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.addCompound("timeline_0020");
+    await editor.decompose("clip_0021");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "clip.compound", args: { clips: ["clip_0003", "clip_0005"] } },
+      { command: "clip.add", args: { compound: "timeline_0020", start: { flicks: FLICKS_PER_SECOND } } },
+      { command: "clip.decompose", args: { clip: "clip_0021" } },
+    ]);
+  });
+
   it("works without a catalog and shows color errors", async () => {
     const fake = engine();
     fake.colorSuggest = async () => {

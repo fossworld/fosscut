@@ -52,7 +52,11 @@ fn yes() -> bool {
 #[serde(deny_unknown_fields)]
 pub struct ClipAdd {
     /// The asset to place.
-    pub asset: Id,
+    #[serde(default)]
+    pub asset: Option<Id>,
+    /// A compound timeline to place instead of an asset (ADR-0025).
+    #[serde(default)]
+    pub compound: Option<Id>,
     /// Target track; the first track of the matching kind (created if needed) when omitted.
     #[serde(default)]
     pub track: Option<Id>,
@@ -72,24 +76,39 @@ pub struct ClipAdd {
 
 impl Command for ClipAdd {
     const NAME: &'static str = "clip.add";
-    const SUMMARY: &'static str = "Place a media asset on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.";
+    const SUMMARY: &'static str = "Place a media asset (or, with compound, a compound timeline) on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.";
     type Output = ClipPlacement;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
         let timeline = timeline_id(ctx.project, self.timeline.as_ref())?;
         let rate = ctx.project.timelines[&timeline].format.rate;
-        let asset = ctx.project.media.get(&self.asset).cloned().ok_or_else(|| {
-            ApiError::new(
-                codes::ASSET_NOT_FOUND,
-                format!("asset {} does not exist", self.asset),
-            )
-        })?;
         let source_in = self
             .source_in
             .as_ref()
             .map(|t| resolve(t, rate))
             .transpose()?
             .unwrap_or(Flicks::ZERO);
+        let asset_id = match (&self.asset, &self.compound) {
+            (Some(asset), None) => asset.clone(),
+            (None, Some(nested)) => {
+                let content =
+                    super::compound::compound_content(ctx.project, &timeline, nested, source_in)?;
+                let total = ctx.project.timelines[nested].duration();
+                return place(ctx, &self, &timeline, content, Some(total), nested.as_str());
+            }
+            _ => {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    "clip.add: give an asset or a compound timeline, not both",
+                ));
+            }
+        };
+        let asset = ctx.project.media.get(&asset_id).cloned().ok_or_else(|| {
+            ApiError::new(
+                codes::ASSET_NOT_FOUND,
+                format!("asset {asset_id} does not exist"),
+            )
+        })?;
         let content = match asset.kind {
             AssetKind::Video => ClipContent::Video {
                 asset: asset.id.clone(),
@@ -120,17 +139,40 @@ impl Command for ClipAdd {
                 }
             }
         };
-        let duration = match (&self.duration, asset.info.duration) {
+        place(
+            ctx,
+            &self,
+            &timeline,
+            content,
+            asset.info.duration,
+            asset.id.as_str(),
+        )
+    }
+}
+
+/// Places `content` on the timeline for `clip.add`: its length, range check and track.
+fn place(
+    ctx: &mut Context<'_>,
+    args: &ClipAdd,
+    timeline: &Id,
+    content: ClipContent,
+    total: Option<Flicks>,
+    label: &str,
+) -> Result<ClipPlacement, ApiError> {
+    {
+        let rate = ctx.project.timelines[timeline].format.rate;
+        let source_in = content.source_in().unwrap_or(Flicks::ZERO);
+        let duration = match (&args.duration, total) {
             (Some(duration), _) => resolve(duration, rate)?,
             (None, Some(total)) => rate.frames_to_flicks(rate.frame_at(total - source_in)),
             (None, None) => rate.snap(Flicks::from_seconds(5).unwrap_or(Flicks::ZERO)),
         };
-        if let Some(total) = asset.info.duration
+        if let Some(total) = total
             && (source_in.is_negative() || source_in + duration > total)
         {
             return Err(ApiError::new(
                 codes::CLIP_SOURCE_RANGE,
-                format!("the clip would read past the end of {}", asset.id),
+                format!("the clip would read past the end of {label}"),
             )
             .with_details(json!({
                 "asset_duration": TimeReport::new(total, rate),
@@ -138,17 +180,17 @@ impl Command for ClipAdd {
                 "duration": TimeReport::new(duration, rate),
             })));
         }
-        let track = match &self.track {
+        let track = match &args.track {
             Some(track) => track.clone(),
-            None => find_or_create_track(ctx.project, &timeline, track_kind_for(&content))?,
+            None => find_or_create_track(ctx.project, timeline, track_kind_for(&content))?,
         };
         let id = ctx.project.allocate_id(IdKind::Clip);
-        let timeline_doc = timeline_mut(ctx.project, &timeline)?;
+        let timeline_doc = timeline_mut(ctx.project, timeline)?;
         let index = track_index(timeline_doc, &track)?;
         let track_doc = &mut timeline_doc.tracks[index];
         ensure_unlocked(track_doc)?;
         ensure_kind(track_doc, &content)?;
-        let start = match &self.start {
+        let start = match &args.start {
             Some(start) => resolve(start, rate)?,
             None => track_doc.end(),
         };
@@ -509,6 +551,10 @@ impl ClipTrim {
             ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
                 asset_duration(asset)
             }
+            // A compound clip reads its timeline (ADR-0025).
+            ClipContent::Timeline { timeline, .. } => {
+                ctx.project.timelines.get(timeline).map(|t| t.duration())
+            }
             _ => None,
         };
         let timeline = timeline_mut(ctx.project, &location.timeline)?;
@@ -534,7 +580,9 @@ impl ClipTrim {
         // Keyframes stay where they are on the timeline.
         trimmed.shift_keyframes(Flicks::ZERO - shift);
         match &mut trimmed.content {
-            ClipContent::Video { source_in, .. } | ClipContent::Audio { source_in, .. } => {
+            ClipContent::Video { source_in, .. }
+            | ClipContent::Audio { source_in, .. }
+            | ClipContent::Timeline { source_in, .. } => {
                 let moved = *source_in;
                 let used = trimmed.source_length();
                 if moved.is_negative() || total.is_some_and(|total| moved + used > total) {

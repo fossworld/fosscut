@@ -419,8 +419,11 @@ pub enum ClipCommand {
     /// Place a media asset on a track.
     Add {
         /// Asset id.
-        #[arg(long)]
-        asset: String,
+        #[arg(long, required_unless_present = "compound")]
+        asset: Option<String>,
+        /// A compound timeline to place instead of an asset.
+        #[arg(long, conflicts_with = "asset")]
+        compound: Option<String>,
         /// Track id; the first matching track when omitted.
         #[arg(long)]
         track: Option<String>,
@@ -545,6 +548,21 @@ pub enum ClipCommand {
         /// Remove only this clip, not the clips of its group.
         #[arg(long)]
         unlinked: bool,
+    },
+    /// Turn clips into one compound clip that shows a new compound timeline.
+    Compound {
+        /// Clip ids.
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+        /// The compound timeline's name.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Put a compound clip's contents back in its place.
+    Decompose {
+        /// The compound clip.
+        #[arg(long)]
+        clip: String,
     },
     /// Group clips so moves, splits, trims and removals edit them together.
     Group {

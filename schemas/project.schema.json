@@ -15,6 +15,10 @@
         "name": {
           "description": "Timeline name.",
           "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TimelineRole",
+          "description": "What the timeline is for: an edit of its own, or the inside of compound clips."
         }
       },
       "required": [
@@ -22,6 +26,21 @@
         "name"
       ],
       "type": "object"
+    },
+    "TimelineRole": {
+      "description": "What a timeline is for (ADR-0025).",
+      "oneOf": [
+        {
+          "const": "sequence",
+          "description": "An edit of its own.",
+          "type": "string"
+        },
+        {
+          "const": "compound",
+          "description": "The inside of compound clips, which show it.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

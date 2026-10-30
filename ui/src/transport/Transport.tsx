@@ -105,6 +105,13 @@ export function Transport({ editor, state }: { editor: Editor; state: EditorStat
         Split all
       </button>
       <button
+        title="Turn the selected clips into one compound clip (Mod+Alt+G)"
+        onClick={() => void editor.compound()}
+        disabled={!state.selection}
+      >
+        Compound
+      </button>
+      <button
         title="Add a marker at the playhead, or remove the one there (M)"
         onClick={() => void editor.toggleMarker()}
         disabled={!timeline}

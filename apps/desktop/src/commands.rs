@@ -12,6 +12,7 @@ use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::AppState;
+use crate::library::{ProjectSummary, TrashEntry};
 use crate::preview::Job;
 use crate::workspace::{NewProject, Opened, Workspace};
 
@@ -338,4 +339,62 @@ pub fn window_fullscreen(app: AppHandle, on: bool) {
     if let Some(window) = tauri::Manager::get_webview_window(&app, "main") {
         let _ = window.set_fullscreen(on);
     }
+}
+
+/// Summaries of the recent projects for the browser, with thumbnails when `thumbnails`.
+#[tauri::command]
+pub async fn project_summaries(
+    state: State<'_, AppState>,
+    thumbnails: bool,
+) -> Answer<Vec<ProjectSummary>> {
+    let workspace = Arc::clone(&state.workspace);
+    let library = Arc::clone(&state.library);
+    blocking(move || {
+        Ok(workspace
+            .recent()
+            .iter()
+            .filter_map(|path| library.summary(path, thumbnails).ok())
+            .collect())
+    })
+    .await
+}
+
+/// Moves a project to the trash; never the open one.
+#[tauri::command]
+pub async fn project_trash(state: State<'_, AppState>, path: PathBuf) -> Answer<TrashEntry> {
+    let workspace = Arc::clone(&state.workspace);
+    let library = Arc::clone(&state.library);
+    blocking(move || {
+        if workspace
+            .snapshot()
+            .is_some_and(|(bundle, _, _)| bundle == path)
+        {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "close the project before moving it to the trash",
+            ));
+        }
+        library.trash(&path)
+    })
+    .await
+}
+
+/// The projects in the trash, newest first.
+#[tauri::command]
+pub fn trash_list(state: State<'_, AppState>) -> Vec<TrashEntry> {
+    state.library.trashed()
+}
+
+/// Moves a project back from the trash and returns where it is.
+#[tauri::command]
+pub async fn trash_restore(state: State<'_, AppState>, id: String) -> Answer<PathBuf> {
+    let library = Arc::clone(&state.library);
+    blocking(move || library.restore(&id)).await
+}
+
+/// Deletes a project in the trash for good.
+#[tauri::command]
+pub async fn trash_delete(state: State<'_, AppState>, id: String) -> Answer<()> {
+    let library = Arc::clone(&state.library);
+    blocking(move || library.delete(&id)).await
 }

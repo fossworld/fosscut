@@ -243,6 +243,7 @@ pub fn validate(project: &Project) -> Vec<Issue> {
         }
     }
     check_groups(&mut issues, project);
+    check_nesting(&mut issues, project);
     issues.0
 }
 
@@ -523,6 +524,85 @@ fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
     }
 }
 
+/// Compound clips show compound timelines of the project with the same frame rate, within
+/// their length, without cycles and at most eight levels deep (ADR-0025).
+fn check_nesting(issues: &mut Issues, project: &Project) {
+    use crate::TimelineRole;
+    let compound = |id: &Id| {
+        project
+            .manifest
+            .timelines
+            .iter()
+            .any(|t| &t.id == id && t.role == TimelineRole::Compound)
+    };
+    let shows = |timeline: &crate::Timeline| -> Vec<Id> {
+        timeline
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .filter_map(|c| c.content.nested().cloned())
+            .collect()
+    };
+    for (id, timeline) in &project.timelines {
+        for track in &timeline.tracks {
+            for clip in &track.clips {
+                let Some(nested) = clip.content.nested() else {
+                    continue;
+                };
+                let path = format!("{id}/{}/{}", track.id, clip.id);
+                let mut bad =
+                    |message: String| issues.push(&path, "fosscut.model.nesting", message);
+                let Some(inner) = project.timelines.get(nested) else {
+                    bad(format!("timeline {nested} does not exist"));
+                    continue;
+                };
+                if !compound(nested) {
+                    bad(format!("{nested} is not a compound timeline"));
+                }
+                if inner.format.rate != timeline.format.rate {
+                    bad(format!("{nested} has another frame rate"));
+                }
+                let source_in = clip.content.source_in().unwrap_or_default();
+                if source_in.is_negative() || source_in + clip.source_length() > inner.duration() {
+                    issues.push(
+                        &path,
+                        "fosscut.model.source_range",
+                        format!("the clip reads past the end of {nested}"),
+                    );
+                }
+            }
+        }
+        // Depth first through what this timeline shows: a cycle or more than 8 levels.
+        let mut stack = vec![(id.clone(), 0usize, vec![id.clone()])];
+        while let Some((at, depth, path)) = stack.pop() {
+            let Some(doc) = project.timelines.get(&at) else {
+                continue;
+            };
+            for next in shows(doc) {
+                if path.contains(&next) {
+                    issues.push(
+                        id.as_str(),
+                        "fosscut.model.nesting",
+                        format!("{id} shows itself through {next}"),
+                    );
+                    return;
+                }
+                if depth + 1 > 8 {
+                    issues.push(
+                        id.as_str(),
+                        "fosscut.model.nesting",
+                        "compound clips nest more than eight levels deep",
+                    );
+                    return;
+                }
+                let mut deeper = path.clone();
+                deeper.push(next.clone());
+                stack.push((next, depth + 1, deeper));
+            }
+        }
+    }
+}
+
 /// A group has two or more clips, all on one timeline (ADR-0024).
 fn check_groups(issues: &mut Issues, project: &Project) {
     let mut groups: BTreeMap<&Id, (Vec<&Id>, BTreeSet<&Id>, String)> = BTreeMap::new();
@@ -561,16 +641,16 @@ fn check_groups(issues: &mut Issues, project: &Project) {
     }
 }
 
-/// Speed applies to video and audio clips, with a rate from 0.05 to 100 (or 0, a freeze)
+/// Speed applies to video, audio and compound clips, with a rate from 0.05 to 100 (or 0, a freeze)
 /// or a curve of at least two points in order (ADR-0023).
 fn check_speed(issues: &mut Issues, clip: &Clip, speed: &crate::Speed, path: &str) {
     let mut bad = |message: &str| issues.push(path, "fosscut.model.speed", message.to_string());
     let in_range = |rate: f64| (crate::MIN_RATE..=crate::MAX_RATE).contains(&rate);
     if !matches!(
         clip.content,
-        ClipContent::Video { .. } | ClipContent::Audio { .. }
+        ClipContent::Video { .. } | ClipContent::Audio { .. } | ClipContent::Timeline { .. }
     ) {
-        bad("only video and audio clips have a speed");
+        bad("only video, audio and compound clips have a speed");
     }
     if speed.curve.is_empty() {
         if !(speed.rate == 0.0 || in_range(speed.rate)) {
@@ -687,9 +767,10 @@ fn check_content(
 ) {
     let (content, duration) = (&clip.content, clip.duration);
     let allowed = match content {
-        ClipContent::Video { .. } | ClipContent::Image { .. } | ClipContent::Adjustment => {
-            track_kind == TrackKind::Video
-        }
+        ClipContent::Video { .. }
+        | ClipContent::Image { .. }
+        | ClipContent::Adjustment
+        | ClipContent::Timeline { .. } => track_kind == TrackKind::Video,
         ClipContent::Audio { .. } => track_kind == TrackKind::Audio,
         ClipContent::Text(_) => track_kind == TrackKind::Text,
         ClipContent::Caption(_) => track_kind == TrackKind::Caption,
@@ -728,7 +809,10 @@ fn check_content(
         ClipContent::Video { .. } => asset.kind == AssetKind::Video,
         ClipContent::Audio { .. } => asset.has_audio(),
         ClipContent::Image { .. } => asset.kind == AssetKind::Image,
-        ClipContent::Text(_) | ClipContent::Caption(_) | ClipContent::Adjustment => true,
+        ClipContent::Text(_)
+        | ClipContent::Caption(_)
+        | ClipContent::Adjustment
+        | ClipContent::Timeline { .. } => true,
     };
     if !kind_ok {
         issues.push(

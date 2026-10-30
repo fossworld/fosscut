@@ -537,16 +537,30 @@ pub fn compare(
     mismatches
 }
 
-/// Assets that clips on `timeline` read frames or audio from.
+/// Assets that clips on `timeline` read frames or audio from, inside compound clips too.
 fn assets_in(project: &Project, timeline: &Id) -> Vec<Id> {
-    let mut assets: Vec<Id> = project
-        .timelines
-        .get(timeline)
-        .into_iter()
-        .flat_map(|doc| doc.tracks.iter())
-        .flat_map(|track| track.clips.iter())
-        .filter_map(|clip| clip.content.asset().cloned())
-        .collect();
+    let mut assets = Vec::new();
+    let mut seen = vec![timeline.clone()];
+    let mut pending = vec![timeline.clone()];
+    while let Some(id) = pending.pop() {
+        let clips = project
+            .timelines
+            .get(&id)
+            .into_iter()
+            .flat_map(|doc| doc.tracks.iter())
+            .flat_map(|track| track.clips.iter());
+        for clip in clips {
+            if let Some(asset) = clip.content.asset() {
+                assets.push(asset.clone());
+            }
+            if let Some(nested) = clip.content.nested()
+                && !seen.contains(nested)
+            {
+                seen.push(nested.clone());
+                pending.push(nested.clone());
+            }
+        }
+    }
     assets.sort();
     assets.dedup();
     assets

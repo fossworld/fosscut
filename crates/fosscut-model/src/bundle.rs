@@ -105,6 +105,7 @@ impl Project {
                 next_id: 1,
                 primary_timeline: timeline_id.clone(),
                 timelines: vec![TimelineEntry {
+                    role: Default::default(),
                     id: timeline_id.clone(),
                     name: timeline_name,
                 }],

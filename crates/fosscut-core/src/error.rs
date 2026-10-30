@@ -137,6 +137,8 @@ pub mod codes {
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
     /// The clip has no mask with this id.
     pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
+    /// Compound clips show the timeline.
+    pub const TIMELINE_IN_USE: &str = "fosscut.timeline.in_use";
     /// No timeline has a marker with this id.
     pub const MARKER_NOT_FOUND: &str = "fosscut.marker.not_found";
     /// No transition type has this name.
@@ -328,6 +330,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             MASK_NOT_FOUND,
             "The clip has no mask with this id.",
             "Read the clip's masks with timeline.read; mask ids look like mask_0007.",
+        ),
+        entry(
+            TIMELINE_IN_USE,
+            "Compound clips show the timeline, so it cannot be removed.",
+            "Remove or decompose the compound clips in the error's details first.",
         ),
         entry(
             MARKER_NOT_FOUND,

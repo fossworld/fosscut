@@ -8,8 +8,11 @@ fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
     return full_screen_position(index);
 }
 
+// output.y = 1 keeps the canvas's alpha: a compound clip's picture (ADR-0025), whose empty
+// areas let what is under it show.
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let linear = textureLoad(canvas, vec2i(position.xy), 0).rgb;
-    return vec4f(encode_transfer(linear, output.x), 1.0);
+    let texel = textureLoad(canvas, vec2i(position.xy), 0);
+    let alpha = select(1.0, texel.a, output.y == 1u);
+    return vec4f(encode_transfer(texel.rgb, output.x), alpha);
 }

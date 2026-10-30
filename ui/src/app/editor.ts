@@ -14,7 +14,9 @@ import {
   type LogEntry,
   type MediaListing,
   type Opened,
+  type ProjectSummary,
   type TimelineView,
+  type TrashEntry,
   isApiError,
 } from "../engine/types";
 import { clipsAt, findClip } from "../timeline/geometry";
@@ -34,6 +36,9 @@ export interface EditorState {
   history: LogEntry[];
   clients: Client[];
   recent: string[];
+  /** The browser's summaries of the recent projects, and the trash. */
+  projects: ProjectSummary[];
+  trash: TrashEntry[];
   /** The playhead, in flicks. */
   playhead: number;
   playing: boolean;
@@ -102,6 +107,8 @@ const EMPTY: EditorState = {
   history: [],
   clients: [],
   recent: [],
+  projects: [],
+  trash: [],
   playhead: 0,
   playing: false,
   selection: null,
@@ -193,6 +200,7 @@ export class Editor {
       const [recent, opened] = await Promise.all([this.engine.recentProjects(), this.engine.currentProject()]);
       this.set({ recent });
       if (opened) await this.show(opened);
+      else await this.browse();
     } catch (error) {
       this.notify(error);
     }
@@ -257,6 +265,52 @@ export class Editor {
     await this.engine.closeProject();
     const recent = await this.engine.recentProjects();
     this.set({ ...EMPTY, recent });
+    await this.browse();
+  }
+
+  /** Reads the browser's project summaries (names first, then thumbnails) and the trash. */
+  async browse(): Promise<void> {
+    try {
+      const [projects, trash] = await Promise.all([this.engine.projectSummaries(false), this.engine.trash.list()]);
+      this.set({ projects, trash });
+      const pictured = await this.engine.projectSummaries(true);
+      if (!this.state.opened) this.set({ projects: pictured });
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /** Moves a project to the trash, from the browser. */
+  async trashProject(path: string): Promise<void> {
+    try {
+      await this.engine.trash.add(path);
+      this.set({ recent: await this.engine.recentProjects() });
+      await this.browse();
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  async restoreProject(id: string): Promise<void> {
+    try {
+      const path = await this.engine.trash.restore(id);
+      this.set({ notice: { kind: "info", text: `Restored to ${path}.` } });
+      await this.browse();
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /** Deletes a trashed project for good, after asking. */
+  async deleteTrashed(id: string): Promise<void> {
+    const entry = this.state.trash.find((t) => t.id === id);
+    if (!entry || !this.confirm(`Delete ${entry.name} for good? This cannot be undone.`)) return;
+    try {
+      await this.engine.trash.remove(id);
+      await this.browse();
+    } catch (error) {
+      this.notify(error);
+    }
   }
 
   /**
@@ -582,6 +636,23 @@ export class Editor {
   /** Splits every clip under the playhead. */
   async splitAll(): Promise<void> {
     await this.edit([{ command: "timeline.split", args: { at: { flicks: this.state.playhead } } }]);
+  }
+
+  /** Turns the selected clips into one compound clip (Mod+Alt+G). */
+  async compound(): Promise<void> {
+    const clips = this.selected();
+    if (clips.length === 0) return;
+    if (await this.edit([{ command: "clip.compound", args: { clips } }])) this.set({ selection: null, also: [] });
+  }
+
+  /** Puts a compound clip's contents back in its place. */
+  async decompose(clip: string): Promise<void> {
+    if (await this.edit([{ command: "clip.decompose", args: { clip } }])) this.set({ selection: null, also: [] });
+  }
+
+  /** Places a compound timeline at the playhead. */
+  async addCompound(timeline: string): Promise<void> {
+    await this.edit([{ command: "clip.add", args: { compound: timeline, start: { flicks: this.state.playhead } } }]);
   }
 
   /** Groups the selected clips. */

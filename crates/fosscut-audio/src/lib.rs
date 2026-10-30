@@ -101,7 +101,24 @@ pub fn mix(
                 {
                     (asset, *source_in)
                 }
+                // A compound clip sounds like its timeline's mix (ADR-0025).
+                (
+                    ClipContent::Timeline {
+                        timeline,
+                        source_in,
+                    },
+                    TrackKind::Video,
+                ) if !clip.audio.detached => (timeline, *source_in),
                 _ => continue,
+            };
+            let mut nested = clip.content.nested().map(|timeline| Nested {
+                project,
+                timeline,
+                inner: &mut *source,
+            });
+            let reader: &mut dyn AudioSource = match &mut nested {
+                Some(nested) => nested,
+                None => &mut *source,
             };
             if !clip.enabled {
                 continue;
@@ -133,7 +150,7 @@ pub fn mix(
                     sample_rate,
                     channels,
                     samples: stretch::clip_audio(
-                        source,
+                        reader,
                         asset,
                         clip,
                         clip_first,
@@ -142,7 +159,7 @@ pub fn mix(
                         channels,
                     )?,
                 },
-                None => source.read(
+                None => reader.read(
                     asset,
                     source_in + (read_from - clip.start),
                     to - read_from,
@@ -171,6 +188,34 @@ pub fn mix(
         *sample = sample.clamp(-1.0, 1.0);
     }
     Ok(out)
+}
+
+/// A compound clip's sound: the mix of the timeline it shows, read like an asset's.
+struct Nested<'a> {
+    project: &'a Project,
+    timeline: &'a Id,
+    inner: &'a mut dyn AudioSource,
+}
+
+impl AudioSource for Nested<'_> {
+    fn read(
+        &mut self,
+        _asset: &Id,
+        start: Flicks,
+        duration: Flicks,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Result<AudioBuffer, AudioError> {
+        mix(
+            self.project,
+            self.timeline,
+            start,
+            duration,
+            sample_rate,
+            channels,
+            self.inner,
+        )
+    }
 }
 
 /// How far a clip's sound reaches before its start and after its end for transitions: half
@@ -463,6 +508,54 @@ mod tests {
     fn level_at(buffer: &AudioBuffer, frame: i64) -> f32 {
         let index = samples_in(frames(frame), RATE) as usize;
         buffer.samples[index * 2]
+    }
+
+    #[test]
+    fn compound_clips_sound_like_their_timeline() {
+        let (mut project, timeline, mut source) = setup();
+        // The whole edit inside a compound timeline, shown at half volume from frame 40.
+        let inner_id = project.allocate_id(IdKind::Timeline);
+        let mut inner = project.timelines[&timeline].clone();
+        inner.id = inner_id.clone();
+        project
+            .manifest
+            .timelines
+            .push(fosscut_model::TimelineEntry {
+                id: inner_id.clone(),
+                name: "Inside".into(),
+                role: fosscut_model::TimelineRole::Compound,
+            });
+        project.timelines.insert(inner_id.clone(), inner);
+        let compound = clip(
+            &mut project,
+            ClipContent::Timeline {
+                timeline: inner_id,
+                source_in: frames(40),
+            },
+            0,
+            50,
+            0.5,
+        );
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks.clear();
+        track(&mut project, TrackKind::Video, false, vec![compound]);
+        let out = mix(
+            &project,
+            &timeline,
+            Flicks::ZERO,
+            frames(60),
+            RATE,
+            2,
+            &mut source,
+        )
+        .unwrap();
+        // Frame 5 shows inside frame 45: the video's sound and the bed, halved.
+        assert!(
+            (level_at(&out, 5) - 0.3).abs() < 1e-6,
+            "{}",
+            level_at(&out, 5)
+        );
+        assert_eq!(level_at(&out, 55), 0.0, "after the compound clip");
     }
 
     #[test]

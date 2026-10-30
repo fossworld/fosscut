@@ -830,3 +830,74 @@ body.browser .preview-hole::after {
 .app.fullscreen .timeline-area {
   display: none;
 }
+
+/* The project browser. */
+.start .browser {
+  width: min(860px, 92vw);
+}
+
+.start .browser .top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.start .browser input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font: inherit;
+}
+
+.start .projects {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.start .project {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.start .project .open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.start .project img,
+.start .project .blank {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #000;
+  border-radius: 4px;
+}
+
+.start .trash ul {
+  list-style: none;
+  padding: 0;
+}
+
+.start .trash li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
