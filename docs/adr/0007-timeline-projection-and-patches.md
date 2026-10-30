@@ -37,6 +37,7 @@ The full project document is too verbose for an agent's context on long timeline
   - `clip.set` sets a clip's `transform.position`, `transform.scale`, `transform.rotation`, `opacity` and `volume` by property path (the `set` op);
   - `timeline.remove_ranges` cuts time ranges from every track, or chosen tracks, with ripple (the range `remove` op with `ripple: true`);
   - `timeline.duplicate` copies a timeline onto another canvas, optionally scaling pictures to fill it.
+  - `clip.trim` (milestone 5) moves a clip's start or end edge within its media, keeping the picture under the rest of the clip in place (the `set` op on a clip's `start` and `end`).
 
 ## Consequences
 

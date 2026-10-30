@@ -34,7 +34,7 @@ pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry
 pub use commands::{
     CLIP_PROPERTIES, CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle,
     CaptionsStyled, ClipAdd, ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved,
-    ClipSet, ClipSplit, ClipSplitResult, Fit, MediaAdd, MediaAdded, Paging, RangeInput,
+    ClipSet, ClipSplit, ClipSplitResult, ClipTrim, Fit, MediaAdd, MediaAdded, Paging, RangeInput,
     RangeReport, RangesRemoved, TextAdd, TimelineDuplicate, TimelineDuplicated,
     TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
 };

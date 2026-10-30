@@ -1,7 +1,7 @@
 //! The preview (ADR-0010, path A): frames rendered with wgpu straight into the window,
 //! behind a transparent webview that leaves a hole where the video shows. One thread owns
 //! the GPU: it draws when the playhead, the project or the hole changes, and paces playback
-//! by the wall clock (audio, and the audio clock, come later).
+//! by the sound being heard ([`crate::audio`]), or by the wall clock without an audio device.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,6 +13,8 @@ use fosscut_model::{Id, Project};
 use fosscut_render::Renderer;
 use fosscut_time::{Flicks, TimeReport};
 use serde::Serialize;
+
+use crate::audio::Speaker;
 
 /// The project the preview shows.
 pub struct Scene {
@@ -72,11 +74,13 @@ impl Preview {
         Preview { jobs: None }
     }
 
-    /// Starts the preview thread drawing onto `surface`. `playhead` hears every frame
-    /// shown; `failed` hears why a frame could not be shown.
+    /// Starts the preview thread drawing onto `surface`, playing sound through `speaker`
+    /// when there is one. `playhead` hears every frame shown; `failed` hears why a frame
+    /// could not be shown.
     pub fn start(
         surface: impl Screen,
         renderer: Renderer,
+        speaker: Option<Speaker>,
         playhead: impl Fn(Playhead) + Send + 'static,
         failed: impl Fn(String) + Send + 'static,
     ) -> std::io::Result<Preview> {
@@ -88,7 +92,8 @@ impl Preview {
             scene: None,
             viewport: [0.0, 0.0, 0.0, 0.0],
             time: Flicks::ZERO,
-            clock: None,
+            pace: None,
+            speaker,
             playhead: Box::new(playhead),
             failed: Box::new(failed),
         };
@@ -148,6 +153,15 @@ fn duration(scene: &Scene) -> Option<(Flicks, Flicks)> {
     Some((doc.duration(), doc.format.rate.frame_duration()))
 }
 
+/// What playback follows.
+#[derive(Clone, Copy, Debug)]
+enum Pace {
+    /// The sound being heard.
+    Sound,
+    /// The wall clock, without an audio device.
+    Wall(Clock),
+}
+
 struct Engine {
     surface: Box<dyn Screen>,
     renderer: Renderer,
@@ -155,7 +169,8 @@ struct Engine {
     scene: Option<Arc<Scene>>,
     viewport: [f32; 4],
     time: Flicks,
-    clock: Option<Clock>,
+    pace: Option<Pace>,
+    speaker: Option<Speaker>,
     playhead: Box<dyn Fn(Playhead) + Send>,
     failed: Box<dyn Fn(String) + Send>,
 }
@@ -163,7 +178,7 @@ struct Engine {
 impl Engine {
     fn run(mut self, jobs: &Receiver<Job>) {
         loop {
-            let first = if self.clock.is_some() {
+            let first = if self.pace.is_some() {
                 let interval = self
                     .scene
                     .as_deref()
@@ -186,14 +201,21 @@ impl Engine {
             for job in first.into_iter().chain(jobs.try_iter()) {
                 changed |= self.apply(job);
             }
-            if let Some(clock) = self.clock {
-                self.time = clock.at(Instant::now());
+            if let Some(pace) = self.pace {
+                self.time = match pace {
+                    Pace::Wall(clock) => clock.at(Instant::now()),
+                    Pace::Sound => self
+                        .speaker
+                        .as_ref()
+                        .and_then(Speaker::position)
+                        .unwrap_or(self.time),
+                };
                 changed = true;
                 if let Some((end, frame)) = self.scene.as_deref().and_then(duration)
                     && self.time >= end
                 {
                     self.time = (end - frame).max(Flicks::ZERO);
-                    self.clock = None;
+                    self.stop();
                 }
             }
             if changed {
@@ -202,20 +224,34 @@ impl Engine {
         }
     }
 
+    /// Stops playback, and the sound with it.
+    fn stop(&mut self) {
+        self.pace = None;
+        if let Some(speaker) = &self.speaker {
+            speaker.stop();
+        }
+    }
+
     /// Applies one job; true when the picture may have changed.
     fn apply(&mut self, job: Job) -> bool {
         match job {
             Job::Scene(scene) => {
-                if scene.is_none() {
-                    self.clock = None;
-                    self.time = Flicks::ZERO;
+                match (&scene, self.pace, &self.speaker) {
+                    (None, _, _) => {
+                        self.stop();
+                        self.time = Flicks::ZERO;
+                    }
+                    (Some(scene), Some(Pace::Sound), Some(speaker)) => {
+                        speaker.update(Arc::clone(scene))
+                    }
+                    _ => {}
                 }
                 self.scene = scene;
             }
             Job::Viewport(rect) => self.viewport = rect,
             Job::Resized => self.surface.resize(&self.renderer),
             Job::Show(time) => {
-                self.clock = None;
+                self.stop();
                 self.time = time.max(Flicks::ZERO);
             }
             Job::Play => {
@@ -227,9 +263,15 @@ impl Engine {
                 if at_end {
                     self.time = Flicks::ZERO;
                 }
-                self.clock = Some(Clock::start(self.time, Instant::now()));
+                self.pace = match (&self.speaker, &self.scene) {
+                    (Some(speaker), Some(scene)) => {
+                        speaker.play(Arc::clone(scene), self.time);
+                        Some(Pace::Sound)
+                    }
+                    _ => Some(Pace::Wall(Clock::start(self.time, Instant::now()))),
+                };
             }
-            Job::Pause => self.clock = None,
+            Job::Pause => self.stop(),
         }
         true
     }
@@ -271,11 +313,11 @@ impl Engine {
                 self.surface.present(&self.renderer, Some(&view), rect);
                 (self.playhead)(Playhead {
                     time: at,
-                    playing: self.clock.is_some(),
+                    playing: self.pace.is_some(),
                 });
             }
             Err(error) => {
-                self.clock = None;
+                self.stop();
                 self.surface.present(&self.renderer, None, [0.0; 4]);
                 (self.failed)(error.to_string());
             }
@@ -412,6 +454,7 @@ mod thread_tests {
         let preview = Preview::start(
             screen,
             renderer,
+            None,
             move |head| {
                 let _ = heads_tx.send(head);
             },
@@ -604,5 +647,25 @@ mod thread_tests {
         assert!(failure.contains("is missing"), "{failure}");
         assert!(run.heads.try_recv().is_err(), "no frame was shown");
         Preview::off().send(Job::Play);
+    }
+
+    #[test]
+    fn with_an_audio_device_the_clock_follows_the_sound() {
+        // CI runners have no audio device; this runs where one exists, playing silence.
+        let Some(speaker) = Speaker::open() else {
+            return;
+        };
+        assert_eq!(speaker.position(), None, "nothing plays yet");
+        speaker.play(titled("sound", 90), frame(10));
+        let heard = std::iter::repeat_with(|| {
+            std::thread::sleep(Duration::from_millis(20));
+            speaker.position()
+        })
+        .take(100)
+        .flatten()
+        .find(|at| *at > frame(10));
+        assert!(heard.is_some(), "the device played and the clock moved");
+        speaker.stop();
+        assert_eq!(speaker.position(), None);
     }
 }

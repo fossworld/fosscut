@@ -197,6 +197,15 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         Command::Clip(ClipCommand::Split { clip, at }) => {
             write(cli, "clip.split", json!({ "clip": clip, "at": at }))
         }
+        Command::Clip(ClipCommand::Trim { clip, start, end }) => write(
+            cli,
+            "clip.trim",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("start", some(start)),
+                ("end", some(end)),
+            ]),
+        ),
         Command::Clip(ClipCommand::Move { clip, start, track }) => write(
             cli,
             "clip.move",

@@ -10,7 +10,7 @@ export function Activity({ editor, state }: { editor: Editor; state: EditorState
   const grouped = runs(state.history);
   const newest = state.history[0];
   return (
-    <aside className="activity">
+    <>
       <section>
         <h2>Connected</h2>
         {state.clients.length === 0 ? (
@@ -53,6 +53,6 @@ export function Activity({ editor, state }: { editor: Editor; state: EditorState
           </div>
         ))}
       </section>
-    </aside>
+    </>
   );
 }

@@ -50,6 +50,10 @@ The owner wants a desktop app first and possibly a web version later. Establishe
   - **History:** grouped into runs by who made each change.
   - **Undo:** of the newest change, whoever made it.
   - **Later:** the diff view of `timeline.plan` results comes later.
+- **Editing in the app** (milestone 5, second step):
+  - **Moving and trimming:** dragging a clip moves it, onto another track of the same kind under the pointer, and dragging an edge trims it with the new `clip.trim` command. Both move in whole frames and send one command when released.
+  - **Inspector:** shows the selected clip's position, scale, rotation, opacity and volume in percent and degrees, and sends `clip.set`.
+  - **Sound:** playback follows the sound (ADR-0008, implementation notes).
 - **Releases** are not set up yet. Debug builds load the interface from the Vite server (`devUrl`). No crate feature may enable `tauri/custom-protocol`, because CI builds with `--all-features` and that feature needs the built interface.
 
 ## Validation

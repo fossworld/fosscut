@@ -574,8 +574,8 @@ pub(crate) fn resolve(
 
 /// Audio decoders per asset, opened on first use.
 #[derive(Default)]
-struct DecoderAudio {
-    paths: HashMap<Id, PathBuf>,
+pub(crate) struct DecoderAudio {
+    pub(crate) paths: HashMap<Id, PathBuf>,
     decoders: HashMap<(Id, u32, u16), FfmpegAudioDecoder>,
 }
 

@@ -25,7 +25,7 @@ Thank you for helping build an open source video editor that people and AI agent
 | `cargo install cargo-nextest cargo-deny cargo-llvm-cov` | Test runner, dependency policy checks and coverage used by CI |
 | `rustup component add llvm-tools` | Needed by `cargo-llvm-cov` |
 | Node.js 24 and pnpm 10 | The shared UI in `ui/` ([ADR-0010](docs/adr/0010-desktop-shell-ui-and-web-path.md)) |
-| On Linux: `libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev` | Building the desktop app, a member of the workspace; macOS and Windows need nothing more |
+| On Linux: `libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev librsvg2-dev libxdo-dev libasound2-dev` | Building the desktop app, a member of the workspace, and its preview sound; macOS and Windows need nothing more |
 | Python 3 | Repository check scripts |
 | FFmpeg 8 shared libraries and headers, plus libclang | Building `fosscut-media` and the crates above it, including the CLI ([ADR-0009](docs/adr/0009-media-io-and-codecs.md)); see [FFmpeg for development](#ffmpeg-for-development) |
 | `ffmpeg` and `ffprobe` command-line tools with libx264 | Generating test fixtures and the end-to-end CLI tests |

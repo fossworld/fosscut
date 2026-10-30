@@ -2286,6 +2286,194 @@
     },
     {
       "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Moves a clip's edges: shorter, or longer into more of its media.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip to trim."
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New timeline position just after the clip's last frame; unchanged when omitted."
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "New timeline position of the clip's first frame. What plays under the rest of the\nclip stays where it is: media starts later or earlier in its source. Unchanged when\nomitted."
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "title": "ClipTrim",
+        "type": "object"
+      },
+      "name": "clip.trim",
+      "output_schema": {
+        "$defs": {
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Where a clip ended up.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "Clip id."
+          },
+          "duration": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Length on the timeline."
+          },
+          "end": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "Position just after the last frame."
+          },
+          "start": {
+            "$ref": "#/$defs/TimeReport",
+            "description": "First frame on the timeline."
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Track id."
+          }
+        },
+        "required": [
+          "clip",
+          "track",
+          "start",
+          "end",
+          "duration"
+        ],
+        "title": "ClipPlacement",
+        "type": "object"
+      },
+      "summary": "Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media."
+    },
+    {
+      "input_schema": {
         "additionalProperties": false,
         "type": "object"
       },

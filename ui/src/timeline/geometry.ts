@@ -2,7 +2,7 @@
 // and zooming around the pointer. Pure, so it is tested without a browser.
 
 import type { ClipView, TimelineView, TrackView } from "../engine/types";
-import { FLICKS_PER_SECOND } from "../transport/time";
+import { FLICKS_PER_SECOND, type Rate, framesToFlicks } from "../transport/time";
 
 /** Height of the time ruler at the top, in CSS pixels. */
 export const RULER = 24;
@@ -122,4 +122,71 @@ export function rulerLabel(seconds: number, step: number): string {
   if (step >= 1) return `${minutes}:${rest}`;
   const tenths = Math.round((seconds - whole) * 10) % 10;
   return `${minutes}:${rest}.${tenths}`;
+}
+
+/** How close to a clip's edge, in pixels, a press grabs the edge instead of the clip. */
+export const EDGE = 6;
+
+export type DragMode = "move" | "trim-start" | "trim-end";
+
+/** What a press at x on `clip` grabs: an edge to trim, or the clip to move. */
+export function grabAt(clip: ClipView, view: View, x: number): DragMode {
+  const left = timeToX(clip.start.flicks, view);
+  const right = timeToX(clip.end.flicks, view);
+  if (right - left > 3 * EDGE) {
+    if (x - left <= EDGE) return "trim-start";
+    if (right - x <= EDGE) return "trim-end";
+  }
+  return "move";
+}
+
+/** A drag in progress: what was grabbed and where the press began. */
+export interface Drag {
+  clip: ClipView;
+  track: TrackView;
+  mode: DragMode;
+  fromX: number;
+}
+
+/** Where a drag would put the clip. */
+export interface DragTarget {
+  start: number;
+  end: number;
+  track: TrackView;
+}
+
+/** Whole frames moved by the pointer since the press. */
+function framesMoved(drag: Drag, x: number, view: View, rate: Rate): number {
+  const seconds = (x - drag.fromX) / view.zoom;
+  return Math.round((seconds * rate.num) / rate.den);
+}
+
+/**
+ * Where the clip lands with the pointer at (x, y), in whole frames: moved (onto another
+ * track of the same kind under the pointer, when there is one), or with one edge moved,
+ * never shorter than a frame or before zero.
+ */
+export function dragTarget(drag: Drag, timeline: TimelineView, view: View, x: number, y: number, rate: Rate): DragTarget {
+  const { clip } = drag;
+  const frame = framesToFlicks(1, rate);
+  const delta = framesToFlicks(framesMoved(drag, x, view, rate), rate);
+  if (drag.mode === "trim-start") {
+    const start = Math.min(Math.max(0, clip.start.flicks + delta), clip.end.flicks - frame);
+    return { start, end: clip.end.flicks, track: drag.track };
+  }
+  if (drag.mode === "trim-end") {
+    const end = Math.max(clip.start.flicks + frame, clip.end.flicks + delta);
+    return { start: clip.start.flicks, end, track: drag.track };
+  }
+  const start = Math.max(0, clip.start.flicks + delta);
+  const under = rows(timeline)[Math.floor((y - RULER) / ROW)];
+  const track = under && under.kind === drag.track.kind ? under : drag.track;
+  return { start, end: start + clip.duration.flicks, track };
+}
+
+/** True when a drag would change nothing. */
+export function unchanged(drag: Drag, target: DragTarget): boolean {
+  return (
+    target.start === drag.clip.start.flicks && target.end === drag.clip.end.flicks && target.track.id === drag.track.id
+  );
 }

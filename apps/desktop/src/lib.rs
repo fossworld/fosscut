@@ -4,11 +4,13 @@
 //! commit and undo here. The preview renders with wgpu behind the webview (path A).
 //!
 //! - [`workspace`]: the open project, hosted live, and recent projects.
-//! - [`preview`] and [`surface`]: the preview thread and the window's GPU surface.
+//! - [`preview`] and [`surface`]: the preview thread and the window's GPU surface;
+//!   [`audio`]: the sound playback follows.
 //! - [`commands`]: what the UI may ask; the engine client in `ui/` is the only caller.
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod commands;
 pub mod preview;
 pub mod surface;
@@ -86,6 +88,7 @@ pub fn run() {
                     Preview::start(
                         surface,
                         renderer,
+                        audio::Speaker::open(),
                         move |playhead| {
                             let _ = heads.emit("playhead", playhead);
                         },

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { timeline } from "../test/fixtures";
-import { FLICKS_PER_SECOND } from "../transport/time";
+import type { TrackView } from "../engine/types";
+import { timeline, track } from "../test/fixtures";
+import { FLICKS_PER_SECOND, framesToFlicks } from "../transport/time";
 import {
   HEADER,
   MAX_ZOOM,
@@ -9,7 +10,9 @@ import {
   ROW,
   RULER,
   clipsAt,
+  dragTarget,
   findClip,
+  grabAt,
   hitTest,
   onRuler,
   rowY,
@@ -18,6 +21,7 @@ import {
   rulerStep,
   scrollBy,
   timeToX,
+  unchanged,
   xToTime,
   zoomAround,
   zoomToFit,
@@ -82,5 +86,52 @@ describe("timeline geometry", () => {
     expect(clipsAt(t, FLICKS_PER_SECOND).map((c) => c.id)).toEqual(["clip_0003", "clip_0005"]);
     expect(clipsAt(t, 2 * FLICKS_PER_SECOND).map((c) => c.id), "not at an edge").toEqual(["clip_0003"]);
     expect(clipsAt(t, 0)).toEqual([]);
+  });
+});
+
+describe("dragging clips", () => {
+  const rate = { num: 30, den: 1 };
+  const flat = { zoom: 100, scroll: 0, width: 1000 };
+  const second = FLICKS_PER_SECOND;
+
+  it("grabs edges near them and the clip elsewhere", () => {
+    const video = timeline().tracks[0]!.clips[0]!;
+    expect(grabAt(video, flat, HEADER + 2)).toBe("trim-start");
+    expect(grabAt(video, flat, HEADER + 597)).toBe("trim-end");
+    expect(grabAt(video, flat, HEADER + 300)).toBe("move");
+    const narrow = { ...flat, zoom: 2 };
+    expect(grabAt(video, narrow, HEADER + 1), "too narrow to have edges").toBe("move");
+  });
+
+  it("moves clips by whole frames, onto a track of the same kind under the pointer", () => {
+    const t = {
+      ...timeline(),
+      tracks: [...timeline().tracks, track("track_0009", "video", 2, [])],
+    };
+    const [video, title] = t.tracks as [TrackView, TrackView, TrackView];
+    const drag = { clip: video.clips[0]!, track: video, mode: "move" as const, fromX: HEADER + 100 };
+    const moved = dragTarget(drag, t, flat, HEADER + 151.7, RULER + 2 * ROW + 5, rate);
+    expect(moved.start, "half a second and a frame, rounded to frames").toBe(framesToFlicks(16, rate));
+    expect(moved.end - moved.start).toBe(6 * second);
+    expect(moved.track.id, "same row: still the video track").toBe("track_0002");
+    expect(dragTarget(drag, t, flat, HEADER + 150, RULER + 5, rate).track.id, "a video row on top").toBe("track_0009");
+    expect(dragTarget(drag, t, flat, HEADER + 150, RULER + ROW + 5, rate).track.id, "titles take no video").toBe("track_0002");
+    expect(dragTarget(drag, t, flat, HEADER - 500, RULER + 5, rate).start, "never before zero").toBe(0);
+    expect(unchanged(drag, dragTarget(drag, t, flat, HEADER + 100, RULER + 2 * ROW + 5, rate))).toBe(true);
+    expect(title.kind).toBe("text");
+  });
+
+  it("trims edges by whole frames, never below one frame", () => {
+    const t = timeline();
+    const video = t.tracks[0]!;
+    const clip = video.clips[0]!;
+    const start = { clip, track: video, mode: "trim-start" as const, fromX: HEADER };
+    expect(dragTarget(start, t, flat, HEADER + 100, 0, rate)).toMatchObject({ start: second, end: 6 * second });
+    expect(dragTarget(start, t, flat, HEADER + 5000, 0, rate).start).toBe(6 * second - framesToFlicks(1, rate));
+    expect(dragTarget(start, t, flat, HEADER - 100, 0, rate).start).toBe(0);
+    const end = { clip, track: video, mode: "trim-end" as const, fromX: HEADER + 600 };
+    expect(dragTarget(end, t, flat, HEADER + 400, 0, rate)).toMatchObject({ start: 0, end: 4 * second });
+    expect(dragTarget(end, t, flat, HEADER + 800, 0, rate).end, "longer, if the media allows").toBe(8 * second);
+    expect(dragTarget(end, t, flat, HEADER - 1000, 0, rate).end).toBe(framesToFlicks(1, rate));
   });
 });

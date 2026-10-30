@@ -31,6 +31,8 @@ bytemuck = { version = "1.25.2", features = ["derive"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 # Text shaping, layout and rasterization; system font discovery (fontconfig) is off so only
 # bundled fonts are used.
+# Audio output for preview playback in the desktop app (ADR-0008, item 5).
+cpal = "0.18.2"
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 # Operating-system randomness for live session keys and nonces (ADR-0022).
 getrandom = "0.4.3"

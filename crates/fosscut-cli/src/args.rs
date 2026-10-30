@@ -368,6 +368,19 @@ pub enum ClipCommand {
         #[arg(long, value_parser = parse_time)]
         at: TimeInput,
     },
+    /// Move a clip's start or end edge: trim it shorter, or extend it into more of its
+    /// media. The picture under the rest of the clip stays where it is.
+    Trim {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// New timeline position of the first frame.
+        #[arg(long, value_parser = parse_time)]
+        start: Option<TimeInput>,
+        /// New timeline position just after the last frame.
+        #[arg(long, value_parser = parse_time)]
+        end: Option<TimeInput>,
+    },
     /// Move a clip in time and/or to another track.
     Move {
         /// Clip id.

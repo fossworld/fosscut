@@ -13,7 +13,7 @@ pub use caption::{
     WordInput,
 };
 pub use clip::{
-    ClipAdd, ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult,
+    ClipAdd, ClipMove, ClipPlacement, ClipRemove, ClipRemoved, ClipSplit, ClipSplitResult, ClipTrim,
 };
 pub use media::{MediaAdd, MediaAdded};
 pub use text::TextAdd;
@@ -30,6 +30,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TrackAdd>();
     registry.register::<ClipAdd>();
     registry.register::<ClipSplit>();
+    registry.register::<ClipTrim>();
     registry.register::<ClipMove>();
     registry.register::<ClipRemove>();
     registry.register::<ClipSet>();
