@@ -112,7 +112,8 @@ fn prores_profile(codec: VideoCodec) -> &'static str {
 /// Encoder-specific options: speed and quality settings, the ProRes profile, and for
 /// hardware encoders a refusal to fall back to software. The software encoders' constant
 /// quality settings apply only when no bit rate was asked for, since each of them would
-/// override the bit rate.
+/// override the bit rate. Windows' Media Foundation encoders choose their own rate control
+/// unless told, and overshoot low bit rates, so an asked-for bit rate makes them constant.
 fn encoder_options(
     name: &str,
     codec: VideoCodec,
@@ -135,6 +136,8 @@ fn encoder_options(
             "libvpx-vp9" => &[("crf", "32"), ("b", "0")],
             _ => &[],
         });
+    } else if matches!(name, "h264_mf" | "hevc_mf") {
+        pairs.push(("rate_control", "cbr"));
     }
     let mut dict: Option<AVDictionary> = None;
     for (key, value) in pairs {
@@ -1076,6 +1079,9 @@ mod tests {
         assert!(!keys("libvpx-vp9", true).contains(&"b".to_string()));
         assert!(!keys("libsvtav1", true).contains(&"crf".to_string()));
         assert!(!keys("librav1e", true).contains(&"qp".to_string()));
+        assert!(keys("h264_mf", true).contains(&"rate_control".to_string()));
+        assert!(!keys("h264_mf", false).contains(&"rate_control".to_string()));
+        assert!(keys("hevc_mf", true).contains(&"rate_control".to_string()));
         assert_eq!(prores_profile(VideoCodec::ProRes422), "standard");
         assert_eq!(prores_profile(VideoCodec::ProRes4444), "4444");
     }
