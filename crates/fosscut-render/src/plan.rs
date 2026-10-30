@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use fosscut_model::{ClipContent, Id, Project, TextContent, TrackKind, Transform};
+use fosscut_model::{BlendMode, ClipContent, Id, Project, TextContent, TrackKind, Transform};
 use fosscut_time::Flicks;
 
 use crate::RenderError;
 use crate::caption::CaptionLayer;
-use crate::geometry::clockwise_rotation;
+use crate::geometry::{UNCROPPED, clockwise_rotation};
 use crate::lut::Lut3d;
 
 /// Which frame of which asset a layer shows.
@@ -66,8 +66,13 @@ pub struct Layer {
     pub rotation: u16,
     /// Placement relative to the fitted size.
     pub transform: Transform,
+    /// The part of the picture kept, `[left, top, right, bottom]` as fractions from its
+    /// top-left corner before flips ([`UNCROPPED`] keeps everything).
+    pub crop: [f64; 4],
     /// Opacity, 0 to 1.
     pub opacity: f32,
+    /// How the layer combines with the layers below it.
+    pub blend: BlendMode,
     /// Optional mask.
     pub mask: Option<Mask>,
     /// Optional 3D LUT, applied to the display-referred signal.
@@ -96,7 +101,9 @@ impl Layer {
             source,
             rotation: 0,
             transform: Transform::default(),
+            crop: UNCROPPED,
             opacity: 1.0,
+            blend: BlendMode::Normal,
             mask: None,
             lut: None,
         }
@@ -144,8 +151,9 @@ pub fn source_geometry(project: &Project, asset: &Id) -> Option<((u32, u32), u16
     ))
 }
 
-/// Plans the frame of `timeline` displayed at `time`: every visible video, image, text and
-/// caption clip that covers `time`, bottom track first.
+/// Plans the frame of `timeline` displayed at `time`: every visible, enabled video, image,
+/// text and caption clip that covers `time`, bottom track first, with its keyframed
+/// properties evaluated at that time.
 pub fn plan_frame(
     project: &Project,
     timeline: &Id,
@@ -166,51 +174,50 @@ pub fn plan_frame(
         else {
             continue;
         };
+        if !clip.enabled {
+            continue;
+        }
+        let offset = time - clip.start;
+        let placed = |source: LayerSource, rotation: u16| Layer {
+            clip: Some(clip.id.clone()),
+            source,
+            rotation,
+            transform: clip.transform_at(offset),
+            crop: clip.crop_at(offset).kept(),
+            opacity: clip.opacity_at(offset) as f32,
+            blend: clip.blend,
+            mask: None,
+            lut: None,
+        };
         let source = match (&clip.content, track.kind) {
             (ClipContent::Video { asset, source_in }, TrackKind::Video) => SourceRef {
                 asset: asset.clone(),
-                time: *source_in + (time - clip.start),
+                time: *source_in + offset,
             },
             (ClipContent::Image { asset }, TrackKind::Video) => SourceRef {
                 asset: asset.clone(),
                 time: Flicks::ZERO,
             },
             (ClipContent::Text(text), _) => {
-                plan.layers.push(Layer {
-                    clip: Some(clip.id.clone()),
-                    transform: clip.transform.clone(),
-                    opacity: clip.opacity.clamp(0.0, 1.0) as f32,
-                    ..Layer::text(text.clone())
-                });
+                plan.layers.push(placed(LayerSource::Text(text.clone()), 0));
                 continue;
             }
             (ClipContent::Caption(caption), _) => {
-                plan.layers.push(Layer {
-                    clip: Some(clip.id.clone()),
-                    transform: clip.transform.clone(),
-                    opacity: clip.opacity.clamp(0.0, 1.0) as f32,
-                    ..Layer::caption(CaptionLayer {
-                        style: track.caption_style.clone().unwrap_or_default(),
-                        content: caption.clone(),
-                        time: time - clip.start,
-                        duration: clip.duration,
-                    })
-                });
+                let layer = CaptionLayer {
+                    style: track.caption_style.clone().unwrap_or_default(),
+                    content: caption.clone(),
+                    time: offset,
+                    duration: clip.duration,
+                };
+                plan.layers
+                    .push(placed(LayerSource::Caption(Box::new(layer)), 0));
                 continue;
             }
             _ => continue,
         };
         let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
-        let source = LayerSource::Frame(source);
-        plan.layers.push(Layer {
-            clip: Some(clip.id.clone()),
-            source,
-            rotation,
-            transform: clip.transform.clone(),
-            opacity: clip.opacity.clamp(0.0, 1.0) as f32,
-            mask: None,
-            lut: None,
-        });
+        plan.layers
+            .push(placed(LayerSource::Frame(source), rotation));
     }
     Ok(plan)
 }
@@ -236,15 +243,12 @@ mod tests {
     }
 
     fn clip(project: &mut Project, start: i64, length: i64, content: ClipContent) -> Clip {
-        Clip {
-            id: project.allocate_id(fosscut_model::IdKind::Clip),
-            start: frames(start),
-            duration: frames(length),
+        Clip::new(
+            project.allocate_id(fosscut_model::IdKind::Clip),
+            frames(start),
+            frames(length),
             content,
-            transform: Transform::default(),
-            opacity: 1.0,
-            volume: 1.0,
-        }
+        )
     }
 
     fn project() -> (Project, Id) {
@@ -376,6 +380,40 @@ mod tests {
             Flicks::ZERO,
         );
         assert_eq!(missing.unwrap_err().code(), "fosscut.timeline.not_found");
+    }
+
+    #[test]
+    fn keyframes_are_evaluated_and_disabled_clips_skipped() {
+        let (mut project, timeline) = project();
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        let base = &mut doc.tracks[0].clips[0];
+        base.keyframes.insert(
+            "opacity".into(),
+            vec![
+                fosscut_model::Keyframe {
+                    time: frames(0),
+                    value: fosscut_model::KeyValue::Number(0.0),
+                    interpolation: fosscut_model::Interpolation::Linear,
+                },
+                fosscut_model::Keyframe {
+                    time: frames(100),
+                    value: fosscut_model::KeyValue::Number(1.0),
+                    interpolation: fosscut_model::Interpolation::Linear,
+                },
+            ],
+        );
+        base.crop.left = 0.25;
+        base.blend = BlendMode::Screen;
+        base.transform.flip_vertical = true;
+        doc.tracks[1].clips[0].enabled = false;
+        let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
+        assert_eq!(plan.layers.len(), 2, "the disabled overlay is not drawn");
+        let layer = &plan.layers[0];
+        assert!((layer.opacity - 0.6).abs() < 1e-6, "{}", layer.opacity);
+        assert_eq!(layer.crop, [0.25, 0.0, 1.0, 1.0]);
+        assert_eq!(layer.blend, BlendMode::Screen);
+        assert!(layer.transform.flip_vertical);
+        assert_eq!(plan.layers[1].crop, UNCROPPED, "the title is not cropped");
     }
 
     #[test]

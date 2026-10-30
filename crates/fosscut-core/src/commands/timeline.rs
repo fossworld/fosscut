@@ -1,153 +1,21 @@
-//! Commands that reshape a whole edit or set clip properties: `clip.set` changes placement,
-//! opacity or volume through property paths (ADR-0011 item 3), `timeline.duplicate` copies
-//! a timeline onto a canvas of another shape, and `timeline.remove_ranges` cuts time ranges
-//! out of every track and closes the gaps (the cut and ripple of ADR-0007's patches).
-
-use std::collections::BTreeMap;
+//! Commands that reshape a whole edit: `timeline.duplicate` copies a timeline onto a canvas
+//! of another shape, and `timeline.remove_ranges` cuts time ranges out of every track and
+//! closes the gaps (the cut and ripple of ADR-0007's patches).
 
 use fosscut_model::{
-    ClipContent, Id, IdKind, Project, Timeline, TimelineEntry, TimelineFormat, TrackKind, Transform,
+    ClipContent, Id, IdKind, Project, Timeline, TimelineEntry, TimelineFormat, TrackKind,
 };
 use fosscut_time::{Flicks, Rate, TimeInput, TimeReport};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::caption::window_caption;
-use super::util::{ensure_unlocked, locate_clip, resolve, timeline_id, timeline_mut, track_index};
+use super::util::{ensure_unlocked, resolve, timeline_id, timeline_mut, track_index};
 use crate::{ApiError, Command, Context, codes};
-
-/// The property paths `clip.set` accepts, with what each takes.
-pub const CLIP_PROPERTIES: [(&str, &str); 5] = [
-    (
-        "transform.position",
-        "[x, y]: offset of the clip's centre from the canvas centre, as fractions of the canvas width and height; y grows downwards",
-    ),
-    (
-        "transform.scale",
-        "size relative to the fitted size, greater than 0",
-    ),
-    ("transform.rotation", "degrees clockwise"),
-    ("opacity", "0 (invisible) to 1"),
-    ("volume", "linear gain: 1 unchanged, 0 silent"),
-];
 
 fn invalid(message: impl Into<String>) -> ApiError {
     ApiError::new(codes::INVALID_ARGUMENTS, message)
-}
-
-fn number(path: &str, value: &Value) -> Result<f64, ApiError> {
-    value
-        .as_f64()
-        .filter(|v| v.is_finite())
-        .ok_or_else(|| invalid(format!("clip.set: {path} must be a number, not {value}")))
-}
-
-/// Changes a clip's placement, opacity or volume.
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ClipSet {
-    /// The clip.
-    pub clip: Id,
-    /// Property paths with their new values, for example
-    /// `{"transform.position": [0.2, 0], "transform.scale": 1.8}`. Paths:
-    /// `transform.position`, `transform.scale`, `transform.rotation`, `opacity`, `volume`.
-    pub set: BTreeMap<String, Value>,
-}
-
-/// A clip's properties after `clip.set`.
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ClipProperties {
-    /// The clip.
-    pub clip: Id,
-    /// Its track.
-    pub track: Id,
-    /// Placement on the canvas.
-    pub transform: Transform,
-    /// Opacity, 0 to 1.
-    pub opacity: f64,
-    /// Linear audio gain.
-    pub volume: f64,
-}
-
-impl Command for ClipSet {
-    const NAME: &'static str = "clip.set";
-    const SUMMARY: &'static str = "Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it.";
-    type Output = ClipProperties;
-
-    fn apply(self, ctx: &mut Context<'_>) -> Result<ClipProperties, ApiError> {
-        if self.set.is_empty() {
-            return Err(invalid("clip.set: give at least one property").with_hint(paths_hint()));
-        }
-        let location = locate_clip(ctx.project, &self.clip)?;
-        let timeline = timeline_mut(ctx.project, &location.timeline)?;
-        let track = &mut timeline.tracks[location.track];
-        ensure_unlocked(track)?;
-        let track_id = track.id.clone();
-        let clip = &mut track.clips[location.clip];
-        let visual = !matches!(clip.content, ClipContent::Audio { .. });
-        let audible = matches!(
-            clip.content,
-            ClipContent::Audio { .. } | ClipContent::Video { .. }
-        );
-        for (path, value) in &self.set {
-            match path.as_str() {
-                "transform.position" | "transform.scale" | "transform.rotation" | "opacity"
-                    if !visual =>
-                {
-                    return Err(invalid(format!(
-                        "clip.set: {} is an audio clip; it has no {path}",
-                        self.clip
-                    )));
-                }
-                "volume" if !audible => {
-                    return Err(invalid(format!(
-                        "clip.set: {} is a {} clip; it has no sound",
-                        self.clip,
-                        clip.content.kind_name()
-                    )));
-                }
-                "transform.position" => {
-                    let pair = value.as_array().filter(|a| a.len() == 2).ok_or_else(|| {
-                        invalid(format!(
-                            "clip.set: transform.position must be [x, y], not {value}"
-                        ))
-                    })?;
-                    clip.transform.position = [number(path, &pair[0])?, number(path, &pair[1])?];
-                }
-                "transform.scale" => {
-                    let scale = number(path, value)?;
-                    if scale <= 0.0 {
-                        return Err(invalid("clip.set: transform.scale must be greater than 0"));
-                    }
-                    clip.transform.scale = scale;
-                }
-                "transform.rotation" => clip.transform.rotation = number(path, value)?,
-                "opacity" => clip.opacity = number(path, value)?,
-                "volume" => clip.volume = number(path, value)?,
-                other => {
-                    return Err(invalid(format!("clip.set: there is no property {other}"))
-                        .with_hint(paths_hint())
-                        .with_details(json!({ "unknown": other })));
-                }
-            }
-        }
-        Ok(ClipProperties {
-            clip: clip.id.clone(),
-            track: track_id,
-            transform: clip.transform.clone(),
-            opacity: clip.opacity,
-            volume: clip.volume,
-        })
-    }
-}
-
-fn paths_hint() -> String {
-    let paths: Vec<String> = CLIP_PROPERTIES
-        .iter()
-        .map(|(path, meaning)| format!("{path} ({meaning})"))
-        .collect();
-    format!("Properties: {}.", paths.join("; "))
 }
 
 /// How pictures meet a canvas of another shape.
@@ -266,7 +134,18 @@ impl Command for TimelineDuplicate {
                     } else {
                         (video.width, video.height)
                     };
-                    clip.transform.scale *= fill_scale(size, (format.width, format.height));
+                    let factor = fill_scale(size, (format.width, format.height));
+                    clip.transform.scale *= factor;
+                    for key in clip
+                        .keyframes
+                        .get_mut("transform.scale")
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let fosscut_model::KeyValue::Number(v) = &mut key.value {
+                            *v *= factor;
+                        }
+                    }
                 }
             }
             copy.tracks.push(track);
@@ -547,13 +426,22 @@ fn cut_track(
             if !(untouched && shift == Flicks::ZERO) && id == clip.id {
                 report.clips_changed.push(id.clone());
             }
-            out.push(fosscut_model::Clip {
+            let mut part = fosscut_model::Clip {
                 id,
                 start: from - shift,
                 duration: to - from,
                 content,
                 ..clip.clone()
-            });
+            };
+            // Keyframes stay with the content; fades stay at the clip's outer edges.
+            part.shift_keyframes(Flicks::ZERO - offset);
+            if from != clip.start {
+                part.audio.fade_in = Flicks::ZERO;
+            }
+            if to != clip.end() {
+                part.audio.fade_out = Flicks::ZERO;
+            }
+            out.push(part);
         }
         if first {
             report.clips_removed.push(clip.id.clone());

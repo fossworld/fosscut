@@ -87,7 +87,11 @@ fn clip_properties_are_set_by_path() {
         "clip.set",
         json!({ "clip": clip, "set": { "opacity": 2 } }),
     );
-    assert_eq!(opaque.code, codes::MODEL_INVALID);
+    assert_eq!(
+        opaque.code,
+        codes::INVALID_ARGUMENTS,
+        "checked against the range"
+    );
     let title = run(&mut session, "text.add", json!({ "text": "Quiet" }));
     let silent = fails(
         &mut session,

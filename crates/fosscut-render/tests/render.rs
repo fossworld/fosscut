@@ -139,6 +139,7 @@ fn layers_stack_with_placement_and_opacity_in_linear_light() {
             position: [-0.25, -0.25],
             scale: 0.5,
             rotation: 0.0,
+            ..Transform::default()
         },
         opacity: 0.5,
         ..Layer::new(source(2))

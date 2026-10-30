@@ -374,7 +374,7 @@ mod thread_tests {
     use fosscut_core::{Request, Session};
     use fosscut_model::{
         Asset, AssetKind, Clip, ClipContent, DirStore, IdKind, MediaInfo, PathHints,
-        TimelineFormat, Track, TrackKind, Transform, VideoInfo,
+        TimelineFormat, Track, TrackKind, VideoInfo,
     };
     use fosscut_time::Rate;
     use serde_json::json;
@@ -540,18 +540,15 @@ mod thread_tests {
                 hidden: false,
                 locked: false,
                 caption_style: None,
-                clips: vec![Clip {
-                    id: Id::new(IdKind::Clip, 92),
-                    start: Flicks::ZERO,
-                    duration: Flicks::from_seconds(1).unwrap(),
-                    content: ClipContent::Video {
+                clips: vec![Clip::new(
+                    Id::new(IdKind::Clip, 92),
+                    Flicks::ZERO,
+                    Flicks::from_seconds(1).unwrap(),
+                    ClipContent::Video {
                         asset,
                         source_in: Flicks::ZERO,
                     },
-                    transform: Transform::default(),
-                    opacity: 1.0,
-                    volume: 1.0,
-                }],
+                )],
             },
         );
         Arc::new(Scene {

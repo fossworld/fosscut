@@ -49,8 +49,41 @@ export interface Transform {
   position?: [number, number];
   /** Scale relative to the fitted size; 1 when omitted. */
   scale?: number;
+  /** Extra width and height factors on top of the scale; [1, 1] when omitted. */
+  stretch?: [number, number];
   /** Clockwise rotation in degrees. */
   rotation?: number;
+  flip_horizontal?: boolean;
+  flip_vertical?: boolean;
+}
+
+/** Edges removed from the picture, as fractions of its size; 0 when omitted. */
+export interface Crop {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
+}
+
+/** A clip's sound shaping; omitted fields are at their defaults. Fades are in flicks. */
+export interface ClipAudio {
+  fade_in?: number;
+  fade_out?: number;
+  pan?: number;
+  channels?: "stereo" | "left" | "right" | "mono";
+}
+
+/** How a value moves from one keyframe to the next. */
+export type Interpolation = "hold" | "linear" | { bezier: [number, number, number, number] };
+
+/** A keyframe as `timeline.read` reports it. */
+export interface KeyframeView {
+  /** Position on the timeline. */
+  at: Moment;
+  /** Position from the clip's start. */
+  offset: Moment;
+  value: number | [number, number];
+  interpolation: Interpolation;
 }
 
 export interface ClipView {
@@ -63,8 +96,15 @@ export interface ClipView {
   asset_name?: string;
   source_in?: Moment;
   transform?: Transform;
+  crop?: Crop;
   opacity?: number;
+  blend?: string;
   volume?: number;
+  audio?: ClipAudio;
+  /** False when the clip is deactivated; omitted when active. */
+  enabled?: boolean;
+  /** Keyframes by property path, when the clip has any. */
+  keyframes?: Record<string, KeyframeView[]>;
 }
 
 export interface TrackView {

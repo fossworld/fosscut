@@ -123,6 +123,12 @@ pub mod codes {
     pub const CLIP_SPLIT_OUTSIDE: &str = "fosscut.clip.split_outside";
     /// A clip would be shorter than one frame or start before zero.
     pub const CLIP_INVALID_RANGE: &str = "fosscut.clip.invalid_range";
+    /// The property has keyframes, so its plain value cannot be set.
+    pub const CLIP_PROPERTY_ANIMATED: &str = "fosscut.clip.property_animated";
+    /// No keyframe of the property is at that time.
+    pub const KEYFRAME_NOT_FOUND: &str = "fosscut.keyframe.not_found";
+    /// A keyframe time lies outside its clip.
+    pub const KEYFRAME_OUTSIDE: &str = "fosscut.keyframe.outside";
     /// The asset does not exist.
     pub const ASSET_NOT_FOUND: &str = "fosscut.asset.not_found";
     /// Media information is missing or inconsistent with the asset kind.
@@ -264,6 +270,21 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             CLIP_INVALID_RANGE,
             "The clip would be empty or start before zero.",
             "Use a positive duration of at least one frame and a start of zero or later.",
+        ),
+        entry(
+            CLIP_PROPERTY_ANIMATED,
+            "The property has keyframes, so a plain value would be ignored.",
+            "Set the value at a time with keyframe.set, or remove its keyframes with keyframe.remove (all: true) first.",
+        ),
+        entry(
+            KEYFRAME_NOT_FOUND,
+            "The property has no keyframe at that time.",
+            "Read the clip's keyframes with timeline.read (detail full) and use one of their times.",
+        ),
+        entry(
+            KEYFRAME_OUTSIDE,
+            "The keyframe time is outside the clip.",
+            "Use a time from the clip's start to its end.",
         ),
         entry(
             ASSET_NOT_FOUND,

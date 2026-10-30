@@ -32,10 +32,26 @@ export function demoEngine(): FakeEngine {
     tracks: [
       track("track_0002", "video", 0, [
         clip("clip_0003", "video", 0, 8, { asset_name: "interview.mp4" }),
-        clip("clip_0006", "video", 8, 15, { asset_name: "b-roll.mp4" }),
+        clip("clip_0006", "video", 8, 15, {
+          asset_name: "b-roll.mp4",
+          transform: { scale: 1.1 },
+          blend: "normal",
+          keyframes: {
+            "transform.scale": [
+              { at: moment(8), offset: moment(0), value: 1, interpolation: { bezier: [0.42, 0, 0.58, 1] } },
+              { at: moment(15), offset: moment(7), value: 1.25, interpolation: "linear" },
+            ],
+          },
+        }),
         clip("clip_0007", "video", 15, 24, { asset_name: "interview.mp4" }),
       ]),
-      track("track_0004", "audio", 1, [clip("clip_0008", "audio", 0, 24, { asset_name: "music.m4a" })]),
+      track("track_0004", "audio", 1, [
+        clip("clip_0008", "audio", 0, 24, {
+          asset_name: "music.m4a",
+          volume: 0.6,
+          audio: { fade_in: 705_600_000, fade_out: 2 * 705_600_000 },
+        }),
+      ]),
       track("track_0005", "text", 2, [clip("clip_0009", "text", 0.5, 3.5, { text: "Meet FossCut" })]),
       track("track_0010", "caption", 3, [
         clip("clip_0011", "caption", 1, 2.2, { text: "Edit by talking" }),

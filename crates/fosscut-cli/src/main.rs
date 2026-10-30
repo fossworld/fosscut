@@ -10,8 +10,8 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    CaptionsCommand, Cli, ClipCommand, Command, MediaCommand, ModelsCommand, ProjectCommand,
-    SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
+    CaptionsCommand, Cli, ClipCommand, Command, KeyframeCommand, MediaCommand, ModelsCommand,
+    ProjectCommand, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -81,6 +81,31 @@ fn object(fields: Vec<(&str, Option<Value>)>) -> Value {
 
 fn some<T: serde::Serialize>(value: &Option<T>) -> Option<Value> {
     value.as_ref().map(|v| json!(v))
+}
+
+/// `PATH=VALUE` from `--set`: the value as JSON, or as a string when it is a bare word.
+fn property_value(text: &str) -> Result<(&str, Value), ApiError> {
+    let (path, value) = text.split_once('=').ok_or_else(|| {
+        ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("--set {text}: write PATH=VALUE, for example crop.left=0.1"),
+        )
+    })?;
+    let value = serde_json::from_str(value).unwrap_or_else(|_| json!(value));
+    Ok((path.trim(), value))
+}
+
+/// A keyframe value: a number, or `x,y` for a pair.
+fn keyframe_value(text: &str) -> Result<Value, ApiError> {
+    let numbers: Result<Vec<f64>, _> = text.split(',').map(|n| n.trim().parse::<f64>()).collect();
+    match numbers {
+        Ok(numbers) if numbers.len() == 1 => Ok(json!(numbers[0])),
+        Ok(numbers) if numbers.len() == 2 => Ok(json!(numbers)),
+        _ => Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("--value {text}: give a number, or x,y for position and stretch"),
+        )),
+    }
 }
 
 fn run(cli: &Cli) -> Result<Outcome, ApiError> {
@@ -227,19 +252,71 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             rotation,
             opacity,
             volume,
+            stretch,
+            blend,
+            fade_in,
+            fade_out,
+            pan,
+            enabled,
+            properties,
+        }) => {
+            let mut set = object(vec![
+                ("transform.position", some(position)),
+                ("transform.scale", some(scale)),
+                ("transform.stretch", some(stretch)),
+                ("transform.rotation", some(rotation)),
+                ("opacity", some(opacity)),
+                ("blend", some(blend)),
+                ("volume", some(volume)),
+                ("audio.fade_in", some(fade_in)),
+                ("audio.fade_out", some(fade_out)),
+                ("audio.pan", some(pan)),
+                ("enabled", some(enabled)),
+            ]);
+            for property in properties {
+                let (path, value) = property_value(property)?;
+                set[path] = value;
+            }
+            write(cli, "clip.set", json!({ "clip": clip, "set": set }))
+        }
+        Command::Keyframe(KeyframeCommand::Set {
+            clip,
+            property,
+            at,
+            offset,
+            value,
+            easing,
+        }) => {
+            let value = value.as_deref().map(keyframe_value).transpose()?;
+            write(
+                cli,
+                "keyframe.set",
+                object(vec![
+                    ("clip", Some(json!(clip))),
+                    ("property", Some(json!(property))),
+                    ("at", some(at)),
+                    ("offset", some(offset)),
+                    ("value", value),
+                    ("easing", some(easing)),
+                ]),
+            )
+        }
+        Command::Keyframe(KeyframeCommand::Remove {
+            clip,
+            property,
+            at,
+            offset,
+            all,
         }) => write(
             cli,
-            "clip.set",
-            json!({
-                "clip": clip,
-                "set": object(vec![
-                    ("transform.position", some(position)),
-                    ("transform.scale", some(scale)),
-                    ("transform.rotation", some(rotation)),
-                    ("opacity", some(opacity)),
-                    ("volume", some(volume)),
-                ]),
-            }),
+            "keyframe.remove",
+            object(vec![
+                ("clip", Some(json!(clip))),
+                ("property", Some(json!(property))),
+                ("at", some(at)),
+                ("offset", some(offset)),
+                ("all", Some(json!(all))),
+            ]),
         ),
         Command::Text(TextCommand::Add {
             text,

@@ -1,15 +1,16 @@
 //! Timeline audio for FossCut (ADR-0008, item 5; first step).
 //!
 //! [`mix`] renders a span of a timeline to interleaved `f32` at a fixed rate and channel
-//! count: audio clips and the embedded audio of video clips on unmuted tracks, each scaled
-//! by its clip's `volume`, placed to the sample. Sources come from an [`AudioSource`], so
-//! the mixer is independent of decoders and fully testable. Fades, pan, effects, buses and
-//! loudness normalization come later.
+//! count: audio clips and the embedded audio of video clips on unmuted tracks, placed to
+//! the sample. Each enabled clip plays its chosen channels, scaled by its volume (keyframed
+//! per sample) and its fades, and balanced by its pan. Sources come from an
+//! [`AudioSource`], so the mixer is independent of decoders and fully testable. Effects,
+//! buses and loudness normalization come later.
 
 #![forbid(unsafe_code)]
 
 use fosscut_media::AudioBuffer;
-use fosscut_model::{AssetKind, ClipContent, Id, Project, TrackKind};
+use fosscut_model::{AssetKind, ChannelMode, Clip, ClipContent, Id, Project, TrackKind};
 use fosscut_time::{FLICKS_PER_SECOND, Flicks};
 use thiserror::Error;
 
@@ -98,9 +99,11 @@ pub fn mix(
                 }
                 _ => continue,
             };
-            let gain = clip.volume as f32;
+            if !clip.enabled {
+                continue;
+            }
             let (from, to) = (clip.start.max(start), clip.end().min(end));
-            if from >= to || gain == 0.0 {
+            if from >= to || silent(clip) {
                 continue;
             }
             let audio = source.read(
@@ -114,14 +117,19 @@ pub fn mix(
             let offset = (samples_in(from, sample_rate) - first).max(0) as usize;
             let count =
                 (samples_in(to, sample_rate) - samples_in(from, sample_rate)).max(0) as usize;
+            let shaped = Shaping::of(clip);
+            let clip_first = samples_in(from - clip.start, sample_rate);
+            let mut frame = vec![0.0f32; channels_n];
             for i in 0..count.min(audio.frames()) {
                 let target = offset + i;
                 if target >= frames {
                     break;
                 }
-                for c in 0..channels_n {
-                    out.samples[target * channels_n + c] +=
-                        audio.samples[i * channels_n + c] * gain;
+                frame.copy_from_slice(&audio.samples[i * channels_n..(i + 1) * channels_n]);
+                let at = sample_time(clip_first + i as i64, sample_rate);
+                shaped.apply(clip, at, &mut frame);
+                for (c, value) in frame.iter().enumerate() {
+                    out.samples[target * channels_n + c] += value;
                 }
             }
         }
@@ -130,6 +138,77 @@ pub fn mix(
         *sample = sample.clamp(-1.0, 1.0);
     }
     Ok(out)
+}
+
+/// The time of sample `index` counted from a clip's start.
+fn sample_time(index: i64, sample_rate: u32) -> Flicks {
+    Flicks::new(
+        i64::try_from(i128::from(index) * i128::from(FLICKS_PER_SECOND) / i128::from(sample_rate))
+            .unwrap_or(i64::MAX),
+    )
+}
+
+/// True when a clip cannot be heard at all: zero volume and no volume keyframes.
+fn silent(clip: &Clip) -> bool {
+    clip.volume == 0.0 && !clip.keyframes.contains_key("volume")
+}
+
+/// How a clip's sound is shaped, decided once per clip: which per-sample work it needs.
+struct Shaping {
+    /// Volume keyframes or fades change the gain over time.
+    varying: bool,
+    /// The constant gain when nothing varies.
+    gain: f32,
+}
+
+impl Shaping {
+    fn of(clip: &Clip) -> Shaping {
+        let varying = clip.keyframes.contains_key("volume")
+            || clip.keyframes.contains_key("audio.pan")
+            || clip.audio.fade_in.is_positive()
+            || clip.audio.fade_out.is_positive();
+        Shaping {
+            varying,
+            gain: clip.volume.max(0.0) as f32,
+        }
+    }
+
+    /// Shapes one sample frame of `clip` at `at` from its start, in place.
+    fn apply(&self, clip: &Clip, at: Flicks, frame: &mut [f32]) {
+        if frame.len() == 2 {
+            let (l, r) = (frame[0], frame[1]);
+            let (l, r) = match clip.audio.channels {
+                ChannelMode::Stereo => (l, r),
+                ChannelMode::Left => (l, l),
+                ChannelMode::Right => (r, r),
+                ChannelMode::Mono => ((l + r) / 2.0, (l + r) / 2.0),
+            };
+            let pan = if self.varying {
+                clip.pan_at(at)
+            } else {
+                clip.audio.pan
+            };
+            let (pl, pr) = balance(pan);
+            frame[0] = l * pl;
+            frame[1] = r * pr;
+        }
+        let gain = if self.varying {
+            (clip.volume_at(at) * clip.fade_at(at)) as f32
+        } else {
+            self.gain
+        };
+        for value in frame.iter_mut() {
+            *value *= gain;
+        }
+    }
+}
+
+/// Left and right gains for a pan from -1 (left) to 1 (right): centred leaves both sides
+/// unchanged, and moving to one side lowers the other on a quarter cosine.
+pub fn balance(pan: f64) -> (f32, f32) {
+    let pan = pan.clamp(-1.0, 1.0);
+    let lower = |amount: f64| (amount.max(0.0) * std::f64::consts::FRAC_PI_2).cos() as f32;
+    (lower(pan), lower(-pan))
 }
 
 fn has_audio(project: &Project, asset: &Id) -> bool {
@@ -145,7 +224,7 @@ mod tests {
     use std::collections::HashMap;
 
     use fosscut_model::{
-        Asset, AudioInfo, Clip, IdKind, MediaInfo, PathHints, TimelineFormat, Track, Transform,
+        Asset, AudioInfo, Clip, IdKind, MediaInfo, PathHints, TimelineFormat, Track,
     };
     use fosscut_time::Rate;
 
@@ -217,13 +296,13 @@ mod tests {
         volume: f64,
     ) -> Clip {
         Clip {
-            id: project.allocate_id(IdKind::Clip),
-            start: frames(start),
-            duration: frames(length),
-            content,
-            transform: Transform::default(),
-            opacity: 1.0,
             volume,
+            ..Clip::new(
+                project.allocate_id(IdKind::Clip),
+                frames(start),
+                frames(length),
+                content,
+            )
         }
     }
 
@@ -447,5 +526,146 @@ mod tests {
             .frames(),
             0
         );
+    }
+
+    /// Every asset is a constant left and right level.
+    struct Stereo(f32, f32);
+
+    impl AudioSource for Stereo {
+        fn read(
+            &mut self,
+            _asset: &Id,
+            _start: Flicks,
+            duration: Flicks,
+            sample_rate: u32,
+            channels: u16,
+        ) -> Result<AudioBuffer, AudioError> {
+            let frames = samples_in(duration, sample_rate) as usize;
+            let mut samples = Vec::with_capacity(frames * usize::from(channels));
+            for _ in 0..frames {
+                samples.extend([self.0, self.1].iter().take(usize::from(channels)));
+            }
+            Ok(AudioBuffer {
+                sample_rate,
+                channels,
+                samples,
+            })
+        }
+    }
+
+    /// One audio clip of 90 frames, shaped by `edit`, mixed over its length.
+    fn shaped(edit: impl FnOnce(&mut Clip), source: &mut dyn AudioSource) -> AudioBuffer {
+        let format = TimelineFormat {
+            width: 1920,
+            height: 1080,
+            rate: Rate::FPS_30,
+            sample_rate: 48_000,
+        };
+        let mut project = Project::new(Id::new(IdKind::Project, 1), "Shape", format);
+        let music = asset(&mut project, AssetKind::Audio, true);
+        let mut voice = clip(
+            &mut project,
+            ClipContent::Audio {
+                asset: music,
+                source_in: Flicks::ZERO,
+            },
+            0,
+            90,
+            1.0,
+        );
+        edit(&mut voice);
+        track(&mut project, TrackKind::Audio, false, vec![voice]);
+        let timeline = project.manifest.primary_timeline.clone();
+        mix(
+            &project,
+            &timeline,
+            Flicks::ZERO,
+            frames(90),
+            RATE,
+            2,
+            source,
+        )
+        .unwrap()
+    }
+
+    fn stereo_at(buffer: &AudioBuffer, frame: i64) -> (f32, f32) {
+        let index = samples_in(frames(frame), RATE) as usize;
+        (buffer.samples[index * 2], buffer.samples[index * 2 + 1])
+    }
+
+    #[test]
+    fn fades_and_volume_keyframes_shape_the_gain() {
+        let faded = shaped(
+            |c| {
+                c.audio.fade_in = frames(30);
+                c.audio.fade_out = frames(30);
+            },
+            &mut Stereo(0.5, 0.5),
+        );
+        assert_eq!(stereo_at(&faded, 0).0, 0.0, "silent at the start");
+        let half = stereo_at(&faded, 15).0;
+        assert!(
+            (half - 0.5 * std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-3,
+            "{half}"
+        );
+        assert_eq!(stereo_at(&faded, 45).0, 0.5, "full in the middle");
+        assert!(stereo_at(&faded, 89).0 < 0.05, "nearly silent at the end");
+
+        let ramp = shaped(
+            |c| {
+                c.keyframes.insert(
+                    "volume".into(),
+                    vec![
+                        fosscut_model::Keyframe {
+                            time: Flicks::ZERO,
+                            value: fosscut_model::KeyValue::Number(0.0),
+                            interpolation: fosscut_model::Interpolation::Linear,
+                        },
+                        fosscut_model::Keyframe {
+                            time: frames(60),
+                            value: fosscut_model::KeyValue::Number(2.0),
+                            interpolation: fosscut_model::Interpolation::Linear,
+                        },
+                    ],
+                );
+                c.volume = 0.0;
+            },
+            &mut Stereo(0.25, 0.25),
+        );
+        let quarter = stereo_at(&ramp, 15).0;
+        assert!(
+            (quarter - 0.125).abs() < 1e-3,
+            "gain 0.5 at frame 15: {quarter}"
+        );
+        assert!(
+            (stereo_at(&ramp, 75).0 - 0.5).abs() < 1e-6,
+            "held at 2 after"
+        );
+    }
+
+    #[test]
+    fn channels_pan_and_deactivation() {
+        let mut source = Stereo(0.6, 0.2);
+        let plain = shaped(|_| {}, &mut source);
+        assert_eq!(stereo_at(&plain, 10), (0.6, 0.2));
+        let left = shaped(|c| c.audio.channels = ChannelMode::Left, &mut source);
+        assert_eq!(stereo_at(&left, 10), (0.6, 0.6));
+        let right = shaped(|c| c.audio.channels = ChannelMode::Right, &mut source);
+        assert_eq!(stereo_at(&right, 10), (0.2, 0.2));
+        let mono = shaped(|c| c.audio.channels = ChannelMode::Mono, &mut source);
+        let (l, r) = stereo_at(&mono, 10);
+        assert!((l - 0.4).abs() < 1e-6 && (r - 0.4).abs() < 1e-6);
+        let panned = shaped(|c| c.audio.pan = 1.0, &mut source);
+        let (l, r) = stereo_at(&panned, 10);
+        assert!(l.abs() < 1e-6, "hard right silences the left: {l}");
+        assert_eq!(r, 0.2, "and leaves the right as it was");
+        let off = shaped(|c| c.enabled = false, &mut source);
+        assert!(
+            off.samples.iter().all(|s| *s == 0.0),
+            "deactivated clips are silent"
+        );
+        assert_eq!(balance(0.0), (1.0, 1.0));
+        let (l, r) = balance(-0.5);
+        assert!((r - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6 && l == 1.0);
     }
 }

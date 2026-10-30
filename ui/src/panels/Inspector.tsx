@@ -1,8 +1,19 @@
 import { useState } from "react";
 
+import { EASINGS, type EasingName, easingName, keyAt, keyTimes } from "../app/animation";
 import type { Editor } from "../app/editor";
 import type { ClipView } from "../engine/types";
-import { type Field, change, fieldsFor } from "./fields";
+import {
+  type Field,
+  type Viewing,
+  change,
+  fieldsFor,
+  hasPicture,
+  hasSound,
+  keyedPaths,
+  stretched,
+  toggleKey,
+} from "./fields";
 
 const KINDS: Record<string, string> = {
   video: "Video clip",
@@ -12,14 +23,62 @@ const KINDS: Record<string, string> = {
   caption: "Caption page",
 };
 
-function NumberField({ field, onCommit }: { field: Field; onCommit: (value: number) => void }) {
+const BLENDS = [
+  "normal",
+  "multiply",
+  "screen",
+  "overlay",
+  "darken",
+  "lighten",
+  "color_dodge",
+  "color_burn",
+  "hard_light",
+  "soft_light",
+  "linear_burn",
+  "add",
+  "difference",
+  "exclusion",
+];
+
+const CHANNELS = ["stereo", "left", "right", "mono"];
+
+const words = (name: string) => name.replaceAll("_", " ");
+
+/** A diamond that adds or removes the property's keyframe at the playhead. */
+function KeyButton({ field, onToggle }: { field: Field; onToggle: () => void }) {
+  if (!field.animatable) return <span />;
+  const state = field.keyed ? "on" : field.animated ? "animated" : "off";
+  const title = field.keyed
+    ? "Remove the keyframe at the playhead"
+    : field.animated
+      ? "Add a keyframe at the playhead"
+      : "Animate: add a keyframe at the playhead";
+  return (
+    <button className={`key ${state}`} title={title} aria-label={title} onClick={onToggle}>
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+        <path d="M5 0.8 9.2 5 5 9.2 0.8 5z" />
+      </svg>
+    </button>
+  );
+}
+
+function NumberField({
+  field,
+  onCommit,
+  onToggle,
+}: {
+  field: Field;
+  onCommit: (value: number) => void;
+  onToggle: () => void;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
   const commit = () => {
     if (draft !== null) onCommit(Number(draft));
     setDraft(null);
   };
   return (
-    <label className="field">
+    <label className={`field${field.animated ? " animated" : ""}`}>
+      <KeyButton field={field} onToggle={onToggle} />
       <span>{field.label}</span>
       <input
         type="number"
@@ -39,10 +98,84 @@ function NumberField({ field, onCommit }: { field: Field; onCommit: (value: numb
   );
 }
 
-/** The selected clip: what and where it is, and its placement, opacity and volume. */
-export function Inspector({ editor, clip }: { editor: Editor; clip: ClipView }) {
+function Choice({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
   return (
-    <section className="inspector">
+    <label className="choice">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {words(option)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Previous and next keyframe, and the easing of the keyframes at the playhead. */
+function Keyframes({ editor, clip, playhead }: { editor: Editor; clip: ClipView; playhead: number }) {
+  const times = keyTimes(clip);
+  if (times.length === 0) return null;
+  const previous = [...times].reverse().find((t) => t < playhead);
+  const next = times.find((t) => t > playhead);
+  const here = keyedPaths(clip, playhead);
+  const first = here[0] ? keyAt(clip, here[0], playhead) : undefined;
+  const easing = first ? easingName(first.interpolation) : null;
+  const setEasing = (name: string) => {
+    void editor.edit(
+      here.map((property) => ({
+        command: "keyframe.set",
+        args: { clip: clip.id, property, at: { flicks: playhead }, easing: name },
+      })),
+    );
+  };
+  return (
+    <div className="keyframes">
+      <button
+        title="Previous keyframe"
+        disabled={previous === undefined}
+        onClick={() => previous !== undefined && void editor.seek(previous)}
+      >
+        ◂ Key
+      </button>
+      <button title="Next keyframe" disabled={next === undefined} onClick={() => next !== undefined && void editor.seek(next)}>
+        Key ▸
+      </button>
+      {easing !== null && (
+        <Choice
+          label="Easing"
+          value={easing}
+          options={easing === "custom" ? ["custom", ...Object.keys(EASINGS)] : Object.keys(EASINGS)}
+          onChange={(name) => name !== "custom" && setEasing(name as EasingName)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The selected clip at the playhead: what and where it is, its placement, crop, opacity,
+ * blend mode and sound, with keyframe diamonds beside the animatable values.
+ */
+export function Inspector({ editor, clip, playhead }: { editor: Editor; clip: ClipView; playhead: number }) {
+  const [separate, setSeparate] = useState(false);
+  const viewing: Viewing = { playhead, separate };
+  const set = (properties: Record<string, unknown>) => void editor.setProperties(clip.id, properties);
+  const t = clip.transform ?? {};
+  const enabled = clip.enabled !== false;
+  return (
+    <section className={`inspector${enabled ? "" : " disabled"}`}>
       <h2>{KINDS[clip.kind] ?? clip.kind}</h2>
       <p className="name">{clip.text ?? clip.asset_name ?? clip.id}</p>
       <dl className="times">
@@ -53,18 +186,64 @@ export function Inspector({ editor, clip }: { editor: Editor; clip: ClipView }) 
         <dt>Length</dt>
         <dd>{clip.duration.timecode}</dd>
       </dl>
+      <label className="toggle">
+        <input type="checkbox" checked={enabled} onChange={(event) => set({ enabled: event.target.checked })} />
+        <span>Active (V)</span>
+      </label>
+      <Keyframes editor={editor} clip={clip} playhead={playhead} />
       <div className="fields" key={clip.id}>
-        {fieldsFor(clip).map((field) => (
+        {fieldsFor(clip, viewing).map((field) => (
           <NumberField
             key={`${field.id}:${field.value}`}
             field={field}
             onCommit={(value) => {
-              const set = change(clip, field.id, value);
-              if (set) void editor.setProperties(clip.id, set);
+              const command = change(clip, field.id, value, viewing);
+              if (command) void editor.edit([command]);
             }}
+            onToggle={() => void editor.edit([toggleKey(clip, field.path, playhead)])}
           />
         ))}
       </div>
+      {hasPicture(clip) && (
+        <div className="options">
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={!(separate || stretched(clip))}
+              disabled={stretched(clip)}
+              onChange={(event) => setSeparate(!event.target.checked)}
+            />
+            <span>Uniform scale</span>
+          </label>
+          <div className="buttons">
+            <button
+              className={t.flip_horizontal ? "active" : ""}
+              aria-pressed={t.flip_horizontal === true}
+              onClick={() => set({ "transform.flip_horizontal": !t.flip_horizontal })}
+            >
+              Mirror
+            </button>
+            <button
+              className={t.flip_vertical ? "active" : ""}
+              aria-pressed={t.flip_vertical === true}
+              onClick={() => set({ "transform.flip_vertical": !t.flip_vertical })}
+            >
+              Flip
+            </button>
+          </div>
+          <Choice label="Blend" value={clip.blend ?? "normal"} options={BLENDS} onChange={(blend) => set({ blend })} />
+        </div>
+      )}
+      {hasSound(clip) && (
+        <div className="options">
+          <Choice
+            label="Channels"
+            value={clip.audio?.channels ?? "stereo"}
+            options={CHANNELS}
+            onChange={(channels) => set({ "audio.channels": channels })}
+          />
+        </div>
+      )}
     </section>
   );
 }

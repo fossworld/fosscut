@@ -44,7 +44,20 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             let added = run(&mut session, "captions.add", captions_sample());
             json!({ "clip": added.results[0]["pages"][0]["clip"], "text": "Hi there", "emphasis": [1] })
         }
-        "clip.set" => json!({ "clip": clip, "set": { "transform.scale": 1.5, "opacity": 0.8 } }),
+        "clip.set" => {
+            json!({ "clip": clip, "set": { "transform.scale": 1.5, "opacity": 0.8, "blend": "screen", "audio.fade_in": { "seconds": "0.5" } } })
+        }
+        "keyframe.set" => {
+            json!({ "clip": clip, "property": "opacity", "at": "1s", "value": 0.25, "easing": "ease_in_out" })
+        }
+        "keyframe.remove" => {
+            run(
+                &mut session,
+                "keyframe.set",
+                json!({ "clip": clip, "property": "transform.scale", "offset": "2s", "value": 1.2 }),
+            );
+            json!({ "clip": clip, "property": "transform.scale", "offset": "2s" })
+        }
         "timeline.duplicate" => json!({ "width": 1080, "height": 1920, "fit": "fill" }),
         "timeline.remove_ranges" => {
             // Cut from the text track only, so the primary video guard does not apply.

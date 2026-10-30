@@ -1909,3 +1909,123 @@ fn a_reframed_subject_stays_in_the_vertical_frame() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn keyframes_flips_and_deactivation_show_in_frames() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("keyframes");
+    // A white square on the left of a dark frame.
+    let status = Command::new("ffmpeg")
+        .current_dir(&dir)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg("color=c=0x203050:s=640x360:r=30:d=3,drawbox=x=60:y=140:w=80:h=80:color=white:t=fill")
+        .args(["-c:v", "mpeg4", "-q:v", "2", "square.mp4"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let new = [
+        "project",
+        "new",
+        "Keys.fosscut",
+        "--width",
+        "640",
+        "--height",
+        "360",
+    ];
+    ok(&dir, &new);
+    ok(&dir, &["media", "import", "square.mp4"]);
+    let placed = ok(&dir, &["clip", "add", "--asset", "asset_0001"]);
+    let clip = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    let grab = |time: &str, out: &str| {
+        ok(&dir, &["frame", time, "--out", out, "--width", "320"]);
+        white_columns(&dir.join(out))
+    };
+    assert!(!grab("1s", "plain.png").is_empty());
+
+    // Fade the picture in over the first second.
+    for (at, value, easing) in [("0s", "0", "ease_in"), ("1s", "1", "linear")] {
+        ok(
+            &dir,
+            &[
+                "keyframe",
+                "set",
+                "--clip",
+                &clip,
+                "--property",
+                "opacity",
+                "--at",
+                at,
+                "--value",
+                value,
+                "--easing",
+                easing,
+            ],
+        );
+    }
+    assert!(grab("0s", "start.png").is_empty(), "invisible at the start");
+    assert!(
+        !grab("2s", "after.png").is_empty(),
+        "visible after the fade"
+    );
+    let blocked = fails(&dir, &["clip", "set", "--clip", &clip, "--opacity", "1"]);
+    assert_eq!(blocked["code"], json!("fosscut.clip.property_animated"));
+
+    // A horizontal flip moves the square to the right side.
+    ok(
+        &dir,
+        &[
+            "clip",
+            "set",
+            "--clip",
+            &clip,
+            "--set",
+            "transform.flip_horizontal=true",
+            "--blend",
+            "screen",
+            "--fade-in",
+            "0.5s",
+        ],
+    );
+    let flipped = grab("2s", "flipped.png");
+    assert!(flipped.iter().all(|&x| x > 160), "{flipped:?}");
+    let view = ok(&dir, &["timeline", "read", "--detail", "full"]);
+    let shown = &view["tracks"][0]["clips"][0];
+    assert_eq!(shown["blend"], json!("screen"));
+    assert_eq!(
+        shown["keyframes"]["opacity"][1]["at"]["seconds"],
+        json!("1")
+    );
+
+    // Deactivated, the clip draws nothing; removing the keyframes keeps the value at 2 s.
+    ok(
+        &dir,
+        &["clip", "set", "--clip", &clip, "--enabled", "false"],
+    );
+    assert!(grab("2s", "off.png").is_empty());
+    ok(&dir, &["clip", "set", "--clip", &clip, "--enabled", "true"]);
+    ok(
+        &dir,
+        &[
+            "keyframe",
+            "remove",
+            "--clip",
+            &clip,
+            "--property",
+            "opacity",
+            "--all",
+            "--at",
+            "2s",
+        ],
+    );
+    assert!(
+        !grab("0s", "kept.png").is_empty(),
+        "opacity 1 everywhere now"
+    );
+    let bad = fails(
+        &dir,
+        &["clip", "set", "--clip", &clip, "--set", "crop.left"],
+    );
+    assert_eq!(bad["code"], json!("fosscut.request.invalid_arguments"));
+}

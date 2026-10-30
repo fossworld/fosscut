@@ -179,6 +179,19 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             "presets": presets,
             "animators": crate::presets::caption_animators(brief),
         });
+        // The closed property vocabulary (ADR-0011, item 3): what clip.set and
+        // keyframe.set take.
+        let properties: Vec<Value> = fosscut_model::clip_properties()
+            .iter()
+            .map(|p| {
+                if brief {
+                    json!({ "path": p.path, "animatable": p.animatable })
+                } else {
+                    json!(p)
+                }
+            })
+            .collect();
+        result["properties"] = json!(properties);
     }
     Ok(result)
 }
@@ -313,10 +326,19 @@ fn clip_view(
             }
         }
     }
+    if !clip.enabled {
+        view["enabled"] = json!(false);
+    }
     if detail == Detail::Full {
         view["transform"] = json!(clip.transform);
+        view["crop"] = json!(clip.crop);
         view["opacity"] = json!(clip.opacity);
+        view["blend"] = json!(clip.blend);
         view["volume"] = json!(clip.volume);
+        view["audio"] = json!(clip.audio);
+        if !clip.keyframes.is_empty() {
+            view["keyframes"] = json!(crate::commands::keyframe_reports(clip, rate));
+        }
     }
     view
 }

@@ -76,6 +76,9 @@ pub enum Command {
     /// Place, split, move and remove clips.
     #[command(subcommand)]
     Clip(ClipCommand),
+    /// Animate clip properties with keyframes.
+    #[command(subcommand)]
+    Keyframe(KeyframeCommand),
     /// Add titles.
     #[command(subcommand)]
     Text(TextCommand),
@@ -402,8 +405,9 @@ pub enum ClipCommand {
         #[arg(long)]
         ripple: bool,
     },
-    /// Set a clip's placement, opacity or volume. Position and scale are relative to the
-    /// canvas and the fitted picture, so the same values work at any output size.
+    /// Set a clip's placement, crop, opacity, blend mode or sound. Position and scale are
+    /// relative to the canvas and the fitted picture, so the same values work at any
+    /// output size. `--set PATH=VALUE` reaches every property `fosscut capabilities` lists.
     Set {
         /// Clip id.
         #[arg(long)]
@@ -424,6 +428,74 @@ pub enum ClipCommand {
         /// Linear audio gain: 1 unchanged, 0 silent.
         #[arg(long)]
         volume: Option<f64>,
+        /// Extra width and height factors for non-uniform scaling, for example 1.2,1.
+        #[arg(long, value_delimiter = ',')]
+        stretch: Option<Vec<f64>>,
+        /// Blend mode: normal, multiply, screen, overlay, darken, lighten, color_dodge,
+        /// color_burn, hard_light, soft_light, linear_burn, add, difference or exclusion.
+        #[arg(long)]
+        blend: Option<String>,
+        /// Fade the sound in over this long, for example 0.5s.
+        #[arg(long, value_parser = parse_time)]
+        fade_in: Option<TimeInput>,
+        /// Fade the sound out over this long.
+        #[arg(long, value_parser = parse_time)]
+        fade_out: Option<TimeInput>,
+        /// Stereo balance from -1 (left) to 1 (right).
+        #[arg(long, allow_hyphen_values = true)]
+        pan: Option<f64>,
+        /// false deactivates the clip; true activates it again.
+        #[arg(long)]
+        enabled: Option<bool>,
+        /// Any property as PATH=VALUE, VALUE in JSON (a bare word is a string), for example
+        /// transform.flip_horizontal=true, crop.left=0.1 or audio.channels=left. Repeatable.
+        #[arg(long = "set", value_name = "PATH=VALUE")]
+        properties: Vec<String>,
+    },
+}
+
+/// `fosscut keyframe ...`
+#[derive(Debug, Subcommand)]
+pub enum KeyframeCommand {
+    /// Add a keyframe to a clip property at a time, or replace the one there.
+    Set {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Animatable property, for example opacity, transform.position or volume.
+        #[arg(long)]
+        property: String,
+        /// Timeline position of the keyframe.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// Position from the clip's start, instead of --at.
+        #[arg(long, value_parser = parse_time)]
+        offset: Option<TimeInput>,
+        /// The value: a number, or x,y for position and stretch. The current value when
+        /// omitted.
+        #[arg(long, allow_hyphen_values = true)]
+        value: Option<String>,
+        /// Easing to the next keyframe: linear, hold, ease_in, ease_out or ease_in_out.
+        #[arg(long)]
+        easing: Option<String>,
+    },
+    /// Remove a keyframe at a time, or all keyframes of a property.
+    Remove {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// The property.
+        #[arg(long)]
+        property: String,
+        /// Timeline position of the keyframe.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// Position from the clip's start, instead of --at.
+        #[arg(long, value_parser = parse_time)]
+        offset: Option<TimeInput>,
+        /// Remove every keyframe of the property.
+        #[arg(long)]
+        all: bool,
     },
 }
 

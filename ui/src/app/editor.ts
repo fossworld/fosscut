@@ -342,6 +342,15 @@ export class Editor {
     await this.edit([{ command: "clip.set", args: { clip, set } }]);
   }
 
+  /** Deactivates the selected clip, or activates it again. */
+  async toggleEnabled(): Promise<void> {
+    const timeline = this.state.timeline;
+    const id = this.state.selection;
+    const clip = timeline && id ? findClip(timeline, id) : null;
+    if (!clip) return;
+    await this.setProperties(clip.id, { enabled: clip.enabled === false });
+  }
+
   async undo(): Promise<void> {
     if (this.state.opened?.info.can_undo) await this.edit([{ command: "history.undo" }]);
   }

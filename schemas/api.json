@@ -2005,7 +2005,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "Changes a clip's placement, opacity or volume.",
+        "description": "Changes a clip's properties: placement, crop, opacity, blend mode, sound, and whether\nit is active.",
         "properties": {
           "clip": {
             "$ref": "#/$defs/Id",
@@ -2013,7 +2013,7 @@
           },
           "set": {
             "additionalProperties": true,
-            "description": "Property paths with their new values, for example\n`{\"transform.position\": [0.2, 0], \"transform.scale\": 1.8}`. Paths:\n`transform.position`, `transform.scale`, `transform.rotation`, `opacity`, `volume`.",
+            "description": "Property paths with their new values, for example\n`{\"transform.position\": [0.2, 0], \"transform.scale\": 1.8, \"blend\": \"screen\"}`.\nPaths: `transform.position`, `transform.scale`, `transform.stretch`,\n`transform.rotation`, `transform.flip_horizontal`, `transform.flip_vertical`,\n`crop.left`, `crop.right`, `crop.top`, `crop.bottom`, `opacity`, `blend`, `enabled`,\n`volume`, `audio.pan`, `audio.fade_in`, `audio.fade_out`, `audio.channels`.",
             "type": "object"
           }
         },
@@ -2027,14 +2027,286 @@
       "name": "clip.set",
       "output_schema": {
         "$defs": {
+          "BlendMode": {
+            "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
+            "oneOf": [
+              {
+                "const": "normal",
+                "description": "Covers what is below.",
+                "type": "string"
+              },
+              {
+                "const": "multiply",
+                "description": "Darkens: below times the picture.",
+                "type": "string"
+              },
+              {
+                "const": "screen",
+                "description": "Lightens: the inverse of multiplying the inverses.",
+                "type": "string"
+              },
+              {
+                "const": "overlay",
+                "description": "Multiply in the shadows of what is below and screen in its highlights.",
+                "type": "string"
+              },
+              {
+                "const": "darken",
+                "description": "The darker of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "lighten",
+                "description": "The lighter of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "color_dodge",
+                "description": "Brightens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "color_burn",
+                "description": "Darkens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "hard_light",
+                "description": "Overlay with the roles swapped: the picture decides multiply or screen.",
+                "type": "string"
+              },
+              {
+                "const": "soft_light",
+                "description": "A gentler hard light.",
+                "type": "string"
+              },
+              {
+                "const": "linear_burn",
+                "description": "Sum minus one: darkens more than multiply.",
+                "type": "string"
+              },
+              {
+                "const": "add",
+                "description": "Sum (linear dodge), clipped at white.",
+                "type": "string"
+              },
+              {
+                "const": "difference",
+                "description": "Absolute difference.",
+                "type": "string"
+              },
+              {
+                "const": "exclusion",
+                "description": "Like difference with lower contrast.",
+                "type": "string"
+              }
+            ]
+          },
+          "ChannelMode": {
+            "description": "Which channels of a clip's sound play where (fill channel).",
+            "oneOf": [
+              {
+                "const": "stereo",
+                "description": "As recorded.",
+                "type": "string"
+              },
+              {
+                "const": "left",
+                "description": "The left channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "The right channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "mono",
+                "description": "Both channels mixed to one, played on both.",
+                "type": "string"
+              }
+            ]
+          },
+          "ClipAudio": {
+            "description": "How a clip's sound is shaped: fades, pan and channels.",
+            "properties": {
+              "channels": {
+                "$ref": "#/$defs/ChannelMode",
+                "description": "Which source channels play."
+              },
+              "fade_in": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade in from silence over this long at the clip's start."
+              },
+              "fade_out": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade out to silence over this long at the clip's end."
+              },
+              "pan": {
+                "description": "Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Crop": {
+            "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
+            "properties": {
+              "bottom": {
+                "description": "Fraction of the height removed at the bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "left": {
+                "description": "Fraction of the width removed on the left.",
+                "format": "double",
+                "type": "number"
+              },
+              "right": {
+                "description": "Fraction of the width removed on the right.",
+                "format": "double",
+                "type": "number"
+              },
+              "top": {
+                "description": "Fraction of the height removed at the top.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
             "type": "string"
           },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "KeyframeReport": {
+            "description": "A keyframe as agents read it: its time on the timeline and from the clip's start.",
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position on the timeline."
+              },
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves on to the next keyframe."
+              },
+              "offset": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position from the clip's start."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value."
+              }
+            },
+            "required": [
+              "at",
+              "offset",
+              "value",
+              "interpolation"
+            ],
+            "type": "object"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          },
           "Transform": {
             "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
             "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
               "position": {
                 "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
                 "items": {
@@ -2054,17 +2326,53 @@
                 "description": "Uniform scale relative to the fitted size (1 when omitted).",
                 "format": "double",
                 "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
               }
             },
             "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "A clip's properties after `clip.set`.",
+        "description": "A clip's properties after `clip.set` or a keyframe change.",
         "properties": {
+          "audio": {
+            "$ref": "#/$defs/ClipAudio",
+            "description": "Fades, pan and channels."
+          },
+          "blend": {
+            "$ref": "#/$defs/BlendMode",
+            "description": "Blend mode."
+          },
           "clip": {
             "$ref": "#/$defs/Id",
             "description": "The clip."
+          },
+          "crop": {
+            "$ref": "#/$defs/Crop",
+            "description": "Edges removed from the picture."
+          },
+          "enabled": {
+            "description": "Whether the clip is drawn and heard.",
+            "type": "boolean"
+          },
+          "keyframes": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/$defs/KeyframeReport"
+              },
+              "type": "array"
+            },
+            "description": "Keyframes by property path.",
+            "type": "object"
           },
           "opacity": {
             "description": "Opacity, 0 to 1.",
@@ -2089,13 +2397,18 @@
           "clip",
           "track",
           "transform",
+          "crop",
           "opacity",
-          "volume"
+          "blend",
+          "volume",
+          "audio",
+          "enabled",
+          "keyframes"
         ],
         "title": "ClipProperties",
         "type": "object"
       },
-      "summary": "Set a clip's placement (transform.position, transform.scale, transform.rotation), opacity or volume. Position and scale are relative to the canvas and the fitted size, so a reframe moves and scales clips with it."
+      "summary": "Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead."
     },
     {
       "input_schema": {
@@ -2593,6 +2906,1087 @@
     {
       "input_schema": {
         "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Removes one keyframe of a clip property, or all of them.",
+        "properties": {
+          "all": {
+            "default": false,
+            "description": "Remove every keyframe of the property; it then keeps the value it had at `at` (or\n`offset`) when one is given, otherwise its plain value.",
+            "type": "boolean"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position of the keyframe to remove. Give this, `offset`, or `all`."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Position from the clip's start, instead of `at`."
+          },
+          "property": {
+            "description": "The property.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "property"
+        ],
+        "title": "KeyframeRemove",
+        "type": "object"
+      },
+      "name": "keyframe.remove",
+      "output_schema": {
+        "$defs": {
+          "BlendMode": {
+            "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
+            "oneOf": [
+              {
+                "const": "normal",
+                "description": "Covers what is below.",
+                "type": "string"
+              },
+              {
+                "const": "multiply",
+                "description": "Darkens: below times the picture.",
+                "type": "string"
+              },
+              {
+                "const": "screen",
+                "description": "Lightens: the inverse of multiplying the inverses.",
+                "type": "string"
+              },
+              {
+                "const": "overlay",
+                "description": "Multiply in the shadows of what is below and screen in its highlights.",
+                "type": "string"
+              },
+              {
+                "const": "darken",
+                "description": "The darker of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "lighten",
+                "description": "The lighter of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "color_dodge",
+                "description": "Brightens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "color_burn",
+                "description": "Darkens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "hard_light",
+                "description": "Overlay with the roles swapped: the picture decides multiply or screen.",
+                "type": "string"
+              },
+              {
+                "const": "soft_light",
+                "description": "A gentler hard light.",
+                "type": "string"
+              },
+              {
+                "const": "linear_burn",
+                "description": "Sum minus one: darkens more than multiply.",
+                "type": "string"
+              },
+              {
+                "const": "add",
+                "description": "Sum (linear dodge), clipped at white.",
+                "type": "string"
+              },
+              {
+                "const": "difference",
+                "description": "Absolute difference.",
+                "type": "string"
+              },
+              {
+                "const": "exclusion",
+                "description": "Like difference with lower contrast.",
+                "type": "string"
+              }
+            ]
+          },
+          "ChannelMode": {
+            "description": "Which channels of a clip's sound play where (fill channel).",
+            "oneOf": [
+              {
+                "const": "stereo",
+                "description": "As recorded.",
+                "type": "string"
+              },
+              {
+                "const": "left",
+                "description": "The left channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "The right channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "mono",
+                "description": "Both channels mixed to one, played on both.",
+                "type": "string"
+              }
+            ]
+          },
+          "ClipAudio": {
+            "description": "How a clip's sound is shaped: fades, pan and channels.",
+            "properties": {
+              "channels": {
+                "$ref": "#/$defs/ChannelMode",
+                "description": "Which source channels play."
+              },
+              "fade_in": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade in from silence over this long at the clip's start."
+              },
+              "fade_out": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade out to silence over this long at the clip's end."
+              },
+              "pan": {
+                "description": "Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Crop": {
+            "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
+            "properties": {
+              "bottom": {
+                "description": "Fraction of the height removed at the bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "left": {
+                "description": "Fraction of the width removed on the left.",
+                "format": "double",
+                "type": "number"
+              },
+              "right": {
+                "description": "Fraction of the width removed on the right.",
+                "format": "double",
+                "type": "number"
+              },
+              "top": {
+                "description": "Fraction of the height removed at the top.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "KeyframeReport": {
+            "description": "A keyframe as agents read it: its time on the timeline and from the clip's start.",
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position on the timeline."
+              },
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves on to the next keyframe."
+              },
+              "offset": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position from the clip's start."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value."
+              }
+            },
+            "required": [
+              "at",
+              "offset",
+              "value",
+              "interpolation"
+            ],
+            "type": "object"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The keyframes of a property after a change.",
+        "properties": {
+          "audio": {
+            "$ref": "#/$defs/ClipAudio",
+            "description": "Fades, pan and channels."
+          },
+          "blend": {
+            "$ref": "#/$defs/BlendMode",
+            "description": "Blend mode."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "crop": {
+            "$ref": "#/$defs/Crop",
+            "description": "Edges removed from the picture."
+          },
+          "enabled": {
+            "description": "Whether the clip is drawn and heard.",
+            "type": "boolean"
+          },
+          "keyframes": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/$defs/KeyframeReport"
+              },
+              "type": "array"
+            },
+            "description": "Keyframes by property path.",
+            "type": "object"
+          },
+          "opacity": {
+            "description": "Opacity, 0 to 1.",
+            "format": "double",
+            "type": "number"
+          },
+          "property": {
+            "description": "The property.",
+            "type": "string"
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Its track."
+          },
+          "transform": {
+            "$ref": "#/$defs/Transform",
+            "description": "Placement on the canvas."
+          },
+          "volume": {
+            "description": "Linear audio gain.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "property",
+          "clip",
+          "track",
+          "transform",
+          "crop",
+          "opacity",
+          "blend",
+          "volume",
+          "audio",
+          "enabled",
+          "keyframes"
+        ],
+        "title": "KeyframesChanged",
+        "type": "object"
+      },
+      "summary": "Remove a keyframe of a clip property at a time, or all of its keyframes (all: true), which stops the animation; with all and a time, the property keeps the value it had then."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Easing": {
+            "description": "Easing from a keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "linear",
+                "description": "Constant rate.",
+                "type": "string"
+              },
+              {
+                "const": "hold",
+                "description": "Keep the value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "ease_in",
+                "description": "Start slowly.",
+                "type": "string"
+              },
+              {
+                "const": "ease_out",
+                "description": "End slowly.",
+                "type": "string"
+              },
+              {
+                "const": "ease_in_out",
+                "description": "Start and end slowly.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "A custom cubic Bezier `[x1, y1, x2, y2]` as in CSS; x1 and x2 from 0 to 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Adds a keyframe to a clip property, or replaces the one at that time.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline position of the keyframe, from the clip's start to its end; snapped to the\nnearest frame. Give this or `offset`."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "easing": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Easing"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the value moves from this keyframe to the next: `linear` (the default for a new\nkeyframe), `hold`, `ease_in`, `ease_out`, `ease_in_out`, or `{\"bezier\": [x1, y1, x2,\ny2]}`. Unchanged for an existing keyframe when omitted."
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Position from the clip's start, instead of `at`."
+          },
+          "property": {
+            "description": "An animatable property: `transform.position`, `transform.scale`,\n`transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,\n`crop.bottom`, `opacity`, `volume` or `audio.pan`.",
+            "type": "string"
+          },
+          "value": {
+            "default": null,
+            "description": "The value (a number, or `[x, y]` for position and stretch). When omitted, the value\nthe property has at that time, so the animation does not change yet."
+          }
+        },
+        "required": [
+          "clip",
+          "property"
+        ],
+        "title": "KeyframeSet",
+        "type": "object"
+      },
+      "name": "keyframe.set",
+      "output_schema": {
+        "$defs": {
+          "BlendMode": {
+            "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
+            "oneOf": [
+              {
+                "const": "normal",
+                "description": "Covers what is below.",
+                "type": "string"
+              },
+              {
+                "const": "multiply",
+                "description": "Darkens: below times the picture.",
+                "type": "string"
+              },
+              {
+                "const": "screen",
+                "description": "Lightens: the inverse of multiplying the inverses.",
+                "type": "string"
+              },
+              {
+                "const": "overlay",
+                "description": "Multiply in the shadows of what is below and screen in its highlights.",
+                "type": "string"
+              },
+              {
+                "const": "darken",
+                "description": "The darker of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "lighten",
+                "description": "The lighter of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "color_dodge",
+                "description": "Brightens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "color_burn",
+                "description": "Darkens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "hard_light",
+                "description": "Overlay with the roles swapped: the picture decides multiply or screen.",
+                "type": "string"
+              },
+              {
+                "const": "soft_light",
+                "description": "A gentler hard light.",
+                "type": "string"
+              },
+              {
+                "const": "linear_burn",
+                "description": "Sum minus one: darkens more than multiply.",
+                "type": "string"
+              },
+              {
+                "const": "add",
+                "description": "Sum (linear dodge), clipped at white.",
+                "type": "string"
+              },
+              {
+                "const": "difference",
+                "description": "Absolute difference.",
+                "type": "string"
+              },
+              {
+                "const": "exclusion",
+                "description": "Like difference with lower contrast.",
+                "type": "string"
+              }
+            ]
+          },
+          "ChannelMode": {
+            "description": "Which channels of a clip's sound play where (fill channel).",
+            "oneOf": [
+              {
+                "const": "stereo",
+                "description": "As recorded.",
+                "type": "string"
+              },
+              {
+                "const": "left",
+                "description": "The left channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "The right channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "mono",
+                "description": "Both channels mixed to one, played on both.",
+                "type": "string"
+              }
+            ]
+          },
+          "ClipAudio": {
+            "description": "How a clip's sound is shaped: fades, pan and channels.",
+            "properties": {
+              "channels": {
+                "$ref": "#/$defs/ChannelMode",
+                "description": "Which source channels play."
+              },
+              "fade_in": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade in from silence over this long at the clip's start."
+              },
+              "fade_out": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade out to silence over this long at the clip's end."
+              },
+              "pan": {
+                "description": "Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Crop": {
+            "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
+            "properties": {
+              "bottom": {
+                "description": "Fraction of the height removed at the bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "left": {
+                "description": "Fraction of the width removed on the left.",
+                "format": "double",
+                "type": "number"
+              },
+              "right": {
+                "description": "Fraction of the width removed on the right.",
+                "format": "double",
+                "type": "number"
+              },
+              "top": {
+                "description": "Fraction of the height removed at the top.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "KeyframeReport": {
+            "description": "A keyframe as agents read it: its time on the timeline and from the clip's start.",
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position on the timeline."
+              },
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves on to the next keyframe."
+              },
+              "offset": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position from the clip's start."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value."
+              }
+            },
+            "required": [
+              "at",
+              "offset",
+              "value",
+              "interpolation"
+            ],
+            "type": "object"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The keyframes of a property after a change.",
+        "properties": {
+          "audio": {
+            "$ref": "#/$defs/ClipAudio",
+            "description": "Fades, pan and channels."
+          },
+          "blend": {
+            "$ref": "#/$defs/BlendMode",
+            "description": "Blend mode."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "crop": {
+            "$ref": "#/$defs/Crop",
+            "description": "Edges removed from the picture."
+          },
+          "enabled": {
+            "description": "Whether the clip is drawn and heard.",
+            "type": "boolean"
+          },
+          "keyframes": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/$defs/KeyframeReport"
+              },
+              "type": "array"
+            },
+            "description": "Keyframes by property path.",
+            "type": "object"
+          },
+          "opacity": {
+            "description": "Opacity, 0 to 1.",
+            "format": "double",
+            "type": "number"
+          },
+          "property": {
+            "description": "The property.",
+            "type": "string"
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Its track."
+          },
+          "transform": {
+            "$ref": "#/$defs/Transform",
+            "description": "Placement on the canvas."
+          },
+          "volume": {
+            "description": "Linear audio gain.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "property",
+          "clip",
+          "track",
+          "transform",
+          "crop",
+          "opacity",
+          "blend",
+          "volume",
+          "audio",
+          "enabled",
+          "keyframes"
+        ],
+        "title": "KeyframesChanged",
+        "type": "object"
+      },
+      "summary": "Animate a clip property: add a keyframe at a time (or replace the one there) with a value and an easing (linear, hold, ease_in, ease_out, ease_in_out or a Bezier). Between keyframes the value moves along the easing; before the first and after the last it holds. Animatable: transform.position, transform.scale, transform.stretch, transform.rotation, crop edges, opacity, volume, audio.pan."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "AssetKind": {
             "description": "What kind of media an asset is.",
             "oneOf": [
@@ -2998,6 +4392,14 @@
           "Transform": {
             "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
             "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
               "position": {
                 "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
                 "items": {
@@ -3017,6 +4419,16 @@
                 "description": "Uniform scale relative to the fitted size (1 when omitted).",
                 "format": "double",
                 "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
               }
             },
             "type": "object"
@@ -3842,6 +5254,21 @@
       "meaning": "The clip would be empty or start before zero."
     },
     {
+      "code": "fosscut.clip.property_animated",
+      "hint": "Set the value at a time with keyframe.set, or remove its keyframes with keyframe.remove (all: true) first.",
+      "meaning": "The property has keyframes, so a plain value would be ignored."
+    },
+    {
+      "code": "fosscut.keyframe.not_found",
+      "hint": "Read the clip's keyframes with timeline.read (detail full) and use one of their times.",
+      "meaning": "The property has no keyframe at that time."
+    },
+    {
+      "code": "fosscut.keyframe.outside",
+      "hint": "Use a time from the clip's start to its end.",
+      "meaning": "The keyframe time is outside the clip."
+    },
+    {
       "code": "fosscut.asset.not_found",
       "hint": "List assets with media.list.",
       "meaning": "The asset does not exist."
@@ -3942,7 +5369,174 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.2.0",
+  "format_version": "0.3.0",
+  "properties": [
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "pair",
+      "meaning": "[x, y]: offset of the clip's centre from the canvas centre, as fractions of the canvas width and height; y grows downwards",
+      "path": "transform.position"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "meaning": "uniform size relative to the fitted size, greater than 0",
+      "min": 0.0,
+      "path": "transform.scale"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "pair",
+      "meaning": "[x, y]: extra width and height factors on top of the scale, for non-uniform scaling; [1, 1] keeps the shape",
+      "min": 0.0,
+      "path": "transform.stretch"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "meaning": "degrees clockwise",
+      "path": "transform.rotation"
+    },
+    {
+      "animatable": false,
+      "applies": "picture",
+      "kind": "bool",
+      "meaning": "mirror the picture left to right",
+      "path": "transform.flip_horizontal"
+    },
+    {
+      "animatable": false,
+      "applies": "picture",
+      "kind": "bool",
+      "meaning": "mirror the picture top to bottom",
+      "path": "transform.flip_vertical"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "fraction of the picture's width removed on the left, before any flip; the rest keeps its size and place",
+      "min": 0.0,
+      "path": "crop.left"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "fraction of the width removed on the right",
+      "min": 0.0,
+      "path": "crop.right"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "fraction of the height removed at the top",
+      "min": 0.0,
+      "path": "crop.top"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "fraction of the height removed at the bottom",
+      "min": 0.0,
+      "path": "crop.bottom"
+    },
+    {
+      "animatable": true,
+      "applies": "picture",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "0 (invisible) to 1",
+      "min": 0.0,
+      "path": "opacity"
+    },
+    {
+      "animatable": false,
+      "applies": "picture",
+      "choices": [
+        "normal",
+        "multiply",
+        "screen",
+        "overlay",
+        "darken",
+        "lighten",
+        "color_dodge",
+        "color_burn",
+        "hard_light",
+        "soft_light",
+        "linear_burn",
+        "add",
+        "difference",
+        "exclusion"
+      ],
+      "kind": "choice",
+      "meaning": "how the picture combines with the layers below it",
+      "path": "blend"
+    },
+    {
+      "animatable": false,
+      "applies": "any",
+      "kind": "bool",
+      "meaning": "false deactivates the clip: it stays on the timeline but is neither drawn nor heard",
+      "path": "enabled"
+    },
+    {
+      "animatable": true,
+      "applies": "sound",
+      "kind": "number",
+      "meaning": "linear gain: 1 unchanged, 0 silent, 2 is about +6 dB",
+      "min": 0.0,
+      "path": "volume"
+    },
+    {
+      "animatable": true,
+      "applies": "sound",
+      "kind": "number",
+      "max": 1.0,
+      "meaning": "-1 (left) to 1 (right): 0 leaves both sides unchanged, and moving to one side lowers the other",
+      "min": -1.0,
+      "path": "audio.pan"
+    },
+    {
+      "animatable": false,
+      "applies": "sound",
+      "kind": "time",
+      "meaning": "length of the fade in from silence at the clip's start",
+      "min": 0.0,
+      "path": "audio.fade_in"
+    },
+    {
+      "animatable": false,
+      "applies": "sound",
+      "kind": "time",
+      "meaning": "length of the fade out to silence at the clip's end",
+      "min": 0.0,
+      "path": "audio.fade_out"
+    },
+    {
+      "animatable": false,
+      "applies": "sound",
+      "choices": [
+        "stereo",
+        "left",
+        "right",
+        "mono"
+      ],
+      "kind": "choice",
+      "meaning": "stereo as recorded, left or right to fill both channels with one side, or mono to mix both",
+      "path": "audio.channels"
+    }
+  ],
   "queries": [
     {
       "input_schema": {

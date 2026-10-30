@@ -1,6 +1,7 @@
 // Draws the timeline on a 2D canvas (ADR-0010, item 2): only what is visible, so long
 // timelines with thousands of clips stay smooth.
 
+import { keyTimes } from "../app/animation";
 import type { ClipView, TimelineView } from "../engine/types";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import { HEADER, ROW, RULER, type View, rowY, rows, rulerLabel, rulerStep, timeToX } from "./geometry";
@@ -42,10 +43,14 @@ export interface DrawState {
 
 /** Draws a clip's block and label between x0 and x1 on the row at y. */
 function block(ctx: CanvasRenderingContext2D, clip: ClipView, x0: number, x1: number, y: number, selected: boolean): void {
+  const enabled = clip.enabled !== false;
+  ctx.save();
+  ctx.globalAlpha *= enabled ? 1 : 0.4;
   ctx.fillStyle = CLIP_COLORS[clip.kind] ?? "#5a5d66";
   ctx.beginPath();
   ctx.roundRect(x0 + 0.5, y + 4.5, x1 - x0 - 1, ROW - 9, 4);
   ctx.fill();
+  ctx.restore();
   if (selected) {
     ctx.strokeStyle = COLORS.selection;
     ctx.lineWidth = 2;
@@ -65,7 +70,42 @@ function block(ctx: CanvasRenderingContext2D, clip: ClipView, x0: number, x1: nu
 }
 
 function label(clip: ClipView): string {
-  return clip.text ?? clip.asset_name ?? clip.kind;
+  const name = clip.text ?? clip.asset_name ?? clip.kind;
+  return clip.enabled === false ? `${name} (off)` : name;
+}
+
+/** Fade ramps at the clip's edges and diamonds at its keyframes. */
+function marks(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, x0: number, x1: number, y: number): void {
+  const top = y + 5;
+  const bottom = y + ROW - 5;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+  for (const [edge, length] of [
+    ["in", clip.audio?.fade_in ?? 0],
+    ["out", clip.audio?.fade_out ?? 0],
+  ] as const) {
+    if (length <= 0) continue;
+    const width = (length / FLICKS_PER_SECOND) * view.zoom;
+    const from = edge === "in" ? timeToX(clip.start.flicks, view) : timeToX(clip.end.flicks, view);
+    const to = edge === "in" ? from + width : from - width;
+    ctx.beginPath();
+    ctx.moveTo(from, top);
+    ctx.lineTo(from, bottom);
+    ctx.lineTo(to, top);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = COLORS.text;
+  for (const time of keyTimes(clip)) {
+    const x = timeToX(time, view);
+    if (x < x0 || x > x1) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, bottom - 9);
+    ctx.lineTo(x + 4, bottom - 5);
+    ctx.lineTo(x, bottom - 1);
+    ctx.lineTo(x - 4, bottom - 5);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 /** Draws the whole timeline into a canvas of `width` by `height` CSS pixels. */
@@ -97,6 +137,7 @@ export function drawTimeline(
       const dragged = state.drag?.clip === clip.id;
       ctx.globalAlpha = dragged ? 0.3 : 1;
       block(ctx, clip, x0, x1, y, !dragged && clip.id === state.selection);
+      marks(ctx, clip, view, x0, x1, y);
       ctx.globalAlpha = 1;
     }
   });

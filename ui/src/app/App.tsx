@@ -30,6 +30,7 @@ function run(editor: Editor, action: Action): void {
     delete: () => editor.deleteSelection(),
     split: () => editor.splitAtPlayhead(),
     deselect: () => editor.select(null),
+    "toggle-enabled": () => editor.toggleEnabled(),
   };
   void actions[action]();
 }
@@ -106,7 +107,7 @@ export function App({ editor }: { editor: Editor }) {
           <main>
             <PreviewHole editor={editor} />
             <aside className="activity">
-              {selected && <Inspector editor={editor} clip={selected} />}
+              {selected && <Inspector editor={editor} clip={selected} playhead={state.playhead} />}
               <Activity editor={editor} state={state} />
             </aside>
           </main>

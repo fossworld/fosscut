@@ -36,6 +36,8 @@ describe("keyboard", () => {
     expect(actionFor(key("Backspace"), true)).toBe("delete");
     expect(actionFor(key("Delete"), false)).toBe("delete");
     expect(actionFor(key("Escape"), false)).toBe("deselect");
+    expect(actionFor(key("v"), false)).toBe("toggle-enabled");
+    expect(actionFor(key("V", { shiftKey: true }), false)).toBeNull();
     expect(actionFor(key("x"), false)).toBeNull();
     expect(actionFor(key(" ", { altKey: true }), false)).toBeNull();
     expect(actionFor(key(" ", { ctrlKey: true }), true), "a stray modifier is no shortcut").toBeNull();

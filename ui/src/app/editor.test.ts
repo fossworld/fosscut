@@ -242,4 +242,27 @@ describe("editor", () => {
       { command: "clip.set", args: { clip: "clip_0003", set: { opacity: 0.5, "transform.scale": 2 } } },
     ]);
   });
+
+  it("deactivates the selected clip and activates it again", async () => {
+    const fake = engine();
+    let enabled = true;
+    fake.answers["timeline.read"] = () => {
+      const view = timeline(fake.revision);
+      if (!enabled) view.tracks[0]!.clips[0]!.enabled = false;
+      return view;
+    };
+    const { editor } = await started(fake);
+    await editor.toggleEnabled();
+    expect(fake.callsOf("execute"), "nothing selected").toHaveLength(0);
+    editor.select("clip_0003");
+    await editor.toggleEnabled();
+    enabled = false;
+    await editor.refresh();
+    await editor.toggleEnabled();
+    const sets = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]?.args);
+    expect(sets).toEqual([
+      { clip: "clip_0003", set: { enabled: false } },
+      { clip: "clip_0003", set: { enabled: true } },
+    ]);
+  });
 });

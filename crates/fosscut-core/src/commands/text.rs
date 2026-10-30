@@ -76,13 +76,8 @@ impl Command for TextAdd {
         ensure_valid_range(start, duration)?;
         ensure_free(track_doc, start, start + duration, None, rate)?;
         let clip = Clip {
-            id,
-            start,
-            duration,
-            content,
             transform: self.transform.unwrap_or_default(),
-            opacity: 1.0,
-            volume: 1.0,
+            ..Clip::new(id, start, duration, content)
         };
         let placement = ClipPlacement::of(&clip, &track, rate);
         insert_sorted(track_doc, clip);
