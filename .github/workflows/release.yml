@@ -225,6 +225,12 @@ jobs:
               fi
               ls "$app/Contents/Frameworks/libavcodec.62.dylib"
               env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/ffprobe" -version > /dev/null
+              # An ad-hoc signed app with hardened runtime cannot load its own libraries.
+              if codesign -dv "$app" 2>&1 | grep -qE 'flags=.*runtime'; then
+                echo "the app is signed with hardened runtime" >&2
+                exit 1
+              fi
+              codesign --verify --deep --strict "$app"
               ;;
             linux)
               unpacked="$RUNNER_TEMP/deb"

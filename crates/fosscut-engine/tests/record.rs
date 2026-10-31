@@ -736,7 +736,19 @@ fn recording_jobs_stop_on_cancel_and_keep_what_they_recorded() {
     assert_eq!(busy.code(), "fosscut.export.output_busy");
     assert_eq!(jobs.list().len(), 1);
 
-    std::thread::sleep(Duration::from_millis(500));
+    // Stop once a second is recorded: a slow machine may take a while to start the device,
+    // and a recording stopped before any media arrives is refused.
+    let waiting = std::time::Instant::now();
+    while jobs
+        .status(&started.job, Duration::ZERO)
+        .unwrap()
+        .progress
+        .done
+        < 1
+    {
+        assert!(waiting.elapsed() < WAIT, "nothing recorded in {WAIT:?}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let stopped = jobs.cancel(&started.job, WAIT).unwrap();
     assert_eq!(stopped.state, JobState::Succeeded, "{stopped:?}");
     assert!(stopped.error.is_none() && stopped.report.is_none());

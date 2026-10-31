@@ -9,7 +9,8 @@ does not see the shell's path:
 - Linux: the libraries and ffprobe in /usr/lib/fosscut, on the executable's rpath (ffprobe
   finds the libraries beside itself).
 - macOS: the libraries in Contents/Frameworks and ffprobe in Contents/MacOS, both found
-  through @rpath. The app is signed ad hoc, as the project has no Developer ID yet.
+  through @rpath. The app is signed ad hoc without hardened runtime, as the project has no
+  Developer ID yet.
 
 Usage: desktop_bundle.py <windows|linux|macos> <ffmpeg dir> <overlay.json>
 The FFmpeg directory holds bin/ (ffprobe, and the DLLs on Windows) and lib/, as
@@ -84,6 +85,10 @@ def overlay(platform: str, ffmpeg: Path) -> dict:
         bundle["targets"] = ["app", "dmg"]
         bundle["macOS"] = {
             "signingIdentity": "-",
+            # Hardened runtime validates libraries against the app's Team ID, which ad-hoc
+            # signatures lack, so the app could not load its own FFmpeg. It matters only for
+            # notarization, which needs a Developer ID.
+            "hardenedRuntime": False,
             "minimumSystemVersion": "13.0",
             "frameworks": [str(c) for c in copies if c.suffix == ".dylib"],
             "files": {"MacOS/ffprobe": str(STAGING / "ffprobe")},
