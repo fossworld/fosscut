@@ -1,9 +1,11 @@
+import { X } from "lucide-react";
 import { useState } from "react";
 
 import type { Editor, MaskTool } from "../app/editor";
 import type { ClipView, MaskView } from "../engine/types";
 import { type MessageKey, t } from "../i18n";
 import { type MaskField, maskChange, maskFields, toggleMaskKey } from "./maskFields";
+import { IconButton } from "../ui/controls";
 
 const SHAPES = ["rectangle", "ellipse", "linear", "mirror", "star", "heart", "path", "text", "brush"];
 const MODES = ["add", "subtract", "intersect"];
@@ -74,8 +76,11 @@ function MaskCard({
       <div className="effect-head">
         <input
           type="checkbox"
+          className="switch"
+          role="switch"
           checked={mask.enabled !== false}
           title={t("masks.use")}
+          aria-label={t("masks.use")}
           onChange={(event) => set({ enabled: event.target.checked })}
         />
         <select value={shape} aria-label={t("masks.shape")} onChange={(event) => set({ shape: event.target.value })}>
@@ -96,12 +101,12 @@ function MaskCard({
           <input type="checkbox" checked={mask.invert === true} onChange={(event) => set({ invert: event.target.checked })} />
           <span>{t("masks.invert")}</span>
         </label>
-        <button
-          title={t("masks.remove")}
+        <IconButton
+          icon={X}
+          size="sm"
+          label={t("masks.remove")}
           onClick={() => void editor.edit([{ command: "mask.remove", args: { clip: clip.id, mask: mask.id } }])}
-        >
-          ×
-        </button>
+        />
       </div>
       {shape === "text" && (
         <label className="choice">

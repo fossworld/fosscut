@@ -106,18 +106,20 @@ pub enum EngineError {
     /// The analysis was cancelled; nothing was cached.
     #[error("the analysis was cancelled")]
     AnalysisCancelled,
-    /// An export or frame needs an analysis that is not cached: a clip's `key.subject` reads
-    /// a matte of its media, a body effect its pose (ADR-0033). Nothing was rendered.
+    /// An export, frame or plan needs an analysis that is not cached: a clip's `key.subject`
+    /// reads a matte of its media, a body effect its pose (ADR-0033), and reframing and
+    /// shorts read pose, mattes, scene cuts or transcripts. Nothing was rendered or planned.
     #[error("{effect} needs the {analyzer} analysis of {asset}, which is not cached")]
     AnalysisMissing {
         /// The asset to analyze.
         asset: String,
-        /// The analyzer to run: `matte` or `pose`.
+        /// The analyzer to run, such as `matte`, `pose`, `scenes` or `transcript`.
         analyzer: String,
         /// The analyzer's options that matter, as `media_analyze` takes them, for example
         /// `{"matte": {"model": "subject"}}`.
         options: Value,
-        /// The effect that needs it, such as `key.subject`.
+        /// What needs it: an effect such as `key.subject`, or a planner (`reframe`,
+        /// `camera_track`, `vertical`, `shorts`).
         effect: String,
     },
     /// No model has this name.
@@ -274,6 +276,32 @@ pub enum EngineError {
         /// What the job was making, such as `proxy` or `remux`.
         kind: String,
     },
+    /// No beat was found in the music: it is silent, or has no pulse to follow.
+    #[error("no beats were found in the sound of {asset}")]
+    NoBeats {
+        /// The asset whose sound was analyzed.
+        asset: String,
+    },
+    /// No subject was found to frame in any frame of the clip.
+    #[error("no {subject} was found in {clip}")]
+    NoSubject {
+        /// The clip.
+        clip: String,
+        /// What was looked for: `person`, `subject` or `region`.
+        subject: String,
+    },
+    /// No stretch of whole sentences in the clip fits the length asked for.
+    #[error("no short of {min_seconds} to {max_seconds} s fits the speech of {clip}")]
+    NoShortCandidates {
+        /// The clip.
+        clip: String,
+        /// Sentences found in the part of the media it plays.
+        sentences: u32,
+        /// The shortest length asked for, in seconds.
+        min_seconds: f64,
+        /// The longest length asked for, in seconds.
+        max_seconds: f64,
+    },
     /// Rendering, decoding, mixing or encoding failed.
     #[error("{message}")]
     Failed {
@@ -325,6 +353,9 @@ impl EngineError {
             EngineError::RemuxNotNeeded { .. } => "fosscut.cache.remux_not_needed",
             EngineError::CopyMismatch { .. } => "fosscut.cache.verification_failed",
             EngineError::JobCancelled { .. } => "fosscut.job.cancelled",
+            EngineError::NoBeats { .. } => "fosscut.beats.none",
+            EngineError::NoSubject { .. } => "fosscut.reframe.no_subject",
+            EngineError::NoShortCandidates { .. } => "fosscut.shorts.no_candidates",
             EngineError::Failed { code, .. } => code,
         }
     }
@@ -439,6 +470,17 @@ impl EngineError {
             EngineError::CopyMismatch { .. } => Some(
                 "The preview keeps using the original media; report the mismatches.".into(),
             ),
+            EngineError::NoBeats { .. } => Some(
+                "Choose music with a steady pulse, or give its tempo in options.beats.bpm; markers can also be added by hand with marker.add.".into(),
+            ),
+            EngineError::NoSubject { subject, .. } => Some(match subject.as_str() {
+                "region" => "The region was lost from the first frame: give a region around something with texture, at a time it is visible.".into(),
+                "person" => "Nobody was found in its pose analysis: frame it with clip.set, or use source subject (a matte) or region.".into(),
+                _ => "Its matte is empty: frame it with clip.set, or use source person or region.".into(),
+            }),
+            EngineError::NoShortCandidates { .. } => Some(
+                "Lower min_seconds or raise max_seconds, or choose a longer clip; candidates start and end at sentence ends in its transcript.".into(),
+            ),
             _ => None,
         }
     }
@@ -513,6 +555,21 @@ impl EngineError {
                 json!({ "kind": kind, "mismatches": mismatches })
             }
             EngineError::JobCancelled { kind } => json!({ "kind": kind }),
+            EngineError::NoBeats { asset } => json!({ "asset": asset }),
+            EngineError::NoSubject { clip, subject } => {
+                json!({ "clip": clip, "subject": subject })
+            }
+            EngineError::NoShortCandidates {
+                clip,
+                sentences,
+                min_seconds,
+                max_seconds,
+            } => json!({
+                "clip": clip,
+                "sentences": sentences,
+                "min_seconds": min_seconds,
+                "max_seconds": max_seconds,
+            }),
             _ => Value::Null,
         }
     }
@@ -579,8 +636,23 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
         ),
         entry(
             "fosscut.analysis.missing",
-            "A clip's key.subject or body effect needs a matte or pose analysis of its media that is not cached, so nothing was rendered.",
-            "Run media_analyze with details.asset, analyzers [details.analyzer] and options details.options, then render again.",
+            "An analysis of a clip's media is not cached: a matte or pose for key.subject or a body effect (nothing was rendered), or the pose, matte, scenes or transcript that reframing and shorts read (nothing was planned).",
+            "Run media_analyze with details.asset, analyzers [details.analyzer] and options details.options, then try again.",
+        ),
+        entry(
+            "fosscut.beats.none",
+            "No beat was found in the music: it is silent or has no steady pulse.",
+            "Choose other music, give its tempo in options.beats.bpm, or add markers with marker.add.",
+        ),
+        entry(
+            "fosscut.reframe.no_subject",
+            "No subject was found in any frame of the clip: no person in its pose analysis, an empty matte, or a region lost at once.",
+            "Frame the clip yourself with clip.set, or follow another source (person, subject or region).",
+        ),
+        entry(
+            "fosscut.shorts.no_candidates",
+            "No stretch of whole sentences in the clip's transcript lasts from min_seconds to max_seconds.",
+            "Widen the length range, or use a longer clip; details.sentences counts the sentences found.",
         ),
         entry(
             "fosscut.voice.unknown_voice",
@@ -1431,6 +1503,19 @@ mod tests {
             },
             EngineError::JobCancelled {
                 kind: String::new(),
+            },
+            EngineError::NoBeats {
+                asset: String::new(),
+            },
+            EngineError::NoSubject {
+                clip: String::new(),
+                subject: String::new(),
+            },
+            EngineError::NoShortCandidates {
+                clip: String::new(),
+                sentences: 0,
+                min_seconds: 15.0,
+                max_seconds: 60.0,
             },
         ];
         for error in &variants {

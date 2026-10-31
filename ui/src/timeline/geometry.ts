@@ -5,11 +5,11 @@ import type { ClipView, TimelineView, TrackView } from "../engine/types";
 import { FLICKS_PER_SECOND, type Rate, framesToFlicks } from "../transport/time";
 
 /** Height of the time ruler at the top, in CSS pixels. */
-export const RULER = 24;
+export const RULER = 28;
 /** Height of one track row. */
-export const ROW = 46;
-/** Width of the track labels on the left. */
-export const HEADER = 96;
+export const ROW = 50;
+/** Width of the track headers on the left. */
+export const HEADER = 152;
 /** Zoom limits, in pixels per second. */
 export const MIN_ZOOM = 2;
 export const MAX_ZOOM = 800;
@@ -22,6 +22,8 @@ export interface View {
   scroll: number;
   /** Canvas width in CSS pixels. */
   width: number;
+  /** Pixels the tracks are scrolled up under the ruler; 0 when omitted. */
+  top?: number;
 }
 
 /** The x position of `flicks`. */
@@ -43,9 +45,20 @@ export function rows(timeline: TimelineView): TrackView[] {
   return [...timeline.tracks].reverse();
 }
 
-/** The top edge of row `row`. */
-export function rowY(row: number): number {
-  return RULER + row * ROW;
+/** The top edge of row `row`, with the tracks scrolled up by `top` pixels. */
+export function rowY(row: number, top = 0): number {
+  return RULER + row * ROW - top;
+}
+
+/** The row at y, with the tracks scrolled up by `top` pixels; it may be past the last. */
+export function rowAt(y: number, top = 0): number {
+  return Math.floor((y - RULER + top) / ROW);
+}
+
+/** How far the tracks scroll: none when they fit in `height`, else until the last shows. */
+export function maxTop(timeline: TimelineView | null, height: number): number {
+  const tracks = timeline?.tracks.length ?? 0;
+  return Math.max(0, RULER + tracks * ROW + ROW / 2 - height);
 }
 
 export interface Hit {
@@ -57,7 +70,7 @@ export interface Hit {
 export function hitTest(timeline: TimelineView, view: View, x: number, y: number): Hit | null {
   if (y < RULER || x < HEADER) return null;
   const ordered = rows(timeline);
-  const track = ordered[Math.floor((y - RULER) / ROW)];
+  const track = ordered[rowAt(y, view.top)];
   if (!track) return null;
   const time = xToTime(x, view);
   const clip = track.clips.find((c) => c.start.flicks <= time && time < c.end.flicks) ?? null;
@@ -193,7 +206,7 @@ export function dragTarget(
   const byEnd = snap(moved + clip.duration.flicks, snaps, view) - (moved + clip.duration.flicks);
   const shift = byStart === 0 ? byEnd : byEnd === 0 ? byStart : Math.abs(byStart) <= Math.abs(byEnd) ? byStart : byEnd;
   const start = Math.max(0, moved + shift);
-  const under = rows(timeline)[Math.floor((y - RULER) / ROW)];
+  const under = rows(timeline)[rowAt(y, view.top)];
   const track = under && under.kind === drag.track.kind ? under : drag.track;
   return { start, end: start + clip.duration.flicks, track };
 }

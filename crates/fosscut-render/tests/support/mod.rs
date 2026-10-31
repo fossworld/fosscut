@@ -298,3 +298,70 @@ impl FrameProvider for Frames {
         Ok(self.poses.get(&source.asset).cloned())
     }
 }
+
+// ---- Scenes for temporal effects (ADR-0035) ----
+
+/// A hash of three integers to 0 to 1 (PCG3D, as the shaders use).
+pub fn hash(x: i32, y: i32, z: u32) -> f32 {
+    let mut v =
+        [x as u32, y as u32, z].map(|c| c.wrapping_mul(1_664_525).wrapping_add(1_013_904_223));
+    v[0] = v[0].wrapping_add(v[1].wrapping_mul(v[2]));
+    v[1] = v[1].wrapping_add(v[2].wrapping_mul(v[0]));
+    v[2] = v[2].wrapping_add(v[0].wrapping_mul(v[1]));
+    v = v.map(|c| c ^ (c >> 16));
+    v[0] = v[0].wrapping_add(v[1].wrapping_mul(v[2]));
+    (v[0] >> 8) as f32 / 16_777_216.0
+}
+
+/// Smooth value noise: hashed values on a grid of `cell` pixels, joined bilinearly.
+pub fn value_noise(x: f32, y: f32, cell: f32, seed: u32) -> f32 {
+    let (gx, gy) = (x / cell, y / cell);
+    let (ix, iy) = (gx.floor(), gy.floor());
+    let (fx, fy) = (gx - ix, gy - iy);
+    let (fx, fy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+    let h = |dx: i32, dy: i32| hash(ix as i32 + dx, iy as i32 + dy, seed);
+    let top = h(0, 0) + (h(1, 0) - h(0, 0)) * fx;
+    let bottom = h(0, 1) + (h(1, 1) - h(0, 1)) * fx;
+    top + (bottom - top) * fy
+}
+
+/// Linear-light RGB to BT.709 limited-range Y'CbCr codes.
+pub fn ycbcr(rgb: [f32; 3]) -> [u8; 3] {
+    let e = |l: f32| fosscut_render::color::TransferFunction::Bt709.encode(l.clamp(0.0, 1.0));
+    let (r, g, b) = (e(rgb[0]), e(rgb[1]), e(rgb[2]));
+    let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    let (cb, cr) = ((b - y) / 1.8556, (r - y) / 1.5748);
+    let code = |v: f32| v.round().clamp(0.0, 255.0) as u8;
+    [
+        code(16.0 + 219.0 * y),
+        code(128.0 + 224.0 * cb),
+        code(128.0 + 224.0 * cr),
+    ]
+}
+
+/// A 320x180 frame of a scene given in linear-light RGB at pixel centres.
+pub fn frame_of(scene: impl Fn(f32, f32) -> [f32; 3]) -> VideoFrame {
+    nv12(320, 180, bt709_limited(), |x, y| {
+        ycbcr(scene(x as f32 + 0.5, y as f32 + 0.5))
+    })
+}
+
+/// A textured background moving left 4 pixels a frame, and a textured disc moving right 10
+/// pixels a frame over it, at time `t` in frames.
+pub fn scene(x: f32, y: f32, t: f32) -> [f32; 3] {
+    let (cx, cy) = (110.0 + 10.0 * t, 90.0);
+    let (dx, dy) = (x - cx, y - cy);
+    if dx * dx + dy * dy < 34.0 * 34.0 {
+        let n =
+            0.6 * value_noise(dx + 200.0, dy + 200.0, 5.0, 7) + 0.4 * value_noise(dx, dy, 2.5, 8);
+        return [0.6 + 0.35 * n, 0.25 + 0.3 * n, 0.1 + 0.2 * n];
+    }
+    let bx = x + 4.0 * t;
+    let n = 0.6 * value_noise(bx, y, 7.0, 1) + 0.4 * value_noise(bx, y, 3.0, 2);
+    let stripe = if (bx / 23.0).floor() as i32 % 2 == 0 {
+        0.08
+    } else {
+        0.0
+    };
+    [0.1 + 0.5 * n + stripe, 0.15 + 0.55 * n, 0.3 + 0.4 * n * n]
+}

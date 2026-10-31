@@ -303,6 +303,17 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             })
             .collect();
         result["looks"] = json!(looks);
+        let voice_presets: Vec<Value> = fosscut_model::voice_filters::voice_presets()
+            .into_iter()
+            .map(|p| {
+                if brief {
+                    json!({ "name": p.name, "title": p.title, "description": p.description })
+                } else {
+                    json!(p)
+                }
+            })
+            .collect();
+        result["voice_presets"] = json!(voice_presets);
         let motion = crate::commands::motion_capabilities(brief);
         result["transitions"] = motion["transitions"].clone();
         result["animations"] = motion["animations"].clone();

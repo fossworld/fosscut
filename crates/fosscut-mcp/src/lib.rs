@@ -65,7 +65,7 @@ When project_info or project_open shows session.live, the user has the project o
 The fosscut-basics prompt (also the resource fosscut://skills/fosscut-basics) is the full guide.";
 
 /// A motion plan without its calls, which the response shows applied.
-fn motion_summary(plan: &fosscut_engine::motion::MotionPlan) -> Value {
+fn motion_summary(plan: &impl serde::Serialize) -> Value {
     let mut report = json!(plan);
     if let Some(object) = report.as_object_mut() {
         object.remove("commands");
@@ -548,7 +548,7 @@ impl FosscutServer {
 
     /// Analyzes media.
     #[tool(
-        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
+        description = "Measure an asset's loudness (LUFS), its loudness over time (levels), silences (pauses to cut or keep), shot cuts (scenes) and musical beats (beats: tempo, beats and downbeats), or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
         annotations(read_only_hint = true)
     )]
     async fn media_analyze(
@@ -948,7 +948,7 @@ impl FosscutServer {
 
     /// Edits measured from media.
     #[tool(
-        description = "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Returns the measurement and the response; check with frame_grab or contact_sheet."
+        description = "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. Returns the measurement and the response; check with frame_grab or contact_sheet."
     )]
     async fn auto_edit(
         &self,
@@ -964,7 +964,12 @@ impl FosscutServer {
         let state = Arc::clone(&self.state);
         reply(
             blocking(move || {
+                use fosscut_engine::beats::{self, BeatContext, BeatOptions, BeatSource, CutOptions};
                 use fosscut_engine::motion::{self, Region, TrackTarget};
+                use fosscut_engine::reframe::{self, ReframeRequest, SubjectSource, VerticalRequest};
+                use fosscut_engine::shorts::{
+                    self, HighlightOptions, ShortRequest, ShortSource, ShortsContext,
+                };
                 let snapshot = state.projects.snapshot(&bundle)?;
                 let clip = || {
                     let clip = required(args.clip.as_deref(), "this action needs clip")?;
@@ -978,6 +983,61 @@ impl FosscutServer {
                 };
                 let max_offset = args.max_offset_seconds.unwrap_or(0.0);
                 let mut progress = |_: fosscut_engine::Progress| true;
+                // Planners whose calls create objects pin the revision they planned at, so
+                // the ids they report are the ones the calls make.
+                let mut pinned = false;
+                let rate_of = |clip: &fosscut_model::Id| {
+                    located(&snapshot, clip).map(|(timeline, _)| timeline.format.rate)
+                };
+                let resolve = |input: &fosscut_time::TimeInput, rate: Rate, what: &str| {
+                    input.resolve(rate).map_err(|e| {
+                        ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}"))
+                    })
+                };
+                let subject = |picked: bool| -> Result<SubjectSource, ApiError> {
+                    if picked && let Some(region) = args.region {
+                        let clip = clip()?;
+                        let rate = rate_of(&clip)?;
+                        return Ok(SubjectSource::Region {
+                            region: Region {
+                                x: region.x,
+                                y: region.y,
+                                width: region.width,
+                                height: region.height,
+                            },
+                            at: args.at.as_ref().map(|at| resolve(at, rate, "at")).transpose()?,
+                        });
+                    }
+                    match args.subject.as_deref().unwrap_or("person") {
+                        "person" => Ok(SubjectSource::Person),
+                        "any" => Ok(SubjectSource::Subject),
+                        other => Err(ApiError::new(
+                            codes::INVALID_ARGUMENTS,
+                            format!("subject {other}: use person or any"),
+                        )),
+                    }
+                };
+                let reframe_request = |source: SubjectSource| ReframeRequest {
+                    bundle: bundle.clone(),
+                    cache: state.cache.clone(),
+                    source,
+                    framing: args.framing.clone().unwrap_or_default(),
+                    shots: args.shots.unwrap_or(true),
+                };
+                let beat_context = || BeatContext {
+                    bundle: bundle.clone(),
+                    cache: state.cache.clone(),
+                    models: state.models.clone(),
+                    options: BeatOptions {
+                        bpm: args.bpm,
+                        ..BeatOptions::default()
+                    },
+                };
+                let music = || {
+                    let music = required(args.music.as_deref(), "this action needs music")?;
+                    parse_id(music, "music")
+                };
+                let size = (args.width.unwrap_or(1080), args.height.unwrap_or(1920));
                 let (key, report, commands) = match args.action {
                     AutoEditAction::SplitScenes => {
                         let found = fosscut_engine::scenes::split_at_scenes(
@@ -1042,6 +1102,141 @@ impl FosscutServer {
                         let commands = plan.commands.clone();
                         ("motion", motion_summary(&plan), commands)
                     }
+                    AutoEditAction::Reframe => {
+                        let plan = reframe::reframe(
+                            &snapshot,
+                            &clip()?,
+                            &reframe_request(subject(true)?),
+                            &mut progress,
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("framing", motion_summary(&plan), commands)
+                    }
+                    AutoEditAction::CameraTrack => {
+                        let plan = reframe::camera_track(
+                            &snapshot,
+                            &clip()?,
+                            args.zoom.unwrap_or(1.5),
+                            &ReframeRequest {
+                                shots: args.shots.unwrap_or(false),
+                                ..reframe_request(subject(true)?)
+                            },
+                            &mut progress,
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("framing", motion_summary(&plan), commands)
+                    }
+                    AutoEditAction::Vertical => {
+                        let timeline = args
+                            .timeline
+                            .as_deref()
+                            .map(|t| parse_id(t, "timeline"))
+                            .transpose()?;
+                        let plan = reframe::vertical(
+                            &snapshot,
+                            timeline.as_ref(),
+                            &VerticalRequest {
+                                reframe: reframe_request(subject(false)?),
+                                width: size.0,
+                                height: size.1,
+                                name: args.name.clone(),
+                            },
+                            &mut progress,
+                        )?;
+                        pinned = true;
+                        let commands = plan.commands.clone();
+                        ("vertical", motion_summary(&plan), commands)
+                    }
+                    AutoEditAction::BeatMarkers => {
+                        let found = beats::markers(
+                            &snapshot,
+                            &beat_context(),
+                            &BeatSource::Clip(music()?),
+                            args.every.unwrap_or(1),
+                            &mut progress,
+                        )?;
+                        let commands = found.commands.clone();
+                        ("beats", motion_summary(&found), commands)
+                    }
+                    AutoEditAction::BeatCuts => {
+                        let music = music()?;
+                        let track =
+                            parse_id(required(args.track.as_deref(), "beat_cuts needs track")?, "track")?;
+                        let rate = rate_of(&music)?;
+                        let found = beats::cut_to_beats(
+                            &snapshot,
+                            &beat_context(),
+                            &track,
+                            &music,
+                            &CutOptions {
+                                every: args.every.unwrap_or(1),
+                                tolerance: args
+                                    .tolerance
+                                    .as_ref()
+                                    .map(|t| resolve(t, rate, "tolerance"))
+                                    .transpose()?,
+                                ..CutOptions::default()
+                            },
+                            &mut progress,
+                        )?;
+                        let commands = found.commands.clone();
+                        ("beats", motion_summary(&found), commands)
+                    }
+                    AutoEditAction::ShortCandidates => {
+                        let defaults = HighlightOptions::default();
+                        let found = shorts::candidates(
+                            &snapshot,
+                            &ShortsContext {
+                                bundle: bundle.clone(),
+                                cache: state.cache.clone(),
+                            },
+                            &clip()?,
+                            &HighlightOptions {
+                                min_seconds: args.min_seconds.unwrap_or(defaults.min_seconds),
+                                max_seconds: args.max_seconds.unwrap_or(defaults.max_seconds),
+                                count: args.count.unwrap_or(defaults.count),
+                                ..defaults
+                            },
+                        )?;
+                        return Ok(json!({ "shorts": found }));
+                    }
+                    AutoEditAction::MakeShort => {
+                        let clip = clip()?;
+                        let rate = rate_of(&clip)?;
+                        let from = resolve(
+                            required(args.from.as_ref(), "make_short needs from and to")?,
+                            rate,
+                            "from",
+                        )?;
+                        let to = resolve(
+                            required(args.to.as_ref(), "make_short needs from and to")?,
+                            rate,
+                            "to",
+                        )?;
+                        let mut request = ShortRequest::new(ShortSource::Clip(clip), from, to);
+                        request.name = args.name.clone();
+                        (request.width, request.height) = size;
+                        request.follow = match args.subject.as_deref() {
+                            Some("centre" | "center") => None,
+                            _ => Some(subject(false)?),
+                        };
+                        request.framing = args.framing.clone().unwrap_or_default();
+                        request.shots = args.shots.unwrap_or(true);
+                        request.captions = args.captions.unwrap_or(true);
+                        request.caption_preset = args.caption_preset.clone();
+                        request.title = args.title.clone();
+                        let plan = shorts::make_short(
+                            &snapshot,
+                            &ShortsContext {
+                                bundle: bundle.clone(),
+                                cache: state.cache.clone(),
+                            },
+                            &request,
+                        )?;
+                        pinned = true;
+                        let commands = plan.commands.clone();
+                        ("short", motion_summary(&plan), commands)
+                    }
                     AutoEditAction::MulticamSync => {
                         let found = motion::sync_offsets(&snapshot, &bundle, &angles()?, max_offset)?;
                         return Ok(json!({ "sync": found }));
@@ -1088,8 +1283,12 @@ impl FosscutServer {
                 if commands.is_empty() {
                     return Ok(json!({ key: report, "committed": false }));
                 }
+                let expected_revision = match args.expected_revision {
+                    None if pinned => Some(snapshot.manifest.revision),
+                    expected => expected,
+                };
                 let write = WriteOptions {
-                    expected_revision: args.expected_revision,
+                    expected_revision,
                     dry_run: args.dry_run,
                     request_id: args.request_id,
                     reason: args.reason,

@@ -17,8 +17,11 @@ runs:
         sudo apt-get install -y --no-install-recommends ffmpeg libclang-dev
         dir="$RUNNER_TEMP/ffmpeg-8"
         mkdir -p "$dir"
+        # BtbN names its 64-bit ARM builds linuxarm64.
+        platform=linux64
+        if [ "$RUNNER_ARCH" = "ARM64" ]; then platform=linuxarm64; fi
         curl -fsSL --retry 3 \
-          https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-linux64-lgpl-shared-8.1.tar.xz \
+          "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-$platform-lgpl-shared-8.1.tar.xz" \
           | tar -xJ -C "$dir" --strip-components=1
         {
           echo "FFMPEG_INCLUDE_DIR=$dir/include"

@@ -32,6 +32,7 @@ mod text;
 mod timeline;
 mod transition;
 mod validate;
+pub mod voice_filters;
 
 pub use animation::{
     Applies, BLEND_MODES, CHANNEL_MODES, Interpolation, KeyValue, Keyframe, Property, PropertyKind,
@@ -85,14 +86,16 @@ pub use validate::{Issue, shape_issues, text_issues, text_style_issues, validate
 /// spans, reveals, spacing, outlines, boxes, shadows and glows, text presets and font assets
 /// (ADR-0027), audio effects (ADR-0026) and caption translations; 0.12.0 added shape clips
 /// (ADR-0028); 0.13.0 added multicam angles on compound clips (ADR-0029); 0.14.0 added
-/// canvas fills behind video and image clips.
-pub const FORMAT_VERSION: &str = "0.14.0";
+/// canvas fills behind video and image clips; 0.15.0 added optical-flow slow motion
+/// (`Interpolate::Flow`) and the effects that read neighbouring frames, `motion.blur`,
+/// `detail.denoise` and `color.deflicker` (ADR-0035).
+pub const FORMAT_VERSION: &str = "0.15.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
 pub const READABLE_VERSIONS: &[&str] = &[
     "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-    "0.11.0", "0.12.0", "0.13.0",
+    "0.11.0", "0.12.0", "0.13.0", "0.14.0",
 ];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.

@@ -44,7 +44,7 @@ fn quiet() {
 
 use std::collections::HashMap;
 use std::ffi::CString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use fosscut_time::{Flicks, Rate};
@@ -112,6 +112,12 @@ fn rounding_slack(time_base: (i32, i32), frame_duration: Flicks) -> Flicks {
 /// Decodes the best video stream of a file with FFmpeg.
 pub struct FfmpegVideoDecoder {
     path: String,
+    source: PathBuf,
+    /// Whether a VideoToolbox device was attached, so a decode failure may be the hardware's.
+    hardware_attached: bool,
+    /// Tests make the next decode fail as a hardware decoder can.
+    #[cfg(test)]
+    fail_next: bool,
     input: AVFormatContextInput,
     decoder: AVCodecContext,
     info: VideoStreamInfo,
@@ -153,11 +159,13 @@ impl FfmpegVideoDecoder {
         }
 
         let want_hardware = options.hardware != HardwareDecoding::Off;
+        let mut hardware_attached = false;
         if want_hardware {
             match videotoolbox_device() {
                 Ok(device) => {
                     decoder.set_hw_device_ctx(device);
                     decoder.set_get_format(Some(prefer_videotoolbox));
+                    hardware_attached = true;
                 }
                 Err(message) if options.hardware == HardwareDecoding::Require => {
                     return Err(MediaError::HardwareUnavailable { message });
@@ -183,6 +191,10 @@ impl FfmpegVideoDecoder {
         let slack = rounding_slack(info.time_base, frame_duration);
         Ok(FfmpegVideoDecoder {
             path: path.display().to_string(),
+            source: path.to_path_buf(),
+            hardware_attached,
+            #[cfg(test)]
+            fail_next: false,
             input,
             decoder,
             info,
@@ -204,6 +216,43 @@ impl FfmpegVideoDecoder {
     /// The file this decoder reads.
     pub fn path(&self) -> &str {
         &self.path
+    }
+
+    /// Whether `error` may be the hardware decoder's and decoding in software may succeed.
+    /// VideoToolbox can fail partway through a stream, for example when the system runs out
+    /// of decode sessions; with [`HardwareDecoding::Auto`] the decoder then carries on in
+    /// software rather than failing the render.
+    fn falls_back(&self, error: &MediaError) -> bool {
+        self.hardware_attached
+            && self.hardware == HardwareDecoding::Auto
+            && matches!(error, MediaError::DecodeFailed { .. })
+    }
+
+    /// Reopens the file for software decoding, keeping the last frame for repeated
+    /// requests of the same time.
+    fn reopen_in_software(&mut self) -> Result<(), MediaError> {
+        let mut software = FfmpegVideoDecoder::open(
+            &self.source,
+            DecoderOptions {
+                hardware: HardwareDecoding::Off,
+            },
+        )?;
+        software.last = self.last.take();
+        *self = software;
+        Ok(())
+    }
+
+    fn next_frame_once(&mut self) -> Result<Option<VideoFrame>, MediaError> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_next) {
+            return Err(MediaError::DecodeFailed {
+                message: "Send packet to a codec context failed (test)".into(),
+            });
+        }
+        match self.next_decoded()? {
+            Some(decoded) => self.deliver(decoded).map(Some),
+            None => Ok(None),
+        }
     }
 
     /// Feeds the decoder one packet of the video stream, or the end-of-stream flush.
@@ -353,6 +402,13 @@ impl FfmpegVideoDecoder {
             other => {
                 format = PixelFormat::Nv12;
                 converted = self.convert_to_nv12(image, other)?;
+                if is_rgb(other) {
+                    // swscale writes R'G'B' pictures (PNG, for one) into Y'CbCr with its
+                    // default BT.601 matrix in limited range. Their primaries and transfer
+                    // stay as tagged, so an untagged picture keeps its code values.
+                    color.matrix = Matrix::Bt601;
+                    color.range = Range::Limited;
+                }
                 &converted
             }
         };
@@ -440,13 +496,43 @@ impl VideoDecoder for FfmpegVideoDecoder {
     }
 
     fn next_frame(&mut self) -> Result<Option<VideoFrame>, MediaError> {
-        match self.next_decoded()? {
-            Some(decoded) => self.deliver(decoded).map(Some),
-            None => Ok(None),
+        match self.next_frame_once() {
+            Err(error) if self.falls_back(&error) => {
+                // Carry on after the last frame delivered, or from the start.
+                let resume = self.last.as_ref().map(VideoFrame::end);
+                self.reopen_in_software()?;
+                match resume {
+                    Some(time) => match self.frame_at_once(time) {
+                        Ok(frame) => Ok(Some(frame)),
+                        Err(MediaError::EndOfStream { .. }) => Ok(None),
+                        Err(error) => Err(error),
+                    },
+                    None => self.next_frame_once(),
+                }
+            }
+            result => result,
         }
     }
 
     fn frame_at(&mut self, time: Flicks) -> Result<VideoFrame, MediaError> {
+        match self.frame_at_once(time) {
+            Err(error) if self.falls_back(&error) => {
+                self.reopen_in_software()?;
+                self.frame_at_once(time)
+            }
+            result => result,
+        }
+    }
+}
+
+impl FfmpegVideoDecoder {
+    fn frame_at_once(&mut self, time: Flicks) -> Result<VideoFrame, MediaError> {
+        #[cfg(test)]
+        if std::mem::take(&mut self.fail_next) {
+            return Err(MediaError::DecodeFailed {
+                message: "Send packet to a codec context failed (test)".into(),
+            });
+        }
         if let Some(last) = &self.last
             && covers(last.pts, last.duration, time, self.slack)
         {
@@ -653,6 +739,15 @@ fn color_info(
     }
 }
 
+/// Whether `format` stores R'G'B' rather than Y'CbCr.
+fn is_rgb(format: i32) -> bool {
+    // SAFETY: `av_pix_fmt_desc_get` returns null or a pointer to a static descriptor.
+    let descriptor = unsafe { ffi::av_pix_fmt_desc_get(format) };
+    // SAFETY: checked non-null; descriptors are static and immutable.
+    !descriptor.is_null()
+        && unsafe { (*descriptor).flags } & u64::from(ffi::AV_PIX_FMT_FLAG_RGB) != 0
+}
+
 fn pixel_format_name(format: i32) -> String {
     get_pix_fmt_name(format)
         .map(|name| name.to_string_lossy().into_owned())
@@ -736,6 +831,83 @@ fn decode_failed(error: &RsmpegError) -> MediaError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 1 s clip at 30 fps made by the FFmpeg tool, or `None` when it is not installed
+    /// (CI requires it with `FOSSCUT_REQUIRE_FFMPEG`).
+    fn clip(name: &str) -> Option<PathBuf> {
+        let required =
+            std::env::var_os("FOSSCUT_REQUIRE_FFMPEG").is_some_and(|v| !v.is_empty() && v != "0");
+        let path = std::env::temp_dir().join(format!("fosscut-unit-{}-{name}", std::process::id()));
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=160x90:r=30:d=1",
+            ])
+            .args(["-c:v", "mpeg4", "-q:v", "3"])
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(
+            made || !required,
+            "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg could not make {name}"
+        );
+        made.then_some(path)
+    }
+
+    #[test]
+    fn a_failing_hardware_decoder_carries_on_in_software() {
+        let Some(clip) = clip("fallback.mp4") else {
+            return;
+        };
+        let frame = |n: i64| Rate::FPS_30.frames_to_flicks(n);
+        let mut decoder = FfmpegVideoDecoder::open(&clip, DecoderOptions::default()).unwrap();
+        let attached = decoder.hardware_attached;
+        assert_eq!(
+            attached,
+            cfg!(target_os = "macos"),
+            "VideoToolbox is attached on macOS only"
+        );
+        decoder.fail_next = true;
+        let result = decoder.frame_at(frame(12));
+        if !attached {
+            // Without a hardware decoder a failure is the file's, and it is reported.
+            assert_eq!(result.unwrap_err().code(), "fosscut.media.decode_failed");
+            return;
+        }
+        assert_eq!(result.unwrap().pts, frame(12));
+        assert!(
+            !decoder.hardware_attached,
+            "it decodes in software from then on"
+        );
+        assert_eq!(decoder.acceleration(), Acceleration::Software);
+
+        // Reading forward carries on after the last frame delivered.
+        let mut decoder = FfmpegVideoDecoder::open(&clip, DecoderOptions::default()).unwrap();
+        assert_eq!(decoder.frame_at(frame(5)).unwrap().pts, frame(5));
+        decoder.fail_next = true;
+        assert_eq!(decoder.next_frame().unwrap().map(|f| f.pts), Some(frame(6)));
+        assert_eq!(decoder.next_frame().unwrap().map(|f| f.pts), Some(frame(7)));
+
+        // A decoder that must use the hardware reports the failure instead.
+        let mut required = FfmpegVideoDecoder::open(
+            &clip,
+            DecoderOptions {
+                hardware: HardwareDecoding::Require,
+            },
+        )
+        .unwrap();
+        required.fail_next = true;
+        assert_eq!(
+            required.frame_at(frame(3)).unwrap_err().code(),
+            "fosscut.media.decode_failed"
+        );
+        std::fs::remove_file(&clip).ok();
+    }
 
     #[test]
     fn color_tags_map_to_named_values() {

@@ -65,6 +65,16 @@ fn main() {
         "speech_add",
         "captions_translate",
         "captions_dub",
+        "media_thumbnails",
+        "media_waveform",
+        "media_import",
+        "clip_reframe",
+        "clip_camera_track",
+        "timeline_vertical",
+        "beats_markers",
+        "beats_cut",
+        "shorts_candidates",
+        "shorts_make",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

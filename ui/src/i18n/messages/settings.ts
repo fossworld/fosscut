@@ -170,6 +170,8 @@ export const en = {
   "settings.action.canvas.nudge_up": "Nudge up",
   "settings.action.canvas.nudge_down": "Nudge down",
   "settings.action.multicam.angle": "Cut to angle {angle}",
+  "settings.general.theme": "Appearance",
+  "settings.general.theme.help": "For this computer's window; dark is the default.",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -340,4 +342,6 @@ export const hu: Translation<typeof en> = {
   "settings.action.canvas.nudge_up": "Mozgatás felfelé",
   "settings.action.canvas.nudge_down": "Mozgatás lefelé",
   "settings.action.multicam.angle": "Vágás a(z) {angle}. kameranézetre",
+  "settings.general.theme": "Megjelenés",
+  "settings.general.theme.help": "Ennek a számítógépnek az ablakára vonatkozik; alapértelmezés szerint sötét.",
 };

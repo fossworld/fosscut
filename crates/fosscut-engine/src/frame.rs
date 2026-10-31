@@ -217,7 +217,8 @@ fn sheet_columns(count: u32, tile_width: u32, tile_height: u32) -> u32 {
 
 /// Decoders for the media a timeline shows, each opened on first use and kept, with the
 /// cached analyses subject effects read. Assets never change once imported (ADR-0004), so
-/// decoders stay valid across edits.
+/// decoders stay valid across edits. The decoders keep the frames decoded last, so the
+/// neighbouring frames temporal effects read are each decoded once (ADR-0035).
 #[derive(Default)]
 pub(crate) struct Media {
     decoders: DecoderFrames,

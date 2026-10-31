@@ -1,14 +1,18 @@
+import { Camera, type LucideIcon, Mic, MonitorUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
 import { NO_MICROPHONE, type RecordForm, defaultForm, devicesOf, recordChoice, recordProblem, recordedTime } from "../app/recorder";
 import type { DeviceKind } from "../engine/types";
 import { t } from "../i18n";
+import { Glyph, IconButton } from "../ui/controls";
 
 /** How often a running recording's time is read while the panel shows, in milliseconds. */
 const POLL = 250;
 
 const KINDS: DeviceKind[] = ["microphone", "camera", "screen"];
+
+const KIND_ICONS: Record<DeviceKind, LucideIcon> = { microphone: Mic, camera: Camera, screen: MonitorUp };
 
 /**
  * Recording a voiceover, a camera or the screen into the project: choose what and from
@@ -33,10 +37,9 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
   return (
     <section className="record-panel" role="dialog" aria-label={t("record.title")}>
       <div className="record-head">
+        <Glyph icon={Mic} size="sm" />
         <h2>{t("record.title")}</h2>
-        <button className="link" onClick={() => editor.closeRecorder()} title={running ? t("record.close.help") : undefined}>
-          {t("record.close")}
-        </button>
+        <IconButton icon={X} size="sm" label={t("record.close")} tooltip={running ? t("record.close.help") : undefined} onClick={() => editor.closeRecorder()} />
       </div>
       <div className="buttons kinds" role="radiogroup" aria-label={t("record.what")}>
         {KINDS.map((kind) => (
@@ -48,7 +51,8 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
             disabled={running}
             onClick={() => setChosen(defaultForm(kind, devices ?? []))}
           >
-            {t(`record.kind.${kind}`)}
+            <Glyph icon={KIND_ICONS[kind]} size="sm" />
+            <span>{t(`record.kind.${kind}`)}</span>
           </button>
         ))}
       </div>
@@ -89,6 +93,7 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
           disabled={!running && listed.length === 0}
           onClick={() => void (running ? editor.stopRecording() : editor.startRecording(recordChoice(form)))}
         >
+          <span className="record-dot" aria-hidden="true" />
           {running ? t("record.stop") : t("record.start")}
         </button>
         <span className="record-time" aria-live="polite">

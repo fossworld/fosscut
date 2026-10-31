@@ -10,11 +10,12 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    AdjustmentCommand, AnimationCommand, AudioCommand, CacheCommand, CaptionsCommand, Cli,
-    ClipCommand, ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand,
-    LibraryCommand, LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand,
-    MulticamCommand, PreferencesCommand, ProjectCommand, RevealArgs, SkillTarget, SkillsCommand,
-    TextCommand, TimelineCommand, TrackCommand, TransitionCommand,
+    AdjustmentCommand, AnimationCommand, AudioCommand, BeatsCommand, CacheCommand, CaptionsCommand,
+    Cli, ClipCommand, ClipsCommand, ColorCommand, Command, EffectCommand, FramingArgs,
+    KeyframeCommand, LibraryCommand, LookCommand, MarkerCommand, MaskCommand, MediaCommand,
+    ModelsCommand, MulticamCommand, PreferencesCommand, ProjectCommand, RevealArgs, ShortsCommand,
+    SkillTarget, SkillsCommand, SubjectArgs, TextCommand, TimelineCommand, TrackCommand,
+    TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -350,6 +351,7 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             forward,
             pitch,
             blend,
+            flow,
             nearest,
             ripple,
             reset,
@@ -394,8 +396,9 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                     ("pitch", some(pitch)),
                     (
                         "interpolate",
-                        (*blend || *nearest)
-                            .then(|| json!(if *blend { "blend" } else { "nearest" })),
+                        [(*blend, "blend"), (*flow, "flow"), (*nearest, "nearest")]
+                            .into_iter()
+                            .find_map(|(on, mode)| on.then(|| json!(mode))),
                     ),
                     ("ripple", ripple.then(|| json!(true))),
                     ("reset", reset.then(|| json!(true))),
@@ -780,6 +783,81 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             mask.as_deref(),
             follow.as_deref(),
         ),
+        Command::Clip(ClipCommand::Reframe {
+            clip,
+            subject,
+            framing,
+        }) => reframe(cli, clip, None, subject, framing),
+        Command::Clip(ClipCommand::CameraTrack {
+            clip,
+            zoom,
+            subject,
+            shots,
+        }) => {
+            let framing = FramingArgs {
+                one_shot: !shots,
+                max_zoom: None,
+                max_speed: None,
+            };
+            reframe(cli, clip, Some(*zoom), subject, &framing)
+        }
+        Command::Timeline(TimelineCommand::Vertical {
+            timeline,
+            name,
+            width,
+            height,
+            follow,
+            framing,
+        }) => vertical(
+            cli,
+            timeline.as_deref(),
+            name.clone(),
+            (*width, *height),
+            follow,
+            framing,
+        ),
+        Command::Beats(BeatsCommand::Markers { music, every, bpm }) => {
+            beat_markers(cli, music, *every, *bpm)
+        }
+        Command::Beats(BeatsCommand::Cut {
+            track,
+            music,
+            every,
+            tolerance,
+            bpm,
+        }) => beat_cuts(cli, track, music, *every, tolerance.as_ref(), *bpm),
+        Command::Shorts(ShortsCommand::Candidates {
+            clip,
+            min_seconds,
+            max_seconds,
+            count,
+        }) => short_candidates(cli, clip, *min_seconds, *max_seconds, *count),
+        Command::Shorts(ShortsCommand::Make {
+            clip,
+            from,
+            to,
+            name,
+            width,
+            height,
+            follow,
+            framing,
+            no_captions,
+            caption_preset,
+            title,
+        }) => make_short(
+            cli,
+            clip,
+            (from, to),
+            ShortLook {
+                name: name.clone(),
+                size: (*width, *height),
+                follow,
+                framing,
+                captions: !no_captions,
+                caption_preset: caption_preset.clone(),
+                title: title.clone(),
+            },
+        ),
         Command::Audio(AudioCommand::Normalize {
             clips,
             target,
@@ -961,6 +1039,15 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ]),
             )
         }
+        Command::Audio(AudioCommand::Voice {
+            preset,
+            clip,
+            replace,
+        }) => write(
+            cli,
+            "voice.apply",
+            json!({ "clip": clip, "preset": preset, "replace": replace }),
+        ),
         Command::Look(LookCommand::Apply {
             look,
             clip,
@@ -1989,8 +2076,344 @@ fn stabilize(cli: &Cli, clip: &str, strength: f64) -> Result<Outcome, ApiError> 
     )
 }
 
-/// A motion plan without its calls, which the response already shows applied.
-fn motion_report(plan: &fosscut_engine::motion::MotionPlan) -> Value {
+/// Like [`apply_measured`], at the revision the calls were planned at unless
+/// --expected-revision says otherwise: the ids a plan reports are the ones its calls make
+/// only there.
+fn apply_planned(
+    cli: &Cli,
+    path: &Path,
+    (name, key): (&str, &str),
+    revision: u64,
+    report: Value,
+    commands: Vec<Value>,
+) -> Result<Outcome, ApiError> {
+    let mut request: Request = serde_json::from_value(json!({ "commands": commands }))
+        .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+    request.expected_revision = Some(revision);
+    apply_options(cli, &mut request, true);
+    let response = bundle::execute(path, request)?;
+    Ok(Outcome::Query(
+        name.to_string(),
+        json!({ key: report, "response": response }),
+    ))
+}
+
+/// The timeline rate of the timeline holding `clip`.
+fn clip_rate(project: &Project, clip: &Id) -> Result<Rate, ApiError> {
+    project
+        .timelines
+        .values()
+        .find(|t| {
+            t.tracks
+                .iter()
+                .any(|tr| tr.clips.iter().any(|c| &c.id == clip))
+        })
+        .map(|t| t.format.rate)
+        .ok_or_else(|| ApiError::new(codes::CLIP_NOT_FOUND, format!("clip {clip} does not exist")))
+}
+
+fn resolve_at(input: &TimeInput, rate: Rate, what: &str) -> Result<fosscut_time::Flicks, ApiError> {
+    input
+        .resolve(rate)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+}
+
+/// What `--follow` names, for planners that cannot follow a region.
+fn followed(name: &str) -> Result<fosscut_engine::reframe::SubjectSource, ApiError> {
+    use fosscut_engine::reframe::SubjectSource;
+    match name {
+        "person" => Ok(SubjectSource::Person),
+        "any" => Ok(SubjectSource::Subject),
+        other => Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("--follow {other}: use person or any"),
+        )),
+    }
+}
+
+fn framing_options(framing: &FramingArgs) -> fosscut_engine::reframe::FramingOptions {
+    let defaults = fosscut_engine::reframe::FramingOptions::default();
+    fosscut_engine::reframe::FramingOptions {
+        max_zoom: framing.max_zoom.unwrap_or(defaults.max_zoom),
+        max_speed: framing.max_speed.unwrap_or(defaults.max_speed),
+        ..defaults
+    }
+}
+
+fn reframe_request(
+    path: &Path,
+    source: fosscut_engine::reframe::SubjectSource,
+    framing: &FramingArgs,
+) -> fosscut_engine::reframe::ReframeRequest {
+    fosscut_engine::reframe::ReframeRequest {
+        bundle: path.to_path_buf(),
+        cache: fosscut_engine::cache_dir(),
+        source,
+        framing: framing_options(framing),
+        shots: !framing.one_shot,
+    }
+}
+
+/// `fosscut clip reframe` and `fosscut clip camera-track` (with `zoom`).
+fn reframe(
+    cli: &Cli,
+    clip: &str,
+    zoom: Option<f64>,
+    subject: &SubjectArgs,
+    framing: &FramingArgs,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::reframe::{self, Region, SubjectSource};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let clip = parse_id(clip, "clip")?;
+    let source = match &subject.region {
+        Some(region) => {
+            let [x, y, width, height] = region[..] else {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    "--region takes four numbers: X,Y,WIDTH,HEIGHT",
+                ));
+            };
+            let rate = clip_rate(&snapshot, &clip)?;
+            SubjectSource::Region {
+                region: Region {
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+                at: subject
+                    .at
+                    .as_ref()
+                    .map(|at| resolve_at(at, rate, "--at"))
+                    .transpose()?,
+            }
+        }
+        None => followed(&subject.follow)?,
+    };
+    let request = reframe_request(&path, source, framing);
+    let mut progress = progress_printer("framing");
+    let (name, plan) = match zoom {
+        Some(zoom) => (
+            "clip.camera_track",
+            reframe::camera_track(&snapshot, &clip, zoom, &request, &mut progress),
+        ),
+        None => (
+            "clip.reframe",
+            reframe::reframe(&snapshot, &clip, &request, &mut progress),
+        ),
+    };
+    let plan = plan.map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_measured(cli, &path, name, "framing", motion_report(&plan), commands)
+}
+
+/// `fosscut timeline vertical`.
+fn vertical(
+    cli: &Cli,
+    timeline: Option<&str>,
+    name: Option<String>,
+    (width, height): (u32, u32),
+    follow: &str,
+    framing: &FramingArgs,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::reframe::{self, VerticalRequest};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let timeline = timeline.map(|t| parse_id(t, "timeline")).transpose()?;
+    let plan = reframe::vertical(
+        &snapshot,
+        timeline.as_ref(),
+        &VerticalRequest {
+            reframe: reframe_request(&path, followed(follow)?, framing),
+            width,
+            height,
+            name,
+        },
+        &mut progress_printer("framing"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_planned(
+        cli,
+        &path,
+        ("timeline.vertical", "vertical"),
+        snapshot.manifest.revision,
+        motion_report(&plan),
+        commands,
+    )
+}
+
+fn beat_context(path: &Path, bpm: Option<f64>) -> fosscut_engine::beats::BeatContext {
+    use fosscut_engine::beats::{BeatContext, BeatOptions};
+    BeatContext {
+        bundle: path.to_path_buf(),
+        cache: fosscut_engine::cache_dir(),
+        models: fosscut_engine::models_dir(),
+        options: BeatOptions {
+            bpm,
+            ..BeatOptions::default()
+        },
+    }
+}
+
+/// `fosscut beats markers`.
+fn beat_markers(cli: &Cli, music: &str, every: u32, bpm: Option<f64>) -> Result<Outcome, ApiError> {
+    use fosscut_engine::beats::{self, BeatSource};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let found = beats::markers(
+        &snapshot,
+        &beat_context(&path, bpm),
+        &BeatSource::Clip(parse_id(music, "music")?),
+        every,
+        &mut progress_printer("finding beats"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = found.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "beats.markers",
+        "beats",
+        motion_report(&found),
+        commands,
+    )
+}
+
+/// `fosscut beats cut`.
+fn beat_cuts(
+    cli: &Cli,
+    track: &str,
+    music: &str,
+    every: u32,
+    tolerance: Option<&TimeInput>,
+    bpm: Option<f64>,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::beats::{self, CutOptions};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let music = parse_id(music, "music")?;
+    let rate = clip_rate(&snapshot, &music)?;
+    let found = beats::cut_to_beats(
+        &snapshot,
+        &beat_context(&path, bpm),
+        &parse_id(track, "track")?,
+        &music,
+        &CutOptions {
+            every,
+            tolerance: tolerance
+                .map(|t| resolve_at(t, rate, "--tolerance"))
+                .transpose()?,
+            ..CutOptions::default()
+        },
+        &mut progress_printer("finding beats"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = found.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "beats.cut",
+        "beats",
+        motion_report(&found),
+        commands,
+    )
+}
+
+/// `fosscut shorts candidates`.
+fn short_candidates(
+    cli: &Cli,
+    clip: &str,
+    min_seconds: f64,
+    max_seconds: f64,
+    count: u32,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::shorts::{self, HighlightOptions, ShortsContext};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let found = shorts::candidates(
+        &snapshot,
+        &ShortsContext {
+            bundle: path.clone(),
+            cache: fosscut_engine::cache_dir(),
+        },
+        &parse_id(clip, "clip")?,
+        &HighlightOptions {
+            min_seconds,
+            max_seconds,
+            count,
+            ..HighlightOptions::default()
+        },
+    )
+    .map_err(|e| engine_error(&e))?;
+    Ok(Outcome::Query(
+        "shorts.candidates".to_string(),
+        json!(found),
+    ))
+}
+
+/// How `fosscut shorts make` builds a short.
+struct ShortLook<'a> {
+    name: Option<String>,
+    size: (u32, u32),
+    follow: &'a str,
+    framing: &'a FramingArgs,
+    captions: bool,
+    caption_preset: Option<String>,
+    title: Option<String>,
+}
+
+/// `fosscut shorts make`.
+fn make_short(
+    cli: &Cli,
+    clip: &str,
+    (from, to): (&TimeInput, &TimeInput),
+    look: ShortLook<'_>,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::shorts::{self, ShortRequest, ShortSource, ShortsContext};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let clip = parse_id(clip, "clip")?;
+    let rate = clip_rate(&snapshot, &clip)?;
+    let mut request = ShortRequest::new(
+        ShortSource::Clip(clip),
+        resolve_at(from, rate, "--from")?,
+        resolve_at(to, rate, "--to")?,
+    );
+    request.name = look.name;
+    (request.width, request.height) = look.size;
+    request.follow = match look.follow {
+        "centre" | "center" => None,
+        other => Some(followed(other)?),
+    };
+    request.framing = framing_options(look.framing);
+    request.shots = !look.framing.one_shot;
+    request.captions = look.captions;
+    request.caption_preset = look.caption_preset;
+    request.title = look.title;
+    let plan = shorts::make_short(
+        &snapshot,
+        &ShortsContext {
+            bundle: path.clone(),
+            cache: fosscut_engine::cache_dir(),
+        },
+        &request,
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_planned(
+        cli,
+        &path,
+        ("shorts.make", "short"),
+        snapshot.manifest.revision,
+        motion_report(&plan),
+        commands,
+    )
+}
+
+/// A plan without its calls, which the response already shows applied.
+fn motion_report(plan: &impl serde::Serialize) -> Value {
     let mut report = json!(plan);
     if let Some(object) = report.as_object_mut() {
         object.remove("commands");

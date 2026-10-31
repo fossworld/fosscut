@@ -5,6 +5,8 @@ import { timeline, track } from "../test/fixtures";
 import { FLICKS_PER_SECOND, framesToFlicks } from "../transport/time";
 import {
   HEADER,
+  maxTop,
+  rowAt,
   MAX_ZOOM,
   MIN_ZOOM,
   ROW,
@@ -54,6 +56,17 @@ describe("timeline geometry", () => {
     expect(hitTest(t, flat, 10, RULER + 5), "the labels are not clips").toBeNull();
     expect(hitTest(t, flat, HEADER + 50, 5), "nor is the ruler").toBeNull();
     expect(onRuler(5) && !onRuler(RULER)).toBe(true);
+  });
+
+  it("scrolls the tracks up under the ruler, as far as the last one shows", () => {
+    const t = timeline();
+    const scrolled = { zoom: 100, scroll: 0, width: 1000, top: ROW };
+    expect(rowY(1, ROW), "the second row moves up to where the first was").toBe(RULER);
+    expect(rowAt(RULER + 5, ROW)).toBe(1);
+    expect(hitTest(t, scrolled, HEADER + 300, RULER + 5)?.clip?.id, "the lower track is now under the ruler").toBe("clip_0003");
+    expect(maxTop(t, 1000), "tracks that fit do not scroll").toBe(0);
+    expect(maxTop(t, RULER + ROW)).toBe(ROW + ROW / 2);
+    expect(maxTop(null, 100)).toBe(0);
   });
 
   it("zooms around the pointer within limits, and scrolls", () => {

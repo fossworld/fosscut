@@ -22,12 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cli: ${{ steps.detect.outputs.cli }}
+      desktop: ${{ steps.detect.outputs.desktop }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - id: detect
-        run: echo "cli=$([ -f crates/fosscut-cli/Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "cli=$([ -f crates/fosscut-cli/Cargo.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "desktop=$([ -f scripts/release/desktop_bundle.py ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
   build-cli:
     name: Build fosscut CLI (${{ matrix.target }})
@@ -61,20 +64,56 @@ jobs:
           # Bump to start fresh caches when a build input cargo does not track changes,
           # such as GGML_NATIVE in .cargo/config.toml.
           prefix-key: v1-rust
-      - run: cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
+      # fosscut-media links FFmpeg 8 dynamically (ADR-0009): the LGPL shared builds on Linux
+      # and Windows, which the archive ships beside the binary.
+      - uses: ./.github/actions/setup-ffmpeg
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            # Find the bundled FFmpeg libraries in lib/ beside the binary.
+            export RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/lib"
+          fi
+          cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
           name="fosscut-${RELEASE_TAG}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp LICENSE-MIT LICENSE-APACHE README.md "dist/$name/"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "target/${{ matrix.target }}/release/fosscut.exe" "dist/$name/"
-            (cd dist && 7z a "$name.zip" "$name" > /dev/null && sha256sum "$name.zip" > "$name.zip.sha256")
-          else
-            cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
-            (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
-          fi
+          ffmpeg_notice() {
+            cat > "dist/$name/FFMPEG-NOTICE.txt" <<NOTICE
+          This archive includes the FFmpeg 8 shared libraries from the LGPL builds of
+          https://github.com/BtbN/FFmpeg-Builds, licensed under the GNU Lesser General Public
+          License 2.1 or later; see FFMPEG-LICENSE.txt. FFmpeg's source code is at
+          https://ffmpeg.org/download.html and the build scripts at the address above. FossCut
+          links them dynamically: you may replace them with your own build of the same version.
+          NOTICE
+          }
+          case "${{ runner.os }}" in
+            Windows)
+              cp "target/${{ matrix.target }}/release/fosscut.exe" "dist/$name/"
+              cp "$RUNNER_TEMP"/ffmpeg-8-dlls/*.dll "dist/$name/"
+              cp "$RUNNER_TEMP"/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1/LICENSE.txt "dist/$name/FFMPEG-LICENSE.txt"
+              ffmpeg_notice
+              (cd dist && 7z a "$name.zip" "$name" > /dev/null && sha256sum "$name.zip" > "$name.zip.sha256")
+              ;;
+            Linux)
+              cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
+              mkdir -p "dist/$name/lib"
+              cp -P "$FFMPEG_LIBS_DIR"/*.so* "dist/$name/lib/"
+              cp "$FFMPEG_LIBS_DIR/../LICENSE.txt" "dist/$name/FFMPEG-LICENSE.txt"
+              ffmpeg_notice
+              (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+              ;;
+            macOS)
+              # Homebrew's FFmpeg is built with GPL parts, so it is not shipped: the binary
+              # uses the ffmpeg@8 the user installs (brew install ffmpeg@8).
+              cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
+              printf '%s\n' "fosscut needs FFmpeg 8: brew install ffmpeg@8" > "dist/$name/REQUIREMENTS.txt"
+              (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+              ;;
+          esac
           rm -rf "dist/$name"
       - uses: actions/upload-artifact@v7
         with:
@@ -82,9 +121,95 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  build-desktop:
+    name: Build FossCut desktop (${{ matrix.target }})
+    needs: detect
+    if: needs.detect.outputs.desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: macos
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Install Rust toolchain and target
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+          prefix-key: v1-rust
+      - uses: ./.github/actions/setup-ffmpeg
+      - uses: ./.github/actions/setup-desktop
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ui/package.json
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Build the UI
+        run: |
+          pnpm install --frozen-lockfile --dir ui
+          pnpm --dir ui run build
+      - name: Bundle settings
+        shell: bash
+        run: |
+          case "${{ matrix.platform }}" in
+            windows) libs="$RUNNER_TEMP/ffmpeg-8-dlls" ;;
+            linux) libs="$FFMPEG_LIBS_DIR" ;;
+            *) libs=- ;;
+          esac
+          python3 -I scripts/release/desktop_bundle.py ${{ matrix.platform }} "$libs" "$RUNNER_TEMP/bundle.json"
+      - name: Build and bundle
+        shell: bash
+        working-directory: apps/desktop
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            # The Debian package installs the FFmpeg libraries in /usr/lib/fosscut.
+            export RUSTFLAGS="-C link-args=-Wl,-rpath,/usr/lib/fosscut"
+          fi
+          cargo tauri build --target ${{ matrix.target }} --config "$RUNNER_TEMP/bundle.json"
+      - name: Package
+        shell: bash
+        run: |
+          out="target/${{ matrix.target }}/release/bundle"
+          mkdir -p dist
+          base="fosscut-desktop-${RELEASE_TAG}-${{ matrix.target }}"
+          case "${{ matrix.platform }}" in
+            windows) cp "$out"/nsis/*.exe "dist/$base-setup.exe" ;;
+            linux) cp "$out"/deb/*.deb "dist/$base.deb" ;;
+            macos) cp "$out"/dmg/*.dmg "dist/$base.dmg" ;;
+          esac
+          sum="sha256sum"
+          if ! command -v sha256sum > /dev/null; then sum="shasum -a 256"; fi
+          (cd dist && for f in *; do $sum "$f" > "$f.sha256"; done)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fosscut-desktop-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
   release:
     name: Draft GitHub release
-    needs: [detect, build-cli]
+    needs: [detect, build-cli, build-desktop]
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
@@ -102,8 +227,7 @@ jobs:
           args: --latest --strip header
         env:
           OUTPUT: RELEASE_NOTES.md
-      - name: Download CLI archives
-        if: needs.build-cli.result == 'success'
+      - name: Download CLI archives and desktop installers
         uses: actions/download-artifact@v8
         with:
           pattern: fosscut-*

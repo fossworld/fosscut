@@ -6,7 +6,10 @@ import { Editor } from "./app/editor";
 import type { EngineClient } from "./engine/client";
 import { TauriEngine, inDesktopApp } from "./engine/tauri";
 import { setLanguage, t } from "./i18n";
+import { startTheme } from "./theme/theme";
 import "./styles.css";
+
+startTheme();
 
 const root = createRoot(document.getElementById("root") as HTMLElement);
 

@@ -1,3 +1,4 @@
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Wand2, X } from "lucide-react";
 import { useState } from "react";
 
 import { sampleCurve } from "../app/animation";
@@ -20,6 +21,8 @@ import {
   specOf,
   toggleParamKey,
 } from "./effectFields";
+import { type EffectScope, inScope } from "./inspectorTabs";
+import { Glyph, IconButton } from "../ui/controls";
 
 const words = (name: string) => name.replaceAll("_", " ");
 
@@ -237,8 +240,8 @@ function EffectCard({
   clip,
   effect,
   spec,
-  index,
-  count,
+  earlier,
+  later,
   playhead,
   luts,
 }: {
@@ -246,8 +249,9 @@ function EffectCard({
   clip: ClipView;
   effect: EffectView;
   spec: EffectSpec | undefined;
-  index: number;
-  count: number;
+  /** Where moving it earlier or later puts it in the clip's whole list; null at an end. */
+  earlier: number | null;
+  later: number | null;
   playhead: number;
   luts: { id: string; name: string }[];
 }) {
@@ -259,36 +263,45 @@ function EffectCard({
   return (
     <div className={`effect${on ? "" : " off"}`}>
       <div className="effect-head">
-        <button className="disclose" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {open ? "▾" : "▸"}
+        <button
+          type="button"
+          className="disclose"
+          aria-expanded={open}
+          aria-label={spec?.title ?? effect.type}
+          onClick={() => setOpen(!open)}
+        >
+          <Glyph icon={open ? ChevronDown : ChevronRight} size="sm" />
         </button>
+        <span className="title">{spec?.title ?? effect.type}</span>
         <input
           type="checkbox"
+          className="switch"
+          role="switch"
           checked={on}
           title={on ? t("effects.bypass") : t("effects.apply")}
+          aria-label={on ? t("effects.bypass") : t("effects.apply")}
           onChange={() => set({ enabled: !on })}
         />
-        <span className="title">{spec?.title ?? effect.type}</span>
-        <button
-          title={t("effects.earlier")}
-          disabled={index === 0}
-          onClick={() => void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: index - 1 } }])}
-        >
-          ↑
-        </button>
-        <button
-          title={t("effects.later")}
-          disabled={index === count - 1}
-          onClick={() => void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: index + 1 } }])}
-        >
-          ↓
-        </button>
-        <button
-          title={t("effects.remove")}
+        <IconButton
+          icon={ArrowUp}
+          size="sm"
+          label={t("effects.earlier")}
+          disabled={earlier === null}
+          onClick={() => earlier !== null && void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: earlier } }])}
+        />
+        <IconButton
+          icon={ArrowDown}
+          size="sm"
+          label={t("effects.later")}
+          disabled={later === null}
+          onClick={() => later !== null && void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: later } }])}
+        />
+        <IconButton
+          icon={X}
+          size="sm"
+          label={t("effects.remove")}
           onClick={() => void editor.edit([{ command: "effect.remove", args: { clip: clip.id, effect: effect.id } }])}
-        >
-          ×
-        </button>
+        />
       </div>
       {open && spec && (
         <div className="params">
@@ -345,6 +358,7 @@ export function Effects({
   luts,
   others,
   targets = { picture: true, sound: false },
+  scope = "all",
 }: {
   editor: Editor;
   clip: ClipView;
@@ -355,36 +369,49 @@ export function Effects({
   others: ClipView[];
   /** What effects can change on this clip. */
   targets?: Targets;
+  /** Which of its effects this part lists and offers. */
+  scope?: EffectScope;
 }) {
-  const effects = clip.effects ?? [];
+  const all = clip.effects ?? [];
   const pictures = clip.kind === "video" || clip.kind === "image";
-  const offered = catalog ? offeredEffects(catalog.effects, targets) : [];
+  // Effects of unknown types show with the picture's.
+  const listed = (effect: EffectView) => {
+    const spec = catalog ? specOf(catalog.effects, effect) : undefined;
+    return spec ? inScope(spec, scope) : scope === "all" || scope === "picture";
+  };
+  const shown = all.map((effect, index) => ({ effect, index })).filter(({ effect }) => listed(effect));
+  const offered = catalog ? offeredEffects(catalog.effects, targets).filter((spec) => inScope(spec, scope)) : [];
+  const colour = scope === "all" || scope === "color";
+  const title = scope === "color" ? t("effects.color.title") : scope === "sound" ? t("effects.sound.title") : t("effects.title");
   return (
     <section className="effects">
-      <h2>{t("effects.title")}</h2>
-      {effects.map((effect, index) => (
+      <h2>{title}</h2>
+      {shown.length === 0 && <p className="hint">{scope === "sound" ? t("effects.none.sound") : t("effects.none")}</p>}
+      {shown.map(({ effect }, at) => (
         <EffectCard
           key={effect.id}
           editor={editor}
           clip={clip}
           effect={effect}
           spec={catalog ? specOf(catalog.effects, effect) : undefined}
-          index={index}
-          count={effects.length}
+          earlier={at > 0 ? (shown[at - 1]?.index ?? null) : null}
+          later={at < shown.length - 1 ? (shown[at + 1]?.index ?? null) : null}
           playhead={playhead}
           luts={luts}
         />
       ))}
       <div className="add">
-        <select
-          value=""
-          aria-label={targets.picture ? t("effects.add") : t("effects.add.sound")}
-          onChange={(event) => event.target.value && void editor.addEffect(clip.id, event.target.value)}
-        >
-          <option value="">{targets.picture ? t("effects.add") : t("effects.add.sound")}</option>
-          <EffectOptions offered={offered} />
-        </select>
-        {targets.picture && (
+        {offered.length > 0 && (
+          <select
+            value=""
+            aria-label={targets.picture && scope !== "sound" ? t("effects.add") : t("effects.add.sound")}
+            onChange={(event) => event.target.value && void editor.addEffect(clip.id, event.target.value)}
+          >
+            <option value="">{targets.picture && scope !== "sound" ? t("effects.add") : t("effects.add.sound")}</option>
+            <EffectOptions offered={offered} />
+          </select>
+        )}
+        {targets.picture && colour && (
           <select
             value=""
             aria-label={t("effects.look")}
@@ -399,9 +426,10 @@ export function Effects({
           </select>
         )}
       </div>
-      {pictures && (
+      {pictures && colour && (
         <div className="add">
           <button title={t("effects.auto.title")} onClick={() => void editor.autoColor(clip.id)}>
+            <Glyph icon={Wand2} size="sm" />
             {t("effects.auto")}
           </button>
           <select

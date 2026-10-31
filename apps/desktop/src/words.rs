@@ -25,6 +25,22 @@ pub enum Word {
     RecordingFailed,
     /// The app menu's item that opens Settings.
     Settings,
+    /// The title of the dialog that imports media files.
+    ImportMedia,
+    /// The import dialog's choice of every kind of media file.
+    MediaFiles,
+    /// The import dialog's choice of video files.
+    VideoFiles,
+    /// The import dialog's choice of sound files.
+    AudioFiles,
+    /// The import dialog's choice of image files.
+    ImageFiles,
+    /// The import dialog's choice of color lookup tables.
+    LutFiles,
+    /// The import dialog's choice of font files.
+    FontFiles,
+    /// The import dialog's choice of any file.
+    AllFiles,
 }
 
 /// `word` in `language` (a code of `fosscut_engine::preferences::LANGUAGES`); English for
@@ -41,6 +57,14 @@ pub fn word(language: &str, word: Word) -> &'static str {
         ("hu", Word::RecordingFinished) => "A felvétel elkészült",
         ("hu", Word::RecordingFailed) => "A felvétel nem sikerült",
         ("hu", Word::Settings) => "Beállítások\u{2026}",
+        ("hu", Word::ImportMedia) => "Médiafájlok importálása",
+        ("hu", Word::MediaFiles) => "Médiafájlok",
+        ("hu", Word::VideoFiles) => "Videók",
+        ("hu", Word::AudioFiles) => "Hangfájlok",
+        ("hu", Word::ImageFiles) => "Képek",
+        ("hu", Word::LutFiles) => "LUT-ok (.cube)",
+        ("hu", Word::FontFiles) => "Betűtípusok",
+        ("hu", Word::AllFiles) => "Minden fájl",
         (_, Word::OpenProject) => "Open a FossCut project",
         (_, Word::CreateProject) => "Create a FossCut project",
         (_, Word::FindMedia) => "Find the media file",
@@ -51,6 +75,14 @@ pub fn word(language: &str, word: Word) -> &'static str {
         (_, Word::RecordingFinished) => "Recording finished",
         (_, Word::RecordingFailed) => "Recording failed",
         (_, Word::Settings) => "Settings\u{2026}",
+        (_, Word::ImportMedia) => "Import media",
+        (_, Word::MediaFiles) => "Media files",
+        (_, Word::VideoFiles) => "Videos",
+        (_, Word::AudioFiles) => "Audio",
+        (_, Word::ImageFiles) => "Images",
+        (_, Word::LutFiles) => "LUTs (.cube)",
+        (_, Word::FontFiles) => "Fonts",
+        (_, Word::AllFiles) => "All files",
     }
 }
 
@@ -71,6 +103,14 @@ mod tests {
             Word::RecordingFinished,
             Word::RecordingFailed,
             Word::Settings,
+            Word::ImportMedia,
+            Word::MediaFiles,
+            Word::VideoFiles,
+            Word::AudioFiles,
+            Word::ImageFiles,
+            Word::LutFiles,
+            Word::FontFiles,
+            Word::AllFiles,
         ];
         for text in all {
             assert_ne!(word("hu", text), word("en", text), "{text:?}");

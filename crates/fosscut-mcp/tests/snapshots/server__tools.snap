@@ -83,7 +83,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Returns the measurement and the response; check with frame_grab or contact_sheet.",
+    "description": "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. Returns the measurement and the response; check with frame_grab or contact_sheet.",
     "input": {
       "$defs": {
         "AutoEditAction": {
@@ -113,8 +113,100 @@ expression: listing
               "const": "multicam_sync",
               "description": "Only measure how far apart angles recorded at the same time started.",
               "type": "string"
+            },
+            {
+              "const": "reframe",
+              "description": "Make a clip follow its subject on its timeline's canvas (another aspect).",
+              "type": "string"
+            },
+            {
+              "const": "camera_track",
+              "description": "Keep the camera on a moving subject, zoomed in on the clip's own canvas.",
+              "type": "string"
+            },
+            {
+              "const": "vertical",
+              "description": "Copy a timeline onto a vertical canvas with every video clip following its subject.",
+              "type": "string"
+            },
+            {
+              "const": "beat_markers",
+              "description": "Put markers on the beats of a music clip.",
+              "type": "string"
+            },
+            {
+              "const": "beat_cuts",
+              "description": "Move the cuts between a track's clips onto the beats of a music clip.",
+              "type": "string"
+            },
+            {
+              "const": "short_candidates",
+              "description": "Score segments of a long clip that could stand alone as shorts.",
+              "type": "string"
+            },
+            {
+              "const": "make_short",
+              "description": "Build a vertical short from a range of a clip's media.",
+              "type": "string"
             }
           ]
+        },
+        "FramingOptions": {
+          "additionalProperties": false,
+          "description": "Options of a framing.",
+          "properties": {
+            "dead_zone": {
+              "default": 0.1,
+              "description": "How far the subject may move from the crop's centre before the camera follows, as a\nfraction of the crop's width (or height, vertically), 0 to 0.4 (default 0.1).",
+              "format": "double",
+              "type": "number"
+            },
+            "ease_seconds": {
+              "default": 0.5,
+              "description": "How long a pan takes to start and to stop, in seconds, 0 to 3 (default 0.5).",
+              "format": "double",
+              "type": "number"
+            },
+            "headroom": {
+              "default": 0.08,
+              "description": "Room above the subject, as a fraction of the crop's height, 0 to 0.4 (default 0.08).",
+              "format": "double",
+              "type": "number"
+            },
+            "max_speed": {
+              "default": 1.0,
+              "description": "The fastest pan, in crop widths (or heights) per second, 0.05 to 10 (default 1).",
+              "format": "double",
+              "type": "number"
+            },
+            "max_zoom": {
+              "default": 1.0,
+              "description": "The most zoom chosen automatically, from `min_zoom` to 4 (default 1, so the crop\nonly pans).",
+              "format": "double",
+              "type": "number"
+            },
+            "min_zoom": {
+              "default": 1.0,
+              "description": "The least zoom, 1 or more (default 1: the largest crop of the target aspect).",
+              "format": "double",
+              "type": "number"
+            },
+            "padding": {
+              "default": 0.15,
+              "description": "Room around the subject when choosing the zoom, as a fraction of its size, 0 to 1\n(default 0.15).",
+              "format": "double",
+              "type": "number"
+            },
+            "zoom": {
+              "description": "A fixed zoom from 1 to 4, instead of choosing one per shot.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
         },
         "RegionArg": {
           "description": "A region of a picture: its centre and size as fractions of the picture.",
@@ -215,7 +307,7 @@ expression: listing
       "properties": {
         "action": {
           "$ref": "#/$defs/AutoEditAction",
-          "description": "`split_scenes`, `stabilize`, `track`, `multicam` or `multicam_sync`."
+          "description": "`split_scenes`, `stabilize`, `track`, `multicam`, `multicam_sync`, `reframe`,\n`camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates` or\n`make_short`."
         },
         "angles": {
           "default": [],
@@ -236,10 +328,41 @@ expression: listing
           ],
           "description": "track: the timeline time where `region` is given; the clip's start when omitted."
         },
-        "clip": {
-          "description": "split_scenes, stabilize, track: the video clip to measure.",
+        "bpm": {
+          "description": "beat_markers, beat_cuts: the music's tempo when known, in beats per minute, instead of\nestimating it.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "caption_preset": {
+          "description": "make_short: the caption preset, such as `bold-pop`.",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "captions": {
+          "description": "make_short: caption the spoken words (default true).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "clip": {
+          "description": "split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short:\nthe video clip to measure.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "description": "short_candidates: see min_seconds.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -247,6 +370,15 @@ expression: listing
           "default": false,
           "description": "Report what would change without committing it.",
           "type": "boolean"
+        },
+        "every": {
+          "description": "beat_markers, beat_cuts: every how many beats (1 to 16; default 1).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "expected_revision": {
           "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
@@ -261,6 +393,37 @@ expression: listing
           "description": "track: another clip, such as a title or sticker, that moves as the region does from\nwhere it is (motion tracking).",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "framing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FramingOptions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "reframe, camera_track, vertical, make_short: how the crop follows (dead zone, speed,\nease, headroom, padding, zoom limits); the defaults pan smoothly at zoom 1."
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "make_short: where the short starts and ends in the clip's media (a candidate's span)."
+        },
+        "height": {
+          "description": "vertical, make_short: see width.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -279,8 +442,31 @@ expression: listing
             "null"
           ]
         },
+        "max_seconds": {
+          "description": "short_candidates: see min_seconds.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min_seconds": {
+          "description": "short_candidates: shortest and longest candidate, in seconds (15 and 60), and how\nmany to return (10).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "music": {
+          "description": "beat_markers, beat_cuts: the music clip.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
-          "description": "multicam: the multicam timeline's name.",
+          "description": "multicam, vertical, make_short: the new timeline's name.",
           "type": [
             "string",
             "null"
@@ -326,6 +512,13 @@ expression: listing
             "null"
           ]
         },
+        "shots": {
+          "description": "reframe, vertical, make_short: frame each shot on its own at the cached scene cuts\n(default true; run media_analyze with analyzers [\"scenes\"] first), or false for one\nframing over the whole clip.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "sound": {
           "description": "multicam: which angle's sound plays, by number from 1; the first when omitted.",
           "format": "uint",
@@ -354,6 +547,13 @@ expression: listing
             "null"
           ]
         },
+        "subject": {
+          "description": "reframe, camera_track, vertical, make_short: what the picture follows: `person`\n(the cached pose analysis, the default) or `any` (whatever the cached matte keeps);\nmake_short also takes `centre` (no analysis needed). reframe and camera_track\nfollow `region` from `at` instead when it is given.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sync": {
           "description": "multicam: false lines the angles up at their starts instead of measuring offsets.",
           "type": [
@@ -362,16 +562,62 @@ expression: listing
           ]
         },
         "timeline": {
-          "description": "multicam: timeline for the multicam clip; the primary timeline when omitted.",
+          "description": "multicam: timeline for the multicam clip; vertical: the timeline to copy; the primary\ntimeline when omitted.",
           "type": [
             "string",
             "null"
           ]
         },
-        "track": {
-          "description": "multicam: track for the multicam clip.",
+        "title": {
+          "description": "make_short: a title over the first seconds.",
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "make_short: see from."
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "beat_cuts: how far a cut may move; half the spacing of the beats that count when\nomitted."
+        },
+        "track": {
+          "description": "multicam: track for the multicam clip; beat_cuts: the video track whose cuts move.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "vertical, make_short: the canvas size in pixels; 1080 by 1920 when omitted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "zoom": {
+          "description": "camera_track: how far to zoom in, 1 to 4 (default 1.5).",
+          "format": "double",
+          "type": [
+            "number",
             "null"
           ]
         }
@@ -1466,9 +1712,62 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
+    "description": "Measure an asset's loudness (LUFS), its loudness over time (levels), silences (pauses to cut or keep), shot cuts (scenes) and musical beats (beats: tempo, beats and downbeats), or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
     "input": {
       "$defs": {
+        "BeatOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `beats` analyzer.",
+          "properties": {
+            "bpm": {
+              "description": "A known tempo, used instead of estimating one.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "max_bpm": {
+              "default": 220.0,
+              "description": "Fastest tempo considered (default 220).",
+              "format": "double",
+              "type": "number"
+            },
+            "min_bpm": {
+              "default": 50.0,
+              "description": "Slowest tempo considered, in beats per minute (default 50).",
+              "format": "double",
+              "type": "number"
+            },
+            "prior_bpm": {
+              "default": 120.0,
+              "description": "The tempo the estimate leans towards when the music allows two, such as 60 or 120\nfor a 120 bpm song (default 120).",
+              "format": "double",
+              "type": "number"
+            },
+            "tightness": {
+              "default": 100.0,
+              "description": "How strictly beats keep an even tempo against following the onsets, from 1 to 1000\n(default 100).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "LevelOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `levels` analyzer.",
+          "properties": {
+            "window_ms": {
+              "default": 1000,
+              "description": "The window, in milliseconds, from 100 to 10000 (default 1000).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "MatteModel": {
           "description": "Which model makes a matte.",
           "oneOf": [
@@ -1527,6 +1826,23 @@ expression: listing
           "additionalProperties": false,
           "description": "Options for every analyzer; each has defaults.",
           "properties": {
+            "beats": {
+              "$ref": "#/$defs/BeatOptions",
+              "default": {
+                "max_bpm": 220.0,
+                "min_bpm": 50.0,
+                "prior_bpm": 120.0,
+                "tightness": 100.0
+              },
+              "description": "Options of `beats`."
+            },
+            "levels": {
+              "$ref": "#/$defs/LevelOptions",
+              "default": {
+                "window_ms": 1000
+              },
+              "description": "Options of `levels`."
+            },
             "matte": {
               "$ref": "#/$defs/MatteOptions",
               "default": {
@@ -1684,6 +2000,15 @@ expression: listing
         "options": {
           "$ref": "#/$defs/Options",
           "default": {
+            "beats": {
+              "max_bpm": 220.0,
+              "min_bpm": 50.0,
+              "prior_bpm": 120.0,
+              "tightness": 100.0
+            },
+            "levels": {
+              "window_ms": 1000
+            },
             "matte": {
               "every": 1,
               "max_fps": 30,

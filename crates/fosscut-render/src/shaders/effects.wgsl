@@ -780,3 +780,43 @@ fn fs_body_sparkle(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let c = clamp(textureSampleLevel(aux_texture, linear_sampler, position.xy / input_size(), 0.0).r, 0.0, 1.0);
     return vec4f(texel.rgb + effect.p[1].rgb * c, texel.a + c * (1.0 - texel.a));
 }
+
+// ---- color.deflicker and detail.denoise (ADR-0035) ----
+
+// Scales linear light by p[0].x: color.deflicker's gain toward the neighbours' brightness.
+@fragment
+fn fs_gain(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    return vec4f(texel.rgb * max(effect.p[0].x, 0.0), texel.a);
+}
+
+// Edge-preserving smoothing (a bilateral filter, C. Tomasi and R. Manduchi, "Bilateral
+// Filtering for Gray and Color Images", 1998): each pixel becomes the average of its
+// neighbours within p[0].z pixels, weighted by distance (sigma p[0].y pixels) and by how
+// close their sRGB-encoded colour is (sigma p[0].x), so noise smooths and edges stay. At
+// p[0].x 0 the picture is unchanged.
+@fragment
+fn fs_bilateral(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let p = effect.p[0];
+    let centre = load(position);
+    if p.x <= 0.0 {
+        return centre;
+    }
+    let top = vec2i(textureDimensions(input_texture)) - vec2i(1);
+    let here = to_display(unpremultiply(centre));
+    let radius = i32(p.z + 0.5);
+    let spatial = max(p.y, 0.1);
+    var sum = vec4f(0.0);
+    var total = 0.0;
+    for (var dy = -radius; dy <= radius; dy = dy + 1) {
+        for (var dx = -radius; dx <= radius; dx = dx + 1) {
+            let q = clamp(vec2i(position.xy) + vec2i(dx, dy), vec2i(0), top);
+            let texel = textureLoad(input_texture, q, 0);
+            let d = to_display(unpremultiply(texel)) - here;
+            let w = exp(-f32(dx * dx + dy * dy) / (2.0 * spatial * spatial) - dot(d, d) / (2.0 * p.x * p.x));
+            sum = sum + w * texel;
+            total = total + w;
+        }
+    }
+    return sum / max(total, 1e-6);
+}

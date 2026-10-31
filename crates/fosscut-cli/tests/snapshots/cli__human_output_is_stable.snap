@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.14.0
+Demo (project_<random>)  revision 0  format 0.15.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.14.0
+Demo (project_<random>)  revision 8  format 0.15.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.14.0
+API 0.1.0  project format 0.15.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -119,7 +119,7 @@ commands:
   clip.replace   Replace a clip's media with another asset, keeping its place, length, speed, effects, masks, keyframes and animations. The new media must be long enough (fosscut.clip.source_range).
   clip.restore_audio Put a video clip's extracted sound back: remove the audio clips of its group that play the same media, and hear the video clip again.
   clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
-  clip.speed     Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
+  clip.speed     Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend, or flow for in-between frames drawn by optical flow). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source. Clips of its group spanning the time split too unless linked: false.
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.
   clip.ungroup   Take clips out of their groups, so each edits on its own again.
@@ -168,6 +168,7 @@ commands:
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
   transition.remove Remove the transition from a clip into the next one: a plain cut again.
   transition.set Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it.
+  voice.apply    Apply a voice preset (deep, giant, chipmunk, robot, alien, phone_call, radio, megaphone, broken_mic, whisper, stadium, cave, ghost) as ordinary voice.* sound effects the clip owns, so each can be adjusted afterwards.
 queries:
   capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.
   clips.copy     Copy clips as documents (media, effects, masks, keyframes, groups) to pass to clips.paste, in this project or another with the same media.
@@ -177,7 +178,7 @@ queries:
   timeline.read  Agent-oriented view of a timeline: tracks and clips with frames, timecode and seconds.
 operations:
   export.start         Render a timeline to a video or audio file with a preset, then verify the file by probing it.
-  media.analyze        Measure an asset's loudness, silences and shot cuts, or transcribe its speech with word timings, on this machine; results are cached by content.
+  media.analyze        Measure an asset's loudness, loudness over time, silences, shot cuts and musical beats, find a person's pose or the subject's matte, or transcribe its speech with word timings, on this machine; results are cached by content.
   captions.generate    Caption the clips of a track word by word from their cached transcripts, as pages on a caption track with a preset look; one undoable step.
   captions.import      Add caption pages from an SRT subtitle file, one page per cue with its lines kept.
   captions.export      Write a caption track to an SRT subtitle file, one cue per page.
@@ -188,6 +189,13 @@ operations:
   clip.split_scenes    Measure the shot cuts in a video clip's media (cached by content) and split the clip at them, so each shot is a clip of its own; one undoable step.
   clip.stabilize       Measure how the camera moved in a video clip and key its position, rotation and scale to cancel the shake, with one zoom up to 1.5 that hides the moving edges; one undoable step.
   clip.track           Follow a region of a video clip's picture from a time on and key one of its masks, or another clip such as a title or sticker, to move with it; one undoable step.
+  clip.reframe         Make a video clip follow its subject (a person, any subject, or a picked region) on its timeline's canvas, for footage of another aspect: a crop of the canvas's shape moves over the picture shot by shot, from cached pose, matte and scenes analyses; one undoable step.
+  clip.camera_track    Zoom a video clip in on its own canvas and keep the camera on its moving subject; one undoable step.
+  timeline.vertical    Copy a timeline onto a vertical canvas as a new timeline, every video clip following its subject and any without one left centred and listed; one undoable step.
+  beats.markers        Measure the beats of a music clip (cached by content) and mark every Nth beat, counted from the first downbeat, on its timeline; one undoable step.
+  beats.cut            Move each cut between the clips of a track onto the nearest beat of a music clip as roll edits, listing the cuts that cannot move and why; one undoable step.
+  shorts.candidates    Score stretches of whole sentences of a long clip's cached transcript that could stand alone as shorts, by speech density, pauses, loudness and shot cuts, with their reasons.
+  shorts.make          Make a vertical short of a range of a clip's media as a new timeline: the picture follows its subject shot by shot, with captions of the words spoken and a title; one undoable step.
   multicam.sync        Measure how far apart angles recorded at the same time started, from their sound, as the offsets of multicam.create (which multicam create measures itself unless given offsets).
   record.start         Record a voiceover (48 kHz WAV), a camera or the screen into the bundle's recordings folder through the same encoders and checks as exports, then import it; stops after a duration or when asked, keeping what was recorded.
   preferences.edit     Read or change the user's preferences: editing and timeline defaults the CLI and the app fill requests with, performance and cache settings (ADR-0031); agents read them with the query preferences.read.
@@ -208,6 +216,8 @@ analyzers:
   transcript     Speech as words with timings, filler candidates and pauses, recognised locally by whisper.cpp; needs an installed speech model and must be named.
   pose           A person's 33 body landmarks and person mask in every frame, with MediaPipe Pose Landmarker, for the body effects (body.outline, body.glow, body.shadow, body.sparkle); needs the mediapipe-pose-full model and must be named.
   matte          The subject's alpha in every frame, for key.subject: model person (the pose model's person mask, fast) or subject (BiRefNet, any subject, 9 to 14 s a frame, so analyze every few frames with every); needs mediapipe-pose-full or birefnet-lite and must be named.
+  beats          The tempo in bpm, every beat with its strength, and the downbeats when the accents show them, for cutting to music and beat markers; must be named.
+  levels         K-weighted loudness in LUFS of consecutive windows (1 s by default), for loudness peaks and variation, such as when looking for highlights; must be named.
 models (fosscut models install <name>):
   whisper-large-v3-turbo  1624.6 MB  multilingual not installed
   whisper-small            487.6 MB  multilingual not installed

@@ -7,6 +7,7 @@ import { defaultPreferences } from "../engine/preferences";
 import {
   type ApiError,
   type AssetView,
+  type BeatCutsResult,
   type CacheKind,
   type CacheUsage,
   type CaptureDevice,
@@ -38,6 +39,9 @@ import {
   type RecordChoice,
   type RecordState,
   type Region,
+  type ShortCandidates,
+  type ShortRequest,
+  type SubjectChoice,
   type SubjectRequest,
   type TimelineView,
   type TrashEntry,
@@ -50,6 +54,7 @@ import { applyShortcuts } from "../shortcuts";
 import { clipsAt, findClip } from "../timeline/geometry";
 import { FLICKS_PER_SECOND, frameAt, frameStart, framesToFlicks, parseRate } from "../transport/time";
 import { keysOf, pairAt } from "./animation";
+import { Pictures } from "./pictures";
 import {
   type AssistKind,
   BODY_NEEDS,
@@ -65,6 +70,19 @@ import {
   translatedReport,
 } from "./assist";
 import { multicamMade, splitAtScenes, stabilized, targetOf, tracked } from "./measure";
+import {
+  type MissingAnalysis,
+  analysisNeeds,
+  beatsCut,
+  beatsMarked,
+  clipShowing,
+  matteModel,
+  missingAnalysis,
+  reframed,
+  shortMade,
+  shortsFound,
+  verticalMade,
+} from "./smart";
 import { multicamPartAt } from "./multicam";
 
 /** How many history entries the activity panel shows. */
@@ -159,6 +177,12 @@ export interface EditorState {
   assist: Assist | null;
   /** The text to speech panel. */
   speech: SpeechPanel;
+  /** The analysis the last measured edit could not do without, which the window offers to run. */
+  missingAnalysis: { kind: Measurement["kind"]; analyzer: string } | null;
+  /** The planned edit a running analysis was started for, which shows its progress. */
+  analysisFor: Measurement["kind"] | null;
+  /** The moments of a long clip found worth a short, the last time they were looked for. */
+  shortList: ShortCandidates | null;
 }
 
 /** Work with local models, for the panel that started it. */
@@ -272,7 +296,7 @@ export interface Recorder {
 
 /** An edit measured from media: stabilizing, splitting at scenes, tracking or multicam. */
 export interface Measurement {
-  kind: "stabilize" | "scenes" | "track" | "multicam";
+  kind: "stabilize" | "scenes" | "track" | "multicam" | "reframe" | "camera" | "vertical" | "beats" | "cuts" | "shorts" | "short";
   /** The clip measured; null when making a multicam clip. */
   clip: string | null;
   /** True while the engine measures. */
@@ -363,6 +387,9 @@ const EMPTY: EditorState = {
   install: null,
   assist: null,
   speech: { open: false, voices: null, error: null },
+  missingAnalysis: null,
+  analysisFor: null,
+  shortList: null,
   notice: null,
   catalog: null,
   luts: [],
@@ -424,10 +451,15 @@ export class Editor {
   /** What runs once the analysis that runs succeeds, answering what it did. */
   private afterAnalysis: (() => Promise<string | null>) | null = null;
 
+  /** Frames and waveforms of the open project's media, for the bin and the timeline. */
+  readonly pictures: Pictures;
+
   constructor(
     private readonly engine: EngineClient,
     private readonly confirm: Confirm = () => false,
-  ) {}
+  ) {
+    this.pictures = new Pictures(engine);
+  }
 
   // ---- Store ----
 
@@ -482,6 +514,7 @@ export class Editor {
         if (finishing || !mediaWorkLine(work)) void this.readSources();
       }),
       this.engine.on("open-settings", () => this.openSettings()),
+      this.engine.on("files-dropped", (paths) => void this.dropped(paths)),
     );
     void this.engine.media
       .work()
@@ -509,6 +542,7 @@ export class Editor {
 
   private async show(opened: Opened | null): Promise<void> {
     if (!opened) return;
+    this.pictures.clear();
     this.set({ ...EMPTY, ...this.kept(), opened, linkage: preferencesOf(this.state).timeline.linked });
     await Promise.all([this.refresh(), this.loadCatalog()]);
     await this.seek(0);
@@ -525,6 +559,7 @@ export class Editor {
           transitions: caps.transitions ?? [],
           animations: caps.animations ?? [],
           speed_presets: caps.speed_presets ?? [],
+          voice_presets: caps.voice_presets ?? [],
           text: { ...NO_TEXT, ...caps.text },
         },
       });
@@ -549,11 +584,14 @@ export class Editor {
     }
   }
 
-  /** Asks where to save a new project, 1920 by 1080 at the preferred frame rate. */
-  async create(): Promise<void> {
+  /**
+   * Asks where to save a new project, `width` by `height` (1920 by 1080 when omitted) at the
+   * preferred frame rate.
+   */
+  async create(size: { width: number; height: number } = { width: 1920, height: 1080 }): Promise<void> {
     try {
       const rate = preferencesOf(this.state).timeline.frame_rate;
-      await this.show(await this.engine.newProject({ width: 1920, height: 1080, rate }));
+      await this.show(await this.engine.newProject({ width: size.width, height: size.height, rate }));
     } catch (error) {
       this.notify(error);
     }
@@ -561,6 +599,7 @@ export class Editor {
 
   async close(): Promise<void> {
     await this.engine.closeProject();
+    this.pictures.clear();
     const recent = await this.engine.recentProjects();
     this.set({ ...EMPTY, ...this.kept(), recent });
     await this.browse();
@@ -1227,12 +1266,60 @@ export class Editor {
    * Places an asset on the timeline at the playhead, on a track free there; a still image
    * is as long as `editing.image_duration` says.
    */
-  async addToTimeline(asset: string): Promise<void> {
-    const args: Record<string, unknown> = { asset, start: { flicks: this.state.playhead } };
+  async addToTimeline(asset: string, at?: { start: number; track?: string }): Promise<void> {
+    const args: Record<string, unknown> = { asset, start: { flicks: at?.start ?? this.state.playhead } };
     if (this.state.media.find((a) => a.id === asset)?.kind === "image") {
       args.duration = { seconds: String(preferencesOf(this.state).editing.image_duration) };
     }
+    // Dropped on the timeline: on the track it was dropped on, or the first free one there.
+    if (at?.track) args.track = at.track;
+    else if (at) args.free_track = true;
     await this.edit([{ command: "clip.add", args }]);
+  }
+
+  /**
+   * Files dropped on the window: a project folder opens; other files are imported into the
+   * open project.
+   */
+  async dropped(paths: string[]): Promise<void> {
+    const project = paths.find((path) => /\.fosscut\/?$/i.test(path));
+    if (project) {
+      if (this.state.opened?.bundle !== project) await this.open(project);
+      return;
+    }
+    if (this.state.opened && paths.length > 0) await this.importMedia(paths);
+  }
+
+  /**
+   * Imports files into the project, `paths` or those the user picks, as one step; files
+   * that could not be imported are named in a notice.
+   */
+  async importMedia(paths?: string[]): Promise<void> {
+    if (!this.state.opened) return;
+    try {
+      const result = await this.engine.media.import(paths);
+      if (!result) return;
+      await this.refresh();
+      if (result.failed.length > 0) {
+        const names = result.failed.map((f) => f.path.split(/[\\/]/).pop() ?? f.path).join(", ");
+        this.set({ notice: { kind: "error", text: t("app.import.failed", { count: result.failed.length, files: names }) } });
+      }
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  /**
+   * Makes a version of the shown timeline on a canvas of `width` by `height`, pictures
+   * scaled to fill it, and shows it.
+   */
+  async makeVersion(width: number, height: number): Promise<void> {
+    const timeline = this.state.timeline;
+    if (!timeline) return;
+    if (await this.edit([{ command: "timeline.duplicate", args: { timeline: timeline.timeline, width, height, fit: "fill", primary: true } }])) {
+      this.set({ selection: null, also: [], playhead: 0 });
+      await this.engine.preview.show(0);
+    }
   }
 
   /** Adds a timeline (from `assets`, when given) and shows it. */
@@ -1382,7 +1469,152 @@ export class Editor {
 
   /** Puts a finished measurement's report or error away. */
   dismissMeasurement(): void {
-    if (!this.state.measurement?.busy) this.set({ measurement: null });
+    if (!this.state.measurement?.busy) this.set({ measurement: null, missingAnalysis: null });
+    this.missing = null;
+  }
+
+  /** What runs again once the analysis the last measured edit missed has run. */
+  private missing: { clip: string; analysis: MissingAnalysis; retry: () => Promise<void> } | null = null;
+
+  /**
+   * A measured edit that plans from analyses: when one is missing, the refusal shows with
+   * an offer to run it (`runMissingAnalysis`), and the edit is tried again once it has.
+   */
+  private async planned<T>(
+    kind: Measurement["kind"],
+    clip: string | null,
+    run: (revision: number) => Promise<T>,
+    report: (result: T) => string,
+    retry: () => Promise<void>,
+  ): Promise<T | null> {
+    this.missing = null;
+    this.set({ missingAnalysis: null });
+    const result = await this.measure(kind, clip, run, report);
+    const analysis = missingAnalysis(this.state.measurement?.error);
+    const target = clipShowing(this.state.timeline, analysis?.asset ?? null) ?? clip;
+    if (!result && analysis && target && this.state.measurement?.kind === kind) {
+      this.missing = { clip: target, analysis, retry };
+      this.set({ missingAnalysis: { kind, analyzer: analysis.analyzer } });
+    }
+    return result;
+  }
+
+  /**
+   * Runs the analysis the last measured edit missed (after the person agreed to install
+   * the models it needs, if any), then tries the edit again.
+   */
+  async runMissingAnalysis(): Promise<void> {
+    const missing = this.missing;
+    if (!missing) return;
+    this.missing = null;
+    this.set({ measurement: null, missingAnalysis: null, analysisFor: this.state.missingAnalysis?.kind ?? null });
+    const { analysis } = missing;
+    const needs = analysisNeeds(analysis);
+    const request: SubjectRequest =
+      analysis.analyzer === "matte"
+        ? { clip: missing.clip, kind: "matte", model: matteModel(analysis) }
+        : { clip: missing.clip, kind: analysis.analyzer, ...(analysis.options ? { options: analysis.options } : {}) };
+    await this.withModels("analysis", needs, () =>
+      this.analyzeThen("analysis", request, needs, async () => {
+        await missing.retry();
+        return null;
+      }),
+    );
+  }
+
+  /** Keys a video clip so its crop follows a person or the subject, shot by shot when `shots`. */
+  async reframe(clip: string, source: SubjectChoice, shots = false): Promise<void> {
+    await this.planned(
+      "reframe",
+      clip,
+      (revision) => this.engine.reframe.clip({ clip, source, shots, expected_revision: revision }),
+      reframed,
+      () => this.reframe(clip, source, shots),
+    );
+  }
+
+  /** Keys a video clip as a camera following the subject would move, zoomed in by `zoom` (1 to 4). */
+  async cameraTrack(clip: string, source: SubjectChoice, zoom: number): Promise<void> {
+    await this.planned(
+      "camera",
+      clip,
+      (revision) => this.engine.reframe.camera({ clip, source, zoom, expected_revision: revision }),
+      reframed,
+      () => this.cameraTrack(clip, source, zoom),
+    );
+  }
+
+  /** Makes a vertical version of the shown timeline that follows its subject, and shows it. */
+  async verticalVersion(source: SubjectChoice): Promise<void> {
+    const timeline = this.state.timeline;
+    if (!timeline) return;
+    const result = await this.planned(
+      "vertical",
+      null,
+      (revision) => this.engine.reframe.vertical({ timeline: timeline.timeline, source, expected_revision: revision }),
+      verticalMade,
+      () => this.verticalVersion(source),
+    );
+    if (result) await this.showMade(result.vertical.timeline);
+  }
+
+  /** Puts a marker on every `every`-th beat of a music clip. */
+  async beatMarkers(clip: string, every = 1): Promise<void> {
+    await this.planned(
+      "beats",
+      clip,
+      (revision) => this.engine.beats.markers(clip, every, revision),
+      beatsMarked,
+      () => this.beatMarkers(clip, every),
+    );
+  }
+
+  /** Moves the cuts of `track` onto every `every`-th beat of the music clip `music`. */
+  async cutToBeats(music: string, track: string, every = 1): Promise<BeatCutsResult | null> {
+    return this.planned(
+      "cuts",
+      music,
+      (revision) => this.engine.beats.cut(track, music, every, revision),
+      beatsCut,
+      async () => void (await this.cutToBeats(music, track, every)),
+    );
+  }
+
+  /** Looks for the moments of a long clip that would stand alone as shorts. */
+  async findShorts(clip: string, options: { min_seconds?: number; max_seconds?: number; count?: number } = {}): Promise<void> {
+    this.set({ shortList: null });
+    const result = await this.planned(
+      "shorts",
+      clip,
+      () => this.engine.shorts.candidates(clip, options),
+      shortsFound,
+      () => this.findShorts(clip, options),
+    );
+    if (result) this.set({ shortList: result });
+  }
+
+  /** Makes a short of part of a clip, as a new vertical timeline, and shows it. */
+  async makeShort(request: Omit<ShortRequest, "expected_revision">): Promise<void> {
+    const result = await this.planned(
+      "short",
+      request.clip,
+      (revision) => this.engine.shorts.make({ ...request, expected_revision: revision }),
+      shortMade,
+      () => this.makeShort(request),
+    );
+    if (result) await this.showMade(result.short.timeline);
+  }
+
+  /** Shows a timeline a planned edit just made, from its start, keeping the report. */
+  private async showMade(timeline: string): Promise<void> {
+    const measurement = this.state.measurement;
+    await this.showTimeline(timeline);
+    if (measurement) this.set({ measurement });
+  }
+
+  /** Applies a voice preset (`voice.apply`) to a clip's sound, replacing its voice filters when `replace`. */
+  async applyVoice(clip: string, preset: string, replace = true): Promise<void> {
+    await this.edit([{ command: "voice.apply", args: { clip, preset, replace } }]);
   }
 
   /** Steadies a video clip's camera shake: `strength` from 0 (none) to 1 (very smooth). */

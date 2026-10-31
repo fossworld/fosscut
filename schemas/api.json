@@ -4533,6 +4533,11 @@
                 "const": "blend",
                 "description": "The two nearest source frames mixed by the position between them: smooth slow\nmotion.",
                 "type": "string"
+              },
+              {
+                "const": "flow",
+                "description": "The two nearest source frames warped along the optical flow between them toward\nthe position, then mixed, with what one of them hides taken from the other: smooth\nslow motion in which moving things stay sharp instead of showing twice (ADR-0035).",
+                "type": "string"
               }
             ]
           },
@@ -4602,7 +4607,7 @@
               }
             ],
             "default": null,
-            "description": "`blend` mixes neighbouring source frames for smooth slow motion; `nearest` shows the\nnearest frame (the default)."
+            "description": "`blend` mixes neighbouring source frames for smooth slow motion; `flow` draws\nin-between frames from the motion measured between them (optical flow), smoother\nand slower to render; `nearest` shows the nearest frame (the default)."
           },
           "pitch": {
             "anyOf": [
@@ -4722,6 +4727,11 @@
                 "const": "blend",
                 "description": "The two nearest source frames mixed by the position between them: smooth slow\nmotion.",
                 "type": "string"
+              },
+              {
+                "const": "flow",
+                "description": "The two nearest source frames warped along the optical flow between them toward\nthe position, then mixed, with what one of them hides taken from the other: smooth\nslow motion in which moving things stay sharp instead of showing twice (ADR-0035).",
+                "type": "string"
               }
             ]
           },
@@ -4753,7 +4763,7 @@
               },
               "interpolate": {
                 "$ref": "#/$defs/Interpolate",
-                "description": "Show the nearest source frame, or blend the two around each time."
+                "description": "Show the nearest source frame, or make one between the two around each time by\nblending them or by following their motion."
               },
               "pitch": {
                 "$ref": "#/$defs/Pitch",
@@ -4860,7 +4870,7 @@
         "title": "SpeedChanged",
         "type": "object"
       },
-      "summary": "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it."
+      "summary": "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend, or flow for in-between frames drawn by optical flow). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it."
     },
     {
       "input_schema": {
@@ -6233,6 +6243,11 @@
                 "const": "blend",
                 "description": "The two nearest source frames mixed by the position between them: smooth slow\nmotion.",
                 "type": "string"
+              },
+              {
+                "const": "flow",
+                "description": "The two nearest source frames warped along the optical flow between them toward\nthe position, then mixed, with what one of them hides taken from the other: smooth\nslow motion in which moving things stay sharp instead of showing twice (ADR-0035).",
+                "type": "string"
               }
             ]
           },
@@ -6720,7 +6735,7 @@
               },
               "interpolate": {
                 "$ref": "#/$defs/Interpolate",
-                "description": "Show the nearest source frame, or blend the two around each time."
+                "description": "Show the nearest source frame, or make one between the two around each time by\nblending them or by following their motion."
               },
               "pitch": {
                 "$ref": "#/$defs/Pitch",
@@ -19084,6 +19099,173 @@
         "type": "object"
       },
       "summary": "Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Applies a voice preset: voice filters with settings chosen for a character.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip with sound."
+          },
+          "preset": {
+            "description": "The preset's name (capabilities lists them under voice_presets).",
+            "type": "string"
+          },
+          "replace": {
+            "default": false,
+            "description": "Replace the clip's voice filters (its `voice.*` effects) instead of adding after\nthem; its other effects stay.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "preset"
+        ],
+        "title": "VoiceApply",
+        "type": "object"
+      },
+      "name": "voice.apply",
+      "output_schema": {
+        "$defs": {
+          "AssetRef": {
+            "description": "A reference to a media asset, such as a LUT file.",
+            "properties": {
+              "asset": {
+                "$ref": "#/$defs/Id",
+                "description": "The asset (`asset_…`)."
+              }
+            },
+            "required": [
+              "asset"
+            ],
+            "type": "object"
+          },
+          "EffectReport": {
+            "description": "An effect as commands report it.",
+            "properties": {
+              "effect": {
+                "$ref": "#/$defs/Id",
+                "description": "Effect id."
+              },
+              "enabled": {
+                "description": "Whether it applies.",
+                "type": "boolean"
+              },
+              "params": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/ParamValue"
+                },
+                "description": "Parameters that differ from their defaults.",
+                "type": "object"
+              },
+              "type": {
+                "description": "Effect type.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "effect",
+              "type",
+              "enabled",
+              "params"
+            ],
+            "type": "object"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "ParamValue": {
+            "anyOf": [
+              {
+                "description": "A number.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair such as a color wheel position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "description": "On or off.",
+                "type": "boolean"
+              },
+              {
+                "description": "One of a fixed set of names.",
+                "type": "string"
+              },
+              {
+                "description": "Curve control points `[[x, y], ...]` from 0 to 1, sorted by x.",
+                "items": {
+                  "items": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "$ref": "#/$defs/AssetRef",
+                "description": "A media asset."
+              }
+            ],
+            "description": "A parameter value."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "A clip's effects after a change.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effect the command added or changed, when there is one."
+          },
+          "effects": {
+            "description": "Every effect of the clip in the order they apply.",
+            "items": {
+              "$ref": "#/$defs/EffectReport"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "effects"
+        ],
+        "title": "EffectsChanged",
+        "type": "object"
+      },
+      "summary": "Apply a voice preset (deep, giant, chipmunk, robot, alien, phone_call, radio, megaphone, broken_mic, whisper, stadium, cave, ghost) as ordinary voice.* sound effects the clip owns, so each can be adjusted afterwards."
     }
   ],
   "effects": [
@@ -19642,6 +19824,34 @@
       "version": 1
     },
     {
+      "category": "color",
+      "params": [
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the flicker is removed: 0 none, 1 all of it",
+          "min": 0.0,
+          "name": "strength"
+        },
+        {
+          "animatable": true,
+          "default": 6.0,
+          "kind": "number",
+          "max": 16.0,
+          "meaning": "how many source frames the brightness is averaged over, centred on the frame: flicker faster than this is removed, slower changes stay",
+          "min": 2.0,
+          "name": "window",
+          "unit": "frames"
+        }
+      ],
+      "summary": "Evens out brightness that flickers from frame to frame, as under mains-powered lights or in time-lapses, by scaling each frame toward the average brightness of the source frames around it; slower changes such as fades stay. Reads neighbouring frames, so it costs more to render.",
+      "title": "Remove flicker",
+      "type": "color.deflicker",
+      "version": 1
+    },
+    {
       "category": "stylize",
       "params": [
         {
@@ -19921,6 +20131,34 @@
       "summary": "Zooms in and out on a beat.",
       "title": "Zoom pulse",
       "type": "motion.zoom_pulse",
+      "version": 1
+    },
+    {
+      "category": "motion",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how long the shutter stays open, as a fraction of a frame: 0.5 is a 180-degree shutter, 0 no blur",
+          "min": 0.0,
+          "name": "amount",
+          "unit": "of a frame"
+        },
+        {
+          "animatable": true,
+          "default": 12.0,
+          "kind": "number",
+          "max": 32.0,
+          "meaning": "how many positions along the motion are averaged, rounded to a whole number: more is smoother and slower",
+          "min": 2.0,
+          "name": "samples"
+        }
+      ],
+      "summary": "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path. Reads neighbouring frames, so it costs more to render.",
+      "title": "Motion blur",
+      "type": "motion.blur",
       "version": 1
     },
     {
@@ -20242,6 +20480,31 @@
       "version": 1
     },
     {
+      "category": "detail",
+      "params": [
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much noise is removed: 0 none, 1 the most, which also smooths fine texture",
+          "min": 0.0,
+          "name": "strength"
+        },
+        {
+          "animatable": false,
+          "default": true,
+          "kind": "bool",
+          "meaning": "also average with the neighbouring frames, following their motion: stronger on still and slowly moving parts",
+          "name": "temporal"
+        }
+      ],
+      "summary": "Reduces grain and sensor noise while keeping edges: edge-preserving smoothing within the frame and, with temporal on, averaging with the matching parts of the neighbouring source frames along their motion, leaving out what moved out of view or changed. Temporal reads neighbouring frames, so it costs more to render.",
+      "title": "Reduce image noise",
+      "type": "detail.denoise",
+      "version": 1
+    },
+    {
       "category": "stylize",
       "params": [
         {
@@ -20351,6 +20614,251 @@
       "summary": "Makes the sound louder by a gain and keeps its peaks under a ceiling, so loud moments never clip. Loudness normalization adds one when peaks leave too little room.",
       "title": "Limiter",
       "type": "audio.limiter",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.0,
+          "kind": "number",
+          "max": 12.0,
+          "meaning": "how far the pitch moves: 12 is an octave up, -12 an octave down",
+          "min": -12.0,
+          "name": "semitones",
+          "unit": "semitones"
+        },
+        {
+          "animatable": false,
+          "default": true,
+          "kind": "bool",
+          "meaning": "keep the resonances that make the voice sound like its speaker where they were; off moves them with the pitch",
+          "name": "keep_formants"
+        }
+      ],
+      "summary": "Makes a voice higher or deeper without changing its length. With formants kept it still sounds like the same person; without, the whole voice is scaled, from a giant to a cartoon.",
+      "title": "Voice pitch",
+      "type": "voice.pitch",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 60.0,
+          "kind": "number",
+          "max": 1000.0,
+          "meaning": "frequency of the modulating tone: low values buzz, high values sound alien",
+          "min": 20.0,
+          "name": "frequency",
+          "unit": "Hz"
+        },
+        {
+          "animatable": false,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the voice is modulated: 0 leaves it unchanged",
+          "min": 0.0,
+          "name": "depth"
+        }
+      ],
+      "summary": "Makes a voice metallic and robotic: ring modulation by a steady tone, then a short comb tuned to the same frequency that adds a buzzing resonance.",
+      "title": "Robot voice",
+      "type": "voice.robot",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.3,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how small the speaker sounds: 0 keeps 300 to 3400 Hz, 1 keeps 600 to 2400 Hz",
+          "min": 0.0,
+          "name": "narrow"
+        },
+        {
+          "animatable": false,
+          "default": 0.3,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how strongly loud passages are distorted: 0 not at all",
+          "min": 0.0,
+          "name": "crunch"
+        }
+      ],
+      "summary": "Sounds like a voice on a phone line: only the band from about 300 to 3400 Hz is kept, with light distortion on loud passages.",
+      "title": "Telephone",
+      "type": "voice.telephone",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how hard the horn is driven: 0 clean, 1 heavily distorted",
+          "min": 0.0,
+          "name": "drive"
+        }
+      ],
+      "summary": "Sounds like a voice through a loudhailer: a narrow band with a horn resonance around 1.8 kHz, driven into distortion.",
+      "title": "Megaphone",
+      "type": "voice.megaphone",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 250.0,
+          "kind": "number",
+          "max": 1000.0,
+          "meaning": "time between the sound and its first repeat, and between repeats",
+          "min": 20.0,
+          "name": "delay",
+          "unit": "ms"
+        },
+        {
+          "animatable": false,
+          "default": 0.4,
+          "kind": "number",
+          "max": 0.9,
+          "meaning": "level of each repeat relative to the one before: 0 a single repeat",
+          "min": 0.0,
+          "name": "feedback"
+        },
+        {
+          "animatable": false,
+          "default": 0.3,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "dry/wet balance at equal power: 0 only the original voice, 1 only the effect",
+          "min": 0.0,
+          "name": "mix"
+        }
+      ],
+      "summary": "Repeats the sound after a delay, each repeat quieter than the one before; the repeats fade out within 1.5 seconds.",
+      "title": "Echo",
+      "type": "voice.echo",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "size of the space: 0 a small room, 1 a large hall",
+          "min": 0.0,
+          "name": "room"
+        },
+        {
+          "animatable": false,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much faster high frequencies die away: 0 bright and hard, 1 dark and soft",
+          "min": 0.0,
+          "name": "damping"
+        },
+        {
+          "animatable": false,
+          "default": 0.3,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "dry/wet balance at equal power: 0 only the original voice, 1 only the effect",
+          "min": 0.0,
+          "name": "mix"
+        }
+      ],
+      "summary": "Places the voice in a space, from a small room to a large hall, with a smooth tail that ends within 1.5 seconds.",
+      "title": "Reverb",
+      "type": "voice.reverb",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.8,
+          "kind": "number",
+          "max": 5.0,
+          "meaning": "how fast the copies drift",
+          "min": 0.05,
+          "name": "rate",
+          "unit": "Hz"
+        },
+        {
+          "animatable": false,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how far the copies drift: 1 is 6 milliseconds",
+          "min": 0.0,
+          "name": "depth"
+        },
+        {
+          "animatable": false,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "dry/wet balance at equal power: 0 only the original voice, 1 only the effect",
+          "min": 0.0,
+          "name": "mix"
+        }
+      ],
+      "summary": "Thickens a voice into several copies that drift slightly in time and pitch, wider in stereo.",
+      "title": "Chorus",
+      "type": "voice.chorus",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how broken: 0 unchanged, 1 low resolution with frequent cut-outs and crackle",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Sounds like a failing microphone: crunchy low resolution, short cut-outs and crackle, placed the same way on every render.",
+      "title": "Broken mic",
+      "type": "voice.broken",
+      "version": 1
+    },
+    {
+      "category": "audio",
+      "params": [
+        {
+          "animatable": false,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the voice becomes whisper: 0 none, 1 only whisper",
+          "min": 0.0,
+          "name": "amount"
+        }
+      ],
+      "summary": "Turns speech into a whisper: breath noise shaped band by band like the voice replaces its pitch.",
+      "title": "Whisper",
+      "type": "voice.whisper",
       "version": 1
     }
   ],
@@ -20514,6 +21022,11 @@
       "code": "fosscut.look.unknown",
       "hint": "List the looks with capabilities (under looks).",
       "meaning": "No built-in look has this name."
+    },
+    {
+      "code": "fosscut.voice.preset_unknown",
+      "hint": "List the voice presets with capabilities (under voice_presets).",
+      "meaning": "No voice preset has this name."
     },
     {
       "code": "fosscut.asset.not_found",
@@ -20681,7 +21194,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.14.0",
+  "format_version": "0.15.0",
   "library": {
     "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
     "templates": [
@@ -23947,6 +24460,274 @@
       "summary": "The first clip turns and shrinks away as the second turns in.",
       "title": "Spin",
       "type": "spin"
+    }
+  ],
+  "voice_presets": [
+    {
+      "description": "A lower voice that still sounds like the speaker: four semitones down, formants kept.",
+      "effects": [
+        {
+          "params": {
+            "keep_formants": true,
+            "semitones": -4.0
+          },
+          "type": "voice.pitch"
+        }
+      ],
+      "name": "deep",
+      "title": "Deep"
+    },
+    {
+      "description": "A huge creature: nine semitones down with the whole voice scaled, in a large space.",
+      "effects": [
+        {
+          "params": {
+            "keep_formants": false,
+            "semitones": -9.0
+          },
+          "type": "voice.pitch"
+        },
+        {
+          "params": {
+            "damping": 0.6,
+            "mix": 0.2,
+            "room": 0.7
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "giant",
+      "title": "Giant"
+    },
+    {
+      "description": "A tiny, squeaky cartoon voice: eight semitones up with the whole voice scaled.",
+      "effects": [
+        {
+          "params": {
+            "keep_formants": false,
+            "semitones": 8.0
+          },
+          "type": "voice.pitch"
+        }
+      ],
+      "name": "chipmunk",
+      "title": "Chipmunk"
+    },
+    {
+      "description": "A metallic machine voice with a low buzz.",
+      "effects": [
+        {
+          "params": {
+            "depth": 1.0,
+            "frequency": 55.0
+          },
+          "type": "voice.robot"
+        },
+        {
+          "params": {
+            "damping": 0.2,
+            "mix": 0.12,
+            "room": 0.15
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "robot",
+      "title": "Robot"
+    },
+    {
+      "description": "A higher, warbling voice from somewhere else: pitched up, ring-modulated and doubled.",
+      "effects": [
+        {
+          "params": {
+            "keep_formants": false,
+            "semitones": 5.0
+          },
+          "type": "voice.pitch"
+        },
+        {
+          "params": {
+            "depth": 0.5,
+            "frequency": 320.0
+          },
+          "type": "voice.robot"
+        },
+        {
+          "params": {
+            "depth": 0.7,
+            "mix": 0.5,
+            "rate": 2.5
+          },
+          "type": "voice.chorus"
+        }
+      ],
+      "name": "alien",
+      "title": "Alien"
+    },
+    {
+      "description": "The other end of a phone call.",
+      "effects": [
+        {
+          "params": {
+            "crunch": 0.25,
+            "narrow": 0.2
+          },
+          "type": "voice.telephone"
+        }
+      ],
+      "name": "phone_call",
+      "title": "Phone call"
+    },
+    {
+      "description": "A small transistor radio with a gritty edge.",
+      "effects": [
+        {
+          "params": {
+            "crunch": 0.6,
+            "narrow": 0.5
+          },
+          "type": "voice.telephone"
+        }
+      ],
+      "name": "radio",
+      "title": "Radio"
+    },
+    {
+      "description": "A loudhailer outdoors, with a little space around it.",
+      "effects": [
+        {
+          "params": {
+            "drive": 0.7
+          },
+          "type": "voice.megaphone"
+        },
+        {
+          "params": {
+            "damping": 0.5,
+            "mix": 0.12,
+            "room": 0.6
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "megaphone",
+      "title": "Megaphone"
+    },
+    {
+      "description": "A cheap microphone that cuts out and crackles.",
+      "effects": [
+        {
+          "params": {
+            "amount": 0.75
+          },
+          "type": "voice.broken"
+        },
+        {
+          "params": {
+            "crunch": 0.4,
+            "narrow": 0.1
+          },
+          "type": "voice.telephone"
+        }
+      ],
+      "name": "broken_mic",
+      "title": "Broken mic"
+    },
+    {
+      "description": "Speech turned into a close whisper in a small room.",
+      "effects": [
+        {
+          "params": {
+            "amount": 1.0
+          },
+          "type": "voice.whisper"
+        },
+        {
+          "params": {
+            "damping": 0.6,
+            "mix": 0.1,
+            "room": 0.2
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "whisper",
+      "title": "Whisper"
+    },
+    {
+      "description": "An announcer over a stadium's speakers: a huge space with a slap of echo.",
+      "effects": [
+        {
+          "params": {
+            "delay": 170.0,
+            "feedback": 0.25,
+            "mix": 0.2
+          },
+          "type": "voice.echo"
+        },
+        {
+          "params": {
+            "damping": 0.35,
+            "mix": 0.35,
+            "room": 1.0
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "stadium",
+      "title": "Stadium"
+    },
+    {
+      "description": "A voice in a stone cave: bright, long reflections and a distant echo.",
+      "effects": [
+        {
+          "params": {
+            "delay": 380.0,
+            "feedback": 0.3,
+            "mix": 0.18
+          },
+          "type": "voice.echo"
+        },
+        {
+          "params": {
+            "damping": 0.1,
+            "mix": 0.45,
+            "room": 0.85
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "cave",
+      "title": "Cave"
+    },
+    {
+      "description": "A breathy, hovering presence in an empty hall.",
+      "effects": [
+        {
+          "params": {
+            "amount": 0.7
+          },
+          "type": "voice.whisper"
+        },
+        {
+          "params": {
+            "depth": 0.8,
+            "mix": 0.5,
+            "rate": 0.3
+          },
+          "type": "voice.chorus"
+        },
+        {
+          "params": {
+            "damping": 0.4,
+            "mix": 0.4,
+            "room": 0.75
+          },
+          "type": "voice.reverb"
+        }
+      ],
+      "name": "ghost",
+      "title": "Ghost"
     }
   ]
 }

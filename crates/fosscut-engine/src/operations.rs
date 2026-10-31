@@ -32,8 +32,8 @@ pub fn operations() -> Vec<OperationInfo> {
         ),
         (
             "media.analyze",
-            "Measure an asset's loudness, silences and shot cuts, or transcribe its speech with word timings, on this machine; results are cached by content.",
-            "fosscut media analyze <asset> [loudness|silences|scenes|transcript ...] [--refresh]",
+            "Measure an asset's loudness, loudness over time, silences, shot cuts and musical beats, find a person's pose or the subject's matte, or transcribe its speech with word timings, on this machine; results are cached by content.",
+            "fosscut media analyze <asset> [loudness|levels|silences|scenes|beats|transcript|pose|matte ...] [--refresh]",
         ),
         (
             "captions.generate",
@@ -84,6 +84,41 @@ pub fn operations() -> Vec<OperationInfo> {
             "clip.track",
             "Follow a region of a video clip's picture from a time on and key one of its masks, or another clip such as a title or sticker, to move with it; one undoable step.",
             "fosscut clip track --clip ID --region X,Y,W,H [--at TIME] (--mask ID | --follow ID)",
+        ),
+        (
+            "clip.reframe",
+            "Make a video clip follow its subject (a person, any subject, or a picked region) on its timeline's canvas, for footage of another aspect: a crop of the canvas's shape moves over the picture shot by shot, from cached pose, matte and scenes analyses; one undoable step.",
+            "fosscut clip reframe --clip ID [--follow person|any | --region X,Y,W,H [--at TIME]] [--one-shot] [--max-zoom N]",
+        ),
+        (
+            "clip.camera_track",
+            "Zoom a video clip in on its own canvas and keep the camera on its moving subject; one undoable step.",
+            "fosscut clip camera-track --clip ID [--zoom 1..4] [--follow person|any | --region X,Y,W,H [--at TIME]] [--shots]",
+        ),
+        (
+            "timeline.vertical",
+            "Copy a timeline onto a vertical canvas as a new timeline, every video clip following its subject and any without one left centred and listed; one undoable step.",
+            "fosscut timeline vertical [--timeline ID] [--width 1080 --height 1920] [--follow person|any] [--name NAME]",
+        ),
+        (
+            "beats.markers",
+            "Measure the beats of a music clip (cached by content) and mark every Nth beat, counted from the first downbeat, on its timeline; one undoable step.",
+            "fosscut beats markers --music ID [--every N] [--bpm BPM]",
+        ),
+        (
+            "beats.cut",
+            "Move each cut between the clips of a track onto the nearest beat of a music clip as roll edits, listing the cuts that cannot move and why; one undoable step.",
+            "fosscut beats cut --track ID --music ID [--every N] [--tolerance TIME] [--bpm BPM]",
+        ),
+        (
+            "shorts.candidates",
+            "Score stretches of whole sentences of a long clip's cached transcript that could stand alone as shorts, by speech density, pauses, loudness and shot cuts, with their reasons.",
+            "fosscut shorts candidates --clip ID [--min-seconds 15] [--max-seconds 60] [--count 10]",
+        ),
+        (
+            "shorts.make",
+            "Make a vertical short of a range of a clip's media as a new timeline: the picture follows its subject shot by shot, with captions of the words spoken and a title; one undoable step.",
+            "fosscut shorts make --clip ID --from TIME --to TIME [--follow person|any|centre] [--no-captions] [--caption-preset NAME] [--title TEXT]",
         ),
         (
             "multicam.sync",

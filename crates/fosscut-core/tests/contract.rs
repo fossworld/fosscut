@@ -131,6 +131,7 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             json!({ "start": "1s", "duration": "2s", "effects": [{ "type": "color.adjust", "params": { "saturation": -1 } }] })
         }
         "look.apply" => json!({ "clip": clip, "look": "teal_orange" }),
+        "voice.apply" => json!({ "clip": clip, "preset": "robot" }),
         "transition.set" | "transition.remove" => {
             run(
                 &mut session,

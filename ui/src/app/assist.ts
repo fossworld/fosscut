@@ -22,7 +22,7 @@ export const RUNTIME = "onnxruntime";
 export const MODEL_MISSING = new Set(["fosscut.model.not_installed", "fosscut.model.runtime_missing"]);
 
 /** What uses local models, as the window names them. */
-export type AssistKind = "background" | "body" | "speech" | "preview" | "translate" | "dub";
+export type AssistKind = "background" | "body" | "speech" | "preview" | "translate" | "dub" | "analysis";
 
 /** The effect that removes the background. */
 export const SUBJECT_KEY = "key.subject";

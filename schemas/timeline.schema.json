@@ -1167,6 +1167,11 @@
           "const": "blend",
           "description": "The two nearest source frames mixed by the position between them: smooth slow\nmotion.",
           "type": "string"
+        },
+        {
+          "const": "flow",
+          "description": "The two nearest source frames warped along the optical flow between them toward\nthe position, then mixed, with what one of them hides taken from the other: smooth\nslow motion in which moving things stay sharp instead of showing twice (ADR-0035).",
+          "type": "string"
         }
       ]
     },
@@ -1765,7 +1770,7 @@
         },
         "interpolate": {
           "$ref": "#/$defs/Interpolate",
-          "description": "Show the nearest source frame, or blend the two around each time."
+          "description": "Show the nearest source frame, or make one between the two around each time by\nblending them or by following their motion."
         },
         "pitch": {
           "$ref": "#/$defs/Pitch",

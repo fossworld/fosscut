@@ -1,6 +1,6 @@
 //! Runs analyzers over a media file: audio decoded at 48 kHz in one-second chunks for
-//! loudness and silences, at 16 kHz mono for speech, and video frame by frame, each fed to
-//! the analyzers that need it (scene cuts, pose and mattes).
+//! loudness, silences, levels and beats, at 16 kHz mono for speech, and video frame by
+//! frame, each fed to the analyzers that need it (scene cuts, pose and mattes).
 
 use std::path::Path;
 
@@ -8,6 +8,8 @@ use fosscut_media::ffmpeg::{FfmpegAudioDecoder, FfmpegVideoDecoder};
 use fosscut_media::{DecoderOptions, MediaError, VideoDecoder};
 use fosscut_time::{Flicks, Rate};
 
+use crate::beats::BeatTracker;
+use crate::levels::LevelMeter;
 use crate::loudness::LoudnessMeter;
 use crate::matte::MatteAnalyzer;
 use crate::models::{self, Manifest, ModelError};
@@ -96,7 +98,14 @@ pub fn analyze(
     progress: &mut dyn FnMut(Progress) -> bool,
 ) -> Result<Results, AnalysisError> {
     let wants = |needs: Needs| analyzers.iter().any(|a| a.needs() == needs);
-    let levels = analyzers.contains(&Analyzer::Loudness) || analyzers.contains(&Analyzer::Silences);
+    let levels = [
+        Analyzer::Loudness,
+        Analyzer::Silences,
+        Analyzer::Levels,
+        Analyzer::Beats,
+    ]
+    .iter()
+    .any(|a| analyzers.contains(a));
     let speech = analyzers.contains(&Analyzer::Transcript);
     let second = Flicks::from_seconds(1).unwrap_or(Flicks::new(705_600_000));
     let seconds = ((media.duration.get() + second.get() - 1) / second.get()).max(0) as u64;
@@ -128,6 +137,12 @@ pub fn analyze(
         let mut finder = analyzers
             .contains(&Analyzer::Silences)
             .then(|| SilenceFinder::new(channels, options.silences.clone()));
+        let mut level_meter = analyzers
+            .contains(&Analyzer::Levels)
+            .then(|| LevelMeter::new(channels, &options.levels));
+        let mut tracker = analyzers
+            .contains(&Analyzer::Beats)
+            .then(|| BeatTracker::new(channels, options.beats.clone()));
         for chunk in 0..seconds {
             let start = Flicks::new(chunk as i64 * second.get());
             let length = (media.duration - start).min(second);
@@ -138,6 +153,12 @@ pub fn analyze(
             if let Some(finder) = finder.as_mut() {
                 finder.push(&buffer.samples);
             }
+            if let Some(meter) = level_meter.as_mut() {
+                meter.push(&buffer.samples);
+            }
+            if let Some(tracker) = tracker.as_mut() {
+                tracker.push(&buffer.samples);
+            }
             if !progress(Progress {
                 done: chunk + 1,
                 total,
@@ -147,6 +168,8 @@ pub fn analyze(
         }
         results.loudness = meter.map(LoudnessMeter::finish);
         results.silences = finder.map(SilenceFinder::finish);
+        results.levels = level_meter.map(LevelMeter::finish);
+        results.beats = tracker.map(BeatTracker::finish);
     }
 
     if speech {

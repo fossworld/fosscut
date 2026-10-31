@@ -2,7 +2,7 @@
 // the desktop app). Development builds only; edits are simulated and nothing is saved.
 
 import { clip, entry, moment, track } from "../test/fixtures";
-import { FakeEngine } from "./fake";
+import { FakeEngine, standInFrame } from "./fake";
 import { STAND_IN_VOICES, standInListing } from "./models";
 import type { LibraryItem, LibraryKind, TimelineView } from "./types";
 
@@ -91,6 +91,24 @@ export function demoEngine(): FakeEngine {
     },
   };
   engine.recent = ["/demo/Launch.fosscut"];
+  // The project browser's cards, with stand-in frames, and a project in the trash.
+  const summary = (name: string, path: string, seconds: number, bytes: number, daysAgo: number) => ({
+    path,
+    name,
+    duration: moment(seconds),
+    timelines: 2,
+    assets: 6,
+    bytes,
+    modified_ms: Date.now() - daysAgo * 86_400_000,
+    thumbnail: standInFrame(path, seconds * 235_200_000, 320, 180),
+  });
+  engine.summaries = [
+    summary("Launch video (demo)", "/demo/Launch.fosscut", 24, 2_400_000, 0),
+    summary("Interview cut", "/demo/Interview.fosscut", 312, 8_100_000, 1),
+    summary("Shorts from the talk", "/demo/Talk shorts.fosscut", 58, 1_300_000, 3),
+    summary("Holiday reel", "/demo/Holiday.fosscut", 96, 4_700_000, 9),
+  ];
+  engine.trashed = [{ id: "t-demo", name: "Old draft", original: "/demo/Old draft.fosscut", trashed_ms: Date.now() - 2 * 86_400_000 }];
   engine.connected = [{ id: 1, name: "agent:claude-code", since_ms: Date.now() - 60_000 }];
   const multicam = (id: string, start: number, end: number, angle: string) =>
     clip(id, "timeline", start, end, {
@@ -142,7 +160,7 @@ export function demoEngine(): FakeEngine {
         clip("clip_0007", "video", 15, 24, {
           asset: "asset_0001",
           asset_name: "interview.mp4",
-          speed: { rate: 1.5, interpolate: "blend" },
+          speed: { rate: 1.5, interpolate: "flow" },
           source_used: moment(13.5),
         }),
       ]),
@@ -310,6 +328,46 @@ export function demoEngine(): FakeEngine {
         ],
       },
       {
+        type: "motion.blur",
+        version: 1,
+        title: "Motion blur",
+        category: "motion",
+        summary: "Smears moving things along their motion, as a slower shutter would.",
+        params: [{ ...amount("amount", "how long the shutter stays open"), min: 0, max: 1, default: 0.5 }],
+      },
+      {
+        type: "detail.denoise",
+        version: 1,
+        title: "Reduce picture noise",
+        category: "detail",
+        summary: "Calms grain and sensor noise while keeping edges.",
+        params: [{ ...amount("strength", "how much noise is removed"), min: 0, max: 1, default: 0.5 }],
+      },
+      {
+        type: "color.deflicker",
+        version: 1,
+        title: "Deflicker",
+        category: "color",
+        summary: "Evens out brightness that pulses from frame to frame.",
+        params: [{ ...amount("strength", "how much the brightness is evened"), min: 0, max: 1, default: 0.7 }],
+      },
+      {
+        type: "voice.pitch",
+        version: 1,
+        title: "Voice pitch",
+        category: "audio",
+        summary: "Raises or lowers a voice without changing its speed.",
+        params: [{ ...amount("semitones", "how far the pitch moves"), min: -12, max: 12, default: 0, animatable: false }],
+      },
+      {
+        type: "voice.robot",
+        version: 1,
+        title: "Robot voice",
+        category: "audio",
+        summary: "A metallic, buzzing voice.",
+        params: [{ ...amount("amount", "how robotic"), min: 0, max: 1, default: 0.8, animatable: false }],
+      },
+      {
         type: "audio.denoise",
         version: 1,
         title: "Reduce noise",
@@ -334,6 +392,12 @@ export function demoEngine(): FakeEngine {
           },
         ],
       },
+    ],
+    voice_presets: [
+      { name: "deep", title: "Deep", description: "A lower, fuller voice." },
+      { name: "robot", title: "Robot", description: "A metallic, buzzing voice." },
+      { name: "phone_call", title: "Phone call", description: "A narrow voice, as on a call." },
+      { name: "stadium", title: "Stadium", description: "A voice in a big echoing space." },
     ],
     looks: [
       { name: "warm", title: "Warm", description: "A gentle warm cast." },
@@ -407,6 +471,35 @@ export function demoEngine(): FakeEngine {
   engine.captionPages = [
     { clip: "clip_0011", text: "Edit by talking" },
     { clip: "clip_0012", text: "to your agent" },
+  ];
+  engine.shortCandidates = [
+    {
+      span: { start: moment(1), end: moment(35.2) },
+      text: "The moment we stopped editing by hand and started describing the cut, the whole thing took an afternoon instead of a week.",
+      score: 0.91,
+      seconds: 34.2,
+      reasons: { words_per_second: 2.9, pause_share: 0.08, loudness_variation_lu: 5.2 },
+      timeline_start: 1 * 705_600_000,
+      timeline_end: Math.round(35.2 * 705_600_000),
+    },
+    {
+      span: { start: moment(40), end: moment(62.5) },
+      text: "Here is the trick nobody tells you: say what you want to keep, and let the agent find it.",
+      score: 0.78,
+      seconds: 22.5,
+      reasons: { words_per_second: 3.3, pause_share: 0.05, loudness_variation_lu: 3.9 },
+      timeline_start: 40 * 705_600_000,
+      timeline_end: Math.round(62.5 * 705_600_000),
+    },
+    {
+      span: { start: moment(80), end: moment(108) },
+      text: "We tried it on a two hour interview and came back with twelve clips worth posting.",
+      score: 0.64,
+      seconds: 28,
+      reasons: { words_per_second: 2.4, pause_share: 0.14, loudness_variation_lu: 4.4 },
+      timeline_start: 80 * 705_600_000,
+      timeline_end: 108 * 705_600_000,
+    },
   ];
   engine.translations = { "Edit by talking": "Szerkesszen beszéddel", "to your agent": "az ügynökével" };
   return engine;

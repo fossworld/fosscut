@@ -503,7 +503,7 @@ export interface SpeedView {
   curve?: { at: number; rate: number }[];
   reverse?: boolean;
   pitch?: "preserve" | "shift";
-  interpolate?: "nearest" | "blend";
+  interpolate?: FrameBlend;
   /** For curves, the rates at the clip's start and end. */
   start_rate?: number;
   end_rate?: number;
@@ -531,7 +531,19 @@ export interface AnimationPreset {
 }
 
 /** What the UI needs from `capabilities` (detail full). */
+/** How slowed footage makes the frames between its own: repeats, cross-fades or optical flow. */
+export type FrameBlend = "nearest" | "blend" | "flow";
+
+/** A preset of voice filters (`voice.apply`), as `capabilities` lists it. */
+export interface VoicePreset {
+  name: string;
+  title: string;
+  description: string;
+}
+
 export interface Catalog {
+  /** Voice filter presets; empty when the engine lists none. */
+  voice_presets?: VoicePreset[];
   effects: EffectSpec[];
   looks: LookView[];
   transitions: TransitionSpec[];
@@ -888,6 +900,35 @@ export interface UpdateAnswer {
   message?: string;
 }
 
+/** Frames of a video or image asset (`media_thumbnails`), as PNG data URLs. */
+export interface ThumbnailStrip {
+  asset: string;
+  width: number;
+  height: number;
+  /** One frame per time asked for, at its source time in flicks. */
+  frames: { flicks: number; image: string }[];
+}
+
+/** The peaks of an asset's sound (`media_waveform`): the lowest and highest sample of each of `buckets` equal spans. */
+export interface Waveform {
+  asset: string;
+  /** The sound's length in flicks. */
+  duration: number;
+  buckets: number;
+  /** `[min, max]` per span, from -1 to 1, over every channel. */
+  peaks: [number, number][];
+}
+
+/** What importing files did (`media_import`). */
+export interface ImportResult {
+  /** The assets added, in the order of the files. */
+  assets: string[];
+  /** Files that could not be imported, and why, as the engine wrote it. */
+  failed: { path: string; error: string; code: string }[];
+  /** The project's revision after the import. */
+  revision: number;
+}
+
 /** The caches FossCut keeps outside projects (ADR-0019, ADR-0032). */
 export type CacheKind = "analysis" | "proxies" | "remux" | "frames";
 
@@ -964,8 +1005,11 @@ export type MatteSource = "person" | "subject";
 /** What `subject_analyze` analyzes. */
 export interface SubjectRequest {
   clip: string;
-  kind: SubjectKind;
+  /** `matte` or `pose`, or another analyzer a planner asks for (`scenes`, `beats`, `transcript`). */
+  kind: SubjectKind | string;
   model?: MatteSource;
+  /** The analyzer's options, as a missing-analysis refusal's details give them. */
+  options?: Record<string, unknown>;
 }
 
 /** A voice of the voice model (`voices_list`). */
@@ -1056,5 +1100,123 @@ export interface DubCaptionsResult {
     pages: { clip: string; start: number; text: string; speech: number; speed: number; asset: string; warning?: string }[];
     skipped: string[];
   };
+  response: EditResponse | null;
+}
+
+// ---- Reframing, beats and shorts (P2) ----
+
+/** What a reframe follows: a person (the pose analysis) or the subject (the matte analysis). */
+export type SubjectChoice = "person" | "subject";
+
+/** How a clip is reframed (`clip_reframe`), or tracked by a moving camera (`clip_camera_track`, with `zoom`). */
+export interface ReframeRequest {
+  clip: string;
+  source: SubjectChoice | "region";
+  /** With `region`: where it is at `at`, as fractions of the displayed picture. */
+  region?: Region;
+  at?: number;
+  /** Frame each shot on its own, at the cuts of the scenes analysis. */
+  shots?: boolean;
+  /** Camera tracking: how far the camera zooms in, 1 to 4. */
+  zoom?: number;
+  expected_revision?: number;
+}
+
+/** How one shot of a reframed clip is framed. */
+export interface ReframeShot {
+  start: number;
+  end: number;
+  zoom: number;
+  subject_frames: number;
+  inside_frames: number;
+}
+
+/** What reframing or camera tracking did. */
+export interface ReframeResult {
+  reframe: { clip: string; frames: number; subject_frames: number; shots: ReframeShot[] };
+  response: EditResponse | null;
+}
+
+/** A vertical version of a timeline that follows its subject (`timeline_vertical`). */
+export interface VerticalRequest {
+  timeline?: string;
+  source: SubjectChoice;
+  width?: number;
+  height?: number;
+  name?: string;
+  shots?: boolean;
+  expected_revision?: number;
+}
+
+export interface VerticalResult {
+  vertical: { source: string; timeline: string; clips: number; centred: { clip: string; reason: string }[] };
+  response: EditResponse | null;
+}
+
+/** Markers put on a music clip's beats (`beats_markers`). */
+export interface BeatMarkersResult {
+  beats: { timeline: string; tempo_bpm: number | null; beats_per_bar: number | null; confidence: number; markers: number; existing: number };
+  response: EditResponse | null;
+}
+
+/** A track's cuts moved onto the music's beats (`beats_cut`), and those left where they were. */
+export interface BeatCutsResult {
+  cuts: {
+    track: string;
+    music: string;
+    tempo_bpm: number | null;
+    beats: number;
+    tolerance: number;
+    snapped: { before: string; after: string; from: number; to: number }[];
+    unsnapped: { before: string | null; after: string; at: number; reason: string }[];
+  };
+  response: EditResponse | null;
+}
+
+/** A moment of a long clip that could stand alone as a short (`shorts_candidates`). */
+export interface ShortCandidate {
+  /** Where it is in the media's own time: what `shorts_make` takes as start and end. */
+  span: { start: Moment | { flicks: number; seconds: string }; end: Moment | { flicks: number; seconds: string } };
+  text: string;
+  /** From 0 to 1, best highest. */
+  score: number;
+  seconds: number;
+  /** The measurements behind the score, by name. */
+  reasons?: Record<string, unknown>;
+  /** Where it plays on the clip's timeline, in flicks. */
+  timeline_start: number;
+  timeline_end: number;
+}
+
+export interface ShortCandidates {
+  clip: string;
+  asset: string;
+  /** The analyses the scores come from, and those missing that would make them better. */
+  measured: string[];
+  missing: string[];
+  sentences: number;
+  considered: number;
+  candidates: ShortCandidate[];
+}
+
+/** How a short is made from part of a clip (`shorts_make`). */
+export interface ShortRequest {
+  clip: string;
+  /** The part of the media, in its own time (a candidate's span), in flicks. */
+  start: number;
+  end: number;
+  name?: string;
+  width?: number;
+  height?: number;
+  /** What the vertical crop follows; centred when null. */
+  follow?: SubjectChoice | null;
+  captions?: boolean;
+  caption_preset?: string;
+  title?: string;
+  expected_revision?: number;
+}
+
+export interface ShortResult {
+  short: { timeline: string; clip: string; name: string; start: number; duration: number; centred: string | null; caption_words: number };
   response: EditResponse | null;
 }
