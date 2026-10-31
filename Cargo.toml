@@ -40,6 +40,11 @@ half = "2.7.1"
 insta = { version = "1.49.0", features = ["json"] }
 # Windows named-pipe server with an owner-only access list for live sessions (ADR-0022).
 interprocess = { version = "2.4.7", default-features = false }
+# ONNX Runtime bindings (MIT OR Apache-2.0) for local vision and voice models (ADR-0033).
+# `load-dynamic` opens Microsoft's ONNX Runtime library (MIT) at run time, the way FFmpeg is
+# linked dynamically (ADR-0009), so nothing is downloaded at build time; `api-22` accepts
+# ONNX Runtime 1.22 and later.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic", "api-22"] }
 png = "0.18.1"
 pollster = "1.0.1"
 proptest = "1.12.0"

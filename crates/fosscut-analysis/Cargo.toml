@@ -9,15 +9,19 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-default = ["speech"]
+default = ["speech", "onnx"]
 # Speech recognition with whisper.cpp (ADR-0020); needs CMake and a C++ compiler to build.
 speech = ["dep:whisper-rs"]
+# Vision and voice models on ONNX Runtime (ADR-0033), loaded at run time from an installed
+# library; nothing native is needed to build it.
+onnx = ["dep:ort"]
 
 [dependencies]
 blake3.workspace = true
 fosscut-media = { workspace = true, features = ["ffmpeg"] }
 fosscut-model.workspace = true
 fosscut-time.workspace = true
+ort = { workspace = true, optional = true }
 rustfft.workspace = true
 schemars.workspace = true
 serde.workspace = true
@@ -28,6 +32,10 @@ whisper-rs = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { workspace = true, optional = true, features = ["metal"] }
+ort = { workspace = true, optional = true, features = ["coreml"] }
+
+[target.'cfg(windows)'.dependencies]
+ort = { workspace = true, optional = true, features = ["directml"] }
 
 [lints]
 workspace = true

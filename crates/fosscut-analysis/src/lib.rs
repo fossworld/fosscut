@@ -1,11 +1,16 @@
 //! FossCut's local media analysis (ADR-0012, ADR-0019): facts about footage that agents
-//! build edits on, measured on this machine and cached by content.
+//! build edits on, measured on this machine and cached by content, and the local models they
+//! run (ADR-0020, ADR-0033).
 //!
 //! - [`loudness`]: ITU-R BS.1770-4 integrated loudness and sample peak;
 //! - [`silence`]: ranges quieter than a threshold for at least a minimum duration;
 //! - [`scenes`]: hard shot cuts from luma-histogram differences;
 //! - [`speech`]: words with timings, filler candidates and pauses, recognised by whisper.cpp
 //!   with a model from [`models`] (ADR-0020);
+//! - [`models`]: the manifests of every model FossCut can install (speech, mattes, pose,
+//!   voices, translation and the ONNX Runtime library), and their verified installation;
+//! - [`onnx`]: sessions on ONNX Runtime, loaded at run time, for the vision, voice and
+//!   translation models (ADR-0033);
 //! - [`motion`]: camera motion between frames, the camera path, and corrections that steady
 //!   it;
 //! - [`track`]: where a region of the first frame is in each later frame;
@@ -23,6 +28,7 @@ mod gray;
 pub mod loudness;
 pub mod models;
 pub mod motion;
+pub mod onnx;
 pub mod scenes;
 pub mod silence;
 pub mod speech;

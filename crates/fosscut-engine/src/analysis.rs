@@ -226,7 +226,8 @@ pub fn analyze(
     })
 }
 
-/// Every model with whether it is installed in `dir`.
+/// Every model with whether it is installed in `dir`: the speech models, the ONNX Runtime
+/// library, and the matte, pose, voice and translation models (ADR-0033).
 pub fn models(dir: &std::path::Path) -> Vec<ModelInfo> {
     fosscut_analysis::models::list(dir)
 }
@@ -242,9 +243,11 @@ pub struct ModelInstall {
     pub status: &'static str,
 }
 
-/// Installs model `name` into `dir` (ADR-0019, item 5). A download needs `confirmed`, so
-/// callers show the size and license first; installing from a local file does not. An
-/// installed model is left as it is, and `dry_run` only reports.
+/// Installs model `name` into `dir` (ADR-0019 item 5, ADR-0033 item 2). A download needs
+/// `confirmed`, so callers show the size and license first; installing from local files (a
+/// file, or a folder holding a multi-file model's files by name) does not. An installed
+/// model is left as it is, and `dry_run` only reports. Models of several files install into
+/// a folder of their own, which `path` names.
 pub fn install_model(
     dir: &std::path::Path,
     name: &str,
@@ -262,13 +265,16 @@ pub fn install_model(
     if models::is_installed(dir, manifest) {
         return Ok(report("unchanged"));
     }
+    // A model with no build for this system fails before the user is asked to agree to a
+    // download.
+    models::installable(manifest)?;
     if dry_run {
         return Ok(report("dry_run"));
     }
     if matches!(source, ModelSource::Download(_)) && !confirmed {
         return Err(EngineError::ModelConfirmation {
             name: manifest.name.into(),
-            size_bytes: manifest.size,
+            size_bytes: manifest.size(),
             license: manifest.license.into(),
         });
     }

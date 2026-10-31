@@ -361,7 +361,12 @@ fn human_output_is_stable() {
         ],
     );
     let info = ok(&dir, &["project", "info"]);
-    let text = text.replace(info["id"].as_str().unwrap(), "project_<random>");
+    let mut text = text.replace(info["id"].as_str().unwrap(), "project_<random>");
+    // The ONNX Runtime download differs by system, so its line is not part of the snapshot.
+    if let Some(runtime) = text.lines().find(|line| line.starts_with("  onnxruntime ")) {
+        let runtime = runtime.to_string();
+        text = text.replace(&runtime, "  onnxruntime            <size by system>");
+    }
     insta::assert_snapshot!(text);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -1128,7 +1133,7 @@ fn models_from_the_command_line() {
     let dir = workspace("models");
     let listed = ok(&dir, &["models", "list"]);
     let models = listed["models"].as_array().unwrap();
-    assert_eq!(models.len(), 4);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
     assert!(Path::new(listed["dir"].as_str().unwrap()).ends_with("cache/models"));
 
@@ -1181,7 +1186,7 @@ fn models_from_the_command_line() {
     let human = fosscut(&dir, &["models", "list"]);
     let text = String::from_utf8_lossy(&human.stdout);
     assert!(
-        text.contains("whisper-tiny.en               77.7 MB  MIT  en            installed"),
+        text.contains("whisper-tiny.en               77.7 MB  MIT        en            installed"),
         "{text}"
     );
     assert!(text.contains("whisper-small") && text.contains("not installed"));

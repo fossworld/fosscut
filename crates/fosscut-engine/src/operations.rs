@@ -122,7 +122,7 @@ pub fn operations() -> Vec<OperationInfo> {
         ),
         (
             "models.install",
-            "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
+            "Download a local model (speech for transcripts; matte, pose, voice and translate; and the ONNX Runtime they run on) after the user agrees to its size and license; every file is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",
         ),
         (

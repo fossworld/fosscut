@@ -149,6 +149,31 @@ pub enum EngineError {
         /// Its license.
         license: String,
     },
+    /// The model has no build for this system.
+    #[error("{name} has no build for {platform}")]
+    ModelUnsupported {
+        /// The model.
+        name: String,
+        /// The system, for example `linux aarch64`.
+        platform: String,
+    },
+    /// ONNX Runtime, which the vision, voice and translation models run on, is not
+    /// installed or cannot be used (ADR-0033).
+    #[error("{message}")]
+    ModelRuntimeMissing {
+        /// What is wrong.
+        message: String,
+        /// The libraries looked for, or the one that cannot be used.
+        tried: Vec<String>,
+    },
+    /// A model could not be loaded into an ONNX Runtime session.
+    #[error("cannot load model {model}: {message}")]
+    ModelLoadFailed {
+        /// The model file.
+        model: String,
+        /// What ONNX Runtime reported.
+        message: String,
+    },
     /// Speech recognition failed.
     #[error("speech recognition failed: {message}")]
     SpeechFailed {
@@ -269,6 +294,9 @@ impl EngineError {
             EngineError::ModelChecksum { .. } => "fosscut.model.checksum_mismatch",
             EngineError::ModelDownload { .. } => "fosscut.model.download_failed",
             EngineError::ModelConfirmation { .. } => "fosscut.model.confirmation_required",
+            EngineError::ModelUnsupported { .. } => "fosscut.model.unsupported_platform",
+            EngineError::ModelRuntimeMissing { .. } => "fosscut.model.runtime_missing",
+            EngineError::ModelLoadFailed { .. } => "fosscut.model.load_failed",
             EngineError::SpeechFailed { .. } => "fosscut.analysis.speech_failed",
             EngineError::SpeechUnavailable => "fosscut.analysis.speech_unavailable",
             EngineError::NoTranscript { .. } => "fosscut.captions.no_transcript",
@@ -322,9 +350,9 @@ impl EngineError {
             EngineError::ModelUnknown { .. } => {
                 Some(format!("Models: {}.", model_names()))
             }
-            EngineError::ModelNotInstalled { .. } => Some(format!(
+            EngineError::ModelNotInstalled { what } => Some(format!(
                 "Ask the user before installing, since it downloads: models install (fosscut models install <name>). Models: {}.",
-                model_sizes()
+                model_sizes(what)
             )),
             EngineError::ModelChecksum { .. } => Some(
                 "The file is damaged or not the published model; install it again from its URL."
@@ -336,6 +364,20 @@ impl EngineError {
             ),
             EngineError::ModelConfirmation { .. } => Some(
                 "Tell the user the size and license; install with --yes (CLI) or confirm: true (MCP) only if they agree."
+                    .into(),
+            ),
+            EngineError::ModelUnsupported { .. } => Some(
+                "This model cannot run on this system; models lists the others for the same task."
+                    .into(),
+            ),
+            EngineError::ModelRuntimeMissing { .. } => Some(format!(
+                "Ask the user before installing, since it downloads: models install onnxruntime (fosscut models install onnxruntime), {}; or set {} to an ONNX Runtime {} or later library.",
+                runtime_size(),
+                fosscut_analysis::onnx::LIBRARY_VARIABLE,
+                fosscut_analysis::onnx::MINIMUM_VERSION
+            )),
+            EngineError::ModelLoadFailed { .. } => Some(
+                "The model file may be damaged or incomplete: install the model again (models install <name> after removing it), or report the message."
                     .into(),
             ),
             EngineError::SpeechFailed { .. } => Some(
@@ -415,6 +457,13 @@ impl EngineError {
                 size_bytes,
                 license,
             } => json!({ "name": name, "size_bytes": size_bytes, "license": license }),
+            EngineError::ModelUnsupported { name, platform } => {
+                json!({ "name": name, "platform": platform })
+            }
+            EngineError::ModelRuntimeMissing { tried, .. } => json!({ "tried": tried }),
+            EngineError::ModelLoadFailed { model, message } => {
+                json!({ "model": model, "message": message })
+            }
             EngineError::SpeechFailed { message } => json!({ "message": message }),
             EngineError::NoTranscript { assets, .. } => json!({ "assets": assets }),
             EngineError::InvalidSrt { line, .. } => json!({ "line": line }),
@@ -521,6 +570,21 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.model.confirmation_required",
             "Installing a model downloads it, so the call must confirm.",
             "Tell the user the size and license; confirm only if they agree.",
+        ),
+        entry(
+            "fosscut.model.unsupported_platform",
+            "The model has no build for this operating system and processor.",
+            "Choose another model for the same task; models lists them.",
+        ),
+        entry(
+            "fosscut.model.runtime_missing",
+            "ONNX Runtime, which the vision, voice and translation models run on, is not installed or cannot be used.",
+            "Ask the user, then install it with models install onnxruntime, or set FOSSCUT_ORT_DYLIB to an ONNX Runtime 1.22 or later library.",
+        ),
+        entry(
+            "fosscut.model.load_failed",
+            "An installed model could not be loaded into ONNX Runtime.",
+            "Install the model again, or report the message in details.",
         ),
         entry(
             "fosscut.analysis.speech_failed",
@@ -649,13 +713,28 @@ fn model_names() -> String {
         .join(", ")
 }
 
-/// Every model with its download size, for hints.
-fn model_sizes() -> String {
-    fosscut_analysis::models::MODELS
+/// The models that would satisfy `what` (a model's name, a kind of speech model, or
+/// anything else) with their download sizes, for hints.
+fn model_sizes(what: &str) -> String {
+    use fosscut_analysis::models::{MODELS, manifest};
+    let named = manifest(what).ok();
+    MODELS
         .iter()
-        .map(|m| format!("{} ({})", m.name, megabytes(&m.size)))
+        .filter(|m| match named {
+            Some(named) => m.name == named.name,
+            None if what.contains("speech model") => m.task == "speech",
+            None => true,
+        })
+        .map(|m| format!("{} ({})", m.name, megabytes(&m.size())))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The ONNX Runtime download's size on this system, for hints.
+fn runtime_size() -> String {
+    fosscut_analysis::models::manifest(fosscut_analysis::onnx::RUNTIME_MODEL)
+        .map(|m| megabytes(&m.size()))
+        .unwrap_or_default()
 }
 
 impl From<fosscut_analysis::models::ModelError> for EngineError {
@@ -675,6 +754,28 @@ impl From<fosscut_analysis::models::ModelError> for EngineError {
             },
             ModelError::DownloadFailed { name, message } => {
                 EngineError::ModelDownload { name, message }
+            }
+            ModelError::Unsupported { name, platform } => {
+                EngineError::ModelUnsupported { name, platform }
+            }
+        }
+    }
+}
+
+impl From<fosscut_analysis::onnx::OnnxError> for EngineError {
+    fn from(error: fosscut_analysis::onnx::OnnxError) -> EngineError {
+        use fosscut_analysis::onnx::OnnxError;
+        let message = error.to_string();
+        match error {
+            OnnxError::RuntimeMissing { tried } => {
+                EngineError::ModelRuntimeMissing { message, tried }
+            }
+            OnnxError::RuntimeUnusable { library, .. } => EngineError::ModelRuntimeMissing {
+                message,
+                tried: vec![library],
+            },
+            OnnxError::LoadFailed { model, message } => {
+                EngineError::ModelLoadFailed { model, message }
             }
         }
     }
@@ -932,6 +1033,33 @@ mod tests {
                 true,
             ),
             (
+                EngineError::ModelUnsupported {
+                    name: "onnxruntime".into(),
+                    platform: "linux aarch64".into(),
+                },
+                "fosscut.model.unsupported_platform",
+                "onnxruntime has no build for linux aarch64",
+                true,
+            ),
+            (
+                EngineError::ModelRuntimeMissing {
+                    message: "ONNX Runtime is not installed (looked for /m/onnxruntime/lib)".into(),
+                    tried: vec!["/m/onnxruntime/lib".into()],
+                },
+                "fosscut.model.runtime_missing",
+                "ONNX Runtime is not installed (looked for /m/onnxruntime/lib)",
+                true,
+            ),
+            (
+                EngineError::ModelLoadFailed {
+                    model: "/m/birefnet-lite/model.onnx".into(),
+                    message: "protobuf parsing failed".into(),
+                },
+                "fosscut.model.load_failed",
+                "cannot load model /m/birefnet-lite/model.onnx: protobuf parsing failed",
+                true,
+            ),
+            (
                 EngineError::SpeechFailed {
                     message: "failed to encode".into(),
                 },
@@ -1142,6 +1270,18 @@ mod tests {
                 size_bytes: 0,
                 license: String::new(),
             },
+            EngineError::ModelUnsupported {
+                name: String::new(),
+                platform: String::new(),
+            },
+            EngineError::ModelRuntimeMissing {
+                message: String::new(),
+                tried: Vec::new(),
+            },
+            EngineError::ModelLoadFailed {
+                model: String::new(),
+                message: String::new(),
+            },
             EngineError::SpeechFailed {
                 message: String::new(),
             },
@@ -1269,5 +1409,70 @@ mod tests {
         let converted = EngineError::from(audio);
         assert_eq!(converted.code(), "fosscut.audio.source_failed");
         assert!(converted.to_string().contains("asset_0002"));
+    }
+
+    #[test]
+    fn model_runtime_errors_say_how_to_get_the_runtime() {
+        use fosscut_analysis::models::ModelError;
+        use fosscut_analysis::onnx::OnnxError;
+        let missing = OnnxError::RuntimeMissing {
+            tried: vec!["/a/lib".into(), "/b/lib".into()],
+        };
+        let converted = EngineError::from(missing.clone());
+        assert_eq!(converted.code(), missing.code());
+        assert_eq!(converted.to_string(), missing.to_string());
+        assert_eq!(
+            converted.details(),
+            json!({ "tried": ["/a/lib", "/b/lib"] })
+        );
+        let hint = converted.hint().unwrap();
+        assert!(
+            hint.contains("models install onnxruntime")
+                && hint.contains("FOSSCUT_ORT_DYLIB")
+                && hint.contains("1.22"),
+            "{hint}"
+        );
+        let unusable = EngineError::from(OnnxError::RuntimeUnusable {
+            library: "/c/lib".into(),
+            message: "expected version >= 1.22".into(),
+        });
+        assert_eq!(unusable.code(), "fosscut.model.runtime_missing");
+        assert_eq!(unusable.details(), json!({ "tried": ["/c/lib"] }));
+        assert!(unusable.to_string().contains("cannot be used"));
+        let load = EngineError::from(OnnxError::LoadFailed {
+            model: "m.onnx".into(),
+            message: "bad graph".into(),
+        });
+        assert_eq!(load.code(), "fosscut.model.load_failed");
+        assert_eq!(
+            load.details(),
+            json!({ "model": "m.onnx", "message": "bad graph" })
+        );
+        let unsupported = EngineError::from(ModelError::Unsupported {
+            name: "onnxruntime".into(),
+            platform: "linux aarch64".into(),
+        });
+        assert_eq!(unsupported.code(), "fosscut.model.unsupported_platform");
+        assert_eq!(
+            unsupported.details(),
+            json!({ "name": "onnxruntime", "platform": "linux aarch64" })
+        );
+    }
+
+    #[test]
+    fn not_installed_hints_list_the_models_that_would_do() {
+        let hint = |what: &str| {
+            EngineError::ModelNotInstalled { what: what.into() }
+                .hint()
+                .unwrap()
+        };
+        let speech = hint("a speech model");
+        assert!(speech.contains("whisper-tiny.en (77.7 MB)"), "{speech}");
+        assert!(!speech.contains("onnxruntime") && !speech.contains("kokoro"));
+        assert!(hint("a multilingual speech model (for de)").contains("whisper-small"));
+        let named = hint("birefnet-lite");
+        assert!(named.contains("birefnet-lite (224.0 MB)") && !named.contains("whisper"));
+        let other = hint("a matte model");
+        assert!(other.contains("birefnet-lite") && other.contains("whisper-tiny.en"));
     }
 }

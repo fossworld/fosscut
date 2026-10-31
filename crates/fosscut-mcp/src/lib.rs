@@ -598,7 +598,7 @@ impl FosscutServer {
 
     /// Lists or installs models.
     #[tool(
-        description = "List the models analyzers can use (speech recognition for media_analyze transcript) with size, license, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256: tell the user the size and license first, and pass confirm: true only after they agree. Larger models are more accurate and slower; English-only models (.en) suit English speech.",
+        description = "List the models FossCut can install, with their task (speech for media_analyze transcript; matte, pose, voice and translate for local vision, voice and translation models; runtime for the ONNX Runtime library those run on), size, license, attribution, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256, and happens only after the user agrees: tell them the size and license first, then pass confirm: true. Larger speech models are more accurate and slower; English-only models (.en) suit English speech.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

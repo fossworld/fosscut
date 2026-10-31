@@ -577,9 +577,14 @@ async fn models_install_only_with_confirmation() {
     let client = connect_with_models(None, folder.clone()).await;
     let listed = ok(&client, "models", json!({})).await;
     let models = listed["models"].as_array().unwrap();
-    assert_eq!(models.len(), 4);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
-    assert!(models.iter().all(|m| m["license"] == json!("MIT")));
+    assert!(
+        models
+            .iter()
+            .filter(|m| m["task"] == json!("speech"))
+            .all(|m| m["license"] == json!("MIT"))
+    );
 
     // Installing asks the agent to confirm with the user first.
     let unconfirmed = fails(&client, "models", json!({ "install": "whisper-tiny.en" })).await;
