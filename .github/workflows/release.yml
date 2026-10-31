@@ -64,16 +64,17 @@ jobs:
           # Bump to start fresh caches when a build input cargo does not track changes,
           # such as GGML_NATIVE in .cargo/config.toml.
           prefix-key: v1-rust
-      # fosscut-media links FFmpeg 8 dynamically (ADR-0009): the LGPL shared builds on Linux
-      # and Windows, which the archive ships beside the binary.
-      - uses: ./.github/actions/setup-ffmpeg
+      # fosscut-media links FFmpeg 8 dynamically (ADR-0009); the archive ships an LGPL build
+      # of it, with ffprobe for importing.
+      - uses: ./.github/actions/setup-release-ffmpeg
       - name: Build
         shell: bash
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            # Find the bundled FFmpeg libraries in lib/ beside the binary.
-            export RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/lib"
-          fi
+          # Find the shipped FFmpeg libraries in lib/ beside the binary.
+          case "${{ runner.os }}" in
+            Linux) export RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/lib" ;;
+            macOS) export RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/lib" ;;
+          esac
           cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
       - name: Package
         shell: bash
@@ -83,34 +84,55 @@ jobs:
           cp LICENSE-MIT LICENSE-APACHE README.md "dist/$name/"
           ffmpeg_notice() {
             cat > "dist/$name/FFMPEG-NOTICE.txt" <<NOTICE
-          This archive includes the FFmpeg 8 shared libraries from the LGPL builds of
-          https://github.com/BtbN/FFmpeg-Builds, licensed under the GNU Lesser General Public
-          License 2.1 or later; see FFMPEG-LICENSE.txt. FFmpeg's source code is at
-          https://ffmpeg.org/download.html and the build scripts at the address above. FossCut
-          links them dynamically: you may replace them with your own build of the same version.
+          This archive includes FFmpeg 8 shared libraries and ffprobe, $1, licensed under the
+          GNU Lesser General Public License 2.1 or later; see FFMPEG-LICENSE.txt. FFmpeg's
+          source code is at https://ffmpeg.org/download.html. FossCut links the libraries
+          dynamically: you may replace them with your own build of the same version.
           NOTICE
           }
+          btbn="from the LGPL builds of https://github.com/BtbN/FFmpeg-Builds"
+          source="built from FFmpeg's 8.1 source release by scripts/release/build-ffmpeg-macos.sh in https://github.com/fossworld/fosscut"
+          cp "$FFMPEG_RELEASE_DIR/LICENSE.txt" "dist/$name/FFMPEG-LICENSE.txt"
           case "${{ runner.os }}" in
             Windows)
               cp "target/${{ matrix.target }}/release/fosscut.exe" "dist/$name/"
-              cp "$RUNNER_TEMP"/ffmpeg-8-dlls/*.dll "dist/$name/"
-              cp "$RUNNER_TEMP"/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1/LICENSE.txt "dist/$name/FFMPEG-LICENSE.txt"
-              ffmpeg_notice
+              cp "$FFMPEG_RELEASE_DIR"/bin/*.dll "$FFMPEG_RELEASE_DIR/bin/ffprobe.exe" "dist/$name/"
+              ffmpeg_notice "$btbn"
+              "dist/$name/fosscut.exe" export --presets > /dev/null
+              "dist/$name/ffprobe.exe" -version > /dev/null
               (cd dist && 7z a "$name.zip" "$name" > /dev/null && sha256sum "$name.zip" > "$name.zip.sha256")
               ;;
             Linux)
+              command -v patchelf > /dev/null || sudo apt-get install -y --no-install-recommends patchelf
               cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
               mkdir -p "dist/$name/lib"
-              cp -P "$FFMPEG_LIBS_DIR"/*.so* "dist/$name/lib/"
-              cp "$FFMPEG_LIBS_DIR/../LICENSE.txt" "dist/$name/FFMPEG-LICENSE.txt"
-              ffmpeg_notice
+              cp -P "$FFMPEG_RELEASE_DIR"/lib/*.so* "dist/$name/lib/"
+              cp "$FFMPEG_RELEASE_DIR/bin/ffprobe" "dist/$name/"
+              patchelf --set-rpath '$ORIGIN/lib' "dist/$name/ffprobe"
+              ffmpeg_notice "$btbn"
+              # The package runs on its own libraries.
+              env -u LD_LIBRARY_PATH "dist/$name/fosscut" export --presets > /dev/null
+              env -u LD_LIBRARY_PATH "dist/$name/ffprobe" -version > /dev/null
               (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
               ;;
             macOS)
-              # Homebrew's FFmpeg is built with GPL parts, so it is not shipped: the binary
-              # uses the ffmpeg@8 the user installs (brew install ffmpeg@8).
               cp "target/${{ matrix.target }}/release/fosscut" "dist/$name/"
-              printf '%s\n' "fosscut needs FFmpeg 8: brew install ffmpeg@8" > "dist/$name/REQUIREMENTS.txt"
+              mkdir -p "dist/$name/lib"
+              # The names the binary asks for, such as libavcodec.62.dylib.
+              for library in "$FFMPEG_RELEASE_DIR"/lib/lib*.dylib; do
+                if [[ "$(basename "$library")" =~ ^lib[a-z]+\.[0-9]+\.dylib$ ]]; then
+                  cp -L "$library" "dist/$name/lib/"
+                fi
+              done
+              cp "$FFMPEG_RELEASE_DIR/bin/ffprobe" "dist/$name/"
+              ffmpeg_notice "$source"
+              # The package runs on its own libraries, never Homebrew's.
+              if otool -L "dist/$name/fosscut" | grep -q /opt/homebrew; then
+                echo "fosscut links Homebrew libraries" >&2
+                exit 1
+              fi
+              env -i PATH=/usr/bin:/bin "dist/$name/fosscut" export --presets > /dev/null
+              env -i PATH=/usr/bin:/bin "dist/$name/ffprobe" -version > /dev/null
               (cd dist && tar czf "$name.tar.gz" "$name" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
               ;;
           esac
@@ -152,8 +174,11 @@ jobs:
         with:
           key: desktop-${{ matrix.target }}
           prefix-key: v1-rust
-      - uses: ./.github/actions/setup-ffmpeg
+      - uses: ./.github/actions/setup-release-ffmpeg
       - uses: ./.github/actions/setup-desktop
+      - name: patchelf (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends patchelf
       - uses: taiki-e/install-action@v2
         with:
           tool: tauri-cli@2
@@ -172,21 +197,39 @@ jobs:
       - name: Bundle settings
         shell: bash
         run: |
-          case "${{ matrix.platform }}" in
-            windows) libs="$RUNNER_TEMP/ffmpeg-8-dlls" ;;
-            linux) libs="$FFMPEG_LIBS_DIR" ;;
-            *) libs=- ;;
-          esac
-          python3 -I scripts/release/desktop_bundle.py ${{ matrix.platform }} "$libs" "$RUNNER_TEMP/bundle.json"
+          python3 -I scripts/release/desktop_bundle.py ${{ matrix.platform }} "$FFMPEG_RELEASE_DIR" "$RUNNER_TEMP/bundle.json"
       - name: Build and bundle
         shell: bash
         working-directory: apps/desktop
         run: |
-          if [ "${{ matrix.platform }}" = "linux" ]; then
+          case "${{ matrix.platform }}" in
             # The Debian package installs the FFmpeg libraries in /usr/lib/fosscut.
-            export RUSTFLAGS="-C link-args=-Wl,-rpath,/usr/lib/fosscut"
-          fi
+            linux) export RUSTFLAGS="-C link-args=-Wl,-rpath,/usr/lib/fosscut" ;;
+            # The app carries them in Contents/Frameworks.
+            macos) export RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../Frameworks" ;;
+          esac
           cargo tauri build --target ${{ matrix.target }} --config "$RUNNER_TEMP/bundle.json"
+      - name: Check the bundle carries FFmpeg
+        shell: bash
+        run: |
+          out="target/${{ matrix.target }}/release/bundle"
+          case "${{ matrix.platform }}" in
+            macos)
+              app=$(ls -d "$out"/macos/*.app)
+              if otool -L "$app/Contents/MacOS/fosscut-desktop" | grep -q /opt/homebrew; then
+                echo "the app links Homebrew libraries" >&2
+                exit 1
+              fi
+              ls "$app/Contents/Frameworks/libavcodec.62.dylib"
+              env -i PATH=/usr/bin:/bin "$app/Contents/MacOS/ffprobe" -version > /dev/null
+              ;;
+            linux)
+              unpacked="$RUNNER_TEMP/deb"
+              dpkg-deb -x "$out"/deb/*.deb "$unpacked"
+              env -u LD_LIBRARY_PATH "$unpacked/usr/lib/fosscut/ffprobe" -version > /dev/null
+              ls "$unpacked"/usr/lib/fosscut/libavcodec.so.*
+              ;;
+          esac
       - name: Package
         shell: bash
         run: |

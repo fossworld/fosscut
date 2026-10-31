@@ -1,0 +1,48 @@
+name: Set up the FFmpeg 8 that releases ship
+description: >
+  The FFmpeg 8 that FossCut's release archives and installers carry (ADR-0009): the LGPL shared
+  builds of BtbN/FFmpeg-Builds on Linux and Windows (through setup-ffmpeg), and on macOS an
+  LGPL build from FFmpeg's source release by scripts/release/build-ffmpeg-macos.sh, because
+  Homebrew's FFmpeg includes GPL parts. Sets FFMPEG_RELEASE_DIR to a folder with bin/ (ffprobe,
+  and the DLLs on Windows), lib/ and LICENSE.txt.
+
+runs:
+  using: composite
+  steps:
+    - if: runner.os != 'macOS'
+      uses: ./.github/actions/setup-ffmpeg
+
+    - name: Where the shipped FFmpeg is (Linux, Windows)
+      if: runner.os != 'macOS'
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = Windows ]; then
+          dir="$RUNNER_TEMP/ffmpeg-n8.1-latest-win64-lgpl-shared-8.1"
+        else
+          dir="$RUNNER_TEMP/ffmpeg-8"
+        fi
+        echo "FFMPEG_RELEASE_DIR=$dir" >> "$GITHUB_ENV"
+
+    - name: Cache the LGPL FFmpeg build (macOS)
+      if: runner.os == 'macOS'
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/ffmpeg-lgpl
+        key: ffmpeg-lgpl-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/release/build-ffmpeg-macos.sh') }}
+
+    - name: Build LGPL FFmpeg 8 (macOS)
+      if: runner.os == 'macOS' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: scripts/release/build-ffmpeg-macos.sh "$RUNNER_TEMP/ffmpeg-lgpl"
+
+    - name: Use it (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/ffmpeg-lgpl"
+        {
+          echo "FFMPEG_PKG_CONFIG_PATH=$dir/lib/pkgconfig"
+          echo "FFMPEG_LINK_MODE=dynamic"
+          echo "FFMPEG_RELEASE_DIR=$dir"
+        } >> "$GITHUB_ENV"
