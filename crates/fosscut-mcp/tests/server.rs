@@ -1425,7 +1425,26 @@ async fn recordings_start_only_when_confirmed_and_stop_keeping_what_was_recorded
         json!({ "action": "start", "what": "microphone", "input": "lavfi:sine=frequency=220:sample_rate=48000", "confirm": true }),
     )
     .await;
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    // Stop once a second is recorded: a slow machine may take a while to start the device,
+    // and a recording stopped before any media arrives is refused.
+    let started = std::time::Instant::now();
+    loop {
+        let status = ok(
+            &client,
+            "job_status",
+            json!({ "job": open["job"], "wait_seconds": 0 }),
+        )
+        .await;
+        if status["progress"]["done"].as_u64().unwrap_or(0) >= 1 {
+            break;
+        }
+        assert_eq!(status["state"], "running", "{status}");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "nothing recorded in 30 s: {status}"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     let stopped = ok(
         &client,
         "job_cancel",
