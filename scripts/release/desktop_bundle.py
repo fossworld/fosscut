@@ -79,7 +79,9 @@ def overlay(platform: str, ffmpeg: Path) -> dict:
         libs = required(named(ffmpeg / "lib", r"lib\w+\.\d+\.dylib"), "libraries", ffmpeg / "lib")
         probe = required(named(ffmpeg / "bin", r"ffprobe"), "ffprobe", ffmpeg / "bin")
         copies = stage(libs + probe)
-        bundle["targets"] = ["dmg"]
+        # The app too, which the release workflow checks before shipping the dmg (Tauri
+        # removes it when only the dmg is asked for).
+        bundle["targets"] = ["app", "dmg"]
         bundle["macOS"] = {
             "signingIdentity": "-",
             "minimumSystemVersion": "13.0",

@@ -72,7 +72,9 @@ jobs:
         run: |
           # Find the shipped FFmpeg libraries in lib/ beside the binary.
           case "${{ runner.os }}" in
-            Linux) export RUSTFLAGS="-C link-args=-Wl,-rpath,\$ORIGIN/lib" ;;
+            # DT_RPATH rather than DT_RUNPATH, so libraries that only other FFmpeg libraries
+            # need (libavfilter, through libavdevice) are found there too.
+            Linux) export RUSTFLAGS="-C link-args=-Wl,--disable-new-dtags,-rpath,\$ORIGIN/lib" ;;
             macOS) export RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/lib" ;;
           esac
           cargo build --release --locked -p fosscut-cli --target ${{ matrix.target }}
@@ -203,8 +205,9 @@ jobs:
         working-directory: apps/desktop
         run: |
           case "${{ matrix.platform }}" in
-            # The Debian package installs the FFmpeg libraries in /usr/lib/fosscut.
-            linux) export RUSTFLAGS="-C link-args=-Wl,-rpath,/usr/lib/fosscut" ;;
+            # The Debian package installs the FFmpeg libraries in /usr/lib/fosscut (DT_RPATH, so
+            # it also serves libraries that other FFmpeg libraries need).
+            linux) export RUSTFLAGS="-C link-args=-Wl,--disable-new-dtags,-rpath,/usr/lib/fosscut" ;;
             # The app carries them in Contents/Frameworks.
             macos) export RUSTFLAGS="-C link-args=-Wl,-rpath,@executable_path/../Frameworks" ;;
           esac
@@ -228,6 +231,14 @@ jobs:
               dpkg-deb -x "$out"/deb/*.deb "$unpacked"
               env -u LD_LIBRARY_PATH "$unpacked/usr/lib/fosscut/ffprobe" -version > /dev/null
               ls "$unpacked"/usr/lib/fosscut/libavcodec.so.*
+              readelf -d "$unpacked/usr/bin/fosscut-desktop" | grep -E '\(RPATH\).*/usr/lib/fosscut'
+              # Every library the app needs is in the package or on the system.
+              missing=$(env -u LD_LIBRARY_PATH LD_LIBRARY_PATH="$unpacked/usr/lib/fosscut" \
+                ldd "$unpacked/usr/bin/fosscut-desktop" | grep "not found" || true)
+              if [ -n "$missing" ]; then
+                echo "$missing" >&2
+                exit 1
+              fi
               ;;
           esac
       - name: Package
