@@ -19,7 +19,9 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 protect_breaking_commits = true
-tag_pattern = "v[0-9].*"
+# Release tags only (v0.1.0, v0.2.0-rc.1): anchored, so that other tags containing a "v" and
+# a digit, such as the models-v1 pre-release of model files, are not taken for releases.
+tag_pattern = "^v[0-9]"
 sort_commits = "oldest"
 commit_parsers = [
   { message = "^feat", group = "<!-- 0 -->Features" },
