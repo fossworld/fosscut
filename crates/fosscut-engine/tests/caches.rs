@@ -478,6 +478,8 @@ fn exports_frame_grabs_and_contact_sheets_read_the_originals() {
             .to_vec()
     };
     let with_proxy = exported("with-proxy.mov", &mut renderer);
+    // The preview holds the proxy open, which Windows will not delete.
+    drop(previewer);
     std::fs::remove_dir_all(&cache).unwrap();
     let without = exported("without-proxy.mov", &mut renderer);
     assert!(with_proxy == without, "the export read the original");
