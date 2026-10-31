@@ -473,6 +473,9 @@ fn ran_for(duration: Option<Flicks>, ran: &Ran, what: &str) {
     );
 }
 
+/// How soon `record` returns after a stop, closing and probing the file included.
+const STOP_RETURNS_WITHIN: Duration = Duration::from_secs(2);
+
 #[test]
 fn stopping_ends_a_recording_without_a_duration() {
     if !have_lavfi() {
@@ -489,7 +492,10 @@ fn stopping_ends_a_recording_without_a_duration() {
     let audio = report.audio.as_ref().unwrap();
     println!("stopped sound: returned {latency:?} after the stop");
     ran_for(audio.duration, &ran, "stopped sound");
-    assert!(latency < Duration::from_millis(250), "{latency:?}");
+    // What is recorded ends at the stop (checked above). Returning also closes and probes
+    // the file, which a loaded machine slows (0.49 s on CI), so the bound only catches a
+    // recording that does not stop.
+    assert!(latency < STOP_RETURNS_WITHIN, "{latency:?}");
 
     let settings = OutputSettings {
         container: Container::Mp4,
@@ -506,7 +512,7 @@ fn stopping_ends_a_recording_without_a_duration() {
         got.frame_count
     );
     ran_for(got.duration.or(report.duration), &ran, "stopped pictures");
-    assert!(latency < Duration::from_millis(250), "{latency:?}");
+    assert!(latency < STOP_RETURNS_WITHIN, "{latency:?}");
     let sound = report.audio.as_ref().unwrap();
     // Sound and pictures end together, within a frame.
     within(
