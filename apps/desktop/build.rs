@@ -15,6 +15,10 @@ fn main() {
         "clients",
         "color_suggest",
         "audio_normalize",
+        "scenes_split",
+        "clip_stabilize",
+        "clip_track",
+        "multicam_create",
         "preview_viewport",
         "preview_show",
         "preview_play",
@@ -35,6 +39,10 @@ fn main() {
         "export_start",
         "export_status",
         "export_cancel",
+        "record_devices",
+        "record_start",
+        "record_status",
+        "record_stop",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

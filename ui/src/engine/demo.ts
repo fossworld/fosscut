@@ -74,6 +74,15 @@ export function demoEngine(): FakeEngine {
           tracks: 4,
           clips: 8,
         },
+        {
+          id: "timeline_0051",
+          name: "Multicam 1",
+          role: "compound",
+          format: { width: 1920, height: 1080, rate: "30" },
+          duration: moment(10),
+          tracks: 2,
+          clips: 2,
+        },
       ],
       assets: 6,
       fonts: ["Inter", "Lora"],
@@ -82,6 +91,16 @@ export function demoEngine(): FakeEngine {
   };
   engine.recent = ["/demo/Launch.fosscut"];
   engine.connected = [{ id: 1, name: "agent:claude-code", since_ms: Date.now() - 60_000 }];
+  const multicam = (id: string, start: number, end: number, angle: string) =>
+    clip(id, "timeline", start, end, {
+      timeline: "timeline_0051",
+      timeline_name: "Multicam 1",
+      angle,
+      angles: [
+        { id: "track_0053", name: "Angle 1: interview.mp4" },
+        { id: "track_0052", name: "Angle 2: b-roll.mp4" },
+      ],
+    });
   const timeline = (): TimelineView => ({
     timeline: "timeline_0000",
     name: "Timeline 1",
@@ -147,6 +166,9 @@ export function demoEngine(): FakeEngine {
         clip("clip_0012", "caption", 2.2, 3.6, { text: "to your agent" }),
       ]),
       track("track_0040", "video", 4, [
+        // A multicam clip cut once: the interview angle, then the b-roll angle.
+        multicam("clip_0055", 0, 6, "track_0053"),
+        multicam("clip_0056", 6, 10, "track_0052"),
         clip("clip_0041", "shape", 16, 20, {
           shape: "rectangle",
           text: "SALE",
@@ -163,6 +185,15 @@ export function demoEngine(): FakeEngine {
     ],
   });
   engine.library = library();
+  engine.captureDevices = [
+    { kind: "camera", name: "FaceTime HD Camera", format: "avfoundation", input: "0:" },
+    { kind: "screen", name: "Capture screen 0", format: "avfoundation", input: "1:" },
+    { kind: "microphone", name: "MacBook Pro Microphone", format: "avfoundation", input: ":0" },
+    { kind: "microphone", name: "USB Audio Interface", format: "avfoundation", input: ":1" },
+  ];
+  // Measured edits: two shot cuts in a clip, and a tracked region lost for half a second.
+  engine.sceneCuts = [moment(10).flicks, moment(12.5).flicks];
+  engine.trackLost = [{ start: moment(10).flicks, end: moment(10.5).flicks }];
   engine.exportListing = {
     presets: [
       { name: "mp4-h264", description: "H.264 and AAC in MP4: plays everywhere (hardware encoder)", extension: "mp4", available: true },

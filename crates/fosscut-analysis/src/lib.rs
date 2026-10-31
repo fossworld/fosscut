@@ -5,7 +5,11 @@
 //! - [`silence`]: ranges quieter than a threshold for at least a minimum duration;
 //! - [`scenes`]: hard shot cuts from luma-histogram differences;
 //! - [`speech`]: words with timings, filler candidates and pauses, recognised by whisper.cpp
-//!   with a model from [`models`] (ADR-0020).
+//!   with a model from [`models`] (ADR-0020);
+//! - [`motion`]: camera motion between frames, the camera path, and corrections that steady
+//!   it;
+//! - [`track`]: where a region of the first frame is in each later frame;
+//! - [`sync`]: how far apart two recordings of the same scene are, from their sound.
 //!
 //! The analyzers are pure and stream over samples or frames; [`decode`] feeds them from a
 //! media file and [`cache`] stores their results outside the project, keyed by the file's
@@ -15,11 +19,15 @@
 
 pub mod cache;
 pub mod decode;
+mod gray;
 pub mod loudness;
 pub mod models;
+pub mod motion;
 pub mod scenes;
 pub mod silence;
 pub mod speech;
+pub mod sync;
+pub mod track;
 
 use fosscut_time::Flicks;
 use schemars::JsonSchema;
@@ -27,9 +35,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use loudness::Loudness;
+pub use motion::{
+    CameraPath, Correction, FrameMotion, MotionEstimator, PathFrame, Stabilization, stabilize,
+};
 pub use scenes::{Cut, SceneOptions, Scenes};
 pub use silence::{SilenceOptions, Silences};
 pub use speech::{Transcript, TranscriptOptions};
+pub use sync::{SyncResult, audio_offset};
+pub use track::{Region, TrackPoint, Tracker};
 
 /// A moment in an asset, from its start: exact flicks, with decimal seconds for reading.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

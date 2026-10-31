@@ -5644,6 +5644,17 @@
               }
             ],
             "properties": {
+              "angle": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A compound clip's angle: the one track of its timeline whose picture shows, for\nmulticam editing (ADR-0029); every track shows when omitted."
+              },
               "animations": {
                 "$ref": "#/$defs/ClipAnimations",
                 "description": "How the clip moves in, out and while it shows."
@@ -9166,6 +9177,578 @@
     {
       "input_schema": {
         "$defs": {
+          "Easing": {
+            "description": "Easing from a keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "linear",
+                "description": "Constant rate.",
+                "type": "string"
+              },
+              {
+                "const": "hold",
+                "description": "Keep the value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "ease_in",
+                "description": "Start slowly.",
+                "type": "string"
+              },
+              {
+                "const": "ease_out",
+                "description": "End slowly.",
+                "type": "string"
+              },
+              {
+                "const": "ease_in_out",
+                "description": "Start and end slowly.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "A custom cubic Bezier `[x1, y1, x2, y2]` as in CSS; x1 and x2 from 0 to 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "KeyInput": {
+            "additionalProperties": false,
+            "description": "One keyframe of `keyframe.set_all`.",
+            "properties": {
+              "easing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Easing"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How the value moves to the next keyframe; linear when omitted."
+              },
+              "offset": {
+                "$ref": "#/$defs/TimeInput",
+                "description": "Position from the clip's start."
+              },
+              "value": {
+                "description": "The value: a number, or `[x, y]` for pairs."
+              }
+            },
+            "required": [
+              "offset",
+              "value"
+            ],
+            "type": "object"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Replaces every keyframe of a clip property at once: how measured motion (stabilization,\ntracking) lands on a clip, one undo step however many keyframes it has.",
+        "properties": {
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "keys": {
+            "description": "The keyframes, at different offsets; an empty list removes them all.",
+            "items": {
+              "$ref": "#/$defs/KeyInput"
+            },
+            "type": "array"
+          },
+          "property": {
+            "description": "The property, as `keyframe.set` takes it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "property",
+          "keys"
+        ],
+        "title": "KeyframeSetAll",
+        "type": "object"
+      },
+      "name": "keyframe.set_all",
+      "output_schema": {
+        "$defs": {
+          "BlendMode": {
+            "description": "How a clip's picture combines with the layers below it. Every mode except `normal`\nworks on display-encoded (sRGB) values, as designers expect, and then mixes by the\nclip's opacity (ADR-0011, item 4).",
+            "oneOf": [
+              {
+                "const": "normal",
+                "description": "Covers what is below.",
+                "type": "string"
+              },
+              {
+                "const": "multiply",
+                "description": "Darkens: below times the picture.",
+                "type": "string"
+              },
+              {
+                "const": "screen",
+                "description": "Lightens: the inverse of multiplying the inverses.",
+                "type": "string"
+              },
+              {
+                "const": "overlay",
+                "description": "Multiply in the shadows of what is below and screen in its highlights.",
+                "type": "string"
+              },
+              {
+                "const": "darken",
+                "description": "The darker of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "lighten",
+                "description": "The lighter of the two, per channel.",
+                "type": "string"
+              },
+              {
+                "const": "color_dodge",
+                "description": "Brightens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "color_burn",
+                "description": "Darkens what is below to reflect the picture.",
+                "type": "string"
+              },
+              {
+                "const": "hard_light",
+                "description": "Overlay with the roles swapped: the picture decides multiply or screen.",
+                "type": "string"
+              },
+              {
+                "const": "soft_light",
+                "description": "A gentler hard light.",
+                "type": "string"
+              },
+              {
+                "const": "linear_burn",
+                "description": "Sum minus one: darkens more than multiply.",
+                "type": "string"
+              },
+              {
+                "const": "add",
+                "description": "Sum (linear dodge), clipped at white.",
+                "type": "string"
+              },
+              {
+                "const": "difference",
+                "description": "Absolute difference.",
+                "type": "string"
+              },
+              {
+                "const": "exclusion",
+                "description": "Like difference with lower contrast.",
+                "type": "string"
+              }
+            ]
+          },
+          "ChannelMode": {
+            "description": "Which channels of a clip's sound play where (fill channel).",
+            "oneOf": [
+              {
+                "const": "stereo",
+                "description": "As recorded.",
+                "type": "string"
+              },
+              {
+                "const": "left",
+                "description": "The left channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "right",
+                "description": "The right channel fills both.",
+                "type": "string"
+              },
+              {
+                "const": "mono",
+                "description": "Both channels mixed to one, played on both.",
+                "type": "string"
+              }
+            ]
+          },
+          "ClipAudio": {
+            "description": "How a clip's sound is shaped: fades, pan and channels.",
+            "properties": {
+              "channels": {
+                "$ref": "#/$defs/ChannelMode",
+                "description": "Which source channels play."
+              },
+              "detached": {
+                "description": "A video clip's sound plays from an audio clip extracted from it, so the video clip\nitself is not heard (ADR-0024).",
+                "type": "boolean"
+              },
+              "fade_in": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade in from silence over this long at the clip's start."
+              },
+              "fade_out": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Fade out to silence over this long at the clip's end."
+              },
+              "pan": {
+                "description": "Stereo balance: -1 left, 0 centre (both sides unchanged), 1 right.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Crop": {
+            "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
+            "properties": {
+              "bottom": {
+                "description": "Fraction of the height removed at the bottom.",
+                "format": "double",
+                "type": "number"
+              },
+              "left": {
+                "description": "Fraction of the width removed on the left.",
+                "format": "double",
+                "type": "number"
+              },
+              "right": {
+                "description": "Fraction of the width removed on the right.",
+                "format": "double",
+                "type": "number"
+              },
+              "top": {
+                "description": "Fraction of the height removed at the top.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "Interpolation": {
+            "description": "How a value travels from one keyframe to the next.",
+            "oneOf": [
+              {
+                "const": "hold",
+                "description": "Keeps this keyframe's value until the next keyframe.",
+                "type": "string"
+              },
+              {
+                "const": "linear",
+                "description": "Changes at a constant rate.",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Follows the cubic Bezier easing curve from (0, 0) to (1, 1) with control points\n`[x1, y1, x2, y2]`, as in CSS: x is the fraction of the time between the keyframes\nand y the fraction of the change. x1 and x2 are between 0 and 1.",
+                "properties": {
+                  "bezier": {
+                    "items": {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    "maxItems": 4,
+                    "minItems": 4,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "bezier"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "KeyValue": {
+            "anyOf": [
+              {
+                "description": "A number, such as a scale or an opacity.",
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "description": "A pair, such as a position `[x, y]`.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            ],
+            "description": "A keyframed value: a number, or a pair such as a position."
+          },
+          "KeyframeReport": {
+            "description": "A keyframe as agents read it: its time on the timeline and from the clip's start.",
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position on the timeline."
+              },
+              "interpolation": {
+                "$ref": "#/$defs/Interpolation",
+                "description": "How the value moves on to the next keyframe."
+              },
+              "offset": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position from the clip's start."
+              },
+              "value": {
+                "$ref": "#/$defs/KeyValue",
+                "description": "The value."
+              }
+            },
+            "required": [
+              "at",
+              "offset",
+              "value",
+              "interpolation"
+            ],
+            "type": "object"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          },
+          "Transform": {
+            "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
+            "properties": {
+              "flip_horizontal": {
+                "description": "Mirrors the picture left to right.",
+                "type": "boolean"
+              },
+              "flip_vertical": {
+                "description": "Mirrors the picture top to bottom.",
+                "type": "boolean"
+              },
+              "position": {
+                "description": "Offset of the clip centre from the canvas centre, as fractions of canvas width\nand height; x grows to the right, y grows downwards.",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              "rotation": {
+                "description": "Clockwise rotation in degrees.",
+                "format": "double",
+                "type": "number"
+              },
+              "scale": {
+                "description": "Uniform scale relative to the fitted size (1 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "stretch": {
+                "description": "Extra width and height factors on top of `scale`, for non-uniform scaling\n(`[1, 1]` when omitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The keyframes of a property after a change.",
+        "properties": {
+          "audio": {
+            "$ref": "#/$defs/ClipAudio",
+            "description": "Fades, pan and channels."
+          },
+          "blend": {
+            "$ref": "#/$defs/BlendMode",
+            "description": "Blend mode."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The clip."
+          },
+          "crop": {
+            "$ref": "#/$defs/Crop",
+            "description": "Edges removed from the picture."
+          },
+          "enabled": {
+            "description": "Whether the clip is drawn and heard.",
+            "type": "boolean"
+          },
+          "keyframes": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/$defs/KeyframeReport"
+              },
+              "type": "array"
+            },
+            "description": "Keyframes by property path.",
+            "type": "object"
+          },
+          "opacity": {
+            "description": "Opacity, 0 to 1.",
+            "format": "double",
+            "type": "number"
+          },
+          "property": {
+            "description": "The property.",
+            "type": "string"
+          },
+          "track": {
+            "$ref": "#/$defs/Id",
+            "description": "Its track."
+          },
+          "transform": {
+            "$ref": "#/$defs/Transform",
+            "description": "Placement on the canvas."
+          },
+          "volume": {
+            "description": "Linear audio gain.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "property",
+          "clip",
+          "track",
+          "transform",
+          "crop",
+          "opacity",
+          "blend",
+          "volume",
+          "audio",
+          "enabled",
+          "keyframes"
+        ],
+        "title": "KeyframesChanged",
+        "type": "object"
+      },
+      "summary": "Replace every keyframe of a clip property with a list of offsets from the clip's start and values, in one step: for motion measured by stabilization or tracking, or any animation planned whole."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
@@ -12390,6 +12973,482 @@
         "type": "object"
       },
       "summary": "Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Makes a multicam clip from angles recorded at the same time.",
+        "properties": {
+          "angles": {
+            "description": "The angles: video assets, at least two.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "The multicam timeline's name; \"Multicam\" and a number when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offsets": {
+            "default": [],
+            "description": "Where each angle starts in the shared scene, in the same order: an angle that\nstarted recording later has a larger offset. All zero when omitted; `fosscut\nmulticam sync` and the MCP `multicam` tool measure them from the sound.",
+            "items": {
+              "$ref": "#/$defs/TimeInput"
+            },
+            "type": "array"
+          },
+          "sound": {
+            "default": null,
+            "description": "Which angle's sound plays, by its number from 1 in `angles` (as `multicam.switch`\nnumbers them); the first when omitted.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Where it starts; appended after the track's last clip when omitted."
+          },
+          "timeline": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Timeline to place the multicam clip on; the primary timeline when omitted."
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Id"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Track for the multicam clip; the first video track when omitted."
+          }
+        },
+        "required": [
+          "angles"
+        ],
+        "title": "MulticamCreate",
+        "type": "object"
+      },
+      "name": "multicam.create",
+      "output_schema": {
+        "$defs": {
+          "ClipPlacement": {
+            "description": "Where a clip ended up.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "duration": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Length on the timeline."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "linked": {
+                "description": "The other clips of its group that the edit changed too (ADR-0024).",
+                "items": {
+                  "$ref": "#/$defs/ClipPlacement"
+                },
+                "type": "array"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "track": {
+                "$ref": "#/$defs/Id",
+                "description": "Track id."
+              }
+            },
+            "required": [
+              "clip",
+              "track",
+              "start",
+              "end",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "What `multicam.create` made.",
+        "properties": {
+          "angles": {
+            "description": "Its angle tracks, in the order of `angles`.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "clip": {
+            "$ref": "#/$defs/ClipPlacement",
+            "description": "The multicam clip, showing the first angle."
+          },
+          "timeline": {
+            "$ref": "#/$defs/Id",
+            "description": "The multicam timeline."
+          }
+        },
+        "required": [
+          "timeline",
+          "angles",
+          "clip"
+        ],
+        "title": "MulticamCreated",
+        "type": "object"
+      },
+      "summary": "Make a multicam clip from angles recorded at the same time: a compound clip whose timeline holds each angle on its own track, lined up by their offsets, with one angle's sound. Cut between angles with multicam.switch."
+    },
+    {
+      "input_schema": {
+        "$defs": {
+          "AngleChoice": {
+            "anyOf": [
+              {
+                "description": "The angle's number, from 1.",
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "$ref": "#/$defs/Id",
+                "description": "The angle's track id."
+              }
+            ],
+            "description": "An angle by track id or by number."
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeInput": {
+            "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frames": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "frames"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "seconds": {
+                    "description": "Decimal seconds, for example \"3.9333\"",
+                    "type": [
+                      "string",
+                      "number"
+                    ]
+                  }
+                },
+                "required": [
+                  "seconds"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "timecode": {
+                    "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "timecode"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "flicks": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "flicks"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Cuts to another angle of a multicam clip from a time on.",
+        "properties": {
+          "angle": {
+            "$ref": "#/$defs/AngleChoice",
+            "description": "The angle to show: its track id, or its number from 1 in `multicam.create`'s order."
+          },
+          "at": {
+            "$ref": "#/$defs/TimeInput",
+            "description": "Timeline position of the cut; the clip's start switches the whole part."
+          },
+          "clip": {
+            "$ref": "#/$defs/Id",
+            "description": "The multicam clip (or any part of it after earlier switches)."
+          }
+        },
+        "required": [
+          "clip",
+          "at",
+          "angle"
+        ],
+        "title": "MulticamSwitch",
+        "type": "object"
+      },
+      "name": "multicam.switch",
+      "output_schema": {
+        "$defs": {
+          "ClipPlacement": {
+            "description": "Where a clip ended up.",
+            "properties": {
+              "clip": {
+                "$ref": "#/$defs/Id",
+                "description": "Clip id."
+              },
+              "duration": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Length on the timeline."
+              },
+              "end": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "Position just after the last frame."
+              },
+              "linked": {
+                "description": "The other clips of its group that the edit changed too (ADR-0024).",
+                "items": {
+                  "$ref": "#/$defs/ClipPlacement"
+                },
+                "type": "array"
+              },
+              "start": {
+                "$ref": "#/$defs/TimeReport",
+                "description": "First frame on the timeline."
+              },
+              "track": {
+                "$ref": "#/$defs/Id",
+                "description": "Track id."
+              }
+            },
+            "required": [
+              "clip",
+              "track",
+              "start",
+              "end",
+              "duration"
+            ],
+            "type": "object"
+          },
+          "Flicks": {
+            "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
+            "type": "integer"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          },
+          "TimeReport": {
+            "description": "A time reported in every unit at once, so agents never have to convert (ADR-0005).",
+            "properties": {
+              "flicks": {
+                "$ref": "#/$defs/Flicks",
+                "description": "Exact value in flicks."
+              },
+              "frames": {
+                "description": "Frame index at the timeline rate (the frame containing this time).",
+                "format": "int64",
+                "type": "integer"
+              },
+              "seconds": {
+                "description": "Decimal seconds rounded to microseconds.",
+                "type": "string"
+              },
+              "timecode": {
+                "description": "SMPTE timecode at the timeline rate.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "frames",
+              "timecode",
+              "seconds",
+              "flicks"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "What `multicam.switch` did.",
+        "properties": {
+          "angle": {
+            "$ref": "#/$defs/Id",
+            "description": "The angle's track."
+          },
+          "clip": {
+            "$ref": "#/$defs/ClipPlacement",
+            "description": "The part that now shows the angle."
+          }
+        },
+        "required": [
+          "clip",
+          "angle"
+        ],
+        "title": "MulticamSwitched",
+        "type": "object"
+      },
+      "summary": "Cut a multicam clip to another angle from a time on: it splits there and the part after shows the angle (by number or track id)."
     },
     {
       "input_schema": {
@@ -19058,6 +20117,11 @@
       "meaning": "No library item has this name."
     },
     {
+      "code": "fosscut.multicam.invalid",
+      "hint": "Give two or more video assets to multicam.create; switch angles of a multicam clip by number from 1 or by track id.",
+      "meaning": "A multicam request does not fit its clips or angles."
+    },
+    {
       "code": "fosscut.template.unknown",
       "hint": "capabilities lists the project templates under library.templates.",
       "meaning": "No project template has this name."
@@ -19153,7 +20217,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.12.0",
+  "format_version": "0.13.0",
   "library": {
     "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
     "templates": [

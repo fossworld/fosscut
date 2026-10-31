@@ -176,6 +176,8 @@ pub mod codes {
     pub const LIBRARY_UNKNOWN_ITEM: &str = "fosscut.library.unknown_item";
     /// No project template has this name.
     pub const TEMPLATE_UNKNOWN: &str = "fosscut.template.unknown";
+    /// A multicam request does not fit its clips or angles.
+    pub const MULTICAM_INVALID: &str = "fosscut.multicam.invalid";
     /// Caption words are empty, out of order, overlapping or outside their page.
     pub const CAPTIONS_INVALID_WORDS: &str = "fosscut.captions.invalid_words";
     /// No caption preset has this name.
@@ -427,6 +429,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             LIBRARY_UNKNOWN_ITEM,
             "No library item has this name.",
             "capabilities lists the shapes, stickers and backgrounds under library; fosscut library list shows the sounds too.",
+        ),
+        entry(
+            MULTICAM_INVALID,
+            "A multicam request does not fit its clips or angles.",
+            "Give two or more video assets to multicam.create; switch angles of a multicam clip by number from 1 or by track id.",
         ),
         entry(
             TEMPLATE_UNKNOWN,

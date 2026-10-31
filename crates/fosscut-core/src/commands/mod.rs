@@ -13,6 +13,7 @@ mod marker;
 mod mask;
 mod media;
 mod motion;
+mod multicam;
 mod shape;
 mod speed;
 mod text;
@@ -41,7 +42,8 @@ pub use group::{
     Grouped,
 };
 pub use keyframe::{
-    ClipProperties, ClipSet, Easing, KeyframeRemove, KeyframeReport, KeyframeSet, KeyframesChanged,
+    ClipProperties, ClipSet, Easing, KeyInput, KeyframeRemove, KeyframeReport, KeyframeSet,
+    KeyframeSetAll, KeyframesChanged,
 };
 pub(crate) use keyframe::{effect_keyframe_reports, keyframe_reports};
 pub use library::{
@@ -53,6 +55,9 @@ pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
 pub(crate) use motion::motion_capabilities;
 pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
+pub use multicam::{
+    AngleChoice, MulticamCreate, MulticamCreated, MulticamSwitch, MulticamSwitched,
+};
 pub use shape::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateApply};
 pub(crate) use speed::speed_capabilities;
 pub use speed::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
@@ -102,6 +107,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<MarkerSet>();
     registry.register::<MarkerRemove>();
     registry.register::<ClipSet>();
+    registry.register::<KeyframeSetAll>();
     registry.register::<KeyframeSet>();
     registry.register::<KeyframeRemove>();
     registry.register::<EffectAdd>();
@@ -125,6 +131,8 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<ShapeAdd>();
     registry.register::<ShapeSet>();
     registry.register::<TemplateApply>();
+    registry.register::<MulticamCreate>();
+    registry.register::<MulticamSwitch>();
     registry.register::<CaptionsAdd>();
     registry.register::<CaptionsEdit>();
     registry.register::<CaptionsStyle>();

@@ -12,9 +12,9 @@ use std::process::ExitCode;
 use args::{
     AdjustmentCommand, AnimationCommand, AudioCommand, CaptionsCommand, Cli, ClipCommand,
     ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand, LibraryCommand,
-    LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, ProjectCommand,
-    RevealArgs, SkillTarget, SkillsCommand, TextCommand, TimelineCommand, TrackCommand,
-    TransitionCommand,
+    LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, MulticamCommand,
+    ProjectCommand, RevealArgs, SkillTarget, SkillsCommand, TextCommand, TimelineCommand,
+    TrackCommand, TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -585,6 +585,61 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         ),
         Command::Text(command) => text(cli, command),
         Command::Library(command) => library(cli, command),
+        Command::Multicam(command) => multicam(cli, command),
+        Command::Record {
+            what,
+            list,
+            device,
+            microphone,
+            duration,
+            out,
+            size,
+            fps,
+            at,
+            no_import,
+            input,
+            microphone_input,
+        } => {
+            if *list {
+                let devices = fosscut_engine::record::devices().map_err(|e| engine_error(&e))?;
+                return Ok(Outcome::Query(
+                    "record.devices".into(),
+                    json!({ "devices": devices }),
+                ));
+            }
+            record(
+                cli,
+                &Recording {
+                    what: what.as_deref().unwrap_or_default(),
+                    device: device.clone(),
+                    microphone: microphone.clone(),
+                    duration: duration.as_ref(),
+                    out: out.clone(),
+                    size: size.as_deref(),
+                    fps: fps.as_deref(),
+                    at: at.as_ref(),
+                    import: !no_import,
+                    input: input.as_deref(),
+                    microphone_input: microphone_input.as_deref(),
+                },
+            )
+        }
+        Command::Clip(ClipCommand::SplitScenes { clip }) => split_scenes(cli, clip),
+        Command::Clip(ClipCommand::Stabilize { clip, strength }) => stabilize(cli, clip, *strength),
+        Command::Clip(ClipCommand::Track {
+            clip,
+            region,
+            at,
+            mask,
+            follow,
+        }) => track_region(
+            cli,
+            clip,
+            region,
+            at.as_ref(),
+            mask.as_deref(),
+            follow.as_deref(),
+        ),
         Command::Audio(AudioCommand::Normalize {
             clips,
             target,
@@ -1683,6 +1738,419 @@ fn normalize(
         "audio.normalize".to_string(),
         json!({ "normalization": measured, "response": response }),
     ))
+}
+
+/// Applies the calls a measurement proposed in one change (none when it proposed none)
+/// and reports the measurement under `key` with the response.
+fn apply_measured(
+    cli: &Cli,
+    path: &Path,
+    name: &str,
+    key: &str,
+    report: Value,
+    commands: Vec<Value>,
+) -> Result<Outcome, ApiError> {
+    let response = if commands.is_empty() {
+        None
+    } else {
+        let mut request: Request = serde_json::from_value(json!({ "commands": commands }))
+            .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+        apply_options(cli, &mut request, true);
+        Some(bundle::execute(path, request)?)
+    };
+    Ok(Outcome::Query(
+        name.to_string(),
+        json!({ key: report, "response": response }),
+    ))
+}
+
+fn parse_id(text: &str, what: &str) -> Result<Id, ApiError> {
+    Id::parse(text).map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+}
+
+/// `fosscut clip split-scenes`: measures the shot cuts and splits the clip at them.
+fn split_scenes(cli: &Cli, clip: &str) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let found = fosscut_engine::scenes::split_at_scenes(
+        &snapshot,
+        path.clone(),
+        &parse_id(clip, "clip")?,
+        fosscut_engine::cache_dir(),
+        fosscut_engine::models_dir(),
+        &mut progress_printer("finding scenes"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = found.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "clip.split_scenes",
+        "scenes",
+        json!(found),
+        commands,
+    )
+}
+
+/// `fosscut clip stabilize`: measures the camera's motion and keys the clip to steady it.
+fn stabilize(cli: &Cli, clip: &str, strength: f64) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let plan = fosscut_engine::motion::stabilize(
+        &snapshot,
+        &path,
+        &parse_id(clip, "clip")?,
+        strength,
+        &mut progress_printer("measuring motion"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "clip.stabilize",
+        "motion",
+        motion_report(&plan),
+        commands,
+    )
+}
+
+/// A motion plan without its calls, which the response already shows applied.
+fn motion_report(plan: &fosscut_engine::motion::MotionPlan) -> Value {
+    let mut report = json!(plan);
+    if let Some(object) = report.as_object_mut() {
+        object.remove("commands");
+    }
+    report
+}
+
+/// `fosscut clip track`: follows a region and keys a mask or another clip to it.
+fn track_region(
+    cli: &Cli,
+    clip: &str,
+    region: &[f64],
+    at: Option<&TimeInput>,
+    mask: Option<&str>,
+    follow: Option<&str>,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::motion::{TrackTarget, track};
+    let [x, y, width, height] = region else {
+        return Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            "--region takes four numbers: X,Y,WIDTH,HEIGHT",
+        ));
+    };
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let id = parse_id(clip, "clip")?;
+    let target = match (mask, follow) {
+        (Some(mask), _) => TrackTarget::Mask(parse_id(mask, "mask")?),
+        (None, Some(other)) => TrackTarget::Clip(parse_id(other, "follow")?),
+        (None, None) => {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "give --mask or --follow",
+            ));
+        }
+    };
+    let at = match at {
+        Some(at) => resolve_time(&snapshot, &id, at)?,
+        None => clip_start(&snapshot, &id)?,
+    };
+    let plan = track(
+        &snapshot,
+        &path,
+        &id,
+        fosscut_engine::motion::Region {
+            x: *x,
+            y: *y,
+            width: *width,
+            height: *height,
+        },
+        at,
+        &target,
+        &mut progress_printer("tracking"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "clip.track",
+        "motion",
+        motion_report(&plan),
+        commands,
+    )
+}
+
+/// The timeline containing `clip`.
+fn clip_timeline<'a>(
+    project: &'a Project,
+    clip: &Id,
+) -> Result<(&'a fosscut_model::Timeline, &'a fosscut_model::Clip), ApiError> {
+    project
+        .timelines
+        .values()
+        .find_map(|t| {
+            t.tracks
+                .iter()
+                .flat_map(|track| &track.clips)
+                .find(|c| &c.id == clip)
+                .map(|c| (t, c))
+        })
+        .ok_or_else(|| ApiError::new(codes::CLIP_NOT_FOUND, format!("clip {clip} does not exist")))
+}
+
+fn clip_start(project: &Project, clip: &Id) -> Result<fosscut_time::Flicks, ApiError> {
+    clip_timeline(project, clip).map(|(_, c)| c.start)
+}
+
+/// `at` in flicks, at the rate of the timeline holding `clip`.
+fn resolve_time(
+    project: &Project,
+    clip: &Id,
+    at: &TimeInput,
+) -> Result<fosscut_time::Flicks, ApiError> {
+    let (timeline, _) = clip_timeline(project, clip)?;
+    at.resolve(timeline.format.rate)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("--at: {e}")))
+}
+
+/// `fosscut multicam ...`
+fn multicam(cli: &Cli, command: &MulticamCommand) -> Result<Outcome, ApiError> {
+    match command {
+        MulticamCommand::Create {
+            angles,
+            offsets,
+            max_offset,
+            no_sync,
+            sound,
+            name,
+            start,
+            track,
+            timeline,
+        } => {
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let mut measured = None;
+            let offsets: Vec<Value> = if !offsets.is_empty() {
+                offsets.iter().map(|o| json!(o)).collect()
+            } else if *no_sync {
+                Vec::new()
+            } else {
+                let snapshot = bundle::snapshot(&path)?;
+                let ids = angles
+                    .iter()
+                    .map(|a| parse_id(a, "angle"))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let found = fosscut_engine::motion::sync_offsets(
+                    &snapshot,
+                    &path,
+                    &ids,
+                    max_offset.unwrap_or(0.0),
+                )
+                .map_err(|e| engine_error(&e))?;
+                let offsets = found
+                    .offsets
+                    .iter()
+                    .map(|o| json!({ "flicks": o.get() }))
+                    .collect();
+                measured = Some(found);
+                offsets
+            };
+            let args = object(vec![
+                ("angles", Some(json!(angles))),
+                ("offsets", (!offsets.is_empty()).then(|| json!(offsets))),
+                ("sound", sound.map(|s| json!(s))),
+                ("name", some(name)),
+                ("start", some(start)),
+                ("track", some(track)),
+                ("timeline", some(timeline)),
+            ]);
+            let command = json!({ "command": "multicam.create", "args": args });
+            apply_measured(
+                cli,
+                &path,
+                "multicam.create",
+                "sync",
+                json!(measured),
+                vec![command],
+            )
+        }
+        MulticamCommand::Switch { clip, at, angle } => {
+            let angle = angle
+                .parse::<usize>()
+                .map_or_else(|_| json!(angle), |n| json!(n));
+            write(
+                cli,
+                "multicam.switch",
+                json!({ "clip": clip, "at": at, "angle": angle }),
+            )
+        }
+        MulticamCommand::Sync { angles, max_offset } => {
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let snapshot = bundle::snapshot(&path)?;
+            let ids = angles
+                .iter()
+                .map(|a| parse_id(a, "angle"))
+                .collect::<Result<Vec<_>, _>>()?;
+            let found = fosscut_engine::motion::sync_offsets(
+                &snapshot,
+                &path,
+                &ids,
+                max_offset.unwrap_or(0.0),
+            )
+            .map_err(|e| engine_error(&e))?;
+            Ok(Outcome::Query("multicam.sync".into(), json!(found)))
+        }
+    }
+}
+
+/// What `fosscut record` was asked for.
+struct Recording<'a> {
+    what: &'a str,
+    device: Option<String>,
+    microphone: Option<String>,
+    duration: Option<&'a TimeInput>,
+    out: Option<PathBuf>,
+    size: Option<&'a str>,
+    fps: Option<&'a str>,
+    at: Option<&'a TimeInput>,
+    import: bool,
+    input: Option<&'a str>,
+    microphone_input: Option<&'a str>,
+}
+
+/// `FORMAT:INPUT` as a capture input.
+fn capture_input(text: &str) -> Result<fosscut_engine::record::CaptureInput, ApiError> {
+    let (format, input) = text.split_once(':').ok_or_else(|| {
+        ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("{text}: give an input as FORMAT:INPUT, for example lavfi:sine"),
+        )
+    })?;
+    Ok(fosscut_engine::record::CaptureInput {
+        format: format.to_string(),
+        input: input.to_string(),
+        options: Vec::new(),
+    })
+}
+
+/// `fosscut record`: records into the bundle's `recordings/` folder (or `--out`), then
+/// imports the file and, with `--at`, places it.
+fn record(cli: &Cli, asked: &Recording<'_>) -> Result<Outcome, ApiError> {
+    use fosscut_engine::record::{self, RecordKind, RecordRequest};
+    let what = RecordKind::parse(asked.what).ok_or_else(|| {
+        ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("{}: record microphone, camera or screen", asked.what),
+        )
+    })?;
+    let bundle = if asked.import || asked.out.is_none() {
+        Some(bundle::bundle_path(cli.project.as_deref())?)
+    } else {
+        None
+    };
+    let output = match (&asked.out, &bundle) {
+        (Some(out), _) => out.clone(),
+        (None, Some(bundle)) => record::default_output(bundle, what, std::time::SystemTime::now()),
+        (None, None) => {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "give --out, or a project to record into",
+            ));
+        }
+    };
+    let rate = Rate::FPS_30;
+    let mut request = RecordRequest::new(what, output);
+    request.device = asked.device.clone();
+    request.microphone = asked.microphone.clone();
+    request.input = asked.input.map(capture_input).transpose()?;
+    request.microphone_input = asked.microphone_input.map(capture_input).transpose()?;
+    request.duration = asked
+        .duration
+        .map(|d| d.resolve(rate))
+        .transpose()
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("--duration: {e}")))?;
+    request.rate = asked
+        .fps
+        .map(|fps| fosscut_engine::frame_rate(fps).map_err(|e| engine_error(&e)))
+        .transpose()?;
+    request.size = asked
+        .size
+        .map(|size| {
+            size.split_once('x')
+                .and_then(|(w, h)| Some((w.trim().parse().ok()?, h.trim().parse().ok()?)))
+                .ok_or_else(|| {
+                    ApiError::new(
+                        codes::INVALID_ARGUMENTS,
+                        format!("--size {size}: give WIDTHxHEIGHT, for example 1280x720"),
+                    )
+                })
+        })
+        .transpose()?;
+    request.allow_overwrite = cli.write.allow_destructive;
+    let plan = record::plan(&request).map_err(|e| engine_error(&e))?;
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Enter, or standard input closing, stops a recording; with a duration and no
+    // terminal, standard input is left alone so a closed one does not stop it at once.
+    if request.duration.is_none() || std::io::stdin().is_terminal() {
+        let stopper = std::sync::Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            stopper.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+    }
+    let terminal = std::io::stderr().is_terminal();
+    eprintln!(
+        "recording {}{} to {}; press Enter to stop",
+        plan.device.as_deref().unwrap_or(what.name()),
+        plan.microphone
+            .as_deref()
+            .map(|m| format!(" with {m}"))
+            .unwrap_or_default(),
+        plan.recording.output.display()
+    );
+    let mut shown = -1_i64;
+    let report = record::record(&request, &stop, &mut |recorded| {
+        let seconds = recorded.get() / 705_600_000;
+        if seconds != shown {
+            shown = seconds;
+            if terminal {
+                eprint!("\rrecorded {seconds} s");
+            }
+        }
+    })
+    .map_err(|e| engine_error(&e))?;
+    if terminal {
+        eprintln!();
+    }
+    let mut result = json!({ "recording": report });
+    if let (true, Some(bundle)) = (asked.import, &bundle) {
+        let file = PathBuf::from(&report.output);
+        let mut add = Request::single(
+            "media.add",
+            fosscut_engine::import::media_add_args(&file, None, bundle)?,
+        );
+        apply_options(cli, &mut add, true);
+        let imported = bundle::execute(bundle, add)?;
+        let asset = imported
+            .results
+            .first()
+            .and_then(|r| r["asset"].as_str().map(str::to_string));
+        result["import"] = json!(imported);
+        if let (Some(at), Some(asset)) = (asked.at, asset) {
+            let mut place = Request::single(
+                "clip.add",
+                json!({ "asset": asset, "start": at, "free_track": true }),
+            );
+            apply_options(cli, &mut place, true);
+            place.expected_revision = None;
+            place.request_id = None;
+            result["placed"] = json!(bundle::execute(bundle, place)?);
+        }
+    }
+    Ok(Outcome::Query("record".into(), result))
 }
 
 fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {

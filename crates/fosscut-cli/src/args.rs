@@ -119,6 +119,9 @@ pub enum Command {
     /// Copy and paste clips.
     #[command(subcommand)]
     Clips(ClipsCommand),
+    /// Multicam editing: angles recorded at the same time in one clip, cut between them.
+    #[command(subcommand)]
+    Multicam(MulticamCommand),
     /// Timeline markers.
     #[command(subcommand)]
     Marker(MarkerCommand),
@@ -181,6 +184,51 @@ pub enum Command {
         /// Write the captions beside the file as srt or vtt subtitles.
         #[arg(long)]
         subtitles: Option<String>,
+    },
+    /// Record a voiceover, a camera or the screen straight into the project: the file goes
+    /// to the bundle's `recordings/` folder and is imported (and placed with --at). Stops
+    /// after --duration, when Enter is pressed, or when standard input closes.
+    Record {
+        /// microphone (a voiceover), camera or screen.
+        #[arg(required_unless_present = "list")]
+        what: Option<String>,
+        /// List the microphones, cameras and screens of this machine instead.
+        #[arg(long)]
+        list: bool,
+        /// The device: its name, a part of it, or its number from 1 in --list; the first
+        /// of its kind when omitted.
+        #[arg(long)]
+        device: Option<String>,
+        /// For camera and screen: the microphone to record with it, chosen the same way, or
+        /// `none`. A camera takes the first microphone and a screen none when omitted.
+        #[arg(long)]
+        microphone: Option<String>,
+        /// Stop after this long, for example 30s.
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+        /// The file to write; a new file in the bundle's `recordings/` folder when omitted.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Picture size as WIDTHxHEIGHT, for example 1280x720 (1920x1080 for a screen and
+        /// 1280x720 for a camera when omitted).
+        #[arg(long)]
+        size: Option<String>,
+        /// Frame rate, 30 when omitted.
+        #[arg(long)]
+        fps: Option<String>,
+        /// Also place the recording on the timeline from this time, on a free track.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// Only write the file; do not import it.
+        #[arg(long, conflicts_with = "at")]
+        no_import: bool,
+        /// An FFmpeg input instead of a device, as FORMAT:INPUT (for example
+        /// `lavfi:sine=frequency=440`).
+        #[arg(long, hide = true)]
+        input: Option<String>,
+        /// A second FFmpeg input for the sound, as FORMAT:INPUT.
+        #[arg(long, hide = true)]
+        microphone_input: Option<String>,
     },
     /// Install FossCut's editing skills for AI agents, or list them.
     #[command(subcommand)]
@@ -468,6 +516,46 @@ pub enum ClipCommand {
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+    /// Split a video clip at its scene changes, so each shot becomes a clip of its own.
+    /// The shot cuts are measured from the media once and cached.
+    SplitScenes {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+    },
+    /// Steady a shaky video clip: measures how the camera moved and keys the clip's
+    /// position, rotation and scale to cancel the shake, with one zoom (up to 1.5) that
+    /// hides the moving edges. Replaces those properties' keyframes.
+    Stabilize {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// How much motion to remove, from 0 (none) to 1 (very smooth); up to 3 for a
+        /// locked-off look.
+        #[arg(long, default_value_t = fosscut_engine::motion::DEFAULT_STRENGTH)]
+        strength: f64,
+    },
+    /// Follow a region of a video clip's picture from a time on: one of the clip's masks
+    /// (mask tracking), or another clip such as a title or sticker (motion tracking), moves
+    /// with it. Replaces the keyframes of the mask's centre or the other clip's position.
+    Track {
+        /// The clip whose picture is followed.
+        #[arg(long)]
+        clip: String,
+        /// The region at --at as X,Y,WIDTH,HEIGHT: its centre and size as fractions of the
+        /// picture, for example 0.5,0.4,0.2,0.3.
+        #[arg(long, value_delimiter = ',', num_args = 1, required = true)]
+        region: Vec<f64>,
+        /// Where the region is given, on the timeline; the clip's start when omitted.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// A mask of the clip whose centre follows the region.
+        #[arg(long, required_unless_present = "follow", conflicts_with = "follow")]
+        mask: Option<String>,
+        /// Another clip that moves as the region does, from where it is.
+        #[arg(long)]
+        follow: Option<String>,
     },
     /// Split a clip at a timeline position.
     Split {
@@ -1267,6 +1355,67 @@ pub enum AudioCommand {
         /// quieter than the target.
         #[arg(long)]
         no_limit: bool,
+    },
+}
+
+/// `fosscut multicam ...`
+#[derive(Debug, Subcommand)]
+pub enum MulticamCommand {
+    /// Make a multicam clip from angles recorded at the same time: each angle on a track of
+    /// its own in a new compound timeline, lined up by their offsets (measured from their
+    /// sound unless --offset is given), with one angle's sound.
+    Create {
+        /// The angles' asset ids, at least two, in order; the first shows at the start.
+        #[arg(required = true, num_args = 2..)]
+        angles: Vec<String>,
+        /// Each angle's start in the scene, in order (repeat the option): an angle that
+        /// started later has a larger offset. Measured from the sound when omitted.
+        #[arg(long = "offset", value_parser = parse_time)]
+        offsets: Vec<TimeInput>,
+        /// Look at most this many seconds either way when measuring offsets; any offset
+        /// when omitted.
+        #[arg(long)]
+        max_offset: Option<f64>,
+        /// Do not measure offsets: line the angles up at their starts.
+        #[arg(long, conflicts_with = "offsets")]
+        no_sync: bool,
+        /// Which angle's sound plays, by number from 1; the first when omitted.
+        #[arg(long)]
+        sound: Option<usize>,
+        /// The multicam timeline's name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Where the multicam clip starts; appended when omitted.
+        #[arg(long, value_parser = parse_time)]
+        start: Option<TimeInput>,
+        /// Track for the multicam clip.
+        #[arg(long)]
+        track: Option<String>,
+        /// Timeline for the multicam clip; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Cut a multicam clip to another angle from a time on.
+    Switch {
+        /// The multicam clip, or a part of it.
+        #[arg(long)]
+        clip: String,
+        /// Timeline position of the cut; the part's start switches the whole part.
+        #[arg(long, value_parser = parse_time)]
+        at: TimeInput,
+        /// The angle: its number from 1, or its track id.
+        #[arg(long)]
+        angle: String,
+    },
+    /// Measure how far apart angles recorded at the same time started, from their sound,
+    /// without changing the project.
+    Sync {
+        /// The angles' asset ids, at least two; offsets are relative to the first.
+        #[arg(required = true, num_args = 2..)]
+        angles: Vec<String>,
+        /// Look at most this many seconds either way; any offset when omitted.
+        #[arg(long)]
+        max_offset: Option<f64>,
     },
 }
 

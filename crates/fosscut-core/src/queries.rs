@@ -418,6 +418,37 @@ fn clip_view(
                     view["timeline"] = json!(timeline);
                     view["timeline_name"] =
                         json!(project.timelines.get(timeline).map(|t| t.name.clone()));
+                    // A multicam clip: the angle it shows, numbered as multicam.switch
+                    // takes them, and every angle it can show (ADR-0029).
+                    if let Some(angle) = &clip.angle {
+                        let angles: Vec<Value> = project
+                            .timelines
+                            .get(timeline)
+                            .map(|t| {
+                                t.tracks
+                                    .iter()
+                                    .rev()
+                                    .filter(|track| track.kind == fosscut_model::TrackKind::Video)
+                                    .enumerate()
+                                    .map(|(index, track)| {
+                                        json!({
+                                            "number": index + 1,
+                                            "id": track.id,
+                                            "name": track.name,
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        view["angle"] = json!(angle);
+                        view["angle_number"] = json!(
+                            angles
+                                .iter()
+                                .find(|a| a["id"] == json!(angle))
+                                .map(|a| a["number"].clone())
+                        );
+                        view["angles"] = json!(angles);
+                    }
                 }
                 ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
                     view["asset"] = json!(asset);

@@ -843,6 +843,25 @@ fn check_content(
     if let ClipContent::Shape(shape) = content {
         check_shape(issues, project, shape, path);
     }
+    if let Some(angle) = &clip.angle {
+        let shown = match content {
+            ClipContent::Timeline { timeline, .. } => {
+                project.timelines.get(timeline).is_some_and(|t| {
+                    t.tracks
+                        .iter()
+                        .any(|track| &track.id == angle && track.kind == TrackKind::Video)
+                })
+            }
+            _ => false,
+        };
+        if !shown {
+            issues.push(
+                path,
+                "fosscut.model.angle",
+                "an angle must be a video track of the compound clip's timeline",
+            );
+        }
+    }
     let Some(asset_id) = content.asset() else {
         return;
     };

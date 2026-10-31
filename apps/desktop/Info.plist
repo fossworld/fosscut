@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged by Tauri into the app's Info.plist: why FossCut asks to record. Screen
+     recording has no key here; macOS asks for it when a recording starts. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>FossCut records voiceovers and the sound of camera and screen recordings from your microphone.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>FossCut records video from your camera into your project.</string>
+</dict>
+</plist>

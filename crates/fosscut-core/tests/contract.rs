@@ -63,6 +63,20 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             json!({ "clip": added.results[0]["clip"], "set": { "fill": { "color": "#00AAFF" } } })
         }
         "template.apply" => json!({ "template": "photo-montage", "media": [asset] }),
+        "multicam.create" => json!({ "angles": [asset, asset], "offsets": ["0s", "1s"] }),
+        "multicam.switch" => {
+            let made = run(
+                &mut session,
+                "multicam.create",
+                json!({ "angles": [asset, asset] }),
+            );
+            let placed = &made.results[0]["clip"];
+            let at = placed["start"]["flicks"].as_i64().unwrap() + 705_600_000;
+            json!({ "clip": placed["clip"], "at": { "flicks": at }, "angle": 2 })
+        }
+        "keyframe.set_all" => json!({ "clip": clip, "property": "opacity", "keys": [
+            { "offset": "0s", "value": 1 }, { "offset": "1s", "value": 0.5 }
+        ] }),
         "captions.add" => json!({
             "words": [
                 { "text": "Hello", "start": { "seconds": "0.5" }, "end": { "seconds": "0.9" } },

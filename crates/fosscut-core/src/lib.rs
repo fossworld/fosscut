@@ -43,6 +43,9 @@ pub use commands::{
     CopiedClip, Grouped, Horizontal, MarkerAdd, MarkerRemove, MarkerReport, MarkerSet, Pasted,
     SplitAll, TimelineSplit, Vertical,
 };
+pub use commands::{
+    AngleChoice, MulticamCreate, MulticamCreated, MulticamSwitch, MulticamSwitched,
+};
 pub use commands::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub use commands::{
     AssetChanged, FolderAction, Folders, MediaFolder, MediaMove, MediaMoved, MediaRelink,
@@ -52,9 +55,10 @@ pub use commands::{
 pub use commands::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
     ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,
-    ClipSplitResult, ClipTrim, Easing, Fit, KeyframeRemove, KeyframeReport, KeyframeSet,
-    KeyframesChanged, MediaAdd, MediaAdded, Paging, RangeInput, RangeReport, RangesRemoved,
-    TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
+    ClipSplitResult, ClipTrim, Easing, Fit, KeyInput, KeyframeRemove, KeyframeReport, KeyframeSet,
+    KeyframeSetAll, KeyframesChanged, MediaAdd, MediaAdded, Paging, RangeInput, RangeReport,
+    RangesRemoved, TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd,
+    TrackAdded, WordInput,
 };
 pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};

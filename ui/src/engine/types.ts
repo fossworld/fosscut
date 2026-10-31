@@ -172,6 +172,10 @@ export interface ClipView {
   /** A compound clip's timeline, and its name (ADR-0025). */
   timeline?: string;
   timeline_name?: string;
+  /** A multicam clip's angle (ADR-0029): the track of its timeline whose picture shows. */
+  angle?: string;
+  /** A multicam clip's angles, numbered from 1 in this order as `multicam.switch` takes them. */
+  angles?: AngleView[];
   /** The group of clips it edits together with (ADR-0024). */
   group?: string;
   /** A video clip whose sound plays from an extracted audio clip. */
@@ -355,6 +359,59 @@ export interface JobStatus {
   report?: ExportReport;
   /** The typed error, once it failed or was cancelled. */
   error?: ApiError;
+}
+
+/** What a capture device records, and what a recording records from. */
+export type DeviceKind = "microphone" | "camera" | "screen";
+
+/** A capture device on this machine. */
+export interface CaptureDevice {
+  kind: DeviceKind;
+  /** The name people know it by, such as `FaceTime HD Camera`. */
+  name: string;
+  /** The FFmpeg input format and what it calls the device. */
+  format: string;
+  input: string;
+}
+
+/** What to record (`record_start`). */
+export interface RecordChoice {
+  what: DeviceKind;
+  /** The device by name; the first of its kind when omitted. */
+  device?: string;
+  /** For a camera or screen, the microphone recorded with it by name, or `none`. */
+  microphone?: string;
+  /** For a camera or screen, `WIDTHxHEIGHT`. */
+  size?: string;
+  /** For a camera or screen, the frame rate. */
+  fps?: string;
+  /** Where the recording goes on the timeline once it is imported, in flicks. */
+  at?: number;
+}
+
+/** A finished recording: the file and what it was recorded from. Durations in flicks. */
+export interface RecordingReport {
+  output: string;
+  what: DeviceKind;
+  device?: string;
+  microphone?: string;
+  preset: string;
+  duration: number;
+  /** True when it was stopped rather than ending by itself. */
+  stopped: boolean;
+  elapsed_ms: number;
+}
+
+/**
+ * A recording's status (`progress.done` is the whole seconds recorded), and once it
+ * succeeded its report and the asset and clip it became.
+ */
+export interface RecordState extends JobStatus {
+  recording?: RecordingReport;
+  asset?: string;
+  clip?: string;
+  /** Why the file could not be imported or placed; it stays in the project's folder. */
+  import_error?: ApiError;
 }
 
 export type MaskShape = "rectangle" | "ellipse" | "linear" | "mirror" | "star" | "heart" | "path" | "text" | "brush";
@@ -576,6 +633,87 @@ export interface Normalization {
   clips: Leveled[];
   /** One `clip.set` per measured clip, to apply as one edit. */
   commands: CommandCall[];
+}
+
+/** An angle of a multicam clip: a video track of its timeline. */
+export interface AngleView {
+  id: string;
+  name?: string | null;
+}
+
+/** A region of a clip's picture: centre and size as fractions of the picture as displayed. */
+export interface Region {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Shot cuts found in a clip, in timeline flicks, and the response of splitting there. */
+export interface SceneSplit {
+  scenes: { clip: string; cuts: number[] };
+  /** Null when the clip has no cuts, so nothing was split. */
+  response: EditResponse | null;
+}
+
+/** A timeline range where tracking lost the region and held its last place, in flicks. */
+export interface LostRange {
+  start: number;
+  end: number;
+}
+
+/** Motion measured in a clip and applied as keyframes: by stabilizing or tracking. */
+export interface MotionResult {
+  motion: {
+    /** The clip keyed: the one stabilized, or the mask's clip or follower when tracking. */
+    clip: string;
+    frames: number;
+    /** Stabilizing: the zoom that hides the moving edges, from 1 to 1.5. */
+    zoom?: number;
+    /** Tracking: where the region was lost. */
+    lost?: LostRange[];
+  };
+  response: EditResponse | null;
+}
+
+/** What to track and what follows it (`clip_track`): exactly one of `mask` and `follow`. */
+export interface TrackRequest {
+  clip: string;
+  region: Region;
+  /** The timeline time the region was drawn at, inside the clip, in flicks. */
+  at: number;
+  /** A mask of the clip, whose centre then follows the region. */
+  mask?: string;
+  /** Another clip, such as a title or sticker, which then moves as the region does. */
+  follow?: string;
+  expected_revision?: number;
+}
+
+/** How to make a multicam clip (`multicam_create`). */
+export interface MulticamRequest {
+  /** Video assets recorded at the same time, at least two. */
+  angles: string[];
+  /** Line the angles up by their sound; they all start together when false. */
+  sync: boolean;
+  /** Whose sound plays, by angle number from 1; the first when omitted. */
+  sound?: number;
+  name?: string;
+  /** Where the clip starts, in flicks. */
+  start?: number;
+  expected_revision?: number;
+}
+
+/** Offsets measured from the angles' sound, in flicks, and how sure each match is (0 to 1). */
+export interface SyncOffsets {
+  offsets: number[];
+  confidence: number[];
+}
+
+/** What making a multicam clip measured and did. */
+export interface MulticamResult {
+  /** Null when the angles were not synced by sound. */
+  sync: SyncOffsets | null;
+  response: EditResponse;
 }
 
 export interface TrackView {

@@ -275,6 +275,47 @@ pub struct JobArgs {
     pub wait_seconds: Option<u64>,
 }
 
+/// What the `record` tool does.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordAction {
+    /// List the microphones, cameras and screens of this machine.
+    Devices,
+    /// Start recording as a background job.
+    Start,
+}
+
+/// Arguments of the `record` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct RecordArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// `devices` or `start`.
+    pub action: RecordAction,
+    /// start: `microphone` (a voiceover), `camera` or `screen`.
+    pub what: Option<String>,
+    /// start: the device by name, a part of its name, or its number from 1 among its kind
+    /// in `devices`; the first of its kind when omitted.
+    pub device: Option<String>,
+    /// start, for camera and screen: the microphone to record with it, chosen the same way,
+    /// or `none`. A camera takes the first microphone and a screen none when omitted.
+    pub microphone: Option<String>,
+    /// start: stop after this long; until job_cancel when omitted.
+    pub duration: Option<TimeInput>,
+    /// start: picture size as [width, height]; 1920x1080 for a screen and 1280x720 for a
+    /// camera when omitted.
+    pub size: Option<[u32; 2]>,
+    /// start: frame rate such as 30 or 60; 30 when omitted.
+    pub fps: Option<String>,
+    /// start: an FFmpeg input as FORMAT:INPUT instead of a device (for example
+    /// `lavfi:sine=frequency=440`).
+    pub input: Option<String>,
+    /// start: `true` only when the user asked you to record. Recording uses their
+    /// microphone, camera or screen.
+    #[serde(default)]
+    pub confirm: bool,
+}
+
 /// Arguments of `models`.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct ModelsArgs {
@@ -417,6 +458,91 @@ pub struct NormalizeArgs {
     /// Add or adjust an `audio.limiter` where the peaks leave too little room for the
     /// volume alone (the default); false only changes volumes.
     pub limit: Option<bool>,
+    /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
+    /// Report what would change without committing it.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Retry key.
+    pub request_id: Option<String>,
+    /// Why, recorded in the project's history.
+    pub reason: Option<String>,
+}
+
+/// What the `auto_edit` tool does.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoEditAction {
+    /// Split a video clip at its scene changes.
+    SplitScenes,
+    /// Steady a shaky video clip.
+    Stabilize,
+    /// Make a mask or another clip follow a region of a video clip's picture.
+    Track,
+    /// Make a multicam clip from angles recorded at the same time, lined up by their sound.
+    Multicam,
+    /// Only measure how far apart angles recorded at the same time started.
+    MulticamSync,
+}
+
+/// A region of a picture: its centre and size as fractions of the picture.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+pub struct RegionArg {
+    /// The centre's distance from the left edge, 0 to 1.
+    pub x: f64,
+    /// The centre's distance from the top edge, 0 to 1.
+    pub y: f64,
+    /// The width, 0 to 1.
+    pub width: f64,
+    /// The height, 0 to 1.
+    pub height: f64,
+}
+
+/// Arguments of the `auto_edit` tool.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct AutoEditArgs {
+    /// Path of a `.fosscut` bundle; the open project when omitted.
+    pub project: Option<String>,
+    /// `split_scenes`, `stabilize`, `track`, `multicam` or `multicam_sync`.
+    pub action: AutoEditAction,
+    /// split_scenes, stabilize, track: the video clip to measure.
+    pub clip: Option<String>,
+    /// stabilize: how much motion to remove, 0 (none) to 1 (very smooth), up to 3 for a
+    /// locked-off look; 0.5 when omitted.
+    pub strength: Option<f64>,
+    /// track: the region to follow at `at`, in the picture as it shows (find it with
+    /// frame_grab).
+    pub region: Option<RegionArg>,
+    /// track: the timeline time where `region` is given; the clip's start when omitted.
+    pub at: Option<TimeInput>,
+    /// track: a mask of the clip whose centre follows the region (mask tracking).
+    pub mask: Option<String>,
+    /// track: another clip, such as a title or sticker, that moves as the region does from
+    /// where it is (motion tracking).
+    pub follow: Option<String>,
+    /// multicam, multicam_sync: the angles' video asset ids, at least two, in order; the
+    /// first shows at the start.
+    #[serde(default)]
+    pub angles: Vec<String>,
+    /// multicam: each angle's start in the scene, in order; measured from their sound when
+    /// omitted, unless sync is false.
+    #[serde(default)]
+    pub offsets: Vec<TimeInput>,
+    /// multicam: false lines the angles up at their starts instead of measuring offsets.
+    pub sync: Option<bool>,
+    /// multicam, multicam_sync: look at most this many seconds either way; any offset when
+    /// omitted.
+    pub max_offset_seconds: Option<f64>,
+    /// multicam: which angle's sound plays, by number from 1; the first when omitted.
+    pub sound: Option<usize>,
+    /// multicam: the multicam timeline's name.
+    pub name: Option<String>,
+    /// multicam: where the multicam clip starts; appended when omitted.
+    pub start: Option<TimeInput>,
+    /// multicam: track for the multicam clip.
+    pub track: Option<String>,
+    /// multicam: timeline for the multicam clip; the primary timeline when omitted.
+    pub timeline: Option<String>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would change without committing it.

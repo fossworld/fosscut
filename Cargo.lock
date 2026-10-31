@@ -1365,6 +1365,7 @@ dependencies = [
  "fosscut-media",
  "fosscut-model",
  "fosscut-time",
+ "rustfft",
  "schemars 1.2.3",
  "serde",
  "serde_json",

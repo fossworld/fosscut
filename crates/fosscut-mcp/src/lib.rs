@@ -44,10 +44,11 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, tool, tool_handler,
 use serde_json::{Value, json};
 
 use params::{
-    CapabilitiesArgs, CaptionsAction, CaptionsArgs, ColorAction, ColorArgs, Detail, EditArgs,
-    ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs, LibraryAction, LibraryArgs,
-    MediaAnalyzeArgs, MediaImportArgs, ModelsArgs, NormalizeArgs, ProjectArgs, ProjectNewArgs,
-    ProjectOpenArgs, QueryArgs, SheetArgs, TimelineReadArgs,
+    AutoEditAction, AutoEditArgs, CapabilitiesArgs, CaptionsAction, CaptionsArgs, ColorAction,
+    ColorArgs, Detail, EditArgs, ExportArgs, FrameArgs, HistoryArgs, HistoryStepArgs, JobArgs,
+    LibraryAction, LibraryArgs, MediaAnalyzeArgs, MediaImportArgs, ModelsArgs, NormalizeArgs,
+    ProjectArgs, ProjectNewArgs, ProjectOpenArgs, QueryArgs, RecordAction, RecordArgs, SheetArgs,
+    TimelineReadArgs,
 };
 
 /// What the server tells agents when they connect.
@@ -62,6 +63,15 @@ Times need a unit: {\"frames\": n}, {\"seconds\": \"1.5\"}, {\"timecode\": \"HH:
 Errors come back as {\"error\": {code, message, hint, details}}: follow the hint.
 When project_info or project_open shows session.live, the user has the project open in the FossCut app: your edits appear there live and the user may edit too, so after a fosscut.revision.conflict read again and re-plan.
 The fosscut-basics prompt (also the resource fosscut://skills/fosscut-basics) is the full guide.";
+
+/// A motion plan without its calls, which the response shows applied.
+fn motion_summary(plan: &fosscut_engine::motion::MotionPlan) -> Value {
+    let mut report = json!(plan);
+    if let Some(object) = report.as_object_mut() {
+        object.remove("commands");
+    }
+    report
+}
 
 /// Longest `job_status` wait, in seconds.
 const MAX_WAIT_SECONDS: u64 = 60;
@@ -156,6 +166,56 @@ fn actor(context: &RequestContext<RoleServer>) -> String {
 
 fn as_value<T: serde::Serialize>(value: &T) -> Value {
     serde_json::to_value(value).unwrap_or_default()
+}
+
+fn parse_id(text: &str, what: &str) -> Result<fosscut_model::Id, ApiError> {
+    fosscut_model::Id::parse(text)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+}
+
+fn required<T>(value: Option<T>, message: &str) -> Result<T, ApiError> {
+    value.ok_or_else(|| ApiError::new(codes::INVALID_ARGUMENTS, message))
+}
+
+/// Where `clip` is: its timeline and the clip.
+fn located<'a>(
+    project: &'a fosscut_model::Project,
+    clip: &fosscut_model::Id,
+) -> Result<(&'a fosscut_model::Timeline, &'a fosscut_model::Clip), ApiError> {
+    project
+        .timelines
+        .values()
+        .find_map(|t| {
+            t.tracks
+                .iter()
+                .flat_map(|track| &track.clips)
+                .find(|c| &c.id == clip)
+                .map(|c| (t, c))
+        })
+        .ok_or_else(|| ApiError::new(codes::CLIP_NOT_FOUND, format!("clip {clip} does not exist")))
+}
+
+/// The envelope of a write a tool makes from proposed calls.
+struct WriteOptions {
+    expected_revision: Option<u64>,
+    dry_run: bool,
+    request_id: Option<String>,
+    reason: Option<String>,
+    actor: String,
+}
+
+impl WriteOptions {
+    fn request(self, commands: Vec<Value>) -> Result<Request, ApiError> {
+        let mut write: Request = serde_json::from_value(json!({ "commands": commands }))
+            .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+        write.expected_revision = self.expected_revision;
+        write.dry_run = self.dry_run;
+        write.request_id = self.request_id;
+        write.reason = self.reason;
+        write.actor = self.actor;
+        write.at_ms = project::now_ms();
+        Ok(write)
+    }
 }
 
 /// Project info with `session`: whether the desktop app or `fosscut host` has the project
@@ -814,6 +874,167 @@ impl FosscutServer {
         )
     }
 
+    /// Edits measured from media.
+    #[tool(
+        description = "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Returns the measurement and the response; check with frame_grab or contact_sheet."
+    )]
+    async fn auto_edit(
+        &self,
+        params: Parameters<AutoEditArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let bundle = match self.bundle(args.project.clone()) {
+            Ok(bundle) => bundle,
+            Err(error) => return Ok(failure(&error)),
+        };
+        let actor = actor(&context);
+        let state = Arc::clone(&self.state);
+        reply(
+            blocking(move || {
+                use fosscut_engine::motion::{self, Region, TrackTarget};
+                let snapshot = state.projects.snapshot(&bundle)?;
+                let clip = || {
+                    let clip = required(args.clip.as_deref(), "this action needs clip")?;
+                    parse_id(clip, "clip")
+                };
+                let angles = || {
+                    args.angles
+                        .iter()
+                        .map(|a| parse_id(a, "angle"))
+                        .collect::<Result<Vec<_>, _>>()
+                };
+                let max_offset = args.max_offset_seconds.unwrap_or(0.0);
+                let mut progress = |_: fosscut_engine::Progress| true;
+                let (key, report, commands) = match args.action {
+                    AutoEditAction::SplitScenes => {
+                        let found = fosscut_engine::scenes::split_at_scenes(
+                            &snapshot,
+                            bundle.clone(),
+                            &clip()?,
+                            fosscut_engine::cache_dir(),
+                            fosscut_engine::models_dir(),
+                            &mut progress,
+                        )?;
+                        let commands = found.commands.clone();
+                        ("scenes", json!({ "clip": found.clip, "cuts": found.cuts }), commands)
+                    }
+                    AutoEditAction::Stabilize => {
+                        let plan = motion::stabilize(
+                            &snapshot,
+                            &bundle,
+                            &clip()?,
+                            args.strength.unwrap_or(motion::DEFAULT_STRENGTH),
+                            &mut progress,
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("motion", motion_summary(&plan), commands)
+                    }
+                    AutoEditAction::Track => {
+                        let clip = clip()?;
+                        let region = required(
+                            args.region,
+                            "track needs region: the centre and size to follow",
+                        )?;
+                        let target = match (&args.mask, &args.follow) {
+                            (Some(mask), None) => TrackTarget::Mask(parse_id(mask, "mask")?),
+                            (None, Some(other)) => TrackTarget::Clip(parse_id(other, "follow")?),
+                            _ => {
+                                return Err(ApiError::new(
+                                    codes::INVALID_ARGUMENTS,
+                                    "track needs either mask (a mask of the clip) or follow (another clip)",
+                                ));
+                            }
+                        };
+                        let (timeline, found) = located(&snapshot, &clip)?;
+                        let at = match &args.at {
+                            Some(at) => at.resolve(timeline.format.rate).map_err(|e| {
+                                ApiError::new(codes::INVALID_ARGUMENTS, format!("at: {e}"))
+                            })?,
+                            None => found.start,
+                        };
+                        let plan = motion::track(
+                            &snapshot,
+                            &bundle,
+                            &clip,
+                            Region {
+                                x: region.x,
+                                y: region.y,
+                                width: region.width,
+                                height: region.height,
+                            },
+                            at,
+                            &target,
+                            &mut progress,
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("motion", motion_summary(&plan), commands)
+                    }
+                    AutoEditAction::MulticamSync => {
+                        let found = motion::sync_offsets(&snapshot, &bundle, &angles()?, max_offset)?;
+                        return Ok(json!({ "sync": found }));
+                    }
+                    AutoEditAction::Multicam => {
+                        let mut measured = Value::Null;
+                        let offsets: Vec<Value> = if !args.offsets.is_empty() {
+                            args.offsets.iter().map(|o| json!(o)).collect()
+                        } else if args.sync == Some(false) {
+                            Vec::new()
+                        } else {
+                            let found =
+                                motion::sync_offsets(&snapshot, &bundle, &angles()?, max_offset)?;
+                            let offsets = found
+                                .offsets
+                                .iter()
+                                .map(|o| json!({ "flicks": o.get() }))
+                                .collect();
+                            measured = json!(found);
+                            offsets
+                        };
+                        let mut call = json!({ "angles": args.angles });
+                        if !offsets.is_empty() {
+                            call["offsets"] = json!(offsets);
+                        }
+                        for (name, value) in [
+                            ("sound", args.sound.map(|s| json!(s))),
+                            ("name", args.name.as_ref().map(|n| json!(n))),
+                            ("start", args.start.as_ref().map(|t| json!(t))),
+                            ("track", args.track.as_ref().map(|t| json!(t))),
+                            ("timeline", args.timeline.as_ref().map(|t| json!(t))),
+                        ] {
+                            if let Some(value) = value {
+                                call[name] = value;
+                            }
+                        }
+                        (
+                            "sync",
+                            measured,
+                            vec![json!({ "command": "multicam.create", "args": call })],
+                        )
+                    }
+                };
+                if commands.is_empty() {
+                    return Ok(json!({ key: report, "committed": false }));
+                }
+                let write = WriteOptions {
+                    expected_revision: args.expected_revision,
+                    dry_run: args.dry_run,
+                    request_id: args.request_id,
+                    reason: args.reason,
+                    actor,
+                }
+                .request(commands)?;
+                let response = state.projects.execute(&bundle, write)?;
+                let mut value = as_value(&response);
+                if !report.is_null() {
+                    value[key] = report;
+                }
+                Ok(value)
+            })
+            .await,
+        )
+    }
+
     /// Lists and adds library items.
     #[tool(
         description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project: sounds and music are imported and placed at start, shapes, stickers and backgrounds drawn, titles and templates added with lines and media, styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (sounds are imported in a step of their own first)."
@@ -1234,9 +1455,87 @@ impl FosscutServer {
         reply(result)
     }
 
+    /// Records a voiceover, a camera or the screen.
+    #[tool(
+        description = "Record a voiceover, a camera or the screen of this machine into the project's recordings folder. Only when the user asked you to record: start needs confirm true. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes."
+    )]
+    async fn record(&self, params: Parameters<RecordArgs>) -> Result<CallToolResult, ErrorData> {
+        let args = params.0;
+        let state = Arc::clone(&self.state);
+        let bundle = match args.action {
+            RecordAction::Devices => None,
+            RecordAction::Start => match self.bundle(args.project.clone()) {
+                Ok(bundle) => Some(bundle),
+                Err(error) => return Ok(failure(&error)),
+            },
+        };
+        reply(
+            blocking(move || {
+                use fosscut_engine::record::{self, CaptureInput, RecordKind, RecordRequest};
+                let Some(bundle) = bundle else {
+                    return Ok(json!({ "devices": record::devices()? }));
+                };
+                if !args.confirm {
+                    return Err(ApiError::new(
+                        "fosscut.record.confirmation_required",
+                        "recording uses the user's microphone, camera or screen: start it only when they asked, with confirm true",
+                    ));
+                }
+                let what = args
+                    .what
+                    .as_deref()
+                    .and_then(RecordKind::parse)
+                    .ok_or_else(|| {
+                        ApiError::new(
+                            codes::INVALID_ARGUMENTS,
+                            "start needs what: microphone, camera or screen",
+                        )
+                    })?;
+                let output = record::default_output(&bundle, what, std::time::SystemTime::now());
+                let mut request = RecordRequest::new(what, output);
+                request.device = args.device;
+                request.microphone = args.microphone;
+                request.input = args
+                    .input
+                    .as_deref()
+                    .map(|text| {
+                        let (format, input) = text.split_once(':').ok_or_else(|| {
+                            ApiError::new(
+                                codes::INVALID_ARGUMENTS,
+                                "input: give FORMAT:INPUT, for example lavfi:sine",
+                            )
+                        })?;
+                        Ok::<_, ApiError>(CaptureInput {
+                            format: format.into(),
+                            input: input.into(),
+                            options: Vec::new(),
+                        })
+                    })
+                    .transpose()?;
+                request.duration = args
+                    .duration
+                    .as_ref()
+                    .map(|d| d.resolve(Rate::FPS_30))
+                    .transpose()
+                    .map_err(|e| {
+                        ApiError::new(codes::INVALID_ARGUMENTS, format!("duration: {e}"))
+                    })?;
+                request.size = args.size.map(|[w, h]| (w, h));
+                request.rate = args
+                    .fps
+                    .as_deref()
+                    .map(fosscut_engine::frame_rate)
+                    .transpose()?;
+                let status = state.jobs.start_recording(request)?;
+                Ok(as_value(&status))
+            })
+            .await,
+        )
+    }
+
     /// Reports an export job.
     #[tool(
-        description = "The state of an export job (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
+        description = "The state of a job from export, media_analyze or record (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis or the recording; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
         annotations(read_only_hint = true)
     )]
     async fn job_status(&self, params: Parameters<JobArgs>) -> Result<CallToolResult, ErrorData> {
@@ -1257,7 +1556,7 @@ impl FosscutServer {
 
     /// Cancels an export job.
     #[tool(
-        description = "Cancel a running export job; nothing is written. A finished job is not affected. wait_seconds (up to 60) waits for it to stop.",
+        description = "Cancel a running export or analysis job (nothing is written), or stop a recording (what was recorded is kept and the job succeeds). A finished job is not affected. wait_seconds (up to 60) waits for it to stop.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn job_cancel(&self, params: Parameters<JobArgs>) -> Result<CallToolResult, ErrorData> {

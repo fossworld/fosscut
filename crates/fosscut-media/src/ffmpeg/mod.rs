@@ -1,5 +1,6 @@
 //! FFmpeg backend through `rsmpeg` (ADR-0009): probing and decoding video, with
-//! VideoToolbox hardware decoding on macOS.
+//! VideoToolbox hardware decoding on macOS, writing files, and recording from FFmpeg's
+//! input devices.
 //!
 //! This is one of the modules allowed to use `unsafe` (ADR-0003); every block says why it
 //! is sound.
@@ -7,10 +8,12 @@
 #![allow(unsafe_code)]
 
 mod audio;
+mod capture;
 mod report;
 mod writer;
 
 pub use audio::{FfmpegAudioDecoder, samples_at};
+pub use capture::{input_formats, list_devices, record};
 pub use report::probe_output;
 pub use writer::{FfmpegWriter, audio_encoder, encoder_capabilities, video_encoder};
 

@@ -134,6 +134,15 @@ export function actionFor(stroke: Keystroke, mac: boolean): Action | null {
   }
 }
 
+/**
+ * The angle a number key cuts a multicam clip to, 1 to 9, or null: a plain digit key
+ * (Shift, Alt and Mod make other shortcuts or characters), never while typing.
+ */
+export function angleKey(stroke: Keystroke): number | null {
+  if (stroke.typing || stroke.metaKey || stroke.ctrlKey || stroke.altKey || stroke.shiftKey) return null;
+  return /^[1-9]$/.test(stroke.key) ? Number(stroke.key) : null;
+}
+
 /** True when a keyboard event's target takes text. */
 export function isTyping(target: EventTarget | null): boolean {
   if (!target || typeof (target as HTMLElement).tagName !== "string") return false;

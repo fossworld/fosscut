@@ -2,12 +2,15 @@ import { useState } from "react";
 
 import { EASINGS, type EasingName, easingName, keyAt, keyTimes } from "../app/animation";
 import type { Editor } from "../app/editor";
+import { isMulticam } from "../app/multicam";
 import type { AssetView, Catalog, ClipView } from "../engine/types";
 import { findClip } from "../timeline/geometry";
 import { Effects } from "./Effects";
 import { targetsOf } from "./effectFields";
 import { Masks } from "./Masks";
+import { Measured } from "./Measured";
 import { Motion } from "./Motion";
+import { Multicam } from "./Multicam";
 import { Shape } from "./Shape";
 import { Speed } from "./Speed";
 import { Text } from "./Text";
@@ -33,6 +36,7 @@ const KINDS: Record<string, string> = {
   caption: "Caption page",
   adjustment: "Adjustment layer",
   shape: "Shape",
+  timeline: "Compound clip",
 };
 
 const BLENDS = [
@@ -213,8 +217,8 @@ export function Inspector({
     .map((c) => c.id);
   return (
     <section className={`inspector${enabled ? "" : " disabled"}`}>
-      <h2>{KINDS[clip.kind] ?? clip.kind}</h2>
-      <p className="name">{clip.text ?? clip.asset_name ?? clip.id}</p>
+      <h2>{isMulticam(clip) ? "Multicam clip" : (KINDS[clip.kind] ?? clip.kind)}</h2>
+      <p className="name">{clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.id}</p>
       <dl className="times">
         <dt>Start</dt>
         <dd>{clip.start.timecode}</dd>
@@ -346,6 +350,7 @@ export function Inspector({
           </div>
         </div>
       )}
+      {isMulticam(clip) && <Multicam editor={editor} clip={clip} />}
       {clip.group && (
         <div className="options">
           <div className="buttons">
@@ -371,6 +376,7 @@ export function Inspector({
       )}
       {hasPicture(clip) && <Masks editor={editor} clip={clip} playhead={playhead} tool={editor.getState().maskTool} />}
       {(clip.kind === "video" || clip.kind === "audio") && <Speed editor={editor} clip={clip} catalog={catalog} />}
+      {clip.kind === "video" && timeline && <Measured key={`measured:${clip.id}`} editor={editor} clip={clip} timeline={timeline} />}
       {isPlaced(clip) && editor.getState().timeline && (
         <Motion editor={editor} clip={clip} timeline={editor.getState().timeline!} catalog={catalog} />
       )}

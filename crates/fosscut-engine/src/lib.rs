@@ -20,10 +20,13 @@ pub mod jobs;
 pub mod library;
 pub mod live;
 pub mod loudness;
+pub mod motion;
 mod operations;
 mod preset;
 pub mod preview;
 pub mod project;
+pub mod record;
+pub mod scenes;
 
 pub use cache::{cache_dir, models_dir};
 pub use error::{EngineError, engine_error_catalogue};

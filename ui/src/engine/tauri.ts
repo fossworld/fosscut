@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
 import type {
   AppInfo,
+  CaptureDevice,
   Client,
   ColorSuggestion,
   EditRequest,
@@ -15,9 +16,16 @@ import type {
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
+  MotionResult,
+  MulticamRequest,
+  MulticamResult,
   Normalization,
   Opened,
   ProjectSummary,
+  RecordChoice,
+  RecordState,
+  SceneSplit,
+  TrackRequest,
   TrashEntry,
 } from "./types";
 
@@ -87,6 +95,23 @@ export class TauriEngine implements EngineClient {
     return invoke("audio_normalize", { clips, targetLufs: targetLufs ?? null });
   }
 
+  measure = {
+    scenes: (clip: string, expectedRevision?: number): Promise<SceneSplit> =>
+      invoke("scenes_split", { clip, expectedRevision: expectedRevision ?? null }),
+    stabilize: (clip: string, strength?: number, expectedRevision?: number): Promise<MotionResult> =>
+      invoke("clip_stabilize", { clip, strength: strength ?? null, expectedRevision: expectedRevision ?? null }),
+    track: (request: TrackRequest): Promise<MotionResult> => invoke("clip_track", { request }),
+    multicam: ({ angles, sync, sound, name, start, expected_revision }: MulticamRequest): Promise<MulticamResult> =>
+      invoke("multicam_create", {
+        angles,
+        sync,
+        sound: sound ?? null,
+        name: name ?? null,
+        start: start ?? null,
+        expectedRevision: expected_revision ?? null,
+      }),
+  };
+
   libraryList(kind?: string, search?: string): Promise<LibraryItem[]> {
     return invoke("library_list", { kind: kind ?? null, search: search ?? null });
   }
@@ -114,6 +139,13 @@ export class TauriEngine implements EngineClient {
   exportCancel(job: string): Promise<JobStatus> {
     return invoke("export_cancel", { job });
   }
+
+  record = {
+    devices: (): Promise<CaptureDevice[]> => invoke("record_devices"),
+    start: (choice: RecordChoice): Promise<RecordState> => invoke("record_start", { choice }),
+    status: (job: string): Promise<RecordState> => invoke("record_status", { job }),
+    stop: (job: string): Promise<RecordState> => invoke("record_stop", { job }),
+  };
 
   media = {
     reveal: (asset: string): Promise<void> => invoke("media_reveal", { asset }),
