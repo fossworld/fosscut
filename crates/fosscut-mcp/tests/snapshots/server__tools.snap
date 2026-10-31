@@ -430,7 +430,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. generate and import are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+    "description": "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
     "input": {
       "$defs": {
         "CaptionsAction": {
@@ -449,6 +449,16 @@ expression: listing
             {
               "const": "export",
               "description": "Write a caption track to an SRT file.",
+              "type": "string"
+            },
+            {
+              "const": "translate",
+              "description": "Translate a caption track's pages with a local model (English and Hungarian).",
+              "type": "string"
+            },
+            {
+              "const": "dub",
+              "description": "Speak each caption page with a local English voice on an audio track.",
               "type": "string"
             }
           ]
@@ -491,12 +501,19 @@ expression: listing
       "properties": {
         "action": {
           "$ref": "#/$defs/CaptionsAction",
-          "description": "`generate` (from transcripts), `import` (an SRT file) or `export` (to an SRT file)."
+          "description": "`generate` (from transcripts), `import` (an SRT file), `export` (to an SRT file),\n`translate` or `dub`."
         },
         "allow_destructive": {
           "default": false,
           "description": "Allow replacing captions or overwriting an existing file. Ask the user first.",
           "type": "boolean"
+        },
+        "audio_track": {
+          "description": "dub: the audio track for the speech; a new one when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "dry_run": {
           "default": false,
@@ -523,6 +540,13 @@ expression: listing
           "default": false,
           "description": "generate: caption a song's lyrics: the music track first, one sung line per page,\nthe karaoke look unless a preset is given.",
           "type": "boolean"
+        },
+        "mode": {
+          "description": "translate: `bilingual` (a second line under each page, the default) or `replace`\n(the page's words become the translation, spread over the page's time).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "paging": {
           "description": "generate: paging limits, for example `{\"max_words\": 3, \"max_lines\": 1}`."
@@ -572,6 +596,14 @@ expression: listing
             "null"
           ]
         },
+        "speed": {
+          "description": "dub: speaking speed from 0.5 to 2 (default 1).",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "style": {
           "description": "Changes to the caption track's look as a JSON merge patch, for example\n`{\"placement\": \"middle\", \"size\": 0.07}`."
         },
@@ -584,6 +616,13 @@ expression: listing
         },
         "timeline": {
           "description": "Timeline; the primary timeline when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "description": "translate: the language to translate into, `hu` or `en`.",
           "type": [
             "string",
             "null"
@@ -603,6 +642,18 @@ expression: listing
             "min_pause_ms": 300
           },
           "description": "generate: the transcript options the media was analyzed with (`model`, `language`,\n`min_pause_ms`), if not the defaults."
+        },
+        "translation": {
+          "default": false,
+          "description": "dub: speak each page's translation instead of its words.",
+          "type": "boolean"
+        },
+        "voice": {
+          "description": "dub: the voice, such as `af_heart`; see the record tool's action voices.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1415,13 +1466,86 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
+    "description": "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
     "input": {
       "$defs": {
+        "MatteModel": {
+          "description": "Which model makes a matte.",
+          "oneOf": [
+            {
+              "const": "person",
+              "description": "The pose model's person mask: people only, fast.",
+              "type": "string"
+            },
+            {
+              "const": "subject",
+              "description": "BiRefNet: any subject, fine edges, slow.",
+              "type": "string"
+            }
+          ]
+        },
+        "MatteOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `matte` analyzer.",
+          "properties": {
+            "every": {
+              "default": 1,
+              "description": "Run the model on every `every`-th analyzed frame (1 to 300, default 1) and follow the\nsubject's motion in between: 5 to 10 keeps `subject` practical for slow scenes, at\nthe cost of soft edges where the subject changes shape quickly.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "max_fps": {
+              "default": 30,
+              "description": "Most frames analyzed per second, 1 to 60 (default 30).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "model": {
+              "$ref": "#/$defs/MatteModel",
+              "default": "person",
+              "description": "`person` (the default: the pose model's person mask, about 20 ms a frame) or\n`subject` (BiRefNet: any subject with fine edges, 9 to 14 s a frame on a laptop CPU)."
+            },
+            "size": {
+              "default": 512,
+              "description": "The stored matte's longer side in pixels, 64 to 1024 (default 512).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "smoothing": {
+              "default": 0.5,
+              "description": "How much mattes are smoothed in time, from 0 (not at all) to 1 (a Gaussian of two\nframes); edges that move are left alone. Default 0.5.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
         "Options": {
           "additionalProperties": false,
           "description": "Options for every analyzer; each has defaults.",
           "properties": {
+            "matte": {
+              "$ref": "#/$defs/MatteOptions",
+              "default": {
+                "every": 1,
+                "max_fps": 30,
+                "model": "person",
+                "size": 512,
+                "smoothing": 0.5
+              },
+              "description": "Options of `matte`."
+            },
+            "pose": {
+              "$ref": "#/$defs/PoseOptions",
+              "default": {
+                "max_fps": 30,
+                "smoothing": 0.5
+              },
+              "description": "Options of `pose`."
+            },
             "scenes": {
               "$ref": "#/$defs/SceneOptions",
               "default": {
@@ -1445,6 +1569,26 @@ expression: listing
                 "min_pause_ms": 300
               },
               "description": "Options of `transcript`."
+            }
+          },
+          "type": "object"
+        },
+        "PoseOptions": {
+          "additionalProperties": false,
+          "description": "Options of the `pose` analyzer.",
+          "properties": {
+            "max_fps": {
+              "default": 30,
+              "description": "Most frames analyzed per second, 1 to 60 (default 30); a faster source is analyzed\nat every other frame or sparser, and the body effects hold each result until the next.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "smoothing": {
+              "default": 0.5,
+              "description": "How much landmarks and masks are smoothed in time, from 0 (not at all) to 1 (a\nGaussian of two frames); fast moves are left alone. Default 0.5.",
+              "format": "double",
+              "type": "number"
             }
           },
           "type": "object"
@@ -1540,6 +1684,17 @@ expression: listing
         "options": {
           "$ref": "#/$defs/Options",
           "default": {
+            "matte": {
+              "every": 1,
+              "max_fps": 30,
+              "model": "person",
+              "size": 512,
+              "smoothing": 0.5
+            },
+            "pose": {
+              "max_fps": 30,
+              "smoothing": 0.5
+            },
             "scenes": {
               "min_shot_ms": 500,
               "threshold": 0.35
@@ -1812,7 +1967,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Record a voiceover, a camera or the screen of this machine into the project's recordings folder. Only when the user asked you to record: start needs confirm true. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes.",
+    "description": "Record a voiceover, a camera or the screen of this machine into the project's recordings folder, or make a voiceover from text. Only when the user asked you to record: start needs confirm true. action speak says text with a local English voice (voice from action voices, speed; install kokoro-82m with models first) into the project's speech folder, imports it and places it at at (on track, or a free one; after the first audio track's last clip without at), as one undoable step; the same text and voice reuse the file. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes.",
     "input": {
       "$defs": {
         "RecordAction": {
@@ -1826,6 +1981,16 @@ expression: listing
             {
               "const": "start",
               "description": "Start recording as a background job.",
+              "type": "string"
+            },
+            {
+              "const": "speak",
+              "description": "Make a voiceover from text with a local English voice.",
+              "type": "string"
+            },
+            {
+              "const": "voices",
+              "description": "List the local voices.",
               "type": "string"
             }
           ]
@@ -1897,7 +2062,18 @@ expression: listing
       "properties": {
         "action": {
           "$ref": "#/$defs/RecordAction",
-          "description": "`devices` or `start`."
+          "description": "`devices`, `start`, `speak` or `voices`."
+        },
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "speak: where to place the speech on the timeline; after the first audio track's last\nclip when omitted."
         },
         "confirm": {
           "default": false,
@@ -1921,6 +2097,15 @@ expression: listing
             }
           ],
           "description": "start: stop after this long; until job_cancel when omitted."
+        },
+        "expected_revision": {
+          "description": "speak: fail with `fosscut.revision.conflict` unless the project is at this revision.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "fps": {
           "description": "start: frame rate such as 30 or 60; 30 when omitted.",
@@ -1961,6 +2146,35 @@ expression: listing
           "minItems": 2,
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "speed": {
+          "description": "speak: speaking speed from 0.5 to 2 (default 1).",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "text": {
+          "description": "speak: the text to say.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "track": {
+          "description": "speak: the audio track to place it on; a free one when omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "voice": {
+          "description": "speak: the voice, such as `af_heart` (American) or `bm_george` (British); see\naction voices.",
+          "type": [
+            "string",
             "null"
           ]
         },

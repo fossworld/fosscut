@@ -7,6 +7,7 @@ import { Inspector } from "../panels/Inspector";
 import { Library } from "../panels/Library";
 import { Media } from "../panels/Media";
 import { Record } from "../panels/Record";
+import { Speech } from "../panels/Speech";
 import { who } from "../panels/runs";
 import { Guides } from "../preview/Guides";
 import { MaskOverlay } from "../preview/MaskOverlay";
@@ -19,6 +20,7 @@ import { TimelineTabs } from "../timeline/TimelineTabs";
 import { Transport } from "../transport/Transport";
 import { type Editor, mediaWorkLine } from "./editor";
 import { Export } from "./Export";
+import { ModelInstall } from "./ModelInstall";
 import { isMulticam } from "./multicam";
 import { recordedTime } from "./recorder";
 import { Settings } from "./Settings";
@@ -130,6 +132,8 @@ export function App({ editor }: { editor: Editor }) {
       // The export dialog and the record panel read their jobs faster while they show.
       if (!editor.getState().exporting.open) void editor.pollExport();
       if (!editor.getState().recorder.open) void editor.pollRecording();
+      // An analysis goes on, and adds its effect, while its clip is not selected.
+      void editor.pollAnalysis();
     }, CLIENTS_POLL);
     return () => window.clearInterval(timer);
   }, [editor, open]);
@@ -144,6 +148,10 @@ export function App({ editor }: { editor: Editor }) {
       }
       if (now.exporting.open) {
         if (event.key === "Escape") editor.closeExport();
+        return;
+      }
+      if (now.install) {
+        if (event.key === "Escape") editor.cancelInstall();
         return;
       }
       const action = actionFor(keystroke(event), MAC, undefined, focusOf(event.target));
@@ -228,6 +236,13 @@ export function App({ editor }: { editor: Editor }) {
                 ? t("app.recording", { time: recordedTime(state.recorder.job) })
                 : t("app.record")}
             </button>
+            <button
+              aria-pressed={state.speech.open}
+              onClick={() => (state.speech.open ? editor.closeSpeech() : void editor.openSpeech())}
+              title={t("app.speech.help")}
+            >
+              {t("app.speech")}
+            </button>
             {settingsButton}
             <button
               className="primary"
@@ -241,6 +256,7 @@ export function App({ editor }: { editor: Editor }) {
           </header>
           <main>
             {state.recorder.open && <Record editor={editor} state={state} />}
+            {state.speech.open && <Speech editor={editor} state={state} />}
             <PreviewHole editor={editor}>
               <MaskOverlay editor={editor} state={state} />
               <Guides editor={editor} state={state} />
@@ -286,6 +302,7 @@ export function App({ editor }: { editor: Editor }) {
             <Timeline editor={editor} state={state} />
           </div>
           {state.exporting.open && <Export editor={editor} state={state} />}
+          {state.install && <ModelInstall editor={editor} prompt={state.install} />}
         </>
       )}
       {state.settings.open && <Settings editor={editor} state={state} />}

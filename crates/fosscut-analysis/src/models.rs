@@ -478,12 +478,16 @@ pub const MODELS: &[Manifest] = &[
             "Converted from Google's TFLite release by FossCut; scripts/models/README.md in the FossCut repository shows how to repeat the conversion and check it.",
         ),
     },
-    // Kokoro-82M v1.0, 8-bit quantized, with its American (a) and British (b) English voices.
+    // Kokoro-82M v1.0, 8-bit quantized, with its American (a) and British (b) English voices,
+    // and the CMU Pronouncing Dictionary (BSD-2-Clause) that English text is pronounced with,
+    // from a pinned commit of Carnegie Mellon's repository, with its license.
     Manifest {
         name: "kokoro-82m",
         task: "voice",
-        license: "Apache-2.0",
-        attribution: Some("Kokoro-82M by hexgrad, Apache-2.0; ONNX export by onnx-community."),
+        license: "Apache-2.0 AND BSD-2-Clause",
+        attribution: Some(
+            "Kokoro-82M by hexgrad, Apache-2.0; ONNX export by onnx-community. Pronunciations from the CMU Pronouncing Dictionary, Copyright (C) 1993-2015 Carnegie Mellon University, BSD-2-Clause.",
+        ),
         languages: "en",
         layout: Layout::Folder,
         files: &[
@@ -498,6 +502,18 @@ pub const MODELS: &[Manifest] = &[
                 "tokenizer.json",
                 3_497,
                 "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34"
+            ),
+            file(
+                "https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict",
+                "cmudict/cmudict.dict",
+                3_618_488,
+                "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+            ),
+            file(
+                "https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/LICENSE",
+                "cmudict/LICENSE",
+                1_754,
+                "bd4ce8e44170a5f9f481310ca85c51de3c4f851a65e679b40e603b143bd3542a",
             ),
             kokoro!(
                 "config.json",
@@ -1291,7 +1307,13 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), MODELS.len());
         let tasks = ["speech", "matte", "pose", "voice", "translate", "runtime"];
-        let licenses = ["MIT", "Apache-2.0", "CC-BY-4.0"];
+        let licenses = [
+            "MIT",
+            "Apache-2.0",
+            "CC-BY-4.0",
+            // Kokoro's weights with the CMU Pronouncing Dictionary.
+            "Apache-2.0 AND BSD-2-Clause",
+        ];
         for model in MODELS {
             assert_eq!(manifest(model.name), Ok(model));
             assert!(tasks.contains(&model.task), "{}", model.name);
@@ -1379,8 +1401,11 @@ mod tests {
         assert_eq!(size("opus-mt-hu-en"), 120_032_083);
         assert_eq!(size("opus-mt-en-hu"), 120_032_083);
         let kokoro = manifest("kokoro-82m").unwrap();
-        assert_eq!(kokoro.files.len(), 31);
-        assert_eq!(kokoro.size(), 92_361_116 + 3_497 + 44 + 28 * 522_240);
+        assert_eq!(kokoro.files.len(), 33);
+        assert_eq!(
+            kokoro.size(),
+            92_361_116 + 3_497 + 44 + 3_618_488 + 1_754 + 28 * 522_240
+        );
         let voices: Vec<&str> = kokoro
             .files
             .iter()
@@ -1558,8 +1583,14 @@ mod tests {
         assert_eq!(tiny["files"][0]["name"], "ggml-tiny.en.bin");
         let kokoro = serde_json::to_value(info(&dir, manifest("kokoro-82m").unwrap())).unwrap();
         assert_eq!(kokoro["task"], "voice");
-        assert_eq!(kokoro["files"].as_array().unwrap().len(), 31);
+        assert_eq!(kokoro["files"].as_array().unwrap().len(), 33);
         assert!(kokoro["attribution"].as_str().unwrap().contains("hexgrad"));
+        assert!(
+            kokoro["attribution"]
+                .as_str()
+                .unwrap()
+                .contains("Carnegie Mellon")
+        );
         let pose =
             serde_json::to_value(info(&dir, manifest("mediapipe-pose-full").unwrap())).unwrap();
         assert_eq!(pose["url"], pose["files"][0]["url"]);

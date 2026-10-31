@@ -1,5 +1,9 @@
 //! Media analysis for front ends (ADR-0019, item 4): an asset's cached results come back at
-//! once; anything missing is measured from its file and cached for next time.
+//! once; anything missing is measured from its file and cached for next time. Pose and
+//! matte results keep their per-frame data in a file beside the cache entry, which the
+//! effects that follow a subject read through [`subject`] (ADR-0033).
+
+pub mod subject;
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -8,7 +12,8 @@ use fosscut_analysis::decode::{self, Media};
 pub use fosscut_analysis::models::{ModelInfo, Source as ModelSource};
 use fosscut_analysis::{AnalysisError, Needs, cache};
 pub use fosscut_analysis::{
-    Analyzer, Options, Results, SceneOptions, SilenceOptions, Transcript, TranscriptOptions,
+    Analyzer, Matte, MatteModel, MatteOptions, Options, Pose, PoseOptions, Results, SceneOptions,
+    SilenceOptions, Transcript, TranscriptOptions,
 };
 use fosscut_model::{AssetKind, ContentIdentity, Id, Project};
 use serde::{Deserialize, Serialize};
@@ -105,16 +110,7 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
             .map_err(EngineError::from)?;
         options.transcript.model = Some(model.name.to_string());
     }
-    let identity = match &asset.identity {
-        Some(identity) => identity.clone(),
-        None => {
-            let path = resolve(project, &request.bundle, &request.asset)?;
-            crate::import::identity(&path).map_err(|e| EngineError::Failed {
-                code: e.code,
-                message: e.message,
-            })?
-        }
-    };
+    let identity = identity(project, &request.bundle, &request.asset)?;
     let mut cached = Results::default();
     let mut missing = Vec::new();
     for &analyzer in &analyzers {
@@ -123,7 +119,9 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
         let hit = (!request.refresh)
             .then(|| cache::read(&path, analyzer, &key))
             .flatten()
-            .is_some_and(|value| cached.set(analyzer, value));
+            .is_some_and(|value| cached.set(analyzer, value))
+            // An entry whose data file is gone is measured again.
+            && (!analyzer.has_data() || has_data(&cached, analyzer, &path));
         if !hit {
             missing.push(analyzer);
         }
@@ -135,6 +133,42 @@ fn plan(project: &Project, request: &AnalysisRequest) -> Result<Plan, EngineErro
         cached,
         missing,
     })
+}
+
+/// Whether the data file of `analyzer`'s cached result at `entry` is there.
+fn has_data(cached: &Results, analyzer: Analyzer, entry: &std::path::Path) -> bool {
+    let file = match analyzer {
+        Analyzer::Pose => cached.pose.as_ref().map(|p| &p.data),
+        Analyzer::Matte => cached.matte.as_ref().map(|m| &m.data),
+        _ => None,
+    };
+    file.is_some_and(|file| cache::has_data(entry, file))
+}
+
+/// The content identity of `asset`: recorded at import, or measured from its file.
+pub(crate) fn identity(
+    project: &Project,
+    bundle: &std::path::Path,
+    asset: &Id,
+) -> Result<ContentIdentity, EngineError> {
+    let recorded = project
+        .media
+        .get(asset)
+        .ok_or_else(|| EngineError::AssetNotFound {
+            asset: asset.to_string(),
+        })?
+        .identity
+        .clone();
+    match recorded {
+        Some(identity) => Ok(identity),
+        None => {
+            let path = resolve(project, bundle, asset)?;
+            crate::import::identity(&path).map_err(|e| EngineError::Failed {
+                code: e.code,
+                message: e.message,
+            })
+        }
+    }
 }
 
 /// The report, if every requested analyzer is cached; nothing is decoded.
@@ -164,6 +198,8 @@ pub fn analyze(
     let plan = plan(project, request)?;
     let mut results = plan.cached;
     if !plan.missing.is_empty() {
+        // Vision models are checked before anything is decoded.
+        fosscut_analysis::decode::vision_models(&plan.missing, &plan.options, &request.models)?;
         let path = resolve(project, &request.bundle, &request.asset)?;
         let info = &project
             .media
@@ -200,13 +236,29 @@ pub fn analyze(
             AnalysisError::Model(model) => EngineError::from(model),
             AnalysisError::Speech(message) => EngineError::SpeechFailed { message },
             AnalysisError::SpeechUnavailable => EngineError::SpeechUnavailable,
+            AnalysisError::Onnx(onnx) => EngineError::from(onnx),
+            AnalysisError::Inference(message) => EngineError::Failed {
+                code: "fosscut.model.inference_failed".into(),
+                message: format!("the model failed: {message}"),
+            },
+            AnalysisError::OnnxUnavailable => EngineError::ModelRuntimeMissing {
+                message: "this build of FossCut has no ONNX Runtime support".into(),
+                tried: Vec::new(),
+            },
         })?;
         for &analyzer in &plan.missing {
             if let Some(value) = measured.get(analyzer) {
                 let key = plan.options.for_analyzer(analyzer);
                 let path = cache::entry_path(&request.cache, &plan.identity, analyzer, &key);
                 // The cache only saves time; failing to write it does not fail the analysis.
-                let _ = cache::write(&path, analyzer, &key, &value);
+                // A data file goes first, so an entry never names one that is not there.
+                let stored = match measured.data.get(&analyzer) {
+                    Some(data) => cache::write_data(&path, data).is_ok(),
+                    None => true,
+                };
+                if stored {
+                    let _ = cache::write(&path, analyzer, &key, &value);
+                }
                 results.set(analyzer, value);
             }
         }

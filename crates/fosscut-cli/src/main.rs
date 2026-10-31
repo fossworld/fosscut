@@ -235,8 +235,25 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             model,
             language,
             min_pause_ms,
+            matte_model,
+            matte_every,
+            matte_size,
         }) => {
             let mut options = fosscut_engine::analysis::Options::default();
+            if let Some(name) = matte_model {
+                options.matte.model = serde_json::from_value(json!(name)).map_err(|_| {
+                    ApiError::new(
+                        codes::INVALID_ARGUMENTS,
+                        format!("--matte-model {name}: person or subject"),
+                    )
+                })?;
+            }
+            if let Some(every) = matte_every {
+                options.matte.every = *every;
+            }
+            if let Some(size) = matte_size {
+                options.matte.size = *size;
+            }
             options.transcript.model.clone_from(model);
             options.transcript.language.clone_from(language);
             if let Some(ms) = min_pause_ms {
@@ -624,6 +641,52 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             write(cli, "clip.canvas", json!({ "clips": clips, "fill": fill }))
         }
         Command::Preferences { command } => preferences_command(command.as_ref()),
+        Command::Speak {
+            text,
+            voice,
+            speed,
+            at,
+            track,
+            voices,
+        } => {
+            if *voices {
+                return Ok(Outcome::Query(
+                    "voices".into(),
+                    json!({ "voices": fosscut_engine::voice::voices(&fosscut_engine::models_dir()) }),
+                ));
+            }
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let snapshot = bundle::snapshot(&path)?;
+            let spoken = fosscut_engine::voice::speak(
+                &snapshot,
+                &fosscut_engine::voice::SpeakRequest {
+                    bundle: path.clone(),
+                    models: fosscut_engine::models_dir(),
+                    text: text.clone().unwrap_or_default(),
+                    voice: voice.clone(),
+                    speed: *speed,
+                    language: None,
+                    timeline: None,
+                    track: track.as_deref().map(|t| parse_id(t, "track")).transpose()?,
+                    start: at.as_ref().map(|t| json!(t)),
+                },
+            )
+            .map_err(|e| engine_error(&e))?;
+            let commands = spoken.calls.clone();
+            let mut report = json!(spoken);
+            if let Some(object) = report.as_object_mut() {
+                object.remove("calls");
+            }
+            apply_at(
+                cli,
+                &path,
+                "speak",
+                "speech",
+                report,
+                commands,
+                spoken.revision,
+            )
+        }
         Command::Cache(command) => cache_command(command),
         Command::Media(MediaCommand::Proxy { asset, size }) => {
             let path = bundle::bundle_path(cli.project.as_deref())?;
@@ -1824,6 +1887,33 @@ fn normalize(
     ))
 }
 
+/// Like [`apply_measured`], for calls that predict ids from the project at `revision`
+/// (imports followed by placements): they apply only to that revision, unless the command
+/// line gave another one.
+fn apply_at(
+    cli: &Cli,
+    path: &Path,
+    name: &str,
+    key: &str,
+    report: Value,
+    commands: Vec<Value>,
+    revision: u64,
+) -> Result<Outcome, ApiError> {
+    let response = if commands.is_empty() {
+        None
+    } else {
+        let mut request: Request = serde_json::from_value(json!({ "commands": commands }))
+            .map_err(|e| ApiError::new(codes::REQUEST_INVALID, e.to_string()))?;
+        apply_options(cli, &mut request, true);
+        request.expected_revision = request.expected_revision.or(Some(revision));
+        Some(bundle::execute(path, request)?)
+    };
+    Ok(Outcome::Query(
+        name.to_string(),
+        json!({ key: report, "response": response }),
+    ))
+}
+
 /// Applies the calls a measurement proposed in one change (none when it proposed none)
 /// and reports the measurement under `key` with the response.
 fn apply_measured(
@@ -2322,7 +2412,102 @@ fn record(cli: &Cli, asked: &Recording<'_>) -> Result<Outcome, ApiError> {
 
 fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
     let path = bundle::bundle_path(cli.project.as_deref())?;
+    let optional_id =
+        |text: &Option<String>, what: &str| text.as_deref().map(|t| parse_id(t, what)).transpose();
     match command {
+        CaptionsCommand::Translate {
+            to,
+            mode,
+            track,
+            timeline,
+        } => {
+            let snapshot = bundle::snapshot(&path)?;
+            let pair = match to.as_str() {
+                "hu" => "en>hu",
+                "en" => "hu>en",
+                other => {
+                    return Err(ApiError::new(
+                        codes::INVALID_ARGUMENTS,
+                        format!("--to {other}: translations go into hu or en"),
+                    ));
+                }
+            };
+            let mode = serde_json::from_value(json!(mode)).map_err(|_| {
+                ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!("--mode {mode}: bilingual or replace"),
+                )
+            })?;
+            let found = fosscut_engine::captions::translate(
+                &snapshot,
+                &fosscut_engine::captions::TranslateRequest {
+                    models: fosscut_engine::models_dir(),
+                    timeline: optional_id(timeline, "timeline")?,
+                    track: optional_id(track, "track")?,
+                    pair: pair.into(),
+                    mode,
+                },
+            )
+            .map_err(|e| engine_error(&e))?;
+            let commands = found.calls.clone();
+            let mut report = json!(found);
+            if let Some(object) = report.as_object_mut() {
+                object.remove("calls");
+            }
+            apply_at(
+                cli,
+                &path,
+                "captions.translate",
+                "translation",
+                report,
+                commands,
+                found.revision,
+            )
+        }
+        CaptionsCommand::Dub {
+            voice,
+            speed,
+            translation,
+            track,
+            audio_track,
+            timeline,
+        } => {
+            use fosscut_engine::voice::{DubRequest, DubText, dub};
+            let snapshot = bundle::snapshot(&path)?;
+            let found = dub(
+                &snapshot,
+                &DubRequest {
+                    bundle: path.clone(),
+                    models: fosscut_engine::models_dir(),
+                    timeline: optional_id(timeline, "timeline")?,
+                    track: optional_id(track, "track")?,
+                    voice: voice.clone(),
+                    speed: *speed,
+                    language: None,
+                    text: if *translation {
+                        DubText::Translation
+                    } else {
+                        DubText::Words
+                    },
+                    audio_track: optional_id(audio_track, "audio track")?,
+                },
+            )
+            .map_err(|e| engine_error(&e))?;
+            let commands = found.calls.clone();
+            let mut report = json!(found);
+            if let Some(object) = report.as_object_mut() {
+                object.remove("calls");
+            }
+            apply_at(
+                cli,
+                &path,
+                "captions.dub",
+                "dub",
+                report,
+                commands,
+                found.revision,
+            )
+        }
         CaptionsCommand::Generate {
             preset,
             source_track,

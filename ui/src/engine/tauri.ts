@@ -10,6 +10,8 @@ import type {
   CacheUsage,
   CaptureDevice,
   Client,
+  DubCaptionsRequest,
+  DubCaptionsResult,
   ColorSuggestion,
   EditRequest,
   EditResponse,
@@ -19,6 +21,8 @@ import type {
   LibraryAddRequest,
   LibraryItem,
   MediaWork,
+  ModelInstallState,
+  ModelListing,
   MotionResult,
   MulticamRequest,
   MulticamResult,
@@ -30,9 +34,16 @@ import type {
   RecordChoice,
   RecordState,
   SceneSplit,
+  SpeechPreview,
+  SpeechRequest,
+  SpeechResult,
+  SubjectRequest,
   TrackRequest,
+  TranslateCaptionsRequest,
+  TranslateCaptionsResult,
   TrashEntry,
   UpdateAnswer,
+  VoiceInfo,
 } from "./types";
 
 /** True inside the desktop app. */
@@ -191,6 +202,31 @@ export class TauriEngine implements EngineClient {
   pickFolder(title?: string, directory?: string): Promise<string | null> {
     return invoke("folder_pick", { title: title ?? null, directory: directory ?? null });
   }
+
+  models = {
+    list: (): Promise<ModelListing> => invoke("models_list"),
+    install: (name: string, confirmed: boolean): Promise<ModelInstallState> => invoke("models_install", { name, confirmed }),
+    installStatus: (name: string): Promise<ModelInstallState> => invoke("models_install_status", { name }),
+  };
+
+  subject = {
+    analyze: (request: SubjectRequest): Promise<JobStatus> => invoke("subject_analyze", { request }),
+    status: (job: string): Promise<JobStatus> => invoke("subject_status", { job }),
+    cancel: (job: string): Promise<JobStatus> => invoke("subject_cancel", { job }),
+  };
+
+  voice = {
+    list: (): Promise<VoiceInfo[]> => invoke("voices_list"),
+    preview: (text: string, voice: string, speed?: number): Promise<SpeechPreview> =>
+      invoke("speech_preview", { text, voice, speed: speed ?? null }),
+    add: (request: SpeechRequest): Promise<SpeechResult> => invoke("speech_add", { request }),
+  };
+
+  captions = {
+    translate: (request: TranslateCaptionsRequest): Promise<TranslateCaptionsResult> =>
+      invoke("captions_translate", { request }),
+    dub: (request: DubCaptionsRequest): Promise<DubCaptionsResult> => invoke("captions_dub", { request }),
+  };
 
   cache = {
     usage: async (): Promise<CacheUsage> => ({ caches: await invoke<CacheUsage["caches"]>("cache_info") }),

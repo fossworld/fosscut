@@ -15,6 +15,9 @@
 //!   Settings window and written into the requests the app builds; [`announce`]: the
 //!   sound and notifications for finished exports and recordings; [`words`]: the texts the
 //!   app shows itself, translated.
+//! - [`models`]: local models (ADR-0033): installing them once the person agreed, the
+//!   analyses background removal and body effects need, text to speech, and translating
+//!   and dubbing captions.
 //! - [`performance`]: hardware acceleration, what the preview decodes and keeps, the cache
 //!   policy, and the proxies and remuxed copies made in the background (ADR-0032).
 
@@ -24,6 +27,7 @@ pub mod announce;
 pub mod audio;
 pub mod commands;
 pub mod library;
+pub mod models;
 pub mod performance;
 pub mod preferences;
 pub mod preview;
@@ -39,6 +43,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
 use crate::audio::Speaker;
 use crate::library::Library;
+use crate::models::ModelInstalls;
 use crate::performance::MediaJobs;
 use crate::preferences::PreferenceStore;
 use crate::preview::{Job, Preview, Scene};
@@ -68,6 +73,8 @@ pub struct AppState {
     pub cache: std::path::PathBuf,
     /// The proxies and remuxed copies being made.
     pub media_jobs: Arc<MediaJobs>,
+    /// The local models being installed (ADR-0033).
+    pub installs: Arc<ModelInstalls>,
     /// The app menu's Settings item, renamed when the language changes (macOS).
     pub settings_item: Option<tauri::menu::MenuItem<tauri::Wry>>,
     /// The thread that forwards the open project's changes, while one is open.
@@ -267,6 +274,7 @@ pub fn run() {
                 release: Mutex::new(None),
                 cache: caches,
                 media_jobs,
+                installs: Arc::new(ModelInstalls::default()),
                 settings_item,
                 follower: Mutex::new(None),
             });
@@ -332,6 +340,17 @@ pub fn run() {
             commands::cache_clear,
             commands::media_sources,
             commands::media_work,
+            commands::models_list,
+            commands::models_install,
+            commands::models_install_status,
+            commands::subject_analyze,
+            commands::subject_status,
+            commands::subject_cancel,
+            commands::voices_list,
+            commands::speech_preview,
+            commands::speech_add,
+            commands::captions_translate,
+            commands::captions_dub,
         ])
         .build(tauri::generate_context!());
     match app {

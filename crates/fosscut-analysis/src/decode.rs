@@ -1,6 +1,6 @@
 //! Runs analyzers over a media file: audio decoded at 48 kHz in one-second chunks for
 //! loudness and silences, at 16 kHz mono for speech, and video frame by frame, each fed to
-//! the analyzers that need it.
+//! the analyzers that need it (scene cuts, pose and mattes).
 
 use std::path::Path;
 
@@ -9,9 +9,12 @@ use fosscut_media::{DecoderOptions, MediaError, VideoDecoder};
 use fosscut_time::{Flicks, Rate};
 
 use crate::loudness::LoudnessMeter;
+use crate::matte::MatteAnalyzer;
 use crate::models::{self, Manifest, ModelError};
+use crate::pose::PoseAnalyzer;
 use crate::scenes::{Luma, SceneDetector};
 use crate::silence::SilenceFinder;
+use crate::vision::DataFile;
 use crate::{AnalysisError, Analyzer, Needs, Options, Progress, Results};
 
 /// What the caller knows about the file, from the project's media table.
@@ -52,8 +55,39 @@ pub fn speech_model(options: &Options, models: &Path) -> Result<&'static Manifes
     }
 }
 
-/// Runs `analyzers` over `media`, with speech models from `models`, calling `progress` as it
-/// goes; returning `false` from it cancels.
+/// Checks that the vision models `analyzers` run with `options` are installed in `models`,
+/// with ONNX Runtime: [`ModelError::NotInstalled`] names every one that is missing.
+pub fn vision_models(
+    analyzers: &[Analyzer],
+    options: &Options,
+    models: &Path,
+) -> Result<(), ModelError> {
+    let mut missing: Vec<&str> = Vec::new();
+    for analyzer in analyzers {
+        let Some(name) = analyzer.vision_model(options) else {
+            continue;
+        };
+        let installed = models::manifest(name).is_ok_and(|m| models::is_installed(models, m));
+        if !installed && !missing.contains(&name) {
+            missing.push(name);
+        }
+    }
+    let wants_runtime = analyzers.iter().any(|a| a.vision_model(options).is_some());
+    if wants_runtime && crate::onnx::runtime_path(models).is_none() {
+        missing.push(crate::onnx::RUNTIME_MODEL);
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(ModelError::NotInstalled {
+            what: missing.join(" and "),
+        })
+    }
+}
+
+/// Runs `analyzers` over `media`, with speech and vision models from `models`, calling
+/// `progress` as it goes; returning `false` from it cancels. Pose and matte results come
+/// with their data files in [`Results::data`].
 pub fn analyze(
     media: Media<'_>,
     analyzers: &[Analyzer],
@@ -136,12 +170,29 @@ pub fn analyze(
         if media.video_rate.is_none() {
             return Err(AnalysisError::NoVideo);
         }
+        vision_models(analyzers, options, models)?;
         let mut decoder = FfmpegVideoDecoder::open(media.path, DecoderOptions::default())
             .map_err(|e| no_stream(e, AnalysisError::NoVideo))?;
-        let mut detector = SceneDetector::new(options.scenes.clone());
+        let mut detector = analyzers
+            .contains(&Analyzer::Scenes)
+            .then(|| SceneDetector::new(options.scenes.clone()));
+        let mut pose = match analyzers.contains(&Analyzer::Pose) {
+            true => Some(PoseAnalyzer::new(&options.pose, models)?),
+            false => None,
+        };
+        let mut matte = match analyzers.contains(&Analyzer::Matte) {
+            true => Some(MatteAnalyzer::new(&options.matte, models)?),
+            false => None,
+        };
+        // Models take long enough per frame that progress is worth reporting every frame.
+        let every = if pose.is_some() || matte.is_some() {
+            1
+        } else {
+            10
+        };
         let mut done = 0;
         while let Some(frame) = decoder.next_frame()? {
-            if let Some(plane) = frame.planes.first() {
+            if let (Some(detector), Some(plane)) = (detector.as_mut(), frame.planes.first()) {
                 detector.push(
                     frame.pts,
                     Luma {
@@ -152,8 +203,14 @@ pub fn analyze(
                     },
                 );
             }
+            if let Some(pose) = pose.as_mut() {
+                pose.push(&frame)?;
+            }
+            if let Some(matte) = matte.as_mut() {
+                matte.push(&frame)?;
+            }
             done += 1;
-            if done % 10 == 0
+            if done % every == 0
                 && !progress(Progress {
                     done: audio_units + done.min(video_units),
                     total,
@@ -162,7 +219,21 @@ pub fn analyze(
                 return Err(AnalysisError::Cancelled);
             }
         }
-        results.scenes = Some(detector.finish());
+        results.scenes = detector.map(SceneDetector::finish);
+        if let Some(pose) = pose {
+            let track = pose.finish();
+            let data: std::sync::Arc<[u8]> = track.encode().into();
+            results.pose = Some(Box::new(track.summary(DataFile::of(&data))));
+            results.data.insert(Analyzer::Pose, data);
+        }
+        if let Some(matte) = matte {
+            let track = matte.finish();
+            let data: std::sync::Arc<[u8]> = track.encode().into();
+            results.matte = Some(Box::new(
+                track.summary(options.matte.model, DataFile::of(&data)),
+            ));
+            results.data.insert(Analyzer::Matte, data);
+        }
     }
     progress(Progress { done: total, total });
     Ok(results)

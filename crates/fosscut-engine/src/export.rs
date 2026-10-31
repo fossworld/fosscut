@@ -382,6 +382,14 @@ pub fn export(
                 crate::frame::load_lut(project, &request.bundle, &asset)?,
             );
         }
+        // The mattes and poses subject effects read (ADR-0033), checked in `check`.
+        crate::analysis::subject::Subjects::new().require(
+            project,
+            &request.bundle,
+            &request.cache,
+            &checked.subjects,
+            &mut frames,
+        )?;
     }
 
     let temporary = parent.join(format!(
@@ -473,6 +481,8 @@ struct Checked {
     /// How much of the timeline it covers.
     timeline_duration: Flicks,
     media: Vec<(Id, PathBuf)>,
+    /// The analyses its subject effects read, each found in the cache.
+    subjects: Vec<crate::analysis::subject::Requirement>,
 }
 
 /// A file beside `output`: its name with `suffix` instead of its extension.
@@ -492,12 +502,13 @@ fn write_cover(
     renderer: &mut Renderer,
 ) -> Result<String, EngineError> {
     let width = request.settings.video.as_ref().map(|v| v.width);
-    let still = crate::frame::frame(
+    let still = crate::frame::frame_in(
         project,
         &request.bundle,
         &request.timeline,
         time,
         width,
+        &request.cache,
         renderer,
     )?;
     let path = beside(&request.output, "cover.png");
@@ -592,6 +603,21 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
     for asset in crate::frame::timeline_luts(project, &request.timeline) {
         resolve(project, &request.bundle, &asset)?;
     }
+    // So must the analyses key.subject and the body effects read (ADR-0033).
+    let subjects = match &request.settings.video {
+        Some(_) => crate::analysis::subject::timeline_requirements(
+            project,
+            &request.timeline,
+            Some((start, start + duration)),
+        ),
+        None => Vec::new(),
+    };
+    if let Some(missing) = subjects
+        .iter()
+        .find(|r| !crate::analysis::subject::is_cached(project, &request.bundle, &request.cache, r))
+    {
+        return Err(missing.missing());
+    }
     let settings = &request.settings;
     let (frames, exported) = match &settings.video {
         // Every frame whose start is before the end of the timeline.
@@ -624,6 +650,7 @@ fn check(project: &Project, request: &ExportRequest) -> Result<Checked, EngineEr
         start,
         timeline_duration: duration,
         media,
+        subjects,
     })
 }
 

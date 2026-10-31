@@ -1626,3 +1626,85 @@ header .settings-button,
 .media .asset .name {
   min-width: 3.5em;
 }
+
+/* Local models (ADR-0033): the text to speech panel, the install dialog, and the
+   inspector's background removal and caption tools. */
+.speech-panel {
+  width: 300px;
+}
+
+.speech-panel .speech-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.speech-panel textarea {
+  resize: vertical;
+  min-height: 64px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  user-select: text;
+}
+
+.speech-panel .choice select {
+  max-width: 190px;
+}
+
+.speech-panel .buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.speech-panel .hint,
+.subject .hint,
+.captions-tools .hint {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.subject .buttons,
+.captions-tools .buttons {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.subject .choice select,
+.captions-tools .choice select {
+  max-width: 170px;
+}
+
+.assist-busy progress,
+.install-progress progress {
+  width: 100%;
+  height: 6px;
+}
+
+.model-install .models {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.model-install .model {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.model-install .model-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-install .credit {
+  font-style: italic;
+}

@@ -234,6 +234,30 @@ pub enum Command {
     /// clearing them, and cleaning them by the cache preferences.
     #[command(subcommand)]
     Cache(CacheCommand),
+    /// Make a voiceover from text with a local English voice (Kokoro, ADR-0033): written
+    /// into the bundle's `speech/` folder, imported and placed. The same text, voice and
+    /// speed reuse the file.
+    Speak {
+        /// The text to say.
+        #[arg(required_unless_present = "voices")]
+        text: Option<String>,
+        /// The voice, such as af_heart (American) or bm_george (British); see --voices.
+        #[arg(long)]
+        voice: Option<String>,
+        /// Speaking speed from 0.5 to 2 (default 1).
+        #[arg(long)]
+        speed: Option<f32>,
+        /// Where to place the speech on the timeline; after the first audio track's last
+        /// clip when omitted.
+        #[arg(long, value_parser = parse_time)]
+        at: Option<TimeInput>,
+        /// The audio track to place it on; a free one when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// List the voices instead.
+        #[arg(long)]
+        voices: bool,
+    },
     /// Your preferences (ADR-0031): defaults the CLI and the app fill requests with, and
     /// performance and cache settings. Without a subcommand, every preference.
     Preferences {
@@ -471,8 +495,9 @@ pub enum MediaCommand {
     Analyze {
         /// The asset, for example `asset_0001`.
         asset: String,
-        /// Analyzers to run: loudness, silences, scenes, transcript. Without names, every one
-        /// the asset allows except transcript, which needs a speech model.
+        /// Analyzers to run: loudness, silences, scenes, transcript, pose, matte. Without
+        /// names, every one the asset allows except those that need a model (transcript,
+        /// pose, matte).
         analyzers: Vec<String>,
         /// Measure again even if results are cached.
         #[arg(long)]
@@ -500,6 +525,16 @@ pub enum MediaCommand {
         /// (default 300).
         #[arg(long)]
         min_pause_ms: Option<u32>,
+        /// Matte: `person` (fast, from the pose model) or `subject` (any subject, through
+        /// BiRefNet, several seconds a frame).
+        #[arg(long)]
+        matte_model: Option<String>,
+        /// Matte: measure every Nth frame and follow the subject between them (default 1).
+        #[arg(long)]
+        matte_every: Option<u32>,
+        /// Matte: the size mattes are kept at, in pixels on the long side (default 512).
+        #[arg(long)]
+        matte_size: Option<u32>,
     },
 }
 
@@ -1109,6 +1144,44 @@ pub enum KeyframeCommand {
 /// `fosscut captions ...`
 #[derive(Debug, Subcommand)]
 pub enum CaptionsCommand {
+    /// Translate a caption track's pages with a local model (English and Hungarian), as a
+    /// second line under each page (bilingual) or in place of its words (replace).
+    Translate {
+        /// The language to translate into: hu or en.
+        #[arg(long)]
+        to: String,
+        /// bilingual (default) or replace.
+        #[arg(long, default_value = "bilingual")]
+        mode: String,
+        /// The caption track; the first one when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// The timeline; the primary one when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
+    /// Speak each caption page with a local English voice, one clip per page at its start
+    /// on an audio track: the page's words, or with --translation its translation.
+    Dub {
+        /// The voice, such as af_heart.
+        #[arg(long)]
+        voice: Option<String>,
+        /// Speaking speed from 0.5 to 2 (default 1); pages that run long are sped up a little.
+        #[arg(long)]
+        speed: Option<f32>,
+        /// Speak each page's translation instead of its words.
+        #[arg(long)]
+        translation: bool,
+        /// The caption track; the first one when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// The audio track for the speech; a new one when omitted.
+        #[arg(long)]
+        audio_track: Option<String>,
+        /// The timeline; the primary one when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+    },
     /// Caption the clips of a track from their cached transcripts: run `fosscut media
     /// analyze <asset> transcript` first. Words become pages of a few words on a caption
     /// track.

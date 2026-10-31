@@ -49,6 +49,22 @@ export function isSoundEffect(spec: EffectSpec): boolean {
   return spec.category === "audio";
 }
 
+/** The groups the effects browser lists effects in. */
+export type EffectGroup = "picture" | "body" | "sound";
+
+/** The group an effect is listed in: body effects follow a person (ADR-0033). */
+export function groupOf(spec: EffectSpec): EffectGroup {
+  if (isSoundEffect(spec)) return "sound";
+  return spec.category === "body" ? "body" : "picture";
+}
+
+/** Effects by group, picture first, each in the catalog's order; empty groups left out. */
+export function effectGroups(offered: EffectSpec[]): { kind: EffectGroup; effects: EffectSpec[] }[] {
+  return (["picture", "body", "sound"] as const)
+    .map((kind) => ({ kind, effects: offered.filter((spec) => groupOf(spec) === kind) }))
+    .filter((group) => group.effects.length > 0);
+}
+
 /** The effect types a clip can take, in the catalog's order. */
 export function offeredEffects(catalog: EffectSpec[], targets: Targets): EffectSpec[] {
   return catalog.filter((spec) => (isSoundEffect(spec) ? targets.sound : targets.picture));

@@ -103,6 +103,7 @@ jobs:
       - uses: ./.github/actions/setup-desktop
       - uses: ./.github/actions/setup-gpu
       - uses: ./.github/actions/setup-speech
+      - uses: ./.github/actions/setup-models
       - name: Unit, property, contract, snapshot and end-to-end tests
         run: cargo nextest run --profile ci --workspace --all-features --locked --no-tests=fail
         env:
@@ -134,6 +135,7 @@ jobs:
       - uses: ./.github/actions/setup-desktop
       - uses: ./.github/actions/setup-gpu
       - uses: ./.github/actions/setup-speech
+      - uses: ./.github/actions/setup-models
       - name: Measure coverage and enforce the minimums in xtask/src/main.rs
         run: cargo xtask coverage
         env:

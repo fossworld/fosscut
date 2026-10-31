@@ -23,7 +23,11 @@ import {
   type LibraryItem,
   type LogEntry,
   type MediaListing,
+  type MatteSource,
   type MediaWork,
+  type ModelInfo,
+  type ModelInstallState,
+  type ModelListing,
   type MulticamRequest,
   type Normalization,
   type Opened,
@@ -34,9 +38,11 @@ import {
   type RecordChoice,
   type RecordState,
   type Region,
+  type SubjectRequest,
   type TimelineView,
   type TrashEntry,
   type UpdateAnswer,
+  type VoiceInfo,
   isApiError,
 } from "../engine/types";
 import { setLanguage, t } from "../i18n";
@@ -44,6 +50,20 @@ import { applyShortcuts } from "../shortcuts";
 import { clipsAt, findClip } from "../timeline/geometry";
 import { FLICKS_PER_SECOND, frameAt, frameStart, framesToFlicks, parseRate } from "../transport/time";
 import { keysOf, pairAt } from "./animation";
+import {
+  type AssistKind,
+  BODY_NEEDS,
+  SUBJECT_KEY,
+  VOICE_NEEDS,
+  backgroundNeeds,
+  dubbedReport,
+  isBodyEffect,
+  missingModels,
+  modelsFor,
+  trackOf,
+  translateNeeds,
+  translatedReport,
+} from "./assist";
 import { multicamMade, splitAtScenes, stabilized, targetOf, tracked } from "./measure";
 import { multicamPartAt } from "./multicam";
 
@@ -131,6 +151,53 @@ export interface EditorState {
   mediaWork: MediaWork | null;
   /** The assets the preview decodes from a proxy or a remuxed copy, by id. */
   sources: Record<string, PreviewSource>;
+  /** The models that run on this computer (ADR-0033); null until read. */
+  models: ModelListing | null;
+  /** Models the person is asked to install for something, and their install. */
+  install: InstallPrompt | null;
+  /** Work with local models that runs, or ran last: an analysis, speech, a translation or a dub. */
+  assist: Assist | null;
+  /** The text to speech panel. */
+  speech: SpeechPanel;
+}
+
+/** Work with local models, for the panel that started it. */
+export interface Assist {
+  kind: AssistKind;
+  /** The clip it is for: a video clip, or a caption clip of the track; null for speech. */
+  clip: string | null;
+  /** True while it runs. */
+  busy: boolean;
+  /** The analysis it waits for, as last read. */
+  job: JobStatus | null;
+  /** What it did, in a sentence, once done. */
+  report: string | null;
+  /** Why it could not, once it failed. */
+  error: ApiError | null;
+}
+
+/** Models to install before something can run: shown for the person to agree to first. */
+export interface InstallPrompt {
+  /** What they are for. */
+  purpose: AssistKind;
+  /** The models, the runtime first. */
+  models: ModelInfo[];
+  /** True once the person agreed, while they install. */
+  installing: boolean;
+  /** Which of `models` installs now. */
+  index: number;
+  /** Its install, as last read. */
+  current: ModelInstallState | null;
+  /** Why installing failed. */
+  error: ApiError | null;
+}
+
+/** The text to speech panel: whether it shows, the voices, and why they could not be read. */
+export interface SpeechPanel {
+  open: boolean;
+  /** The voice model's voices; null until read. */
+  voices: VoiceInfo[] | null;
+  error: ApiError | null;
 }
 
 /** The status line of copies being made ("Making proxies 2 of 5"), or null when none are. */
@@ -292,6 +359,10 @@ const EMPTY: EditorState = {
   update: null,
   mediaWork: null,
   sources: {},
+  models: null,
+  install: null,
+  assist: null,
+  speech: { open: false, voices: null, error: null },
   notice: null,
   catalog: null,
   luts: [],
@@ -348,6 +419,10 @@ export class Editor {
   private reading: Promise<void> | null = null;
   private stale = false;
   private updateTimer: ReturnType<typeof setInterval> | null = null;
+  /** What runs once the models the person agreed to are installed. */
+  private afterInstall: (() => Promise<void>) | null = null;
+  /** What runs once the analysis that runs succeeds, answering what it did. */
+  private afterAnalysis: (() => Promise<string | null>) | null = null;
 
   constructor(
     private readonly engine: EngineClient,
@@ -378,9 +453,9 @@ export class Editor {
   }
 
   /** What outlives a project: the recent list, the preferences, Settings and an update. */
-  private kept(): Pick<EditorState, "recent" | "preferences" | "settings" | "update" | "mediaWork"> {
-    const { recent, preferences, settings, update, mediaWork } = this.state;
-    return { recent, preferences, settings, update, mediaWork };
+  private kept(): Pick<EditorState, "recent" | "preferences" | "settings" | "update" | "mediaWork" | "models"> {
+    const { recent, preferences, settings, update, mediaWork, models } = this.state;
+    return { recent, preferences, settings, update, mediaWork, models };
   }
 
   // ---- Lifecycle ----
@@ -1206,8 +1281,13 @@ export class Editor {
     await this.edit([{ command: "animation.set", args }]);
   }
 
-  /** Adds an effect at its defaults to the end of a clip's effects. */
+  /**
+   * Adds an effect at its defaults to the end of a clip's effects. Removing the background
+   * and body effects analyze the clip first, installing their models once the person agrees.
+   */
   async addEffect(clip: string, type: string): Promise<void> {
+    if (type === SUBJECT_KEY) return this.removeBackground(clip);
+    if (isBodyEffect(type)) return this.addBodyEffect(clip, type);
     await this.edit([{ command: "effect.add", args: { clip, type } }]);
   }
 
@@ -1414,6 +1494,8 @@ export class Editor {
 
   /** Opens the record panel and reads the devices again, as they come and go. */
   async openRecorder(): Promise<void> {
+    // The two panels share the preview's corner.
+    if (this.state.speech.open) this.closeSpeech();
     this.setRecorder({ open: true, error: null });
     try {
       this.setRecorder({ devices: await this.engine.record.devices() });
@@ -1480,6 +1562,353 @@ export class Editor {
     if (status.clip) this.set({ selection: status.clip, also: [] });
     if (!this.state.recorder.open && !error) {
       this.set({ notice: { kind: "info", text: t("app.recording.placed") } });
+    }
+  }
+
+  // ---- Local models (ADR-0033) ----
+
+  /** Reads which models are installed; null when they cannot be read. */
+  async loadModels(): Promise<ModelListing | null> {
+    try {
+      const models = await this.engine.models.list();
+      this.set({ models });
+      return models;
+    } catch {
+      return null;
+    }
+  }
+
+  private setInstall(patch: Partial<InstallPrompt>): void {
+    const install = this.state.install;
+    if (install) this.set({ install: { ...install, ...patch } });
+  }
+
+  private setAssist(patch: Partial<Assist>): void {
+    const assist = this.state.assist;
+    if (assist) this.set({ assist: { ...assist, ...patch } });
+  }
+
+  /** Asks the person to install `models` for `purpose`; `then` runs once they are installed. */
+  private askToInstall(purpose: AssistKind, models: ModelInfo[], then: () => Promise<void>): void {
+    this.afterInstall = then;
+    this.set({ install: { purpose, models, installing: false, index: 0, current: null, error: null } });
+  }
+
+  /**
+   * Runs `then` once the models of `needs` are installed: at once when they are (or when
+   * the listing cannot be read, so the engine says what is missing), otherwise after the
+   * person agreed to install the missing ones.
+   */
+  private async withModels(purpose: AssistKind, needs: string[], then: () => Promise<void>): Promise<void> {
+    if (this.state.assist?.busy) {
+      this.set({ notice: { kind: "info", text: t("app.assist.busy") } });
+      return;
+    }
+    const listing = await this.loadModels();
+    const missing = listing ? missingModels(listing, needs) : [];
+    if (missing.length === 0) await then();
+    else this.askToInstall(purpose, missing, then);
+  }
+
+  /**
+   * Offers to install what the engine said is missing, retrying with `retry` once it is;
+   * false when the refusal is about something else.
+   */
+  private async offerInstall(purpose: AssistKind, error: ApiError, needs: string[], retry: () => Promise<void>): Promise<boolean> {
+    const listing = await this.loadModels();
+    const models = listing ? modelsFor(error, listing, needs) : [];
+    if (models.length === 0) return false;
+    this.askToInstall(purpose, models, retry);
+    return true;
+  }
+
+  /** The person agreed to the models shown: they install one after the other. */
+  async confirmInstall(): Promise<void> {
+    const prompt = this.state.install;
+    if (!prompt || prompt.installing) return;
+    this.setInstall({ installing: true, error: null, index: 0, current: null });
+    await this.installFrom(0);
+  }
+
+  /** Installs the prompt's models from `index` on, then runs what waited for them. */
+  private async installFrom(index: number): Promise<void> {
+    const prompt = this.state.install;
+    if (!prompt?.installing) return;
+    const model = prompt.models[index];
+    if (!model) {
+      const then = this.afterInstall;
+      this.afterInstall = null;
+      this.set({ install: null });
+      await this.loadModels();
+      await then?.();
+      return;
+    }
+    let state: ModelInstallState;
+    try {
+      state = await this.engine.models.install(model.name, true);
+    } catch (error) {
+      this.setInstall({ installing: false, error: asError(error) });
+      return;
+    }
+    await this.installRead(index, state);
+  }
+
+  /** An install's new state: the next model once it succeeded, the error once it failed. */
+  private async installRead(index: number, state: ModelInstallState): Promise<void> {
+    // An answer after the dialog was put away changes nothing.
+    if (!this.state.install?.installing) return;
+    this.setInstall({ index, current: state });
+    if (state.state === "succeeded") await this.installFrom(index + 1);
+    else if (state.state !== "running") {
+      this.setInstall({ installing: false, error: state.error ?? { code: "fosscut.model.download_failed", message: t("models.install.failed", { name: state.name }) } });
+    }
+  }
+
+  /** Reads the running install again; the install dialog asks twice a second. */
+  async pollInstall(): Promise<void> {
+    const prompt = this.state.install;
+    const current = prompt?.current;
+    if (!prompt?.installing || current?.state !== "running") return;
+    let state: ModelInstallState;
+    try {
+      state = await this.engine.models.installStatus(current.name);
+    } catch (error) {
+      this.setInstall({ installing: false, error: asError(error) });
+      return;
+    }
+    const now = this.state.install;
+    if (now?.current?.name !== state.name || now.current.state !== "running") return;
+    await this.installRead(now.index, state);
+  }
+
+  /** Puts the install dialog away without installing; an install that runs goes on. */
+  cancelInstall(): void {
+    if (this.state.install?.installing) return;
+    this.afterInstall = null;
+    this.set({ install: null });
+  }
+
+  /**
+   * Runs work with local models for the panel of `kind`: busy while it runs, then what it
+   * did, or its error with the hint. A model that is missing turns into the install dialog,
+   * and the work runs again once it is installed; a stale revision reloads and says so.
+   */
+  private async assisted(kind: AssistKind, clip: string | null, needs: string[], run: () => Promise<string | null>): Promise<boolean> {
+    if (!this.state.timeline) return false;
+    if (this.state.assist?.busy) {
+      this.set({ notice: { kind: "info", text: t("app.assist.busy") } });
+      return false;
+    }
+    this.set({ assist: { kind, clip, busy: true, job: null, report: null, error: null } });
+    try {
+      const report = await run();
+      this.set({ assist: { kind, clip, busy: false, job: null, report, error: null } });
+      return true;
+    } catch (error) {
+      const api = asError(error);
+      this.set({ assist: null });
+      if (api.code === "fosscut.revision.conflict") {
+        await this.refresh();
+        this.set({ notice: { kind: "info", text: t("app.conflict") } });
+        return false;
+      }
+      const retry = async () => void (await this.assisted(kind, clip, needs, run));
+      if (await this.offerInstall(kind, api, needs, retry)) return false;
+      this.set({ assist: { kind, clip, busy: false, job: null, report: null, error: api } });
+      return false;
+    }
+  }
+
+  /**
+   * Analyzes a video clip's subject as a job, then runs `then` (which adds or changes the
+   * effect) once it succeeded. Cached analyses answer at once.
+   */
+  private async analyzeThen(kind: AssistKind, request: SubjectRequest, needs: string[], then: () => Promise<string | null>): Promise<void> {
+    if (!this.state.timeline) return;
+    if (this.state.assist?.busy) {
+      this.set({ notice: { kind: "info", text: t("app.assist.busy") } });
+      return;
+    }
+    this.set({ assist: { kind, clip: request.clip, busy: true, job: null, report: null, error: null } });
+    let status: JobStatus;
+    try {
+      status = await this.engine.subject.analyze(request);
+    } catch (error) {
+      const api = asError(error);
+      this.set({ assist: null });
+      const retry = () => this.analyzeThen(kind, request, needs, then);
+      if (await this.offerInstall(kind, api, needs, retry)) return;
+      this.set({ assist: { kind, clip: request.clip, busy: false, job: null, report: null, error: api } });
+      return;
+    }
+    this.afterAnalysis = then;
+    await this.analysisRead(status);
+  }
+
+  /** Reads the running analysis again; the panel that started it asks twice a second. */
+  async pollAnalysis(): Promise<void> {
+    const job = this.state.assist?.job;
+    if (!this.state.assist?.busy || job?.state !== "running") return;
+    try {
+      await this.analysisRead(await this.engine.subject.status(job.job));
+    } catch (error) {
+      this.afterAnalysis = null;
+      this.setAssist({ busy: false, error: asError(error) });
+    }
+  }
+
+  /** Stops the running analysis; nothing is added. */
+  async cancelAnalysis(): Promise<void> {
+    const job = this.state.assist?.job;
+    if (!this.state.assist?.busy || job?.state !== "running") return;
+    try {
+      await this.analysisRead(await this.engine.subject.cancel(job.job));
+    } catch (error) {
+      this.afterAnalysis = null;
+      this.setAssist({ busy: false, error: asError(error) });
+    }
+  }
+
+  /** An analysis's new status: once it succeeded, what waited for it runs, once. */
+  private async analysisRead(status: JobStatus): Promise<void> {
+    const assist = this.state.assist;
+    if (!assist?.busy) return;
+    // An answer for another job, or for one already finished, changes nothing.
+    if (assist.job && (assist.job.job !== status.job || assist.job.state !== "running")) return;
+    this.setAssist({ job: status });
+    if (status.state === "running") return;
+    const then = this.afterAnalysis;
+    this.afterAnalysis = null;
+    if (status.state === "succeeded") {
+      const report = then ? await then() : null;
+      this.setAssist({ busy: false, report });
+    } else if (status.state === "cancelled") {
+      this.setAssist({ busy: false, report: t("models.analysis.cancelled") });
+    } else {
+      this.setAssist({ busy: false, error: status.error ?? { code: "fosscut.internal", message: t("models.analysis.failed") } });
+    }
+  }
+
+  /** Puts a finished piece of work's report or error away. */
+  dismissAssist(): void {
+    if (!this.state.assist?.busy) this.set({ assist: null });
+  }
+
+  /**
+   * Removes a video clip's background: analyzes its matte (a person by default, or any
+   * subject, slowly), then adds the effect, or points the effect there is at that matte.
+   */
+  async removeBackground(clip: string, source: MatteSource = "person"): Promise<void> {
+    const needs = backgroundNeeds(source);
+    await this.withModels("background", needs, () =>
+      this.analyzeThen("background", { clip, kind: "matte", model: source }, needs, async () => {
+        const view = this.state.timeline ? findClip(this.state.timeline, clip) : null;
+        const effect = view?.effects?.find((e) => e.type === SUBJECT_KEY);
+        if (effect && (effect.params?.source ?? "person") === source) return t("models.background.done");
+        const command = effect
+          ? { command: "effect.set", args: { clip, effect: effect.id, params: { source } } }
+          : { command: "effect.add", args: { clip, type: SUBJECT_KEY, params: { source } } };
+        return (await this.edit([command], t("models.background.reason"))) ? t("models.background.done") : null;
+      }),
+    );
+  }
+
+  /** Adds a body effect to a video clip once its pose is analyzed. */
+  async addBodyEffect(clip: string, type: string): Promise<void> {
+    await this.withModels("body", BODY_NEEDS, () =>
+      this.analyzeThen("body", { clip, kind: "pose" }, BODY_NEEDS, async () => {
+        const title = this.state.catalog?.effects.find((e) => e.type === type)?.title ?? type;
+        const added = await this.edit([{ command: "effect.add", args: { clip, type } }]);
+        return added ? t("models.body.done", { effect: title }) : null;
+      }),
+    );
+  }
+
+  /** Opens the text to speech panel and reads the voices. */
+  async openSpeech(): Promise<void> {
+    // The two panels share the preview's corner; a recording that runs goes on.
+    if (this.state.recorder.open) this.closeRecorder();
+    this.set({ speech: { ...this.state.speech, open: true, error: null } });
+    try {
+      const voices = await this.engine.voice.list();
+      this.set({ speech: { ...this.state.speech, voices } });
+    } catch (error) {
+      this.set({ speech: { ...this.state.speech, voices: this.state.speech.voices ?? [], error: asError(error) } });
+    }
+  }
+
+  closeSpeech(): void {
+    this.set({ speech: { ...this.state.speech, open: false } });
+  }
+
+  /** Speaks the text and plays it without adding it. */
+  async previewSpeech(text: string, voice: string, speed: number): Promise<void> {
+    if (!text.trim()) return;
+    await this.withModels("preview", VOICE_NEEDS, async () =>
+      void (await this.assisted("preview", null, VOICE_NEEDS, async () => {
+        const preview = await this.engine.voice.preview(text, voice, speed);
+        return preview.played ? null : t("voice.preview.silent");
+      })),
+    );
+  }
+
+  /** Speaks the text and places it at the playhead as one step, selecting the clip it became. */
+  async insertSpeech(text: string, voice: string, speed: number): Promise<void> {
+    if (!text.trim()) return;
+    await this.withModels("speech", VOICE_NEEDS, async () =>
+      void (await this.assisted("speech", null, VOICE_NEEDS, async () => {
+        const timeline = this.state.timeline;
+        const result = await this.engine.voice.add({
+          text,
+          voice,
+          speed,
+          at: this.state.playhead,
+          expected_revision: timeline?.revision,
+        });
+        await this.refresh();
+        const placed = (result.response?.results ?? [])
+          .map((r) => (r as { clip?: string } | null)?.clip)
+          .find((c): c is string => typeof c === "string");
+        if (placed) this.set({ selection: placed, also: [] });
+        return t("voice.speech.added", { seconds: Math.round(result.speech.file.seconds * 10) / 10 });
+      })),
+    );
+  }
+
+  /** Translates the caption track of `clip` into `to`, under each page or instead of its words. */
+  async translateCaptions(clip: string, to: "hu" | "en", mode: "bilingual" | "replace"): Promise<void> {
+    const needs = translateNeeds(to);
+    await this.withModels("translate", needs, async () =>
+      void (await this.assisted("translate", clip, needs, async () => {
+        const timeline = this.state.timeline;
+        const track = timeline ? trackOf(timeline, clip) : undefined;
+        const result = await this.engine.captions.translate({ track, to, mode, expected_revision: timeline?.revision });
+        await this.refresh();
+        return translatedReport(result);
+      })),
+    );
+  }
+
+  /** Dubs the caption track of `clip` with a voice, speaking its words or its translations. */
+  async dubCaptions(clip: string, voice: string, speed: number, translation: boolean): Promise<void> {
+    await this.withModels("dub", VOICE_NEEDS, async () =>
+      void (await this.assisted("dub", clip, VOICE_NEEDS, async () => {
+        const timeline = this.state.timeline;
+        const track = timeline ? trackOf(timeline, clip) : undefined;
+        const result = await this.engine.captions.dub({ track, voice, speed, translation, expected_revision: timeline?.revision });
+        await this.refresh();
+        return dubbedReport(result);
+      })),
+    );
+  }
+
+  /** Reads the voices once, for the caption track's dubbing. */
+  async loadVoices(): Promise<void> {
+    if (this.state.speech.voices) return;
+    try {
+      this.set({ speech: { ...this.state.speech, voices: await this.engine.voice.list() } });
+    } catch (error) {
+      this.set({ speech: { ...this.state.speech, voices: [], error: asError(error) } });
     }
   }
 

@@ -106,6 +106,20 @@ pub enum EngineError {
     /// The analysis was cancelled; nothing was cached.
     #[error("the analysis was cancelled")]
     AnalysisCancelled,
+    /// An export or frame needs an analysis that is not cached: a clip's `key.subject` reads
+    /// a matte of its media, a body effect its pose (ADR-0033). Nothing was rendered.
+    #[error("{effect} needs the {analyzer} analysis of {asset}, which is not cached")]
+    AnalysisMissing {
+        /// The asset to analyze.
+        asset: String,
+        /// The analyzer to run: `matte` or `pose`.
+        analyzer: String,
+        /// The analyzer's options that matter, as `media_analyze` takes them, for example
+        /// `{"matte": {"model": "subject"}}`.
+        options: Value,
+        /// The effect that needs it, such as `key.subject`.
+        effect: String,
+    },
     /// No model has this name.
     #[error("there is no model {name}")]
     ModelUnknown {
@@ -289,6 +303,7 @@ impl EngineError {
             EngineError::NoVideo { .. } => "fosscut.analysis.no_video",
             EngineError::UnknownAnalyzer { .. } => "fosscut.analysis.unknown_analyzer",
             EngineError::AnalysisCancelled => "fosscut.analysis.cancelled",
+            EngineError::AnalysisMissing { .. } => "fosscut.analysis.missing",
             EngineError::ModelUnknown { .. } => "fosscut.model.unknown",
             EngineError::ModelNotInstalled { .. } => "fosscut.model.not_installed",
             EngineError::ModelChecksum { .. } => "fosscut.model.checksum_mismatch",
@@ -347,6 +362,11 @@ impl EngineError {
             EngineError::UnknownAnalyzer { known, .. } => {
                 Some(format!("Analyzers: {}.", known.join(", ")))
             }
+            EngineError::AnalysisMissing {
+                asset, analyzer, ..
+            } => Some(format!(
+                "Analyze it first: media_analyze with asset {asset}, analyzers [\"{analyzer}\"] and the options in details (fosscut media analyze {asset} {analyzer} on the command line), then render again. It runs a local model, which must be installed."
+            )),
             EngineError::ModelUnknown { .. } => {
                 Some(format!("Models: {}.", model_names()))
             }
@@ -442,6 +462,17 @@ impl EngineError {
             EngineError::UnknownAnalyzer { name, known } => {
                 json!({ "name": name, "known": known })
             }
+            EngineError::AnalysisMissing {
+                asset,
+                analyzer,
+                options,
+                effect,
+            } => json!({
+                "asset": asset,
+                "analyzer": analyzer,
+                "options": options,
+                "effect": effect,
+            }),
             EngineError::ModelUnknown { name } => json!({ "name": name }),
             EngineError::ModelNotInstalled { what } => json!({ "what": what }),
             EngineError::ModelChecksum {
@@ -545,6 +576,56 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.analysis.cancelled",
             "The analysis was cancelled; nothing was cached.",
             "Start it again when wanted.",
+        ),
+        entry(
+            "fosscut.analysis.missing",
+            "A clip's key.subject or body effect needs a matte or pose analysis of its media that is not cached, so nothing was rendered.",
+            "Run media_analyze with details.asset, analyzers [details.analyzer] and options details.options, then render again.",
+        ),
+        entry(
+            "fosscut.voice.unknown_voice",
+            "There is no voice with this name.",
+            "List the voices (fosscut speak --voices, or the record tool's action voices) and choose one, such as af_heart.",
+        ),
+        entry(
+            "fosscut.voice.language_unavailable",
+            "Text to speech speaks English only; the text or the language asked for is not English.",
+            "Give English text, or caption the speech instead of dubbing it.",
+        ),
+        entry(
+            "fosscut.voice.synthesis_failed",
+            "The voice model could not speak the text.",
+            "Try shorter text or another voice, and check the kokoro-82m model is installed intact (fosscut models list).",
+        ),
+        entry(
+            "fosscut.voice.write_failed",
+            "The speech file could not be written into the bundle's speech folder.",
+            "Check the bundle is writable and the disk has room.",
+        ),
+        entry(
+            "fosscut.voice.unavailable",
+            "This build of FossCut has no text to speech.",
+            "Use a build with the onnx feature.",
+        ),
+        entry(
+            "fosscut.translate.unsupported_pair",
+            "No translation model covers these two languages.",
+            "Translate between English and Hungarian (en>hu, hu>en), or translate the captions yourself with captions.edit.",
+        ),
+        entry(
+            "fosscut.translate.failed",
+            "The translation model could not translate the text.",
+            "Check the opus-mt model is installed intact (fosscut models list), or translate the captions yourself with captions.edit.",
+        ),
+        entry(
+            "fosscut.translate.unavailable",
+            "This build of FossCut has no translation models.",
+            "Use a build with the onnx feature, or translate the captions yourself with captions.edit.",
+        ),
+        entry(
+            "fosscut.model.inference_failed",
+            "An installed vision model failed while it ran.",
+            "Try again, install the model again, or report the message.",
         ),
         entry(
             "fosscut.model.unknown",
@@ -900,6 +981,17 @@ mod tests {
                 true,
             ),
             (
+                EngineError::AnalysisMissing {
+                    asset: "asset_0001".into(),
+                    analyzer: "matte".into(),
+                    options: json!({ "matte": { "model": "subject" } }),
+                    effect: "key.subject".into(),
+                },
+                "fosscut.analysis.missing",
+                "key.subject needs the matte analysis of asset_0001, which is not cached",
+                true,
+            ),
+            (
                 EngineError::MissingMedia {
                     asset: "asset_0001".into(),
                     tried: vec!["clip.mp4".into()],
@@ -1153,6 +1245,22 @@ mod tests {
             path: "Out.mp4".into(),
         };
         assert_eq!(exists.details(), json!({ "path": "Out.mp4" }));
+        let missing = EngineError::AnalysisMissing {
+            asset: "asset_0002".into(),
+            analyzer: "pose".into(),
+            options: json!({}),
+            effect: "body.glow".into(),
+        };
+        assert_eq!(
+            missing.details(),
+            json!({ "asset": "asset_0002", "analyzer": "pose", "options": {}, "effect": "body.glow" })
+        );
+        assert!(
+            missing
+                .hint()
+                .unwrap()
+                .contains("fosscut media analyze asset_0002 pose")
+        );
         let conflict = EngineError::RevisionConflict {
             expected: 3,
             current: 5,
@@ -1250,6 +1358,12 @@ mod tests {
                 known: Vec::new(),
             },
             EngineError::AnalysisCancelled,
+            EngineError::AnalysisMissing {
+                asset: String::new(),
+                analyzer: String::new(),
+                options: Value::Null,
+                effect: String::new(),
+            },
             EngineError::ModelUnknown {
                 name: String::new(),
             },

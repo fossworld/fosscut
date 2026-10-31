@@ -283,6 +283,10 @@ pub enum RecordAction {
     Devices,
     /// Start recording as a background job.
     Start,
+    /// Make a voiceover from text with a local English voice.
+    Speak,
+    /// List the local voices.
+    Voices,
 }
 
 /// Arguments of the `record` tool.
@@ -290,8 +294,22 @@ pub enum RecordAction {
 pub struct RecordArgs {
     /// Path of a `.fosscut` bundle; the open project when omitted.
     pub project: Option<String>,
-    /// `devices` or `start`.
+    /// `devices`, `start`, `speak` or `voices`.
     pub action: RecordAction,
+    /// speak: the text to say.
+    pub text: Option<String>,
+    /// speak: the voice, such as `af_heart` (American) or `bm_george` (British); see
+    /// action voices.
+    pub voice: Option<String>,
+    /// speak: speaking speed from 0.5 to 2 (default 1).
+    pub speed: Option<f32>,
+    /// speak: where to place the speech on the timeline; after the first audio track's last
+    /// clip when omitted.
+    pub at: Option<TimeInput>,
+    /// speak: the audio track to place it on; a free one when omitted.
+    pub track: Option<String>,
+    /// speak: fail with `fosscut.revision.conflict` unless the project is at this revision.
+    pub expected_revision: Option<u64>,
     /// start: `microphone` (a voiceover), `camera` or `screen`.
     pub what: Option<String>,
     /// start: the device by name, a part of its name, or its number from 1 among its kind
@@ -338,6 +356,10 @@ pub enum CaptionsAction {
     Import,
     /// Write a caption track to an SRT file.
     Export,
+    /// Translate a caption track's pages with a local model (English and Hungarian).
+    Translate,
+    /// Speak each caption page with a local English voice on an audio track.
+    Dub,
 }
 
 /// Arguments of `captions`.
@@ -345,8 +367,23 @@ pub enum CaptionsAction {
 pub struct CaptionsArgs {
     /// Path of a `.fosscut` bundle; the open project when omitted.
     pub project: Option<String>,
-    /// `generate` (from transcripts), `import` (an SRT file) or `export` (to an SRT file).
+    /// `generate` (from transcripts), `import` (an SRT file), `export` (to an SRT file),
+    /// `translate` or `dub`.
     pub action: CaptionsAction,
+    /// translate: the language to translate into, `hu` or `en`.
+    pub to: Option<String>,
+    /// translate: `bilingual` (a second line under each page, the default) or `replace`
+    /// (the page's words become the translation, spread over the page's time).
+    pub mode: Option<String>,
+    /// dub: the voice, such as `af_heart`; see the record tool's action voices.
+    pub voice: Option<String>,
+    /// dub: speaking speed from 0.5 to 2 (default 1).
+    pub speed: Option<f32>,
+    /// dub: speak each page's translation instead of its words.
+    #[serde(default)]
+    pub translation: bool,
+    /// dub: the audio track for the speech; a new one when omitted.
+    pub audio_track: Option<String>,
     /// The SRT file to import or to write.
     pub file: Option<String>,
     /// Timeline; the primary timeline when omitted.

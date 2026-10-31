@@ -2,7 +2,7 @@
 //! by the same plan and renderer as an export, so what an agent checks is what it exports.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use fosscut_media::DecoderOptions;
 use fosscut_media::ffmpeg::FfmpegVideoDecoder;
@@ -14,6 +14,7 @@ use fosscut_time::{Flicks, TimeReport};
 use serde::{Deserialize, Serialize};
 
 use crate::EngineError;
+use crate::analysis::subject::{Subjects, plan_requirements, timeline_requirements};
 use crate::export::resolve;
 
 /// Widest frame or tile rendered, in pixels.
@@ -61,7 +62,8 @@ pub struct ContactSheet {
 }
 
 /// Renders the frame of `timeline` that contains `time`, `width` pixels wide (the
-/// timeline's own size when `None`), with the timeline's aspect ratio.
+/// timeline's own size when `None`), with the timeline's aspect ratio. Analyses that clips'
+/// effects read come from the cache in [`crate::cache_dir`].
 pub fn frame(
     project: &Project,
     bundle: &Path,
@@ -70,7 +72,30 @@ pub fn frame(
     width: Option<u32>,
     renderer: &mut Renderer,
 ) -> Result<Still, EngineError> {
-    let mut frames = Frames::new(project, bundle, timeline)?;
+    frame_in(
+        project,
+        bundle,
+        timeline,
+        time,
+        width,
+        &crate::cache_dir(),
+        renderer,
+    )
+}
+
+/// [`frame`] with the analyses that `key.subject` and the body effects read taken from the
+/// cache directory `cache`. A clip whose analysis is missing fails with
+/// `fosscut.analysis.missing` before anything renders (ADR-0033).
+pub fn frame_in(
+    project: &Project,
+    bundle: &Path,
+    timeline: &Id,
+    time: Flicks,
+    width: Option<u32>,
+    cache: &Path,
+    renderer: &mut Renderer,
+) -> Result<Still, EngineError> {
+    let mut frames = Frames::new(project, bundle, timeline, cache)?;
     if time < Flicks::ZERO || time >= frames.duration {
         return Err(EngineError::TimeOutOfRange {
             time,
@@ -83,6 +108,7 @@ pub fn frame(
 
 /// Renders `count` frames spread evenly over `timeline`, each `width` pixels wide, and tiles
 /// them into one image. Tile `i` shows the middle of the `i`-th of `count` equal parts.
+/// Analyses that clips' effects read come from the cache in [`crate::cache_dir`].
 pub fn contact_sheet(
     project: &Project,
     bundle: &Path,
@@ -91,12 +117,39 @@ pub fn contact_sheet(
     width: u32,
     renderer: &mut Renderer,
 ) -> Result<ContactSheet, EngineError> {
+    contact_sheet_in(
+        project,
+        bundle,
+        timeline,
+        count,
+        width,
+        &crate::cache_dir(),
+        renderer,
+    )
+}
+
+/// [`contact_sheet`] with analyses from the cache directory `cache`. Every analysis the
+/// timeline's effects need is checked before the first tile renders.
+pub fn contact_sheet_in(
+    project: &Project,
+    bundle: &Path,
+    timeline: &Id,
+    count: u32,
+    width: u32,
+    cache: &Path,
+    renderer: &mut Renderer,
+) -> Result<ContactSheet, EngineError> {
     if !(1..=MAX_TILES).contains(&count) {
         return Err(EngineError::InvalidArguments {
             message: format!("a contact sheet has 1 to {MAX_TILES} tiles, not {count}"),
         });
     }
-    let mut frames = Frames::new(project, bundle, timeline)?;
+    let mut frames = Frames::new(project, bundle, timeline, cache)?;
+    frames.media.require_subjects(
+        project,
+        bundle,
+        &timeline_requirements(project, timeline, None),
+    )?;
     let (tile_width, tile_height) = frames.size(width)?;
     let columns = sheet_columns(count, tile_width, tile_height);
     let rows = count.div_ceil(columns);
@@ -162,12 +215,16 @@ fn sheet_columns(count: u32, tile_width: u32, tile_height: u32) -> u32 {
     columns.clamp(1, count)
 }
 
-/// Decoders for the media a timeline shows, each opened on first use and kept. Assets never
-/// change once imported (ADR-0004), so decoders stay valid across edits.
+/// Decoders for the media a timeline shows, each opened on first use and kept, with the
+/// cached analyses subject effects read. Assets never change once imported (ADR-0004), so
+/// decoders stay valid across edits.
 #[derive(Default)]
 pub(crate) struct Media {
     decoders: DecoderFrames,
     opened: HashSet<Id>,
+    /// The cache directory analyses are read from; [`crate::cache_dir`] when `None`.
+    cache: Option<PathBuf>,
+    subjects: Subjects,
 }
 
 impl Media {
@@ -209,7 +266,23 @@ impl Media {
                 self.opened.insert(source.asset.clone());
             }
         }
-        Ok(())
+        self.require_subjects(project, bundle, &plan_requirements(project, plan))
+    }
+
+    /// Loads the cached analyses `requirements` name, failing with
+    /// `fosscut.analysis.missing` for the first that is not cached.
+    pub(crate) fn require_subjects(
+        &mut self,
+        project: &Project,
+        bundle: &Path,
+        requirements: &[crate::analysis::subject::Requirement],
+    ) -> Result<(), EngineError> {
+        if requirements.is_empty() {
+            return Ok(());
+        }
+        let cache = self.cache.clone().unwrap_or_else(crate::cache_dir);
+        self.subjects
+            .require(project, bundle, &cache, requirements, &mut self.decoders)
     }
 
     /// The decoders, as the renderer reads frames.
@@ -297,6 +370,7 @@ impl<'a> Frames<'a> {
         project: &'a Project,
         bundle: &'a Path,
         timeline: &'a Id,
+        cache: &Path,
     ) -> Result<Frames<'a>, EngineError> {
         let doc = project
             .timelines
@@ -314,7 +388,10 @@ impl<'a> Frames<'a> {
             timeline,
             format: doc.format.clone(),
             duration,
-            media: Media::default(),
+            media: Media {
+                cache: Some(cache.to_path_buf()),
+                ..Media::default()
+            },
         })
     }
 

@@ -2,6 +2,11 @@
 //! cached transcript of each clip on a source track to timeline time; `import` reads SRT;
 //! `export` writes SRT. Front ends hand the words to the core's `captions.add` with the
 //! caller's safety-contract fields, so every write goes through the command framework.
+//!
+//! [`translate`] translates a caption track's pages with an installed translation model
+//! (ADR-0033 item 6) into `captions.edit` calls: each page's `translation` for bilingual
+//! captions, or new words spread over the page's time. [`crate::voice::dub`] speaks the
+//! pages.
 
 use std::path::PathBuf;
 
@@ -142,6 +147,14 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
             continue;
         };
         clips += 1;
+        // Speech FossCut made knows its words: keep the recognizer's timing, not its spelling.
+        let spoken = crate::export::resolve(project, &request.bundle, asset)
+            .ok()
+            .and_then(|file| crate::voice::spoken_text(&file));
+        let transcript = match spoken {
+            Some(text) => with_known_words(&transcript, &text),
+            None => transcript,
+        };
         words.extend(clip_words(clip, &transcript, request.skip_fillers));
     }
     if !missing.is_empty() {
@@ -162,6 +175,58 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
         clips,
         words,
     })
+}
+
+/// `transcript` with its words replaced by `text`'s, as written: one for one when the
+/// counts match, otherwise spread over the recognized words' time by their length. Fillers
+/// do not apply to known text.
+fn with_known_words(
+    transcript: &fosscut_analysis::speech::Transcript,
+    text: &str,
+) -> fosscut_analysis::speech::Transcript {
+    use fosscut_analysis::Moment;
+    let known: Vec<&str> = text.split_whitespace().collect();
+    let heard = &transcript.words;
+    let (Some(first), Some(last)) = (heard.first(), heard.last()) else {
+        return transcript.clone();
+    };
+    let words = if known.len() == heard.len() {
+        heard
+            .iter()
+            .zip(&known)
+            .map(|(word, text)| fosscut_analysis::speech::Word {
+                text: (*text).to_string(),
+                ..word.clone()
+            })
+            .collect()
+    } else {
+        let (start, end) = (first.start.flicks.get(), last.end.flicks.get());
+        let total: i64 = known
+            .iter()
+            .map(|w| w.chars().count() as i64)
+            .sum::<i64>()
+            .max(1);
+        let mut used = 0;
+        known
+            .iter()
+            .map(|text| {
+                let from = start + (end - start) * used / total;
+                used += text.chars().count() as i64;
+                let to = start + (end - start) * used / total;
+                fosscut_analysis::speech::Word {
+                    text: (*text).to_string(),
+                    start: Moment::new(fosscut_time::Flicks::new(from)),
+                    end: Moment::new(fosscut_time::Flicks::new(to)),
+                    probability: 1.0,
+                }
+            })
+            .collect()
+    };
+    fosscut_analysis::speech::Transcript {
+        words,
+        fillers: Vec::new(),
+        ..transcript.clone()
+    }
 }
 
 /// A clip's transcript words in timeline time, as `captions.add` takes them. A word
@@ -532,6 +597,257 @@ pub fn srt_preview(srt: &str, cues: usize) -> String {
         .take(cues)
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+impl From<fosscut_analysis::translate::TranslateError> for EngineError {
+    fn from(error: fosscut_analysis::translate::TranslateError) -> EngineError {
+        use fosscut_analysis::translate::TranslateError;
+        match error {
+            TranslateError::Model(error) => EngineError::from(error),
+            TranslateError::Onnx(error) => EngineError::from(error),
+            other => EngineError::Failed {
+                code: other.code().to_string(),
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
+/// A caption page as translation and dubbing read it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Page {
+    /// The caption clip.
+    pub clip: Id,
+    /// When it starts on the timeline.
+    pub start: Flicks,
+    /// When it ends on the timeline.
+    pub end: Flicks,
+    /// Its words, lines joined by `\n`.
+    pub text: String,
+    /// Its translation, if it has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translation: Option<String>,
+}
+
+/// The pages of a caption track (the timeline's first when `track` is `None`), with the
+/// timeline and track they are on.
+pub fn pages(
+    project: &Project,
+    timeline: Option<&Id>,
+    track: Option<&Id>,
+) -> Result<(Id, Id, Vec<Page>), EngineError> {
+    let timeline_id = timeline
+        .cloned()
+        .unwrap_or_else(|| project.manifest.primary_timeline.clone());
+    let doc = project
+        .timelines
+        .get(&timeline_id)
+        .ok_or_else(|| EngineError::TimelineNotFound {
+            timeline: timeline_id.to_string(),
+        })?;
+    let found = match track {
+        Some(id) => {
+            let found = doc.track(id).ok_or_else(|| EngineError::InvalidArguments {
+                message: format!("track {id} does not exist in {timeline_id}"),
+            })?;
+            if found.kind != TrackKind::Caption {
+                return Err(EngineError::Failed {
+                    code: "fosscut.track.kind_mismatch".into(),
+                    message: format!("{id} is not a caption track"),
+                });
+            }
+            found
+        }
+        None => doc
+            .tracks
+            .iter()
+            .find(|t| t.kind == TrackKind::Caption)
+            .ok_or_else(|| EngineError::NoCaptions {
+                timeline: timeline_id.to_string(),
+            })?,
+    };
+    let pages: Vec<Page> = found
+        .clips
+        .iter()
+        .filter_map(|clip| match &clip.content {
+            ClipContent::Caption(caption) => Some(Page {
+                clip: clip.id.clone(),
+                start: clip.start,
+                end: clip.end(),
+                text: caption.text(),
+                translation: caption.translation.clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    if pages.is_empty() {
+        return Err(EngineError::NoCaptions {
+            timeline: timeline_id.to_string(),
+        });
+    }
+    Ok((timeline_id, found.id.clone(), pages))
+}
+
+/// How [`translate`] writes a page's translation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TranslateMode {
+    /// Into the page's `translation`, shown under its words (bilingual captions).
+    #[default]
+    Bilingual,
+    /// Instead of the page's words, spread over the page's time.
+    Replace,
+}
+
+impl TranslateMode {
+    /// The mode named `bilingual` or `replace`.
+    pub fn named(name: &str) -> Result<TranslateMode, EngineError> {
+        match name {
+            "bilingual" => Ok(TranslateMode::Bilingual),
+            "replace" => Ok(TranslateMode::Replace),
+            other => Err(EngineError::InvalidArguments {
+                message: format!(
+                    "the translation mode must be bilingual or replace, not {other:?}"
+                ),
+            }),
+        }
+    }
+}
+
+/// What [`translate`] translates.
+#[derive(Clone, Debug, Default)]
+pub struct TranslateRequest {
+    /// The models folder.
+    pub models: PathBuf,
+    /// Timeline; the primary timeline when `None`.
+    pub timeline: Option<Id>,
+    /// The caption track; the timeline's first when `None`.
+    pub track: Option<Id>,
+    /// The direction, `en>hu` or `hu>en`.
+    pub pair: String,
+    /// Where the translations go.
+    pub mode: TranslateMode,
+}
+
+/// A page and its translation.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TranslatedPage {
+    /// The caption clip.
+    pub clip: Id,
+    /// Its words.
+    pub text: String,
+    /// The translation.
+    pub translation: String,
+}
+
+/// A translated caption track, ready to apply.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Translated {
+    /// The project revision the calls are for.
+    pub revision: u64,
+    /// The timeline.
+    pub timeline: Id,
+    /// The caption track.
+    pub track: Id,
+    /// The direction.
+    pub pair: String,
+    /// Where the translations go.
+    pub mode: TranslateMode,
+    /// The model that translated.
+    pub model: String,
+    /// Its credit line, to show with the result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<String>,
+    /// Every page with its translation.
+    pub pages: Vec<TranslatedPage>,
+    /// Pages whose translation came out empty; they are left as they are.
+    pub skipped: Vec<Id>,
+    /// One `captions.edit` call per translated page.
+    pub calls: Vec<Value>,
+}
+
+/// Translates the pages of a caption track with the installed model for `request.pair`
+/// and returns the `captions.edit` calls that write the translations as `request.mode`
+/// says. A front end applies them in one request with `expected_revision` set to the
+/// returned `revision`.
+pub fn translate(project: &Project, request: &TranslateRequest) -> Result<Translated, EngineError> {
+    let model = fosscut_analysis::translate::model_for(&request.pair)?;
+    let (timeline, track, pages) =
+        pages(project, request.timeline.as_ref(), request.track.as_ref())?;
+    let texts: Vec<String> = pages.iter().map(|p| p.text.replace('\n', " ")).collect();
+    let translations =
+        fosscut_analysis::translate::translate(&request.models, model.languages, &texts)?;
+    let (calls, skipped) = translation_calls(&pages, &translations, request.mode);
+    Ok(Translated {
+        revision: project.manifest.revision,
+        timeline,
+        track,
+        pair: model.languages.to_string(),
+        mode: request.mode,
+        model: model.name.to_string(),
+        attribution: model.attribution.map(String::from),
+        pages: pages
+            .iter()
+            .zip(&translations)
+            .map(|(page, translation)| TranslatedPage {
+                clip: page.clip.clone(),
+                text: page.text.clone(),
+                translation: translation.clone(),
+            })
+            .collect(),
+        skipped,
+        calls,
+    })
+}
+
+/// The `captions.edit` calls that write `translations` (one per page, in order) as `mode`
+/// says, and the pages skipped because their translation is empty.
+pub fn translation_calls(
+    pages: &[Page],
+    translations: &[String],
+    mode: TranslateMode,
+) -> (Vec<Value>, Vec<Id>) {
+    let mut calls = Vec::new();
+    let mut skipped = Vec::new();
+    for (page, translation) in pages.iter().zip(translations) {
+        let translation = translation.split_whitespace().collect::<Vec<_>>().join(" ");
+        if translation.is_empty() {
+            skipped.push(page.clip.clone());
+            continue;
+        }
+        let args = match mode {
+            TranslateMode::Bilingual => json!({ "clip": page.clip, "translation": translation }),
+            TranslateMode::Replace => json!({
+                "clip": page.clip,
+                "words": spread_words(&translation, page.start, page.end),
+            }),
+        };
+        calls.push(json!({ "command": "captions.edit", "args": args }));
+    }
+    (calls, skipped)
+}
+
+/// `text`'s words timed across `start` to `end`, each with a share of the time in
+/// proportion to its length, back to back, as `captions.edit` takes them.
+pub fn spread_words(text: &str, start: Flicks, end: Flicks) -> Vec<Value> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let total: usize = words.iter().map(|w| w.chars().count()).sum();
+    let span = i128::from((end - start).get().max(0));
+    let at = |count: usize| {
+        Flicks::new(start.get() + (span * count as i128 / total.max(1) as i128) as i64)
+    };
+    let mut before = 0;
+    let mut out = Vec::with_capacity(words.len());
+    for word in words {
+        let length = word.chars().count();
+        out.push(json!({
+            "text": word,
+            "start": flicks(at(before)),
+            "end": flicks(at(before + length)),
+        }));
+        before += length;
+    }
+    out
 }
 
 #[cfg(test)]

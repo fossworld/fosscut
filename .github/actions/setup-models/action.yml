@@ -1,0 +1,30 @@
+name: Set up the local vision and voice models
+description: >
+  Makes ONNX Runtime and the vision, voice and translation models of ADR-0033 available to
+  the tests: restored from the Actions cache, or installed once with `fosscut models install`,
+  which downloads every file from its manifest address and checks its size and SHA-256. Run
+  after setup-speech, which sets FOSSCUT_MODELS_DIR; sets FOSSCUT_REQUIRE_MODELS=1, so a
+  missing model fails the tests instead of skipping them.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the models
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/fosscut-models
+        # The manifests name every file with its SHA-256, so they decide the cache.
+        key: local-models-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/fosscut-analysis/src/models.rs') }}
+
+    - name: Install and verify the models
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        for model in onnxruntime birefnet-lite mediapipe-pose-full kokoro-82m opus-mt-hu-en opus-mt-en-hu; do
+          cargo run --locked --quiet -p fosscut-cli -- models install "$model" --yes
+        done
+
+    - name: Require the models in tests
+      shell: bash
+      run: echo "FOSSCUT_REQUIRE_MODELS=1" >> "$GITHUB_ENV"

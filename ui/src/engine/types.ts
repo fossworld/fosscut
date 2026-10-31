@@ -361,6 +361,8 @@ export interface JobStatus {
   report?: ExportReport;
   /** The typed error, once it failed or was cancelled. */
   error?: ApiError;
+  /** The asset an analysis reads. */
+  asset?: string;
 }
 
 /** What a capture device records, and what a recording records from. */
@@ -467,7 +469,7 @@ export interface EffectView {
 /** One parameter of an effect type, as `capabilities` describes it. */
 export interface ParamSpec {
   name: string;
-  kind: "number" | "pair" | "bool" | "choice" | "curve" | "asset";
+  kind: "number" | "pair" | "bool" | "choice" | "curve" | "asset" | "color";
   default: unknown;
   min?: number;
   max?: number;
@@ -909,3 +911,150 @@ export interface MediaWork {
 
 /** What fills the canvas around a video or image clip (`clip.canvas`). */
 export type CanvasFill = { kind: "blur"; amount: number } | { kind: "color"; color: string };
+
+// ---- Local models (ADR-0033) ----
+
+/** A model FossCut can install and run on this computer, as `models_list` lists it. */
+export interface ModelInfo {
+  name: string;
+  /** `runtime`, `matte`, `pose`, `voice`, `translate` or `speech`. */
+  task: string;
+  /** The download's size on this system. */
+  size_bytes: number;
+  /** SPDX license. */
+  license: string;
+  /** The credit its license asks for, shown wherever it is listed. */
+  attribution?: string;
+  /** `en`, `multilingual`, a direction such as `en>hu`, or `none`. */
+  languages: string;
+  /** Where it downloads from; empty when it has no build for this system. */
+  url: string;
+  installed: boolean;
+  files: { name: string; url: string; size_bytes: number; sha256: string }[];
+  /** What to know before installing it. */
+  note?: string;
+}
+
+/** The models and where they are (`models_list`). */
+export interface ModelListing {
+  dir: string;
+  models: ModelInfo[];
+  /** The ONNX Runtime library the models will load; null until it is installed. */
+  runtime: string | null;
+}
+
+/** A model being installed in the background, or installed (`models_install`). */
+export interface ModelInstallState {
+  name: string;
+  state: JobState;
+  done_bytes: number;
+  total_bytes: number;
+  elapsed_ms: number;
+  /** Once it succeeded: `installed`, or `unchanged` when it already was. */
+  install?: { path: string; status: "installed" | "unchanged" | "dry_run" };
+  error?: ApiError;
+}
+
+/** What a clip's subject is analyzed for: a matte (background removal) or a pose (body effects). */
+export type SubjectKind = "matte" | "pose";
+
+/** Whose matte: a person (fast) or any subject (slow). */
+export type MatteSource = "person" | "subject";
+
+/** What `subject_analyze` analyzes. */
+export interface SubjectRequest {
+  clip: string;
+  kind: SubjectKind;
+  model?: MatteSource;
+}
+
+/** A voice of the voice model (`voices_list`). */
+export interface VoiceInfo {
+  /** For example `af_heart`. */
+  name: string;
+  accent: "american" | "british";
+  gender: "female" | "male";
+  installed: boolean;
+}
+
+/** A speech file the engine wrote. */
+export interface SpeechFile {
+  relative: string;
+  reused: boolean;
+  duration: number;
+  seconds: number;
+  voice: string;
+  speed: number;
+}
+
+/** A preview of speech, played and not added (`speech_preview`). */
+export interface SpeechPreview {
+  file: SpeechFile;
+  /** False when there is no sound output to play it on. */
+  played: boolean;
+}
+
+/** What `speech_add` says and where. */
+export interface SpeechRequest {
+  text: string;
+  voice?: string;
+  /** 0.5 to 2. */
+  speed?: number;
+  /** Where it starts on the timeline, in flicks. */
+  at?: number;
+  expected_revision?: number;
+}
+
+/** Speech added to the timeline. */
+export interface SpeechResult {
+  speech: { revision: number; asset: string; file: SpeechFile };
+  response: EditResponse | null;
+}
+
+/** What `captions_translate` translates. */
+export interface TranslateCaptionsRequest {
+  track?: string;
+  /** The language translated into. */
+  to: "hu" | "en";
+  mode: "bilingual" | "replace";
+  expected_revision?: number;
+}
+
+/** A translated caption track. */
+export interface TranslateCaptionsResult {
+  translation: {
+    revision: number;
+    timeline: string;
+    track: string;
+    pair: string;
+    mode: "bilingual" | "replace";
+    model: string;
+    attribution?: string;
+    pages: { clip: string; text: string; translation: string }[];
+    skipped: string[];
+  };
+  response: EditResponse | null;
+}
+
+/** What `captions_dub` speaks. */
+export interface DubCaptionsRequest {
+  track?: string;
+  voice?: string;
+  speed?: number;
+  /** Speak each page's translation instead of its words. */
+  translation: boolean;
+  expected_revision?: number;
+}
+
+/** A dubbed caption track. */
+export interface DubCaptionsResult {
+  dub: {
+    revision: number;
+    timeline: string;
+    track: string;
+    voice: string;
+    pages: { clip: string; start: number; text: string; speech: number; speed: number; asset: string; warning?: string }[];
+    skipped: string[];
+  };
+  response: EditResponse | null;
+}

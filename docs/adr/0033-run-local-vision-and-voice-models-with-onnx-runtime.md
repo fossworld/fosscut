@@ -20,7 +20,7 @@ The maintainers surveyed candidates on 2026-10-31 and chose these:
 
 - **BiRefNet_lite** (MIT) for subject mattes.
 - **MediaPipe Pose Landmarker** (Apache-2.0) for body keypoints and a person mask.
-- **Kokoro-82M** (Apache-2.0) for English voices, with the MIT `misaki-rs` pronunciation crate built without GPL espeak-ng.
+- **Kokoro-82M** (Apache-2.0) for English voices. Pronunciation comes from CMUdict (BSD-2-Clause), mapped by FossCut to Kokoro's phonemes, with FossCut's own rules for words it lacks. `misaki-rs` was dropped: it depends on a WTFPL crate, and its dictionaries were corrected with GPL eSpeak output.
 - **OPUS-MT** for English and Hungarian (Apache-2.0).
 
 These were excluded:
@@ -59,6 +59,10 @@ These were excluded:
 - **Speed:** BiRefNet_lite takes 9 to 14 s per 1024 by 1024 frame on an Apple M3 Pro CPU.
 - **Pose:** Google publishes Pose Landmarker only as TFLite, so FossCut converts it with the scripts in `scripts/models/` and hosts the result on the `models-v1` release.
 - **Translation:** English to Hungarian uses the older `opus-mt-en-hu` (Apache-2.0), because `opus-mt-tc-big-en-hu` has no ONNX export.
+- **Mattes:** the default matte is the pose model's person mask (`model: person`, about 0.2 s a frame in a debug build). BiRefNet (`model: subject`) accepts only 1024 by 1024 input, so long clips use `every` to measure every Nth frame and follow the subject between them. Mattes and landmarks are smoothed with a bilateral filter in time, and a person seen in one frame only is dropped.
+- **Pronunciation:** CMUdict (BSD-2-Clause, installed with the voice model) is mapped to Kokoro's phonemes by FossCut's own table, with rules for British voices and for words, numbers and abbreviations it lacks. `misaki-rs` was dropped: it depends on a WTFPL crate, and its dictionaries were corrected with GPL eSpeak output.
+- **Captions of spoken text:** each speech file has its text beside it (`speech/<name>.txt`). Captions generated from such a clip keep the recognizer's timing but spell the words as written, so "FossCut" is never captioned as "faucet".
+- **Translation in order:** sentences are translated one segment at a time by default. Batching is about twice as fast, but the 8-bit models quantize a whole batch together, which changed 3 of 10 test translations.
 
 ## Consequences
 

@@ -70,6 +70,8 @@ thiserror = "2.0.21"
 # Wide strings for the Windows pipe access list (ADR-0022).
 widestring = "1.2.1"
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+# Unicode NFKC (MIT OR Apache-2.0) for text before the translation models' tokenizer (ADR-0033).
+unicode-normalization = "0.1.26"
 wgpu = "30.0.1"
 # whisper.cpp (MIT) built from source with CMake: local speech recognition (ADR-0020).
 whisper-rs = { version = "0.16.0", default-features = false }

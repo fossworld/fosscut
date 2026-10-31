@@ -13,8 +13,8 @@ default = ["speech", "onnx"]
 # Speech recognition with whisper.cpp (ADR-0020); needs CMake and a C++ compiler to build.
 speech = ["dep:whisper-rs"]
 # Vision and voice models on ONNX Runtime (ADR-0033), loaded at run time from an installed
-# library; nothing native is needed to build it.
-onnx = ["dep:ort"]
+# library; nothing native is needed to build it. Translation also normalizes Unicode text.
+onnx = ["dep:ort", "dep:unicode-normalization"]
 
 [dependencies]
 blake3.workspace = true
@@ -28,6 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+unicode-normalization = { workspace = true, optional = true }
 whisper-rs = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

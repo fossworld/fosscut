@@ -1086,3 +1086,137 @@ fn canvas_fills() {
         (180, 320),
     );
 }
+
+/// A drawn figure (`support::figure_frame`) in a 2x2 grid over the test pattern, each tile
+/// keyed by `key.subject` from the figure's matte at half its size: kept on the pattern
+/// (background none), inverted (only the background stays), on a flat colour, and on its own
+/// picture blurred. The matte comes from the provider, so no model runs (ADR-0033, item 3).
+#[test]
+fn subject_key_over_backgrounds() {
+    use fosscut_model::ParamValue::{Flag, Name, Number};
+    use fosscut_render::subject::MatteKind;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let tiles = vec![
+        planned("key.subject", &[]),
+        planned(
+            "key.subject",
+            &[("invert", Flag(true)), ("feather", Number(0.02))],
+        ),
+        planned(
+            "key.subject",
+            &[
+                ("background", Name("color".into())),
+                ("color", Name("#2E6B5A".into())),
+            ],
+        ),
+        planned(
+            "key.subject",
+            &[("background", Name("blur".into())), ("blur", Number(0.03))],
+        ),
+    ];
+    let mut layers = vec![Layer::new(source(2))];
+    for (index, effect) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 2) as f64, (index / 2) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.25 + column * 0.5, -0.25 + row * 0.5],
+                scale: 0.48,
+                ..Transform::default()
+            },
+            effects: vec![effect],
+            ..Layer::new(source(1))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default()
+        .with(1, figure_frame(320, 180))
+        .with(2, pattern(320, 180, 0))
+        .with_matte(1, MatteKind::Person, figure_matte(160, 90));
+    check_at("subject-key", &mut renderer, &plan, &mut frames, (640, 360));
+}
+
+/// The figure in a 4x2 grid with one body effect per tile, from its landmarks and its mask
+/// at half its size (ADR-0033, item 4). Top row at the defaults: outline, glow, shadow and
+/// sparkle at 0.4 s. Bottom row at extremes: a wide soft yellow outline, a large strong
+/// magenta glow, a far soft shadow up and to the left, and the most and largest sparkles at
+/// 1.3 s (another moment of their cycles).
+#[test]
+fn body_effects_on_a_figure() {
+    use fosscut_model::ParamValue::{Name, Number, Pair};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let at = |effect: PlannedEffect, time: f64| PlannedEffect { time, ..effect };
+    let tiles = vec![
+        planned("body.outline", &[]),
+        planned("body.glow", &[]),
+        planned("body.shadow", &[]),
+        at(planned("body.sparkle", &[]), 0.4),
+        planned(
+            "body.outline",
+            &[
+                ("color", Name("#FFD400".into())),
+                ("width", Number(0.05)),
+                ("softness", Number(1.0)),
+            ],
+        ),
+        planned(
+            "body.glow",
+            &[
+                ("color", Name("#FF3CC8".into())),
+                ("size", Number(0.1)),
+                ("strength", Number(2.0)),
+            ],
+        ),
+        planned(
+            "body.shadow",
+            &[
+                ("color", Name("#101030".into())),
+                ("offset", Pair([-0.08, -0.05])),
+                ("blur", Number(0.04)),
+                ("opacity", Number(1.0)),
+            ],
+        ),
+        at(
+            planned(
+                "body.sparkle",
+                &[("amount", Number(1.0)), ("size", Number(0.06))],
+            ),
+            1.3,
+        ),
+    ];
+    let mut layers = Vec::new();
+    for (index, effect) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 4) as f64, (index / 4) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.375 + column * 0.25, -0.25 + row * 0.5],
+                scale: 0.24,
+                ..Transform::default()
+            },
+            effects: vec![effect],
+            ..Layer::new(source(1))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default()
+        .with(1, figure_frame(320, 180))
+        .with_pose(1, figure_pose((160, 90)));
+    check_at(
+        "body-effects",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        (640, 360),
+    );
+}
