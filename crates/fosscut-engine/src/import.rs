@@ -97,9 +97,35 @@ pub fn asset_file(
     crate::export::resolve(project, bundle, asset).map_err(ApiError::from)
 }
 
-/// The ffprobe program: `FOSSCUT_FFPROBE` when set, otherwise `ffprobe` on the path.
-fn ffprobe_path() -> String {
-    std::env::var("FOSSCUT_FFPROBE").unwrap_or_else(|_| "ffprobe".to_string())
+/// The ffprobe program: `FOSSCUT_FFPROBE` when set, then the one FossCut's releases ship
+/// (beside the program, or in `../lib/fosscut` as the Linux package installs it), otherwise
+/// `ffprobe` on the path. An app opened from the Finder or a desktop menu does not see the
+/// shell's path, so the shipped one matters there.
+fn ffprobe_path() -> std::path::PathBuf {
+    ffprobe_from(
+        std::env::var_os("FOSSCUT_FFPROBE"),
+        std::env::current_exe().ok().as_deref(),
+    )
+}
+
+fn ffprobe_from(
+    variable: Option<std::ffi::OsString>,
+    program: Option<&Path>,
+) -> std::path::PathBuf {
+    let name = if cfg!(windows) {
+        "ffprobe.exe"
+    } else {
+        "ffprobe"
+    };
+    if let Some(path) = variable.filter(|v| !v.is_empty()) {
+        return path.into();
+    }
+    program
+        .and_then(Path::parent)
+        .into_iter()
+        .flat_map(|dir| [dir.join(name), dir.join("../lib/fosscut").join(name)])
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| name.into())
 }
 
 /// Probes `file`: `.cube` files are read as 3D LUTs, `.ttf`, `.otf` and `.ttc` files as
@@ -363,6 +389,43 @@ fn relative_path(target: &Path, base: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ffprobe_is_the_variable_then_the_shipped_one_then_the_path() {
+        let name = if cfg!(windows) {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        };
+        let base = std::env::temp_dir().join(format!("fosscut-ffprobe-{}", std::process::id()));
+        let program = base.join("bin").join("fosscut");
+        std::fs::create_dir_all(base.join("bin")).unwrap();
+        std::fs::create_dir_all(base.join("lib").join("fosscut")).unwrap();
+        // Nothing shipped: the one on the path.
+        assert_eq!(ffprobe_from(None, Some(&program)), Path::new(name));
+        // The Linux package's place, then beside the program.
+        std::fs::write(base.join("lib").join("fosscut").join(name), b"").unwrap();
+        assert_eq!(
+            ffprobe_from(None, Some(&program)),
+            base.join("bin").join("../lib/fosscut").join(name)
+        );
+        std::fs::write(base.join("bin").join(name), b"").unwrap();
+        assert_eq!(
+            ffprobe_from(None, Some(&program)),
+            base.join("bin").join(name)
+        );
+        // The variable wins, unless it is empty.
+        assert_eq!(
+            ffprobe_from(Some("/opt/ff/ffprobe".into()), Some(&program)),
+            Path::new("/opt/ff/ffprobe")
+        );
+        assert_eq!(
+            ffprobe_from(Some("".into()), Some(&program)),
+            base.join("bin").join(name)
+        );
+        assert_eq!(ffprobe_from(None, None), Path::new(name));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn interprets_a_video_report() {
