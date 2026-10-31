@@ -125,7 +125,9 @@ pub fn normalize(
         };
         let wanted = target_lufs - lufs;
         let headroom = ceiling_dbfs - peak;
-        if wanted <= headroom || !limit {
+        // The volume alone serves when the peaks leave room and the gain is within the
+        // volume's range; beyond that range the limiter's gain makes it up, as for peaks.
+        if (wanted <= headroom && wanted <= GAIN_RANGE.1) || !limit {
             let gain = wanted.min(headroom).clamp(GAIN_RANGE.0, GAIN_RANGE.1);
             let volume = round(10f64.powf(gain / 20.0) * 1000.0) / 1000.0;
             commands.push(json!({

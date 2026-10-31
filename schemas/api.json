@@ -2629,6 +2629,182 @@
     {
       "input_schema": {
         "$defs": {
+          "CanvasFill": {
+            "description": "What fills the canvas around a clip's picture (CapCut parity CC-063).",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "description": "A solid colour.",
+                "properties": {
+                  "color": {
+                    "$ref": "#/$defs/Color",
+                    "description": "The colour."
+                  },
+                  "kind": {
+                    "const": "color",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "color"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The clip's own picture, scaled to cover the canvas and blurred.",
+                "properties": {
+                  "amount": {
+                    "default": 0.05,
+                    "description": "The blur radius as a fraction of the covering picture's height, from 0 to 0.2.",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "kind": {
+                    "const": "blur",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Sets or removes the canvas fill of clips.",
+        "properties": {
+          "clips": {
+            "description": "Video or image clips, of any timelines.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CanvasFill"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`{\"kind\": \"blur\", \"amount\": 0.05}` for the clip's own picture blurred to cover the\ncanvas (amount from 0 to 0.2 of the picture's height), `{\"kind\": \"color\", \"color\":\n\"#202020\"}` for a colour; omitted or null removes the fill."
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "ClipCanvas",
+        "type": "object"
+      },
+      "name": "clip.canvas",
+      "output_schema": {
+        "$defs": {
+          "CanvasFill": {
+            "description": "What fills the canvas around a clip's picture (CapCut parity CC-063).",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "description": "A solid colour.",
+                "properties": {
+                  "color": {
+                    "$ref": "#/$defs/Color",
+                    "description": "The colour."
+                  },
+                  "kind": {
+                    "const": "color",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "color"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The clip's own picture, scaled to cover the canvas and blurred.",
+                "properties": {
+                  "amount": {
+                    "default": 0.05,
+                    "description": "The blur radius as a fraction of the covering picture's height, from 0 to 0.2.",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "kind": {
+                    "const": "blur",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Color": {
+            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
+            "type": "string"
+          },
+          "Id": {
+            "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
+            "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "What `clip.canvas` changed.",
+        "properties": {
+          "clips": {
+            "description": "The clips.",
+            "items": {
+              "$ref": "#/$defs/Id"
+            },
+            "type": "array"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CanvasFill"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their fill now; none when removed."
+          }
+        },
+        "required": [
+          "clips"
+        ],
+        "title": "CanvasChanged",
+        "type": "object"
+      },
+      "summary": "Fill the canvas around video or image clips whose picture does not cover it (a 16:9 shot in a vertical video): with their own picture blurred to cover, or a colour; no fill removes it. Several clips at once."
+    },
+    {
+      "input_schema": {
+        "$defs": {
           "Id": {
             "description": "Stable object id: kind prefix and lowercase Crockford base32, for example clip_0007 or track_000a.",
             "pattern": "^[a-z]+_[0-9a-hjkmnp-tv-z]{4,13}$",
@@ -5324,6 +5500,50 @@
             ],
             "type": "object"
           },
+          "CanvasFill": {
+            "description": "What fills the canvas around a clip's picture (CapCut parity CC-063).",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "description": "A solid colour.",
+                "properties": {
+                  "color": {
+                    "$ref": "#/$defs/Color",
+                    "description": "The colour."
+                  },
+                  "kind": {
+                    "const": "color",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "color"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The clip's own picture, scaled to cover the canvas and blurred.",
+                "properties": {
+                  "amount": {
+                    "default": 0.05,
+                    "description": "The blur radius as a fraction of the covering picture's height, from 0 to 0.2.",
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "kind": {
+                    "const": "blur",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              }
+            ]
+          },
           "CaptionContent": {
             "description": "One caption page: what is on screen at once.",
             "properties": {
@@ -5666,6 +5886,17 @@
               "blend": {
                 "$ref": "#/$defs/BlendMode",
                 "description": "How the picture combines with the layers below it (normal when omitted)."
+              },
+              "canvas": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/CanvasFill"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "What fills the canvas around a video or image clip where its picture does not cover\nit: a colour, or the clip's own picture scaled to cover and blurred. Black (or the\ntracks below) shows when omitted."
               },
               "crop": {
                 "$ref": "#/$defs/Crop",
@@ -20122,6 +20353,11 @@
       "meaning": "A multicam request does not fit its clips or angles."
     },
     {
+      "code": "fosscut.canvas.invalid",
+      "hint": "Choose video or image clips, and a fill of kind color (with color) or blur (with amount).",
+      "meaning": "A canvas fill can only go behind video and image clips, and a blur's amount is from 0 to 0.2."
+    },
+    {
       "code": "fosscut.template.unknown",
       "hint": "capabilities lists the project templates under library.templates.",
       "meaning": "No project template has this name."
@@ -20217,7 +20453,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.13.0",
+  "format_version": "0.14.0",
   "library": {
     "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
     "templates": [

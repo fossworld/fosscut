@@ -5,6 +5,7 @@ import { keyTimes } from "../app/animation";
 import { angleNumber } from "../app/multicam";
 import { speedLabel } from "../app/speed";
 import type { ClipView, TimelineView } from "../engine/types";
+import { type MessageKey, t } from "../i18n";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import { HEADER, ROW, RULER, type View, rowY, rows, rulerLabel, rulerStep, timeToX } from "./geometry";
 
@@ -34,12 +35,13 @@ const CLIP_COLORS: Record<string, string> = {
   shape: "#a5556e",
 };
 
-const KIND_NAMES: Record<string, string> = {
-  video: "Video",
-  audio: "Audio",
-  text: "Titles",
-  caption: "Captions",
-};
+/** The keys of track names by kind, looked up when drawn so the language can change. */
+const KIND_NAMES = new Map<string, MessageKey>([
+  ["video", "timeline.track.video"],
+  ["audio", "timeline.track.audio"],
+  ["text", "timeline.track.text"],
+  ["caption", "timeline.track.caption"],
+]);
 
 export interface DrawState {
   playhead: number;
@@ -116,7 +118,7 @@ function label(clip: ClipView): string {
   const name = clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.shape ?? clip.kind;
   const speed = speedLabel(clip);
   const shown = speed ? `${name} (${speed})` : name;
-  return clip.enabled === false ? `${shown} (off)` : shown;
+  return clip.enabled === false ? t("timeline.clip.off", { name: shown }) : shown;
 }
 
 /** Fade ramps at the clip's edges and diamonds at its keyframes. */
@@ -230,7 +232,8 @@ export function drawTimeline(
   ctx.font = "12px system-ui, sans-serif";
   ordered.forEach((track, row) => {
     ctx.fillStyle = COLORS.text;
-    ctx.fillText(track.name ?? KIND_NAMES[track.kind] ?? track.kind, 10, rowY(row) + ROW / 2);
+    const kind = KIND_NAMES.get(track.kind);
+    ctx.fillText(track.name ?? (kind ? t(kind) : track.kind), 10, rowY(row) + ROW / 2);
   });
 
   // Markers: flags on the ruler.

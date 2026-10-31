@@ -35,7 +35,9 @@ pub async fn start(dir: &Path, name: &'static str) -> Client {
         cmd.arg("mcp")
             .current_dir(dir)
             .env_remove("FOSSCUT_PROJECT")
-            .env("FOSSCUT_CACHE_DIR", dir.join("cache"));
+            .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
+            // Preferences of this test only, never the user's.
+            .env("FOSSCUT_CONFIG_DIR", dir.join("config"));
     });
     NamedClient(name)
         .serve(TokioChildProcess::new(command).unwrap())

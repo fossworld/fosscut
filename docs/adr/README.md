@@ -36,12 +36,14 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0028](0028-a-built-in-library-made-by-fosscut.md) | Make the built-in library from FossCut's own data and code | Proposed |
 | [0029](0029-cut-multicam-angles-on-compound-clips.md) | Cut multicam angles on compound clips | Proposed |
 | [0030](0030-apply-measured-motion-as-keyframes.md) | Apply measured motion as keyframes | Proposed |
+| [0031](0031-keep-user-preferences-outside-projects.md) | Keep user preferences outside projects | Proposed |
+| [0032](0032-keep-proxies-remuxes-and-rendered-frames-as-caches.md) | Keep proxies, remuxes and rendered frames as caches | Proposed |
 
 ## Reading order
 
-- **Product shape:** 0002, 0006, 0007, 0013, 0022.
+- **Product shape:** 0002, 0006, 0007, 0013, 0022, 0031.
 - **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027, 0028, 0029.
-- **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026, 0030.
+- **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026, 0030, 0032.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 
 ## Suggested first milestones

@@ -373,6 +373,50 @@
       ],
       "type": "object"
     },
+    "CanvasFill": {
+      "description": "What fills the canvas around a clip's picture (CapCut parity CC-063).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A solid colour.",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/Color",
+              "description": "The colour."
+            },
+            "kind": {
+              "const": "color",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "color"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The clip's own picture, scaled to cover the canvas and blurred.",
+          "properties": {
+            "amount": {
+              "default": 0.05,
+              "description": "The blur radius as a fraction of the covering picture's height, from 0 to 0.2.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "blur",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "CaptionContent": {
       "description": "One caption page: what is on screen at once.",
       "properties": {
@@ -777,6 +821,17 @@
         "blend": {
           "$ref": "#/$defs/BlendMode",
           "description": "How the picture combines with the layers below it (normal when omitted)."
+        },
+        "canvas": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanvasFill"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What fills the canvas around a video or image clip where its picture does not cover\nit: a colour, or the clip's own picture scaled to cover and blurred. Black (or the\ntracks below) shows when omitted."
         },
         "crop": {
           "$ref": "#/$defs/Crop",

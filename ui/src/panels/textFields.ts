@@ -12,6 +12,7 @@ import type {
   TextCase,
   TextStyleView,
 } from "../engine/types";
+import { type MessageKey, t } from "../i18n";
 import { FLICKS_PER_SECOND } from "../transport/time";
 
 /** Every style field with a value: a stored style with the defaults filled in. */
@@ -61,7 +62,8 @@ export const REVEAL_MOTIONS: RevealMotion[] = ["appear", "fade", "rise"];
 
 /** How a number field is shown: `scale` times the engine value, within `min` and `max` shown. */
 export interface NumberSpec {
-  label: string;
+  /** The field's name, translated where it shows. */
+  label: MessageKey;
   min: number;
   max: number;
   step: number;
@@ -75,16 +77,16 @@ export interface NumberSpec {
  * `shadow.x` and `shadow.y` are the parts of the shadow's offset. Lengths are in em.
  */
 export const NUMBERS: Record<string, NumberSpec> = {
-  size: { label: "Size", min: 0.5, max: 100, step: 0.5, scale: 100, unit: "%" },
-  letter_spacing: { label: "Letter spacing", min: -0.5, max: 2, step: 0.01, scale: 1, unit: "em" },
-  line_height: { label: "Line height", min: 0.5, max: 4, step: 0.05, scale: 1, unit: "x" },
-  "stroke.width": { label: "Width", min: 0, max: 1, step: 0.01, scale: 1, unit: "em" },
-  "box.padding": { label: "Padding", min: 0, max: 2, step: 0.01, scale: 1, unit: "em" },
-  "box.radius": { label: "Corners", min: 0, max: 1, step: 0.01, scale: 1, unit: "" },
-  "shadow.x": { label: "Offset X", min: -1, max: 1, step: 0.01, scale: 1, unit: "em" },
-  "shadow.y": { label: "Offset Y", min: -1, max: 1, step: 0.01, scale: 1, unit: "em" },
-  "shadow.blur": { label: "Blur", min: 0, max: 1, step: 0.01, scale: 1, unit: "em" },
-  "glow.radius": { label: "Radius", min: 0, max: 2, step: 0.01, scale: 1, unit: "em" },
+  size: { label: "text.number.size", min: 0.5, max: 100, step: 0.5, scale: 100, unit: "%" },
+  letter_spacing: { label: "text.number.letter_spacing", min: -0.5, max: 2, step: 0.01, scale: 1, unit: "em" },
+  line_height: { label: "text.number.line_height", min: 0.5, max: 4, step: 0.05, scale: 1, unit: "x" },
+  "stroke.width": { label: "text.number.stroke.width", min: 0, max: 1, step: 0.01, scale: 1, unit: "em" },
+  "box.padding": { label: "text.number.box.padding", min: 0, max: 2, step: 0.01, scale: 1, unit: "em" },
+  "box.radius": { label: "text.number.box.radius", min: 0, max: 1, step: 0.01, scale: 1, unit: "" },
+  "shadow.x": { label: "text.number.shadow.x", min: -1, max: 1, step: 0.01, scale: 1, unit: "em" },
+  "shadow.y": { label: "text.number.shadow.y", min: -1, max: 1, step: 0.01, scale: 1, unit: "em" },
+  "shadow.blur": { label: "text.number.shadow.blur", min: 0, max: 1, step: 0.01, scale: 1, unit: "em" },
+  "glow.radius": { label: "text.number.glow.radius", min: 0, max: 2, step: 0.01, scale: 1, unit: "em" },
 };
 
 /** The number fields of each look, in the order they show. */
@@ -269,14 +271,15 @@ export function textChange(clip: ClipView, text: string): { text: string } | nul
 
 /**
  * The text presets to offer: the project's saved ones first, then the built-in ones that
- * the project has not replaced by name.
+ * the project has not replaced by name. Saved ones say so in the interface's language;
+ * built-in ones keep the engine's description.
  */
 export function presetOptions(
   saved: string[],
   builtIn: { name: string; description: string }[],
 ): { name: string; description: string; saved: boolean }[] {
   return [
-    ...saved.map((name) => ({ name, description: "Saved in this project", saved: true })),
+    ...saved.map((name) => ({ name, description: t("text.preset.saved"), saved: true })),
     ...builtIn.filter((p) => !saved.includes(p.name)).map((p) => ({ ...p, saved: false })),
   ];
 }

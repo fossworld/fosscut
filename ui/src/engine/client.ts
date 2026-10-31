@@ -4,6 +4,8 @@
 
 import type {
   AppInfo,
+  CacheKind,
+  CacheUsage,
   CaptureDevice,
   Change,
   Client,
@@ -15,18 +17,22 @@ import type {
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
+  MediaWork,
   MotionResult,
   MulticamRequest,
   MulticamResult,
   Normalization,
   Opened,
   Playhead,
+  PreferencesView,
+  PreviewSource,
   ProjectSummary,
   RecordChoice,
   RecordState,
   SceneSplit,
   TrackRequest,
   TrashEntry,
+  UpdateAnswer,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -41,6 +47,10 @@ export interface EngineEvents {
   playhead: Playhead;
   /** The preview could not show a frame, for example when media is missing. */
   "preview-error": string;
+  /** Proxies or remuxed copies started or finished being made. */
+  "media-work": MediaWork;
+  /** The app's menu asked for Settings. */
+  "open-settings": null;
 }
 
 /** Where the preview shows through the page, in CSS pixels. */
@@ -142,10 +152,18 @@ export interface EngineClient {
     reveal(asset: string): Promise<void>;
     /** Asks where an asset's file is now and relinks it; false when the user cancels. */
     relink(asset: string): Promise<boolean>;
+    /** The assets the preview decodes from a proxy or a remuxed copy, by id. */
+    sources(): Promise<Record<string, PreviewSource>>;
+    /** The proxies and remuxed copies being made. */
+    work(): Promise<MediaWork>;
   };
   preview: {
     viewport(rect: Rect): Promise<void>;
-    show(flicks: number): Promise<void>;
+    /**
+     * Shows the frame at `flicks`. With `scrub` (scrubbing or skimming), a moment of its
+     * sound plays too while the `timeline.scrub_audio` preference is on.
+     */
+    show(flicks: number, scrub?: boolean): Promise<void>;
     play(): Promise<void>;
     pause(): Promise<void>;
     /** Plays at `rate` without sound unless it is 1: 2 is twice as fast, -1 backwards. */
@@ -153,6 +171,31 @@ export interface EngineClient {
   };
   /** Puts the window in full screen, or back. */
   fullscreen(on: boolean): Promise<void>;
+  /**
+   * The person's preferences (ADR-0031), outside any project. Each change is validated
+   * and saved at once; a refusal throws `fosscut.preferences.invalid` with the reason.
+   */
+  preferences: {
+    get(): Promise<PreferencesView>;
+    /** Sets a dotted key (`editing.frame_step`) to a JSON value; null is its default. */
+    set(key: string, value: unknown): Promise<PreferencesView>;
+    reset(key: string): Promise<PreferencesView>;
+  };
+  updates: {
+    /** Asks for the latest release, unless the `updates` preference is off. */
+    check(): Promise<UpdateAnswer>;
+    /** Opens the page of the newer release the last check found. */
+    open(): Promise<void>;
+  };
+  /** Plays a library sound once, as a finished export does. */
+  playSound(name: string): Promise<void>;
+  /** Asks the user for a folder, starting in `directory`; null when they cancel. */
+  pickFolder(title?: string, directory?: string): Promise<string | null>;
+  /** The caches outside projects (ADR-0032): their sizes, and emptying them. */
+  cache: {
+    usage(): Promise<CacheUsage>;
+    clear(kind: CacheKind | "all"): Promise<CacheUsage>;
+  };
   on<E extends keyof EngineEvents>(
     event: E,
     handler: (payload: EngineEvents[E]) => void,

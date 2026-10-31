@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { ApiError, ExportPresets, JobStatus, Opened, TimelineView } from "../engine/types";
+import { t } from "../i18n";
 import { parseRate } from "../transport/time";
 import type { Editor, EditorState } from "./editor";
 import {
@@ -13,7 +14,7 @@ import {
   defaultPreset,
   fileName,
   folderOf,
-  fpsText,
+  fpsNumber,
   markerRanges,
   progressOf,
   reportRows,
@@ -80,7 +81,7 @@ function Choices({
   const sound = audioOnly(preset);
   const made = choiceOf(form, { format: timeline.format, duration: timeline.duration.flicks, presets: presets.presets });
   const marked = markerRanges(timeline.markers ?? [], timeline.duration.flicks);
-  const captions = timeline.tracks.some((t) => t.kind === "caption");
+  const captions = timeline.tracks.some((track) => track.kind === "caption");
   const [width, height] = [timeline.format.width, timeline.format.height];
   const here = showTime(state.playhead, rate);
 
@@ -109,22 +110,20 @@ function Choices({
       }}
     >
       <label className="choice">
-        <span>Preset</span>
+        <span>{t("export.preset")}</span>
         <select value={form.preset} onChange={(e) => choosePreset(e.target.value)}>
           {presets.presets.map((p) => (
             <option key={p.name} value={p.name} disabled={!p.available} title={p.description}>
-              {p.available ? p.name : `${p.name} (not on this machine)`}
+              {p.available ? p.name : t("export.preset.unavailable", { name: p.name })}
             </option>
           ))}
         </select>
       </label>
       {preset && <p className="muted hint">{preset.description}</p>}
       <label className="choice">
-        <span>Resolution</span>
+        <span>{t("export.resolution")}</span>
         <select value={form.resolution} disabled={sound} onChange={(e) => update({ resolution: e.target.value })}>
-          <option value="">
-            Timeline ({width} x {height})
-          </option>
+          <option value="">{t("export.resolution.timeline", { width, height })}</option>
           {presets.resolutions.map((r) => {
             const [w, h] = sizeFor(timeline.format, r.pixels);
             return (
@@ -136,55 +135,55 @@ function Choices({
         </select>
       </label>
       <label className="choice">
-        <span>Frame rate</span>
+        <span>{t("export.frameRate")}</span>
         <select value={form.fps} disabled={sound} onChange={(e) => update({ fps: e.target.value })}>
-          <option value="">Timeline ({fpsText(timeline.format.rate)} fps)</option>
+          <option value="">{t("export.frameRate.timeline", { fps: fpsNumber(timeline.format.rate) })}</option>
           {FRAME_RATES.map((fps) => (
             <option key={fps} value={fps}>
-              {fps} fps
+              {t("export.fps", { fps: Number(fps) })}
             </option>
           ))}
         </select>
       </label>
       <label className="choice">
-        <span>Bit rate</span>
+        <span>{t("export.bitrate")}</span>
         <input
           className="short"
-          placeholder="Automatic"
-          title="For example 8M or 2500k; the encoder chooses for the size when empty"
+          placeholder={t("export.bitrate.automatic")}
+          title={t("export.bitrate.help")}
           disabled={sound}
           value={form.bitrate}
           onChange={(e) => update({ bitrate: e.target.value })}
         />
       </label>
-      <div className="part" role="radiogroup" aria-label="What to export">
+      <div className="part" role="radiogroup" aria-label={t("export.what")}>
         <label className="toggle">
           <input type="radio" checked={!form.part} onChange={() => update({ part: false })} />
-          <span>Whole timeline ({timeline.duration.timecode})</span>
+          <span>{t("export.whole", { length: timeline.duration.timecode })}</span>
         </label>
         <label className="toggle">
           <input type="radio" checked={form.part} onChange={() => update({ part: true })} />
-          <span>Part of it</span>
+          <span>{t("export.part")}</span>
         </label>
         {form.part && (
           <div className="times">
             <label className="choice">
-              <span>From</span>
+              <span>{t("export.from")}</span>
               <input className="time" value={form.from} onChange={(e) => update({ from: e.target.value })} />
-              <button type="button" title="The playhead" onClick={() => update({ from: here })}>
-                Playhead
+              <button type="button" title={t("export.playhead.help")} onClick={() => update({ from: here })}>
+                {t("export.playhead")}
               </button>
             </label>
             <label className="choice">
-              <span>To</span>
+              <span>{t("export.to")}</span>
               <input className="time" value={form.to} onChange={(e) => update({ to: e.target.value })} />
-              <button type="button" title="The playhead" onClick={() => update({ to: here })}>
-                Playhead
+              <button type="button" title={t("export.playhead.help")} onClick={() => update({ to: here })}>
+                {t("export.playhead")}
               </button>
             </label>
             {marked.length > 0 && (
               <label className="choice">
-                <span>Between markers</span>
+                <span>{t("export.markers")}</span>
                 <select
                   value=""
                   onChange={(e) => {
@@ -192,7 +191,7 @@ function Choices({
                     if (range) update({ from: showTime(range.from, rate), to: showTime(range.to, rate) });
                   }}
                 >
-                  <option value="">Choose</option>
+                  <option value="">{t("export.markers.choose")}</option>
                   {marked.map((range, index) => (
                     <option key={index} value={index}>
                       {range.label}
@@ -204,59 +203,59 @@ function Choices({
           </div>
         )}
       </div>
-      <label className="toggle" title="A PNG of one frame beside the file, as name.cover.png">
+      <label className="toggle" title={t("export.cover.help")}>
         <input
           type="checkbox"
           checked={form.cover}
           disabled={sound}
           onChange={(e) => update({ cover: e.target.checked, coverAt: coverStart(form, rate) })}
         />
-        <span>Cover image</span>
+        <span>{t("export.cover")}</span>
       </label>
       {form.cover && !sound && (
         <div className="times">
           <label className="choice">
-            <span>At</span>
+            <span>{t("export.cover.at")}</span>
             <input className="time" value={form.coverAt} onChange={(e) => update({ coverAt: e.target.value })} />
-            <button type="button" title="The frame at the playhead" onClick={() => update({ coverAt: here })}>
-              Playhead
+            <button type="button" title={t("export.cover.playhead.help")} onClick={() => update({ coverAt: here })}>
+              {t("export.playhead")}
             </button>
           </label>
         </div>
       )}
       <label className="choice">
-        <span>Subtitles</span>
+        <span>{t("export.subtitles")}</span>
         <select value={form.subtitles} onChange={(e) => update({ subtitles: e.target.value as ExportForm["subtitles"] })}>
-          <option value="">None</option>
-          <option value="srt">SubRip (.srt)</option>
-          <option value="vtt">WebVTT (.vtt)</option>
+          <option value="">{t("export.subtitles.none")}</option>
+          <option value="srt">{t("export.subtitles.srt")}</option>
+          <option value="vtt">{t("export.subtitles.vtt")}</option>
         </select>
       </label>
       {form.subtitles && (
         <p className="muted hint">
-          {captions ? "From the first caption track, beside the file." : "The timeline has no captions, so none are written."}
+          {captions ? t("export.subtitles.from") : t("export.subtitles.noCaptions")}
         </p>
       )}
       <label className="choice output">
-        <span>Save to</span>
+        <span>{t("export.saveTo")}</span>
         <input value={form.output} title={form.output} onChange={(e) => update({ output: e.target.value, overwrite: false })} />
         <button type="button" onClick={() => void pick()}>
-          Choose
+          {t("export.saveTo.choose")}
         </button>
       </label>
       <label className="toggle">
         <input type="checkbox" checked={form.overwrite} onChange={(e) => update({ overwrite: e.target.checked })} />
-        <span>Replace the file if it exists</span>
+        <span>{t("export.overwrite")}</span>
       </label>
       {"problem" in made && <p className="muted hint">{made.problem}</p>}
       {state.exporting.error && <Problem error={state.exporting.error} />}
       <div className="buttons">
         <span className="spacer" />
         <button type="button" onClick={() => editor.closeExport()}>
-          Cancel
+          {t("export.cancel")}
         </button>
         <button type="submit" className="primary" disabled={!("choice" in made) || starting}>
-          Export
+          {t("export.start")}
         </button>
       </div>
     </form>
@@ -292,7 +291,7 @@ function Progress({ editor, job }: { editor: Editor; job: JobStatus }) {
           </dl>
           {(report.rights ?? []).length > 0 && (
             <>
-              <h3>Before you publish</h3>
+              <h3>{t("export.rights")}</h3>
               <ul className="rights">
                 {report.rights?.map((note, index) => (
                   <li key={index} className={note.origin}>
@@ -308,16 +307,18 @@ function Progress({ editor, job }: { editor: Editor; job: JobStatus }) {
         <span className="spacer" />
         {job.state === "running" ? (
           <>
-            <button title="Close this; the export goes on" onClick={() => editor.closeExport()}>
-              Hide
+            <button title={t("export.hide.help")} onClick={() => editor.closeExport()}>
+              {t("export.hide")}
             </button>
-            <button onClick={() => void editor.cancelExport()}>Cancel export</button>
+            <button onClick={() => void editor.cancelExport()}>{t("export.cancelExport")}</button>
           </>
         ) : (
           <>
-            <button onClick={() => editor.clearExport()}>{job.state === "succeeded" ? "Export another" : "Back"}</button>
+            <button onClick={() => editor.clearExport()}>
+              {job.state === "succeeded" ? t("export.another") : t("export.back")}
+            </button>
             <button className="primary" onClick={() => editor.closeExport()}>
-              Done
+              {t("export.done")}
             </button>
           </>
         )}
@@ -348,7 +349,9 @@ export function Export({ editor, state }: { editor: Editor; state: EditorState }
         aria-modal="true"
         aria-labelledby="export-title"
       >
-        <h2 id="export-title">Export {timeline ? <span className="muted">{timeline.name}</span> : null}</h2>
+        <h2 id="export-title">
+          {t("export.title")} {timeline ? <span className="muted">{timeline.name}</span> : null}
+        </h2>
         {job ? (
           <Progress editor={editor} job={job} />
         ) : presets && timeline && state.opened ? (
@@ -358,11 +361,11 @@ export function Export({ editor, state }: { editor: Editor; state: EditorState }
             <Problem error={error} />
             <div className="buttons">
               <span className="spacer" />
-              <button onClick={() => editor.closeExport()}>Close</button>
+              <button onClick={() => editor.closeExport()}>{t("export.close")}</button>
             </div>
           </>
         ) : (
-          <p className="muted">Reading the presets.</p>
+          <p className="muted">{t("export.reading")}</p>
         )}
       </div>
     </div>

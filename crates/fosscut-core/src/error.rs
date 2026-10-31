@@ -178,6 +178,8 @@ pub mod codes {
     pub const TEMPLATE_UNKNOWN: &str = "fosscut.template.unknown";
     /// A multicam request does not fit its clips or angles.
     pub const MULTICAM_INVALID: &str = "fosscut.multicam.invalid";
+    /// A canvas fill names clips without a picture of their own, or an amount out of range.
+    pub const CANVAS_INVALID: &str = "fosscut.canvas.invalid";
     /// Caption words are empty, out of order, overlapping or outside their page.
     pub const CAPTIONS_INVALID_WORDS: &str = "fosscut.captions.invalid_words";
     /// No caption preset has this name.
@@ -434,6 +436,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             MULTICAM_INVALID,
             "A multicam request does not fit its clips or angles.",
             "Give two or more video assets to multicam.create; switch angles of a multicam clip by number from 1 or by track id.",
+        ),
+        entry(
+            CANVAS_INVALID,
+            "A canvas fill can only go behind video and image clips, and a blur's amount is from 0 to 0.2.",
+            "Choose video or image clips, and a fill of kind color (with color) or blur (with amount).",
         ),
         entry(
             TEMPLATE_UNKNOWN,

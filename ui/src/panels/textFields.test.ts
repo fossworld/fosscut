@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { setLanguage, t } from "../i18n";
 import { clip, moment } from "../test/fixtures";
 import {
+  NUMBERS,
   TEXT_DEFAULTS,
   normalColor,
   picked,
@@ -149,10 +151,23 @@ describe("text and presets", () => {
       { name: "neon", description: "Glowing" },
     ];
     expect(presetOptions(["brand", "neon"], builtIn)).toEqual([
-      { name: "brand", description: "Saved in this project", saved: true },
-      { name: "neon", description: "Saved in this project", saved: true },
+      { name: "brand", description: t("text.preset.saved"), saved: true },
+      { name: "neon", description: t("text.preset.saved"), saved: true },
       { name: "outline", description: "Black outline", saved: false },
     ]);
     expect(presetOptions([], builtIn).map((p) => p.name)).toEqual(["outline", "neon"]);
+  });
+
+  describe("in Hungarian", () => {
+    afterEach(() => setLanguage("en"));
+
+    it("name the fields and saved presets in the interface's language, but not the engine's presets", () => {
+      setLanguage("hu");
+      expect(t(NUMBERS["letter_spacing"]!.label)).toBe("Betűköz");
+      expect(presetOptions(["brand"], [{ name: "neon", description: "Glowing" }])).toEqual([
+        { name: "brand", description: "Ebben a projektben mentve", saved: true },
+        { name: "neon", description: "Glowing", saved: false },
+      ]);
+    });
   });
 });

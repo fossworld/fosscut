@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import type { ProjectSummary } from "../engine/types";
-import type { Editor, EditorState } from "./editor";
+import { language, t } from "../i18n";
+import { type Editor, type EditorState, preferencesOf } from "./editor";
 
-/** A size in bytes as people read it: 12 KB, 3.4 MB. */
+/** A size in bytes as people read it: 12 KB, 3.4 MB, in the interface's language. */
 export function readableSize(bytes: number): string {
-  const units = ["bytes", "KB", "MB", "GB"];
+  const units = ["app.size.kb", "app.size.mb", "app.size.gb"] as const;
   let value = bytes;
-  let unit = 0;
+  let unit = -1;
   while (value >= 1000 && unit < units.length - 1) {
     value /= 1000;
     unit += 1;
   }
-  return unit === 0 ? `${bytes} bytes` : `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+  const key = units[unit];
+  if (!key) return t("app.size.bytes", { count: bytes });
+  const tenths = new Intl.NumberFormat(language(), { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false });
+  return t(key, { value: value < 10 ? tenths.format(value) : String(Math.round(value)) });
 }
 
 /** The projects whose name or folder has every word of `search`. */
@@ -22,7 +26,7 @@ export function matching(projects: ProjectSummary[], search: string): ProjectSum
 }
 
 /** Shown when no project is open: the project browser, with search and the trash. */
-export function Start({ editor, state }: { editor: Editor; state: EditorState }) {
+export function Start({ editor, state, settings }: { editor: Editor; state: EditorState; settings?: ReactNode }) {
   const [search, setSearch] = useState("");
   const [showTrash, setShowTrash] = useState(false);
   const projects = matching(state.projects, search);
@@ -33,16 +37,23 @@ export function Start({ editor, state }: { editor: Editor; state: EditorState })
           <h1>FossCut</h1>
           <span className="spacer" />
           <button className="primary" onClick={() => void editor.pick()}>
-            Open project
+            {t("app.start.open")}
           </button>
-          <button onClick={() => void editor.create()}>New project</button>
+          <button onClick={() => void editor.create()} title={t("app.start.new.help", { rate: preferencesOf(state).timeline.frame_rate })}>
+            {t("app.start.new")}
+          </button>
+          {settings}
         </div>
         <p className="muted">
-          Agents connected through <code>fosscut mcp</code> edit the project you open here, and you see their changes as
-          they land.
+          {t("app.start.agents.before")} <code>fosscut mcp</code> {t("app.start.agents.after")}
         </p>
         {state.projects.length > 0 && (
-          <input type="search" placeholder="Search projects" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            type="search"
+            placeholder={t("app.start.search")}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         )}
         <ul className="projects">
           {projects.map((project) => (
@@ -54,25 +65,25 @@ export function Start({ editor, state }: { editor: Editor; state: EditorState })
                   {project.duration.timecode} · {readableSize(project.bytes)}
                 </span>
               </button>
-              <button className="link" title="Move the project to the trash" onClick={() => void editor.trashProject(project.path)}>
-                Move to trash
+              <button className="link" title={t("app.start.trash.help")} onClick={() => void editor.trashProject(project.path)}>
+                {t("app.start.trash")}
               </button>
             </li>
           ))}
         </ul>
-        {state.projects.length > 0 && projects.length === 0 && <p className="muted">No project matches.</p>}
+        {state.projects.length > 0 && projects.length === 0 && <p className="muted">{t("app.start.noMatch")}</p>}
         {state.trash.length > 0 && (
           <div className="trash">
             <button className="link" onClick={() => setShowTrash(!showTrash)}>
-              Trash ({state.trash.length})
+              {t("app.start.trashed", { count: state.trash.length })}
             </button>
             {showTrash && (
               <ul>
                 {state.trash.map((entry) => (
                   <li key={entry.id}>
                     <span title={entry.original}>{entry.name}</span>
-                    <button onClick={() => void editor.restoreProject(entry.id)}>Restore</button>
-                    <button onClick={() => void editor.deleteTrashed(entry.id)}>Delete for good</button>
+                    <button onClick={() => void editor.restoreProject(entry.id)}>{t("app.start.restore")}</button>
+                    <button onClick={() => void editor.deleteTrashed(entry.id)}>{t("app.start.delete")}</button>
                   </li>
                 ))}
               </ul>

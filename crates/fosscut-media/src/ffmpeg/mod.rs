@@ -1,6 +1,6 @@
 //! FFmpeg backend through `rsmpeg` (ADR-0009): probing and decoding video, with
-//! VideoToolbox hardware decoding on macOS, writing files, and recording from FFmpeg's
-//! input devices.
+//! VideoToolbox hardware decoding on macOS, writing files, copying streams into QuickTime
+//! ([`remux`]), and recording from FFmpeg's input devices.
 //!
 //! This is one of the modules allowed to use `unsafe` (ADR-0003); every block says why it
 //! is sound.
@@ -9,13 +9,18 @@
 
 mod audio;
 mod capture;
+mod remux;
 mod report;
 mod writer;
 
 pub use audio::{FfmpegAudioDecoder, samples_at};
 pub use capture::{input_formats, list_devices, record};
+pub use remux::{remux, remux_with_progress};
 pub use report::probe_output;
-pub use writer::{FfmpegWriter, audio_encoder, encoder_capabilities, video_encoder};
+pub use writer::{
+    FfmpegWriter, WriterOptions, audio_encoder, encoder_capabilities, encoder_capabilities_for,
+    hardware_encoding, set_hardware_encoding, video_encoder, video_encoder_for,
+};
 
 /// The mono or stereo channel layout.
 fn channel_layout(channels: u16) -> Result<rsmpeg::avutil::AVChannelLayout, String> {

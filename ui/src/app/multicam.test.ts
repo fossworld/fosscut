@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { AssetView } from "../engine/types";
+import { setLanguage, t } from "../i18n";
 import { clip, moment, timeline, track } from "../test/fixtures";
 import { NEW_MULTICAM, angleNumber, angleTitle, canSync, multicamAngles, multicamPartAt, multicamRequest } from "./multicam";
 
@@ -24,6 +25,8 @@ const asset = (id: string, extra: Partial<AssetView> = {}): AssetView => ({
 });
 
 describe("multicam", () => {
+  afterEach(() => setLanguage("en"));
+
   it("numbers the angle each part shows as multicam.switch does", () => {
     expect(angleNumber(part("clip_0012", 0, 4, "track_0011"))).toBe(1);
     expect(angleNumber(part("clip_0013", 4, 8, "track_0009"))).toBe(3);
@@ -32,9 +35,14 @@ describe("multicam", () => {
     expect(angleNumber(clip("clip_0016", "video", 0, 4))).toBeNull();
     const shown = part("clip_0012", 0, 4, "track_0011");
     expect([angleTitle(shown, 1), angleTitle(shown, 3), angleTitle(shown, 4)]).toEqual([
-      "Angle 1: cam-a.mp4",
-      "Angle 3",
-      "Angle 4",
+      t("motion.multicam.named", { number: 1, name: "cam-a.mp4" }),
+      t("motion.multicam.number", { number: 3 }),
+      t("motion.multicam.number", { number: 4 }),
+    ]);
+    setLanguage("hu");
+    expect([angleTitle(shown, 1), angleTitle(shown, 4)], "the engine's own number is dropped").toEqual([
+      "1. kameranézet: cam-a.mp4",
+      "4. kameranézet",
     ]);
   });
 

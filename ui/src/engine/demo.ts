@@ -344,5 +344,9 @@ export function demoEngine(): FakeEngine {
       entry(2, "agent:claude-code", ["media.add"]),
     ].map((e) => ({ ...e, at_ms: Date.now() - (7 - e.seq) * 45_000 })),
   };
+  // A proxy and a remuxed copy in use, one more proxy being made, and a newer release.
+  engine.sources = { asset_0001: { proxy: "half" }, asset_0002: "remux" };
+  engine.mediaWork = { proxies: { done: 1, total: 2 }, remux: { done: 0, total: 0 }, failed: 0 };
+  engine.latestRelease = { version: "0.2.0", url: "https://github.com/fossworld/fosscut/releases" };
   return engine;
 }

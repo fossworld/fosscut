@@ -196,6 +196,8 @@ export interface ClipView {
   shape?: ShapeKind;
   /** A shape clip's whole shape (detail full). */
   content?: ShapeContentView;
+  /** What fills the canvas around a video or image clip's picture. */
+  canvas?: CanvasFill;
 }
 
 /** The outlines a shape clip can have. */
@@ -830,3 +832,80 @@ export function isApiError(value: unknown): value is ApiError {
     typeof (value as ApiError).message === "string"
   );
 }
+
+/** How the timeline, the transport and the inspector show times. */
+export type TimeDisplay = "timecode" | "frames" | "seconds";
+
+/** The person's preferences (ADR-0031), every one with its default where none is set. */
+export interface Preferences {
+  version: number;
+  /** Folders for new projects, recordings and exports; null uses the default place. */
+  locations: { projects: string | null; recordings: string | null; exports: string | null };
+  cache: { max_age_days: number; limit_gb: number };
+  editing: { frame_step: number; nudge_pixels: number; image_duration: number; loudness_target: number };
+  timeline: { scrub_audio: boolean; linked: boolean; frame_rate: string; time_display: TimeDisplay };
+  export: { sound: boolean; sound_name: string };
+  performance: {
+    hardware_decoding: "auto" | "off";
+    hardware_encoding: boolean;
+    proxies: "off" | "auto" | "on";
+    proxy_size: "half" | "quarter";
+    render_cache_gb: number;
+    auto_render: boolean;
+    auto_remux: boolean;
+  };
+  language: string;
+  updates: "off" | "notify" | "check";
+  notifications: boolean;
+  shortcuts: { set: string; overrides: Record<string, string> };
+}
+
+/** What `preferences_get` and the calls that change preferences answer. */
+export interface PreferencesView {
+  /** The preferences file. */
+  path: string;
+  preferences: Preferences;
+  defaults: Preferences;
+  languages: string[];
+  shortcut_sets: string[];
+  /** Why the file could not be read, while the defaults stand in for it. */
+  problem?: string;
+}
+
+/** What `update_check` answers: whether it asked the release server, and what it found. */
+export interface UpdateAnswer {
+  policy: Preferences["updates"];
+  checked: boolean;
+  current?: string;
+  latest?: string;
+  newer?: boolean;
+  /** The release's page. */
+  url?: string;
+  published?: string;
+  /** Why nothing was asked. */
+  message?: string;
+}
+
+/** The caches FossCut keeps outside projects (ADR-0019, ADR-0032). */
+export type CacheKind = "analysis" | "proxies" | "remux" | "frames";
+
+/** How large each cache is (`cache_info`); bytes are null while unknown. */
+export interface CacheUsage {
+  caches: { kind: CacheKind; bytes: number | null; entries?: number; path?: string }[];
+  /** What the last clearing freed. */
+  freed_bytes?: number;
+}
+
+/** Which copy of an asset's media the preview decodes instead of the original. */
+export type PreviewSource = "original" | "remux" | { proxy: "half" | "quarter" };
+
+/** Proxies and remuxed copies being made in the background (`media_work`). */
+export interface MediaWork {
+  proxies: { done: number; total: number };
+  remux: { done: number; total: number };
+  /** Copies that could not be made since the app started. */
+  failed: number;
+}
+
+/** What fills the canvas around a video or image clip (`clip.canvas`). */
+export type CanvasFill = { kind: "blur"; amount: number } | { kind: "color"; color: string };

@@ -22,6 +22,14 @@ ignore = [
     # macro helper of `glib-macros`, part of the GTK 3 bindings Tauri uses for windows and
     # menus on Linux (ADR-0010). Remove this entry when Tauri moves to newer GTK bindings.
     { id = "RUSTSEC-2024-0370", reason = "unmaintained compile-time macro helper in Tauri's Linux GTK bindings; no known vulnerability" },
+    # `zvariant`, `zbus_names` and `zvariant_derive` are no longer published as standalone
+    # crates (their code moved into `zbus`), with no known vulnerability. They come only
+    # through `notify-rust`, which `tauri-plugin-notification` uses to show desktop
+    # notifications over D-Bus on Linux (ADR-0031 item 6). Remove these entries when
+    # notify-rust moves to a zbus release without them.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant folded into zbus; used only for Linux desktop notifications; no known vulnerability" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names folded into zbus; used only for Linux desktop notifications; no known vulnerability" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive folded into zbus; used only for Linux desktop notifications; no known vulnerability" },
 ]
 
 [licenses]

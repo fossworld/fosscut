@@ -205,6 +205,36 @@ pub enum EngineError {
         /// What the file contains.
         report: Box<OutputReport>,
     },
+    /// A proxy or a remuxed copy was asked for an asset without moving pictures.
+    #[error("asset {asset} is not a video, so it has no proxy or remuxed copy")]
+    NotVideo {
+        /// The asset.
+        asset: String,
+    },
+    /// A remuxed copy was asked for media whose container already seeks well (ADR-0032,
+    /// item 3).
+    #[error("asset {asset} is in {container}, which seeks well without a remuxed copy")]
+    RemuxNotNeeded {
+        /// The asset.
+        asset: String,
+        /// Its container, as probed.
+        container: String,
+    },
+    /// A proxy or remuxed copy did not come out as asked; it was removed.
+    #[error("the {kind} does not match its source: {}", mismatches.join("; "))]
+    CopyMismatch {
+        /// `proxy` or `remux`.
+        kind: String,
+        /// Each difference.
+        mismatches: Vec<String>,
+    },
+    /// A background job other than an export or an analysis was cancelled; nothing it was
+    /// making was kept.
+    #[error("the {kind} was cancelled")]
+    JobCancelled {
+        /// What the job was making, such as `proxy` or `remux`.
+        kind: String,
+    },
     /// Rendering, decoding, mixing or encoding failed.
     #[error("{message}")]
     Failed {
@@ -248,6 +278,10 @@ impl EngineError {
             EngineError::Cancelled => "fosscut.export.cancelled",
             EngineError::RequestReused { .. } => "fosscut.request.reused",
             EngineError::VerificationFailed { .. } => "fosscut.export.verification_failed",
+            EngineError::NotVideo { .. } => "fosscut.cache.not_video",
+            EngineError::RemuxNotNeeded { .. } => "fosscut.cache.remux_not_needed",
+            EngineError::CopyMismatch { .. } => "fosscut.cache.verification_failed",
+            EngineError::JobCancelled { .. } => "fosscut.job.cancelled",
             EngineError::Failed { code, .. } => code,
         }
     }
@@ -333,6 +367,16 @@ impl EngineError {
             EngineError::RevisionConflict { .. } => Some(
                 "Read the timeline again, then export with the current revision.".into(),
             ),
+            EngineError::NotVideo { .. } => {
+                Some("Proxies and remuxed copies are made of video assets only.".into())
+            }
+            EngineError::RemuxNotNeeded { .. } => Some(
+                "Only MPEG transport and program streams, AVI and FLV files are remuxed; this file previews well as it is."
+                    .into(),
+            ),
+            EngineError::CopyMismatch { .. } => Some(
+                "The preview keeps using the original media; report the mismatches.".into(),
+            ),
             _ => None,
         }
     }
@@ -381,6 +425,14 @@ impl EngineError {
             EngineError::RevisionConflict { expected, current } => {
                 json!({ "expected_revision": expected, "current_revision": current })
             }
+            EngineError::NotVideo { asset } => json!({ "asset": asset }),
+            EngineError::RemuxNotNeeded { asset, container } => {
+                json!({ "asset": asset, "container": container })
+            }
+            EngineError::CopyMismatch { kind, mismatches } => {
+                json!({ "kind": kind, "mismatches": mismatches })
+            }
+            EngineError::JobCancelled { kind } => json!({ "kind": kind }),
             _ => Value::Null,
         }
     }
@@ -554,6 +606,26 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.record.confirmation_required",
             "Recording uses the user's microphone, camera or screen, so an agent's call must confirm that the user asked for it.",
             "Record only when the user asked you to; then call again with confirm true.",
+        ),
+        entry(
+            "fosscut.cache.not_video",
+            "A proxy or a remuxed copy was asked for an asset that is not a video.",
+            "Choose a video asset; media_list shows each asset's kind.",
+        ),
+        entry(
+            "fosscut.cache.remux_not_needed",
+            "The asset's container already seeks well, so it gets no remuxed copy.",
+            "Only MPEG transport and program streams, AVI and FLV files are remuxed.",
+        ),
+        entry(
+            "fosscut.cache.verification_failed",
+            "A proxy or remuxed copy did not match its source and was removed; the preview keeps the original.",
+            "Report it with details.mismatches.",
+        ),
+        entry(
+            "fosscut.job.cancelled",
+            "The job was cancelled; nothing it was making was kept.",
+            "Start it again when wanted.",
         ),
         entry(
             "fosscut.media.nothing_recorded",
@@ -1092,6 +1164,20 @@ mod tests {
                 mismatches: Vec::new(),
                 report: Box::new(report()),
             },
+            EngineError::NotVideo {
+                asset: String::new(),
+            },
+            EngineError::RemuxNotNeeded {
+                asset: String::new(),
+                container: String::new(),
+            },
+            EngineError::CopyMismatch {
+                kind: String::new(),
+                mismatches: Vec::new(),
+            },
+            EngineError::JobCancelled {
+                kind: String::new(),
+            },
         ];
         for error in &variants {
             assert!(
@@ -1106,6 +1192,41 @@ mod tests {
                 .iter()
                 .any(|core| core.code == e.code)),
             "the engine catalogue only adds codes"
+        );
+    }
+
+    #[test]
+    fn cache_errors_name_what_they_were_making() {
+        let mismatch = EngineError::CopyMismatch {
+            kind: "proxy".into(),
+            mismatches: vec!["frames 3, expected 4".into()],
+        };
+        assert_eq!(mismatch.code(), "fosscut.cache.verification_failed");
+        assert_eq!(
+            mismatch.to_string(),
+            "the proxy does not match its source: frames 3, expected 4"
+        );
+        assert_eq!(
+            mismatch.details(),
+            json!({ "kind": "proxy", "mismatches": ["frames 3, expected 4"] })
+        );
+        let cancelled = EngineError::JobCancelled {
+            kind: "remux".into(),
+        };
+        assert_eq!(cancelled.to_string(), "the remux was cancelled");
+        assert_eq!(cancelled.code(), "fosscut.job.cancelled");
+        let not_needed = EngineError::RemuxNotNeeded {
+            asset: "asset_0001".into(),
+            container: "mov,mp4,m4a,3gp,3g2,mj2".into(),
+        };
+        assert_eq!(not_needed.code(), "fosscut.cache.remux_not_needed");
+        assert!(not_needed.hint().is_some());
+        assert_eq!(
+            EngineError::NotVideo {
+                asset: "asset_0002".into()
+            }
+            .details(),
+            json!({ "asset": "asset_0002" })
         );
     }
 

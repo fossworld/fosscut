@@ -3,9 +3,12 @@
 // from the engine after each commit, whoever made it, so agents' edits appear live.
 
 import type { EngineClient, Rect, Unsubscribe } from "../engine/client";
+import { defaultPreferences } from "../engine/preferences";
 import {
   type ApiError,
   type AssetView,
+  type CacheKind,
+  type CacheUsage,
   type CaptureDevice,
   type Catalog,
   type Client,
@@ -20,24 +23,35 @@ import {
   type LibraryItem,
   type LogEntry,
   type MediaListing,
+  type MediaWork,
   type MulticamRequest,
   type Normalization,
   type Opened,
+  type Preferences,
+  type PreferencesView,
+  type PreviewSource,
   type ProjectSummary,
   type RecordChoice,
   type RecordState,
   type Region,
   type TimelineView,
   type TrashEntry,
+  type UpdateAnswer,
   isApiError,
 } from "../engine/types";
+import { setLanguage, t } from "../i18n";
+import { applyShortcuts } from "../shortcuts";
 import { clipsAt, findClip } from "../timeline/geometry";
 import { FLICKS_PER_SECOND, frameAt, frameStart, framesToFlicks, parseRate } from "../transport/time";
+import { keysOf, pairAt } from "./animation";
 import { multicamMade, splitAtScenes, stabilized, targetOf, tracked } from "./measure";
 import { multicamPartAt } from "./multicam";
 
 /** How many history entries the activity panel shows. */
 const HISTORY = 50;
+
+/** How often the `check` update policy checks while the app runs: daily. */
+export const UPDATE_INTERVAL = 24 * 60 * 60 * 1000;
 
 export interface Notice {
   kind: "error" | "info";
@@ -107,7 +121,76 @@ export interface EditorState {
   regionPick: RegionPick | null;
   /** The record panel and the recording it started. */
   recorder: Recorder;
+  /** The person's preferences (ADR-0031); null until read, when the defaults apply. */
+  preferences: PreferencesView | null;
+  /** The Settings dialog. */
+  settings: SettingsState;
+  /** A newer release the update check found, until dismissed. */
+  update: UpdateAnswer | null;
+  /** Proxies and remuxed copies being made in the background; null until heard of. */
+  mediaWork: MediaWork | null;
+  /** The assets the preview decodes from a proxy or a remuxed copy, by id. */
+  sources: Record<string, PreviewSource>;
 }
+
+/** The status line of copies being made ("Making proxies 2 of 5"), or null when none are. */
+export function mediaWorkLine(work: MediaWork | null): string | null {
+  if (!work) return null;
+  const parts: string[] = [];
+  if (work.proxies.done < work.proxies.total) {
+    parts.push(t("app.work.proxies", { done: work.proxies.done + 1, total: work.proxies.total }));
+  }
+  if (work.remux.done < work.remux.total) {
+    parts.push(t("app.work.remux", { done: work.remux.done + 1, total: work.remux.total }));
+  }
+  return parts.length > 0 ? parts.join(" \u00b7 ") : null;
+}
+
+/** The sections of the Settings dialog, as the preferences group them. */
+export type SettingsSection =
+  | "general"
+  | "locations"
+  | "editing"
+  | "timeline"
+  | "export"
+  | "performance"
+  | "cache"
+  | "shortcuts";
+
+export const SETTINGS_SECTIONS: SettingsSection[] = [
+  "general",
+  "locations",
+  "editing",
+  "timeline",
+  "export",
+  "performance",
+  "cache",
+  "shortcuts",
+];
+
+/** The Settings dialog: whether it shows, where, and what the engine refused. */
+export interface SettingsState {
+  open: boolean;
+  section: SettingsSection;
+  /** The engine's refusal of the last change of each preference, by key, as it wrote it. */
+  errors: Record<string, string>;
+  /** The caches' sizes, once read. */
+  cache: CacheUsage | null;
+  /** Why the caches could not be read or cleared. */
+  cacheError: string | null;
+  /** The library's sounds, for the export sound; null until read. */
+  sounds: LibraryItem[] | null;
+}
+
+/** The preferences in `state`, or the defaults until they are read. */
+export function preferencesOf(state: Pick<EditorState, "preferences">): Preferences {
+  return state.preferences?.preferences ?? DEFAULTS;
+}
+
+const DEFAULTS = defaultPreferences();
+
+/** The kinds of clip with a place on the canvas, which nudging moves. */
+const NUDGED = new Set(["video", "image", "text", "shape", "timeline", "multicam"]);
 
 /** The record panel: whether it shows, the devices, the recording and a refusal. */
 export interface Recorder {
@@ -204,6 +287,11 @@ const EMPTY: EditorState = {
   measurement: null,
   regionPick: null,
   recorder: { open: false, devices: null, job: null, error: null },
+  preferences: null,
+  settings: { open: false, section: "general", errors: {}, cache: null, cacheError: null, sounds: null },
+  update: null,
+  mediaWork: null,
+  sources: {},
   notice: null,
   catalog: null,
   luts: [],
@@ -224,22 +312,24 @@ const NO_TEXT: Catalog["text"] = {
 /** What normalizing loudness did, in a sentence. */
 export function levelled(normalization: Normalization): string {
   const measured = normalization.clips.filter((c) => c.measured_lufs !== null);
-  if (measured.length === 0) return "Nothing to level: the clips are silent or shorter than 400 ms.";
-  const count = (n: number, what: string) => (n === 1 ? `one ${what}` : `${n} ${what}s`);
-  const parts = [`Levelled to ${normalization.target_lufs} LUFS`];
+  if (measured.length === 0) return t("app.levelled.nothing");
+  const parts = [t("app.levelled.to", { target: normalization.target_lufs })];
   const limited = measured.filter((c) => c.limited).length;
-  if (limited > 0) parts.push(`${count(limited, "clip")} held back by the ${normalization.ceiling_dbfs} dBFS peak ceiling`);
+  if (limited > 0) parts.push(t("app.levelled.limited", { count: limited, ceiling: normalization.ceiling_dbfs }));
   const silent = normalization.clips.length - measured.length;
-  if (silent > 0) parts.push(`${count(silent, "silent clip")} left alone`);
-  return `${parts.join("; ")}.`;
+  if (silent > 0) parts.push(t("app.levelled.silent", { count: silent }));
+  return t("app.sentence", { text: parts.join("; ") });
 }
 
 /** What an export that finished out of sight did, in a sentence. */
 export function finished(status: JobStatus): Notice {
   const file = status.output ?? status.job;
-  if (status.state === "succeeded") return { kind: "info", text: `Exported ${file}.` };
-  if (status.state === "cancelled") return { kind: "info", text: `The export to ${file} was cancelled.` };
-  return { kind: "error", text: `The export to ${file} failed: ${status.error?.message ?? "no reason given"}.` };
+  if (status.state === "succeeded") return { kind: "info", text: t("app.export.done", { file }) };
+  if (status.state === "cancelled") return { kind: "info", text: t("app.export.cancelled", { file }) };
+  return {
+    kind: "error",
+    text: t("app.export.failed", { file, reason: status.error?.message ?? t("app.export.noReason") }),
+  };
 }
 
 /** Asks the user a yes-or-no question; the app passes `window.confirm`. */
@@ -257,6 +347,7 @@ export class Editor {
   private unsubscribers: Unsubscribe[] = [];
   private reading: Promise<void> | null = null;
   private stale = false;
+  private updateTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly engine: EngineClient,
@@ -286,13 +377,19 @@ export class Editor {
     this.set({ notice: null });
   }
 
+  /** What outlives a project: the recent list, the preferences, Settings and an update. */
+  private kept(): Pick<EditorState, "recent" | "preferences" | "settings" | "update" | "mediaWork"> {
+    const { recent, preferences, settings, update, mediaWork } = this.state;
+    return { recent, preferences, settings, update, mediaWork };
+  }
+
   // ---- Lifecycle ----
 
   /** Listens to the engine and loads the project the app has open, if any. */
   async start(): Promise<void> {
     this.unsubscribers.push(
       this.engine.on("project-changed", () => void this.refresh()),
-      this.engine.on("project-closed", () => this.set({ ...EMPTY, recent: this.state.recent })),
+      this.engine.on("project-closed", () => this.set({ ...EMPTY, ...this.kept() })),
       this.engine.on("playhead", (playhead) =>
         this.set({
           playhead: playhead.time.flicks,
@@ -303,7 +400,20 @@ export class Editor {
       this.engine.on("preview-error", (message) =>
         this.set({ playing: false, notice: { kind: "error", text: message } }),
       ),
+      this.engine.on("media-work", (work) => {
+        const finishing = work.proxies.done + work.remux.done > (this.state.mediaWork?.proxies.done ?? 0) + (this.state.mediaWork?.remux.done ?? 0);
+        this.set({ mediaWork: work });
+        // A copy made changes what the media bin marks.
+        if (finishing || !mediaWorkLine(work)) void this.readSources();
+      }),
+      this.engine.on("open-settings", () => this.openSettings()),
     );
+    void this.engine.media
+      .work()
+      .then((mediaWork) => this.set({ mediaWork }))
+      .catch(() => undefined);
+    await this.loadPreferences();
+    void this.watchUpdates();
     try {
       const [recent, opened] = await Promise.all([this.engine.recentProjects(), this.engine.currentProject()]);
       this.set({ recent });
@@ -316,13 +426,15 @@ export class Editor {
 
   stop(): void {
     for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
+    if (this.updateTimer !== null) clearInterval(this.updateTimer);
+    this.updateTimer = null;
   }
 
   // ---- Projects ----
 
   private async show(opened: Opened | null): Promise<void> {
     if (!opened) return;
-    this.set({ ...EMPTY, recent: this.state.recent, opened });
+    this.set({ ...EMPTY, ...this.kept(), opened, linkage: preferencesOf(this.state).timeline.linked });
     await Promise.all([this.refresh(), this.loadCatalog()]);
     await this.seek(0);
   }
@@ -362,9 +474,11 @@ export class Editor {
     }
   }
 
+  /** Asks where to save a new project, 1920 by 1080 at the preferred frame rate. */
   async create(): Promise<void> {
     try {
-      await this.show(await this.engine.newProject());
+      const rate = preferencesOf(this.state).timeline.frame_rate;
+      await this.show(await this.engine.newProject({ width: 1920, height: 1080, rate }));
     } catch (error) {
       this.notify(error);
     }
@@ -373,7 +487,7 @@ export class Editor {
   async close(): Promise<void> {
     await this.engine.closeProject();
     const recent = await this.engine.recentProjects();
-    this.set({ ...EMPTY, recent });
+    this.set({ ...EMPTY, ...this.kept(), recent });
     await this.browse();
   }
 
@@ -403,7 +517,7 @@ export class Editor {
   async restoreProject(id: string): Promise<void> {
     try {
       const path = await this.engine.trash.restore(id);
-      this.set({ notice: { kind: "info", text: `Restored to ${path}.` } });
+      this.set({ notice: { kind: "info", text: t("app.restored", { path }) } });
       await this.browse();
     } catch (error) {
       this.notify(error);
@@ -413,7 +527,7 @@ export class Editor {
   /** Deletes a trashed project for good, after asking. */
   async deleteTrashed(id: string): Promise<void> {
     const entry = this.state.trash.find((t) => t.id === id);
-    if (!entry || !this.confirm(`Delete ${entry.name} for good? This cannot be undone.`)) return;
+    if (!entry || !this.confirm(t("app.trash.confirm", { name: entry.name }))) return;
     try {
       await this.engine.trash.remove(id);
       await this.browse();
@@ -458,6 +572,7 @@ export class Editor {
         .query<MediaListing>("media.list")
         .catch(() => ({ assets: this.state.media, folders: this.state.folders }));
       const luts = listing.assets.filter((a) => a.kind === "lut").map(({ id, name }) => ({ id, name }));
+      const sources = await this.engine.media.sources().catch(() => this.state.sources);
       this.set({
         opened: { ...opened, info },
         timeline,
@@ -467,9 +582,20 @@ export class Editor {
         luts,
         media: listing.assets,
         folders: listing.folders ?? [],
+        sources,
       });
     } catch (error) {
       this.notify(error);
+    }
+  }
+
+  /** Reads which assets the preview decodes from a proxy or a remuxed copy. */
+  async readSources(): Promise<void> {
+    if (!this.state.opened) return;
+    try {
+      this.set({ sources: await this.engine.media.sources() });
+    } catch {
+      // The marks are a courtesy; the next read tries again.
     }
   }
 
@@ -494,16 +620,29 @@ export class Editor {
     return Math.max(0, frameStart(duration - 1, this.rate()));
   }
 
-  /** Moves the playhead to the frame containing `flicks`, within the timeline. */
-  async seek(flicks: number): Promise<void> {
+  /**
+   * Moves the playhead to the frame containing `flicks`, within the timeline. With
+   * `scrub`, a moment of its sound plays too, as the preferences allow.
+   */
+  async seek(flicks: number, scrub = false): Promise<void> {
     const at = Math.min(Math.max(0, frameStart(flicks, this.rate())), this.end());
     this.set({ playhead: at, playing: false });
-    await this.engine.preview.show(at);
+    await this.engine.preview.show(at, scrub);
+  }
+
+  /** Moves the playhead while dragging on the ruler, with sound when the preferences say. */
+  async scrub(flicks: number): Promise<void> {
+    await this.seek(flicks, true);
   }
 
   async step(frames: number): Promise<void> {
     const rate = this.rate();
     await this.seek(framesToFlicks(frameAt(this.state.playhead, rate) + frames, rate));
+  }
+
+  /** Steps `editing.frame_step` frames back (-1) or forward (1): Shift and an arrow key. */
+  async stepMany(direction: -1 | 1): Promise<void> {
+    await this.step(direction * preferencesOf(this.state).editing.frame_step);
   }
 
   async stepSeconds(seconds: number): Promise<void> {
@@ -563,7 +702,7 @@ export class Editor {
     if (!this.state.skimming || this.state.playing) return;
     if (time === this.state.skim) return;
     this.set({ skim: time });
-    await this.engine.preview.show(time ?? this.state.playhead);
+    await this.engine.preview.show(time ?? this.state.playhead, time !== null);
   }
 
   async toggleFullscreen(): Promise<void> {
@@ -666,10 +805,10 @@ export class Editor {
       const api = asError(error);
       if (api.code === "fosscut.revision.conflict") {
         await this.refresh();
-        this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
+        this.set({ notice: { kind: "info", text: t("app.conflict") } });
         return null;
       }
-      if (api.code === "fosscut.guard.destructive" && this.confirm(`${api.message}. Do it anyway?`)) {
+      if (api.code === "fosscut.guard.destructive" && this.confirm(t("app.destructive.confirm", { message: api.message }))) {
         try {
           response = await this.engine.execute({ ...request, allow_destructive: true });
         } catch (again) {
@@ -745,7 +884,7 @@ export class Editor {
     const clip = timeline && id ? findClip(timeline, id) : null;
     const at = this.state.playhead;
     if (!clip || at <= clip.start.flicks || at >= clip.end.flicks) {
-      this.set({ notice: { kind: "info", text: "Put the playhead inside the selected clip first." } });
+      this.set({ notice: { kind: "info", text: t("app.playhead.inside") } });
       return;
     }
     const edge = side === "left" ? { start: { flicks: at } } : { end: { flicks: at } };
@@ -778,7 +917,7 @@ export class Editor {
   async group(): Promise<void> {
     const clips = this.selected();
     if (clips.length < 2) {
-      this.set({ notice: { kind: "info", text: "Shift-click to select two or more clips to group." } });
+      this.set({ notice: { kind: "info", text: t("app.group.select") } });
       return;
     }
     await this.edit([{ command: "clip.group", args: { clips } }]);
@@ -836,10 +975,10 @@ export class Editor {
         : undefined;
     if (!chosen) {
       const text = this.state.selection
-        ? "The playhead is not inside the selected clip."
+        ? t("app.split.outside")
         : under.length > 1
-          ? "Several clips are under the playhead; select the one to split."
-          : "No clip is under the playhead.";
+          ? t("app.split.several")
+          : t("app.split.none");
       this.set({ notice: { kind: "info", text } });
       return;
     }
@@ -859,6 +998,31 @@ export class Editor {
     if (edges.start !== undefined) args.start = { flicks: edges.start };
     if (edges.end !== undefined) args.end = { flicks: edges.end };
     await this.edit([{ command: "clip.trim", args }]);
+  }
+
+  /**
+   * Moves the selected clips on the canvas by `dx` and `dy` nudges of `editing.nudge_pixels`
+   * canvas pixels each, as one step: a keyframe at the playhead where their position is
+   * animated, their position otherwise.
+   */
+  async nudge(dx: number, dy: number): Promise<void> {
+    const timeline = this.state.timeline;
+    if (!timeline) return;
+    const pixels = preferencesOf(this.state).editing.nudge_pixels;
+    const { width, height } = timeline.format;
+    const playhead = this.state.playhead;
+    const round = (value: number) => Math.round(value * 1e6) / 1e6;
+    const commands: CommandCall[] = this.selected()
+      .map((id) => findClip(timeline, id))
+      .filter((clip): clip is NonNullable<typeof clip> => clip !== null && NUDGED.has(clip.kind))
+      .map((clip) => {
+        const [x, y] = pairAt(clip, "transform.position", playhead, clip.transform?.position ?? [0, 0]);
+        const value = [round(x + (dx * pixels) / width), round(y + (dy * pixels) / height)];
+        return keysOf(clip, "transform.position")
+          ? { command: "keyframe.set", args: { clip: clip.id, property: "transform.position", at: { flicks: playhead }, value } }
+          : { command: "clip.set", args: { clip: clip.id, set: { "transform.position": value } } };
+      });
+    if (commands.length > 0) await this.edit(commands, t("app.nudge"));
   }
 
   /** Sets clip properties by path (`transform.position`, `opacity`, ...) as one step. */
@@ -896,7 +1060,7 @@ export class Editor {
     const existing = clip?.masks?.find((m) => m.id === tool.mask);
     if (drawn.points) {
       if (drawn.points.length < 3) {
-        this.set({ notice: { kind: "info", text: "A path needs at least three points." } });
+        this.set({ notice: { kind: "info", text: t("app.mask.points") } });
         return;
       }
       const command = existing
@@ -984,9 +1148,16 @@ export class Editor {
     this.set({ chosen: on ? [...rest, asset] : rest });
   }
 
-  /** Places an asset on the timeline at the playhead, on a track free there. */
+  /**
+   * Places an asset on the timeline at the playhead, on a track free there; a still image
+   * is as long as `editing.image_duration` says.
+   */
   async addToTimeline(asset: string): Promise<void> {
-    await this.edit([{ command: "clip.add", args: { asset, start: { flicks: this.state.playhead } } }]);
+    const args: Record<string, unknown> = { asset, start: { flicks: this.state.playhead } };
+    if (this.state.media.find((a) => a.id === asset)?.kind === "image") {
+      args.duration = { seconds: String(preferencesOf(this.state).editing.image_duration) };
+    }
+    await this.edit([{ command: "clip.add", args }]);
   }
 
   /** Adds a timeline (from `assets`, when given) and shows it. */
@@ -1063,19 +1234,20 @@ export class Editor {
   async autoColor(clip: string, reference?: string): Promise<void> {
     try {
       const suggestion = await this.engine.colorSuggest(clip, reference);
-      await this.edit([{ command: "effect.add", args: suggestion.effect_add }], reference ? "Match color" : "Auto color");
+      await this.edit([{ command: "effect.add", args: suggestion.effect_add }], reference ? t("app.color.match") : t("app.color.auto"));
     } catch (error) {
       this.notify(error);
     }
   }
 
   /**
-   * Levels the loudness of clips with sound: the engine measures them, and the volumes it
+   * Levels the loudness of clips with sound to `targetLufs`, the preferred
+   * `editing.loudness_target` unless given: the engine measures them, and the volumes it
    * works out apply as one undoable step, with a note of what it did.
    */
-  async normalizeLoudness(clips: string[], targetLufs?: number): Promise<void> {
+  async normalizeLoudness(clips: string[], targetLufs = preferencesOf(this.state).editing.loudness_target): Promise<void> {
     if (clips.length === 0) {
-      this.set({ notice: { kind: "info", text: "Select clips with sound to normalize their loudness." } });
+      this.set({ notice: { kind: "info", text: t("app.normalize.select") } });
       return;
     }
     let normalization: Normalization;
@@ -1085,7 +1257,7 @@ export class Editor {
       this.notify(error);
       return;
     }
-    if (normalization.commands.length > 0 && !(await this.edit(normalization.commands, "Normalize loudness"))) return;
+    if (normalization.commands.length > 0 && !(await this.edit(normalization.commands, t("app.normalize.reason")))) return;
     this.set({ notice: { kind: "info", text: levelled(normalization) } });
   }
 
@@ -1105,7 +1277,7 @@ export class Editor {
     const timeline = this.state.timeline;
     if (!timeline) return null;
     if (this.state.measurement?.busy) {
-      this.set({ notice: { kind: "info", text: "Another measurement is running; try again when it is done." } });
+      this.set({ notice: { kind: "info", text: t("app.measure.busy") } });
       return null;
     }
     this.set({ measurement: { kind, clip, busy: true, report: null, error: null } });
@@ -1117,7 +1289,7 @@ export class Editor {
       if (api.code === "fosscut.revision.conflict") {
         this.set({ measurement: null });
         await this.refresh();
-        this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
+        this.set({ notice: { kind: "info", text: t("app.conflict") } });
       } else {
         this.set({ measurement: { kind, clip, busy: false, report: null, error: api } });
       }
@@ -1176,7 +1348,7 @@ export class Editor {
     const which = targetOf(target);
     const region = pick?.region;
     if (!pick || !region || !which) {
-      this.set({ notice: { kind: "info", text: "Draw the region to follow on the preview, then choose what follows it." } });
+      this.set({ notice: { kind: "info", text: t("app.track.draw") } });
       return;
     }
     const rate = this.rate();
@@ -1214,12 +1386,12 @@ export class Editor {
     const at = this.state.playhead;
     const part = multicamPartAt(timeline, this.state.selection, at);
     if (!part?.angles) {
-      this.set({ notice: { kind: "info", text: "Select a multicam clip and put the playhead inside it to cut between angles." } });
+      this.set({ notice: { kind: "info", text: t("app.multicam.select") } });
       return;
     }
     const chosen = part.angles[angle - 1];
     if (!chosen) {
-      this.set({ notice: { kind: "info", text: `This multicam clip has ${part.angles.length} angles.` } });
+      this.set({ notice: { kind: "info", text: t("app.multicam.angles", { count: part.angles.length }) } });
       return;
     }
     if (part.angle === chosen.id) {
@@ -1228,7 +1400,7 @@ export class Editor {
     }
     const response = await this.apply(
       [{ command: "multicam.switch", args: { clip: part.id, at: { flicks: at }, angle } }],
-      `Cut to angle ${angle}`,
+      t("app.multicam.cut", { angle }),
     );
     const switched = response?.results[0] as { clip?: { clip?: string } } | undefined;
     if (switched?.clip?.clip) this.set({ selection: switched.clip.clip, also: [] });
@@ -1307,7 +1479,7 @@ export class Editor {
     await this.refresh();
     if (status.clip) this.set({ selection: status.clip, also: [] });
     if (!this.state.recorder.open && !error) {
-      this.set({ notice: { kind: "info", text: "The recording is in the project, at the playhead where it started." } });
+      this.set({ notice: { kind: "info", text: t("app.recording.placed") } });
     }
   }
 
@@ -1338,7 +1510,7 @@ export class Editor {
       await this.refresh();
       const api = asError(error);
       if (api.code === "fosscut.revision.conflict") {
-        this.set({ notice: { kind: "info", text: "The project changed while you were editing. It is up to date now; try again." } });
+        this.set({ notice: { kind: "info", text: t("app.conflict") } });
       } else {
         this.notify(api);
       }
@@ -1404,7 +1576,7 @@ export class Editor {
     } catch (error) {
       const api = asError(error);
       if (api.code === "fosscut.guard.destructive" && !choice.overwrite) {
-        if (this.confirm(`${api.message}. Replace it?`)) return this.startExport({ ...choice, overwrite: true });
+        if (this.confirm(t("app.export.replace", { message: api.message }))) return this.startExport({ ...choice, overwrite: true });
         return false;
       }
       this.setExporting({ error: api });
@@ -1457,11 +1629,11 @@ export class Editor {
     if (!preset) return false;
     const args: Record<string, unknown> = { name: preset, clip };
     if (this.state.opened?.info.text_presets?.includes(preset)) {
-      if (!this.confirm(`The project already has a text preset called ${preset}. Replace it?`)) return false;
+      if (!this.confirm(t("app.preset.replace", { name: preset }))) return false;
       args.replace = true;
     }
     if (!(await this.edit([{ command: "text.preset_save", args }]))) return false;
-    this.set({ notice: { kind: "info", text: `Saved the style as ${preset}.` } });
+    this.set({ notice: { kind: "info", text: t("app.preset.saved", { name: preset }) } });
     return true;
   }
 
@@ -1474,7 +1646,7 @@ export class Editor {
     const start = { flicks: this.state.playhead };
     const command = template
       ? { command: "text.template", args: { template, start } }
-      : { command: "text.add", args: { text: "Title", start } };
+      : { command: "text.add", args: { text: t("app.title.text"), start } };
     const response = await this.apply([command]);
     const placed = response?.results[0] as { clip?: string } | undefined;
     if (placed?.clip) this.set({ selection: placed.clip, also: [] });
@@ -1487,6 +1659,174 @@ export class Editor {
     const clip = timeline && id ? findClip(timeline, id) : null;
     if (!clip) return;
     await this.setProperties(clip.id, { enabled: clip.enabled === false });
+  }
+
+  // ---- Preferences and Settings ----
+
+  /** Reads the preferences and applies the language and shortcuts they choose. */
+  async loadPreferences(): Promise<void> {
+    try {
+      this.applyPreferences(await this.engine.preferences.get());
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  private applyPreferences(view: PreferencesView): void {
+    const { preferences } = view;
+    setLanguage(preferences.language);
+    applyShortcuts(preferences.shortcuts.set, preferences.shortcuts.overrides);
+    const linked = preferencesOf(this.state).timeline.linked;
+    // A changed default for linked editing applies at once; a session's own switch stays.
+    const linkage = preferences.timeline.linked !== linked ? preferences.timeline.linked : this.state.linkage;
+    this.set({ preferences: view, linkage });
+  }
+
+  private setSettings(patch: Partial<SettingsState>): void {
+    this.set({ settings: { ...this.state.settings, ...patch } });
+  }
+
+  /**
+   * Sets the dotted preference `key` to `value` and saves it. A refusal changes nothing
+   * and shows beside the control, as the engine worded it; true when it was saved.
+   */
+  async setPreference(key: string, value: unknown): Promise<boolean> {
+    return this.changePreference(key, () => this.engine.preferences.set(key, value));
+  }
+
+  /** Returns the dotted preference `key` to its default. */
+  async resetPreference(key: string): Promise<boolean> {
+    return this.changePreference(key, () => this.engine.preferences.reset(key));
+  }
+
+  private async changePreference(key: string, change: () => Promise<PreferencesView>): Promise<boolean> {
+    try {
+      const view = await change();
+      const errors = { ...this.state.settings.errors };
+      delete errors[key];
+      this.setSettings({ errors });
+      this.applyPreferences(view);
+      if (key === "updates") this.scheduleUpdates();
+      return true;
+    } catch (error) {
+      this.setSettings({ errors: { ...this.state.settings.errors, [key]: asError(error).message } });
+      return false;
+    }
+  }
+
+  /** Saves a shortcut set and the person's changes to it, as one preference. */
+  async saveShortcuts(set: string, overrides: Record<string, string>): Promise<boolean> {
+    return this.setPreference("shortcuts", { set, overrides });
+  }
+
+  /** Asks for the folder of `locations.<which>` and saves it; nothing when cancelled. */
+  async pickLocation(which: "projects" | "recordings" | "exports"): Promise<void> {
+    const key = `locations.${which}`;
+    try {
+      const current = preferencesOf(this.state).locations[which] ?? undefined;
+      const folder = await this.engine.pickFolder(t(`settings.locations.${which}.pick`), current);
+      if (folder) await this.setPreference(key, folder);
+    } catch (error) {
+      this.setSettings({ errors: { ...this.state.settings.errors, [key]: asError(error).message } });
+    }
+  }
+
+  /** Opens Settings, at `section` when given, and reads what its sections show. */
+  openSettings(section?: SettingsSection): void {
+    this.setSettings({ open: true, section: section ?? this.state.settings.section });
+    void this.loadSounds();
+    void this.loadCacheUsage();
+  }
+
+  closeSettings(): void {
+    this.setSettings({ open: false, errors: {} });
+  }
+
+  showSettings(section: SettingsSection): void {
+    this.setSettings({ section });
+  }
+
+  /** Reads the library's sounds once, for the export sound. */
+  private async loadSounds(): Promise<void> {
+    if (this.state.settings.sounds) return;
+    try {
+      this.setSettings({ sounds: await this.engine.libraryList("sound") });
+    } catch {
+      this.setSettings({ sounds: [] });
+    }
+  }
+
+  /** Plays a library sound, as a finished export would. */
+  async playSound(name: string): Promise<void> {
+    try {
+      await this.engine.playSound(name);
+    } catch (error) {
+      this.setSettings({ errors: { ...this.state.settings.errors, "export.sound_name": asError(error).message } });
+    }
+  }
+
+  /** Reads the caches' sizes. */
+  async loadCacheUsage(): Promise<void> {
+    try {
+      this.setSettings({ cache: await this.engine.cache.usage(), cacheError: null });
+    } catch (error) {
+      this.setSettings({ cacheError: asError(error).message });
+    }
+  }
+
+  /** Empties a cache, or all of them, after asking. */
+  async clearCache(kind: CacheKind | "all"): Promise<void> {
+    if (!this.confirm(t(kind === "all" ? "settings.cache.confirmAll" : "settings.cache.confirm", { cache: t(`settings.cache.kind.${kind === "all" ? "analysis" : kind}`) }))) {
+      return;
+    }
+    try {
+      this.setSettings({ cache: await this.engine.cache.clear(kind), cacheError: null });
+    } catch (error) {
+      this.setSettings({ cacheError: asError(error).message });
+    }
+  }
+
+  /** Checks for a newer release now; it shows until dismissed. */
+  async checkUpdates(): Promise<void> {
+    try {
+      const answer = await this.engine.updates.check();
+      if (answer.checked && answer.newer) this.set({ update: answer });
+    } catch {
+      // Checking is a courtesy: offline or refused, the app carries on.
+    }
+  }
+
+  /**
+   * Checks for updates when the app starts unless `updates` is off, and daily while it
+   * runs when it is `check`.
+   */
+  private async watchUpdates(): Promise<void> {
+    this.scheduleUpdates();
+    if (preferencesOf(this.state).updates !== "off") await this.checkUpdates();
+  }
+
+  /** Checks daily while `updates` is `check`, and stops when it changes. */
+  private scheduleUpdates(): void {
+    const daily = preferencesOf(this.state).updates === "check";
+    if (daily && this.updateTimer === null) {
+      this.updateTimer = setInterval(() => void this.checkUpdates(), UPDATE_INTERVAL);
+    } else if (!daily && this.updateTimer !== null) {
+      clearInterval(this.updateTimer);
+      this.updateTimer = null;
+    }
+  }
+
+  dismissUpdate(): void {
+    this.set({ update: null });
+  }
+
+  /** Opens the newer release's page in the browser. */
+  async openRelease(): Promise<void> {
+    try {
+      await this.engine.updates.open();
+    } catch (error) {
+      this.notify(error);
+    }
   }
 
   async undo(): Promise<void> {

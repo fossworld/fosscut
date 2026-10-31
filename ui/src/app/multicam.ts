@@ -3,6 +3,7 @@
 // which part a cut at the playhead applies to.
 
 import type { AssetView, ClipView, MulticamRequest, TimelineView } from "../engine/types";
+import { t } from "../i18n";
 
 /** True for a multicam clip: a compound clip that shows one of its angles. */
 export function isMulticam(clip: ClipView | null | undefined): clip is ClipView & { angles: NonNullable<ClipView["angles"]> } {
@@ -16,11 +17,14 @@ export function angleNumber(clip: ClipView): number | null {
   return index >= 0 ? index + 1 : null;
 }
 
-/** How an angle is called: its track's name without the number, or the number alone. */
+/**
+ * How an angle is called, in the interface's language: its number and its track's name
+ * without the number the engine gives it ("Angle 2: cam-b.mp4"), or the number alone.
+ */
 export function angleTitle(clip: ClipView, number: number): string {
   const name = clip.angles?.[number - 1]?.name ?? "";
   const plain = name.replace(/^Angle \d+:\s*/, "");
-  return plain ? `Angle ${number}: ${plain}` : `Angle ${number}`;
+  return plain ? t("motion.multicam.named", { number, name: plain }) : t("motion.multicam.number", { number });
 }
 
 /** The chosen media that can be angles: video whose file is there, in the order chosen. */

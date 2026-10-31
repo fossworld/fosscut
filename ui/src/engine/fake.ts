@@ -2,9 +2,13 @@
 // sends events when the test says so.
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
+import { CacheStandIn } from "./cache";
+import { PreferenceStandIn } from "./preferences";
 import type {
   ApiError,
   AppInfo,
+  CacheKind,
+  CacheUsage,
   CaptureDevice,
   Client,
   ColorSuggestion,
@@ -17,17 +21,21 @@ import type {
   LibraryAddRequest,
   LibraryItem,
   LostRange,
+  MediaWork,
   MotionResult,
   MulticamRequest,
   MulticamResult,
   Normalization,
   Opened,
+  PreferencesView,
+  PreviewSource,
   ProjectSummary,
   RecordChoice,
   RecordState,
   SceneSplit,
   TrackRequest,
   TrashEntry,
+  UpdateAnswer,
 } from "./types";
 
 export interface Call {
@@ -441,17 +449,24 @@ export class FakeEngine implements EngineClient {
   /** What relinking answers: true for a file chosen, false for a cancel. */
   relinkChooses = true;
 
+  /** The copies the preview decodes, by asset, and the copies being made. */
+  sources: Record<string, PreviewSource> = {};
+  mediaWork: MediaWork = { proxies: { done: 0, total: 0 }, remux: { done: 0, total: 0 }, failed: 0 };
+
   media = {
     reveal: async (asset: string): Promise<void> => this.log("media.reveal", asset),
     relink: async (asset: string): Promise<boolean> => {
       this.log("media.relink", asset);
       return this.relinkChooses;
     },
+    sources: async (): Promise<Record<string, PreviewSource>> => this.sources,
+    work: async (): Promise<MediaWork> => this.mediaWork,
   };
 
   preview = {
     viewport: async (rect: Rect): Promise<void> => this.log("preview.viewport", rect),
-    show: async (flicks: number): Promise<void> => this.log("preview.show", flicks),
+    show: async (flicks: number, scrub?: boolean): Promise<void> =>
+      scrub ? this.log("preview.show", flicks, true) : this.log("preview.show", flicks),
     play: async (): Promise<void> => this.log("preview.play"),
     pause: async (): Promise<void> => this.log("preview.pause"),
     shuttle: async (rate: number): Promise<void> => this.log("preview.shuttle", rate),
@@ -460,6 +475,65 @@ export class FakeEngine implements EngineClient {
   async fullscreen(on: boolean): Promise<void> {
     this.log("fullscreen", on);
   }
+
+  /** The preferences, in memory, refused as the engine refuses them. */
+  prefs = new PreferenceStandIn();
+
+  preferences = {
+    get: async (): Promise<PreferencesView> => this.prefs.view(),
+    set: async (key: string, value: unknown): Promise<PreferencesView> => {
+      this.log("preferences.set", key, value);
+      return this.prefs.set(key, value);
+    },
+    reset: async (key: string): Promise<PreferencesView> => {
+      this.log("preferences.reset", key);
+      return this.prefs.set(key, null);
+    },
+  };
+
+  /** What `updates.check` finds while the `updates` preference allows a check. */
+  latestRelease: { version: string; url: string } | null = null;
+
+  updates = {
+    check: async (): Promise<UpdateAnswer> => {
+      this.log("updates.check");
+      const policy = this.prefs.current.updates;
+      if (policy === "off") return { policy, checked: false, message: "update checks are off" };
+      const latest = this.latestRelease;
+      return {
+        policy,
+        checked: true,
+        current: "0.1.0",
+        latest: latest?.version,
+        newer: latest !== null,
+        url: latest?.url,
+      };
+    },
+    open: async (): Promise<void> => this.log("updates.open"),
+  };
+
+  async playSound(name: string): Promise<void> {
+    this.log("playSound", name);
+  }
+
+  /** The folder `pickFolder` answers; null for a cancel. */
+  folderChosen: string | null = "/Users/demo/Movies/Exports";
+
+  async pickFolder(title?: string, directory?: string): Promise<string | null> {
+    this.log("pickFolder", title, directory);
+    return this.folderChosen;
+  }
+
+  /** The caches, with sizes so that clearing them shows. */
+  caches = new CacheStandIn({ analysis: 120_000_000, proxies: 2_400_000_000, remux: 800_000_000, frames: 650_000_000 });
+
+  cache = {
+    usage: (): Promise<CacheUsage> => this.caches.usage(),
+    clear: async (kind: CacheKind | "all"): Promise<CacheUsage> => {
+      this.log("cache.clear", kind);
+      return this.caches.clear(kind);
+    },
+  };
 
   on<E extends keyof EngineEvents>(event: E, handler: (payload: EngineEvents[E]) => void): Unsubscribe {
     const set = this.handlers.get(event) ?? new Set<Handler>();

@@ -96,6 +96,31 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut record microphone|camera|screen [--device NAME] [--microphone NAME] [--duration TIME] [--at TIME] [--list]",
         ),
         (
+            "preferences.edit",
+            "Read or change the user's preferences: editing and timeline defaults the CLI and the app fill requests with, performance and cache settings (ADR-0031); agents read them with the query preferences.read.",
+            "fosscut preferences [get KEY | set KEY VALUE | reset KEY | path]",
+        ),
+        (
+            "media.proxy",
+            "Make a smaller ProRes Proxy copy of a video asset in FossCut's cache for the desktop preview; exports, frame grabs and contact sheets always read the original.",
+            "fosscut media proxy <asset> [--size half|quarter]",
+        ),
+        (
+            "media.remux",
+            "Copy a video asset in a hard-to-seek container (MPEG-TS, MPEG-PS, AVI, FLV) into QuickTime in FossCut's cache, without re-encoding, for the desktop preview.",
+            "fosscut media remux <asset>",
+        ),
+        (
+            "cache.clear",
+            "Report the size of FossCut's caches (analysis, proxies, remuxed copies, rendered frames), empty them, or clean them by the cache preferences; everything in them is made again when needed.",
+            "fosscut cache info | clear [KIND ...] | clean",
+        ),
+        (
+            "update.check",
+            "Ask GitHub once for the latest FossCut release and say whether it is newer; nothing about the user is sent and nothing is installed.",
+            "fosscut update",
+        ),
+        (
             "models.install",
             "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",

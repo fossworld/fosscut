@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 import type { Editor } from "../app/editor";
 import type { Catalog, ClipView } from "../engine/types";
+import { type MessageKey, t } from "../i18n";
+import { english } from "../i18n/catalogue";
+import { MAC, formatCombo } from "../keyboard";
 import {
   ALIGNS,
   CASES,
@@ -25,19 +28,11 @@ import {
 
 const words = (name: string) => name.replaceAll("_", " ").replaceAll("-", " ");
 
-const CASE_NAMES: Record<string, string> = {
-  as_written: "As written",
-  upper: "UPPER CASE",
-  lower: "lower case",
-  title: "Title Case",
-};
-
-const LOOK_NAMES: Record<Look, string> = {
-  stroke: "Outline",
-  box: "Box",
-  shadow: "Shadow",
-  glow: "Glow",
-};
+/** A value the engine names, in the interface's language when known, else in its words. */
+function named(prefix: string, value: string): string {
+  const key = `${prefix}.${value}`;
+  return Object.hasOwn(english, key) ? t(key as MessageKey) : words(value);
+}
 
 /** The text, committed on blur or Mod+Enter rather than on every keystroke. */
 function TextArea({ text, onCommit }: { text: string; onCommit: (text: string) => void }) {
@@ -50,8 +45,8 @@ function TextArea({ text, onCommit }: { text: string; onCommit: (text: string) =
     <textarea
       className="text-input"
       rows={3}
-      aria-label="Text"
-      title="Mod+Enter applies; Escape cancels"
+      aria-label={t("text.input")}
+      title={t("text.input.keys", { apply: formatCombo("Mod+Enter", MAC), cancel: formatCombo("Escape", MAC) })}
       value={draft ?? text}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
@@ -78,7 +73,7 @@ function Amount({ path, value, onCommit }: { path: string; value: number; onComm
   return (
     <label className="field">
       <span />
-      <span>{spec.label}</span>
+      <span>{t(spec.label)}</span>
       <input
         type="number"
         step={spec.step}
@@ -129,15 +124,15 @@ function Presets({ editor, clip, catalog }: { editor: Editor; clip: ClipView; ca
   return (
     <>
       <label className="choice">
-        <span>Preset</span>
+        <span>{t("text.preset")}</span>
         <select
           value=""
           disabled={options.length === 0}
           onChange={(event) => event.target.value && void editor.setText(clip.id, { preset: event.target.value })}
         >
-          <option value="">Apply a preset</option>
+          <option value="">{t("text.preset.apply")}</option>
           {own.length > 0 && (
-            <optgroup label="This project">
+            <optgroup label={t("text.preset.project")}>
               {own.map((o) => (
                 <option key={o.name} value={o.name} title={o.description}>
                   {o.name}
@@ -146,7 +141,7 @@ function Presets({ editor, clip, catalog }: { editor: Editor; clip: ClipView; ca
             </optgroup>
           )}
           {builtIn.length > 0 && (
-            <optgroup label="Built in">
+            <optgroup label={t("text.preset.builtIn")}>
               {builtIn.map((o) => (
                 <option key={o.name} value={o.name} title={o.description}>
                   {words(o.name)}
@@ -158,16 +153,16 @@ function Presets({ editor, clip, catalog }: { editor: Editor; clip: ClipView; ca
       </label>
       {naming === null ? (
         <div className="buttons">
-          <button title="Keep this style in the project to reuse it" onClick={() => setNaming("")}>
-            Save style as preset
+          <button title={t("text.preset.keep")} onClick={() => setNaming("")}>
+            {t("text.preset.saveAs")}
           </button>
         </div>
       ) : (
         <div className="buttons naming">
           <input
             autoFocus
-            placeholder="Preset name"
-            aria-label="Preset name"
+            placeholder={t("text.preset.name")}
+            aria-label={t("text.preset.name")}
             value={naming}
             onChange={(event) => setNaming(event.target.value)}
             onKeyDown={(event) => {
@@ -176,9 +171,9 @@ function Presets({ editor, clip, catalog }: { editor: Editor; clip: ClipView; ca
             }}
           />
           <button disabled={!naming.trim()} onClick={save}>
-            Save
+            {t("text.save")}
           </button>
-          <button onClick={() => setNaming(null)}>Cancel</button>
+          <button onClick={() => setNaming(null)}>{t("text.cancel")}</button>
         </div>
       )}
     </>
@@ -201,12 +196,12 @@ function LookFields({
     <div className="look">
       <label className="toggle">
         <input type="checkbox" checked={on} onChange={(event) => onPatch(`${look}.enabled`, event.target.checked)} />
-        <span>{LOOK_NAMES[look]}</span>
+        <span>{t(`text.look.${look}`)}</span>
       </label>
       {on && (
         <div className="fields">
           <Swatch
-            label="Color"
+            label={t("text.color")}
             value={style[look].color}
             onCommit={(rgb) => onPatch(`${look}.color`, picked(style[look].color, rgb))}
           />
@@ -228,12 +223,12 @@ function Reveal({ editor, clip, catalog }: { editor: Editor; clip: ClipView; cat
   return (
     <>
       <label className="choice">
-        <span>Reveal</span>
+        <span>{t("text.reveal")}</span>
         <select value={reveal.unit} onChange={(event) => change({ unit: event.target.value as RevealDraft["unit"] })}>
-          <option value="">None</option>
+          <option value="">{t("text.reveal.none")}</option>
           {units.map((unit) => (
             <option key={unit} value={unit}>
-              {unit === "letter" ? "Letter by letter" : unit === "word" ? "Word by word" : "Line by line"}
+              {named("text.reveal.unit", unit)}
             </option>
           ))}
         </select>
@@ -241,19 +236,19 @@ function Reveal({ editor, clip, catalog }: { editor: Editor; clip: ClipView; cat
       {reveal.unit && (
         <>
           <label className="choice">
-            <span>Motion</span>
+            <span>{t("text.reveal.motion")}</span>
             <select value={reveal.motion} onChange={(event) => change({ motion: event.target.value as RevealDraft["motion"] })}>
               {motions.map((motion) => (
                 <option key={motion} value={motion}>
-                  {motion}
+                  {named("text.reveal.motion", motion)}
                 </option>
               ))}
             </select>
           </label>
           <RevealSeconds seconds={reveal.seconds} onCommit={(seconds) => change({ seconds })} />
-          <label className="toggle" title="Leave the same way, in reverse, before the clip ends">
+          <label className="toggle" title={t("text.reveal.exit.help")}>
             <input type="checkbox" checked={reveal.exit} onChange={(event) => change({ exit: event.target.checked })} />
-            <span>Also on exit</span>
+            <span>{t("text.reveal.exit")}</span>
           </label>
         </>
       )}
@@ -268,9 +263,9 @@ function RevealSeconds({ seconds, onCommit }: { seconds: number; onCommit: (seco
     setDraft(null);
   };
   return (
-    <label className="field" title="Time until the whole text shows">
+    <label className="field" title={t("text.reveal.duration.help")}>
       <span />
-      <span>Duration</span>
+      <span>{t("text.reveal.duration")}</span>
       <input
         type="number"
         step={0.1}
@@ -283,7 +278,7 @@ function RevealSeconds({ seconds, onCommit }: { seconds: number; onCommit: (seco
           if (event.key === "Escape") setDraft(null);
         }}
       />
-      <span className="unit">s</span>
+      <span className="unit">{t("text.seconds")}</span>
     </label>
   );
 }
@@ -300,23 +295,23 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
     const change = stylePatch(clip, path, shown, listed);
     if (change) void editor.setText(clip.id, { style: change });
   };
-  const pressed = (path: "bold" | "italic" | "underline", label: string) => (
+  const pressed = (path: "bold" | "italic" | "underline") => (
     <button className={style[path] ? "active" : ""} aria-pressed={style[path]} onClick={() => patch(path, !style[path])}>
-      {label}
+      {t(`text.${path}`)}
     </button>
   );
   return (
     <section className="effects text-panel">
-      <h2>Text</h2>
+      <h2>{t("text.title")}</h2>
       <TextArea
         key={clip.text}
         text={clip.text ?? ""}
         onCommit={(text) => void editor.setText(clip.id, textChange(clip, text))}
       />
       <Presets editor={editor} clip={clip} catalog={catalog} />
-      <h3>Typography</h3>
+      <h3>{t("text.typography")}</h3>
       <label className="choice">
-        <span>Font</span>
+        <span>{t("text.font")}</span>
         <select value={style.font} onChange={(event) => patch("font", event.target.value)}>
           {fonts.map((font) => (
             <option key={font} value={font}>
@@ -328,23 +323,23 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
       <div className="fields">
         <Amount path="size" value={style.size} onCommit={(shown) => patch("size", shown)} />
       </div>
-      <Swatch label="Color" value={style.color} onCommit={(rgb) => patch("color", picked(style.color, rgb))} />
+      <Swatch label={t("text.color")} value={style.color} onCommit={(rgb) => patch("color", picked(style.color, rgb))} />
       <div className="buttons">
-        {pressed("bold", "Bold")}
-        {pressed("italic", "Italic")}
-        {pressed("underline", "Underline")}
+        {pressed("bold")}
+        {pressed("italic")}
+        {pressed("underline")}
       </div>
       <label className="choice">
-        <span>Case</span>
+        <span>{t("text.case")}</span>
         <select value={style.case} onChange={(event) => patch("case", event.target.value)}>
           {(catalog?.text.cases ?? CASES).map((c) => (
             <option key={c} value={c}>
-              {CASE_NAMES[c] ?? words(c)}
+              {named("text.case", c)}
             </option>
           ))}
         </select>
       </label>
-      <div className="buttons" role="group" aria-label="Alignment">
+      <div className="buttons" role="group" aria-label={t("text.alignment")}>
         {ALIGNS.map((align) => (
           <button
             key={align}
@@ -352,20 +347,20 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
             aria-pressed={style.align === align}
             onClick={() => patch("align", align)}
           >
-            {align === "center" ? "Centre" : align === "left" ? "Left" : "Right"}
+            {t(`text.align.${align}`)}
           </button>
         ))}
       </div>
-      <h3>Spacing</h3>
+      <h3>{t("text.spacing")}</h3>
       <div className="fields">
         <Amount path="letter_spacing" value={style.letter_spacing} onCommit={(shown) => patch("letter_spacing", shown)} />
         <Amount path="line_height" value={style.line_height} onCommit={(shown) => patch("line_height", shown)} />
       </div>
-      <h3>Appearance</h3>
+      <h3>{t("text.appearance")}</h3>
       {(["stroke", "box", "shadow", "glow"] as const).map((look) => (
         <LookFields key={look} look={look} clip={clip} onPatch={patch} />
       ))}
-      <h3>Reveal</h3>
+      <h3>{t("text.reveal")}</h3>
       <Reveal editor={editor} clip={clip} catalog={catalog} />
     </section>
   );

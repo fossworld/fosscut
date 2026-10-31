@@ -975,3 +975,114 @@ fn blended_slow_motion() {
     };
     check("blended-slow-motion", &mut renderer, &plan, &mut frames);
 }
+
+/// A 16:9 picture on a vertical canvas with a canvas fill, through the planner: its own
+/// picture blurred to cover the canvas, then a colour.
+#[test]
+fn canvas_fills() {
+    use fosscut_model::{
+        Asset, AssetKind, CanvasFill, Clip, ClipContent, Id, IdKind, MediaInfo, PathHints, Project,
+        TimelineFormat, Track, TrackKind, VideoInfo,
+    };
+    use fosscut_render::plan::{LayerSource, plan_frame};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let format = TimelineFormat {
+        width: 1080,
+        height: 1920,
+        rate: fosscut_time::Rate::FPS_30,
+        sample_rate: 48_000,
+    };
+    let mut project = Project::new(Id::new(IdKind::Project, 1), "Fill", format);
+    project.media.assets.push(Asset {
+        folder: None,
+        id: asset(1),
+        kind: AssetKind::Video,
+        name: "wide.mp4".into(),
+        path: PathHints::default(),
+        identity: None,
+        info: MediaInfo {
+            duration: Some(Flicks::from_seconds(2).unwrap()),
+            video: Some(VideoInfo {
+                width: 640,
+                height: 360,
+                rate: Some(fosscut_time::Rate::FPS_30),
+                codec: None,
+                rotation: 0,
+            }),
+            ..MediaInfo::default()
+        },
+    });
+    let second = Flicks::from_seconds(1).unwrap();
+    let clip = |n: u64, start: Flicks, fill: CanvasFill| Clip {
+        canvas: Some(fill),
+        ..Clip::new(
+            Id::new(IdKind::Clip, n),
+            start,
+            second,
+            ClipContent::Video {
+                asset: asset(1),
+                source_in: Flicks::ZERO,
+            },
+        )
+    };
+    let timeline = project.manifest.primary_timeline.clone();
+    project
+        .timelines
+        .get_mut(&timeline)
+        .unwrap()
+        .tracks
+        .push(Track {
+            id: Id::new(IdKind::Track, 2),
+            kind: TrackKind::Video,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: vec![
+                clip(3, Flicks::ZERO, CanvasFill::Blur { amount: 0.03 }),
+                clip(
+                    4,
+                    second,
+                    CanvasFill::Color {
+                        color: Color::parse("#2E6B5A").unwrap(),
+                    },
+                ),
+            ],
+        });
+    let blurred = plan_frame(&project, &timeline, Flicks::ZERO).unwrap();
+    assert_eq!(blurred.layers.len(), 2, "the fill, then the clip");
+    let fill = &blurred.layers[0];
+    assert!(matches!(fill.source, LayerSource::Frame(_)));
+    // 640x360 fits a 1080x1920 canvas at 1080x607.5; covering needs 1920 / 607.5.
+    assert!(
+        (fill.transform.scale - 1920.0 / 607.5).abs() < 1e-9,
+        "{}",
+        fill.transform.scale
+    );
+    assert_eq!(fill.effects[0].effect_type, "blur.gaussian");
+    assert_eq!(
+        blurred.layers[1].transform.scale, 1.0,
+        "the clip itself is unchanged"
+    );
+    let colored = plan_frame(&project, &timeline, second).unwrap();
+    assert!(matches!(colored.layers[0].source, LayerSource::Shape(_)));
+
+    let mut frames = Frames::default().with(1, pattern(640, 360, 0));
+    check_at(
+        "canvas-blur",
+        &mut renderer,
+        &blurred,
+        &mut frames,
+        (180, 320),
+    );
+    check_at(
+        "canvas-color",
+        &mut renderer,
+        &colored,
+        &mut frames,
+        (180, 320),
+    );
+}

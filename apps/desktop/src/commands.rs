@@ -18,9 +18,12 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::AppState;
 use crate::library::{ProjectSummary, TrashEntry};
+use crate::preferences::{self as preferred, PreferencesView, UpdateAnswer};
 use crate::preview::Job;
 use crate::recording::{RecordChoice, RecordState};
+use crate::words::{Word, word};
 use crate::workspace::{NewProject, Opened, Workspace};
+use fosscut_engine::preferences::Preferences;
 
 type Answer<T> = Result<T, ApiError>;
 
@@ -97,13 +100,17 @@ pub async fn project_open(
 pub async fn project_pick(app: AppHandle, state: State<'_, AppState>) -> Answer<Option<Opened>> {
     let dialog = app.clone();
     let workspace = Arc::clone(&state.workspace);
+    let preferences = state.preferences.current();
     let opened = blocking(move || {
-        let Some(folder) = dialog
+        let mut pick = dialog
             .dialog()
             .file()
-            .set_title("Open a FossCut project")
-            .blocking_pick_folder()
-        else {
+            .set_title(word(&preferences.language, Word::OpenProject));
+        if let Some(folder) = preferred::projects_folder(&preferences, preferred::home().as_deref())
+        {
+            pick = pick.set_directory(folder);
+        }
+        let Some(folder) = pick.blocking_pick_folder() else {
             return Ok(None);
         };
         let path = folder
@@ -118,8 +125,9 @@ pub async fn project_pick(app: AppHandle, state: State<'_, AppState>) -> Answer<
     Ok(opened)
 }
 
-/// Asks where to save a new project, creates it with `width`, `height` and `rate`, and
-/// opens it; `None` when the user cancels.
+/// Asks where to save a new project (in the preferred projects folder), creates it with
+/// `width`, `height` and `rate` (1920 by 1080 at the preferred frame rate when omitted),
+/// and opens it; `None` when the user cancels.
 #[tauri::command]
 pub async fn project_new(
     app: AppHandle,
@@ -130,29 +138,24 @@ pub async fn project_new(
 ) -> Answer<Option<Opened>> {
     let dialog = app.clone();
     let workspace = Arc::clone(&state.workspace);
+    let preferences = state.preferences.current();
     let opened = blocking(move || {
-        let Some(file) = dialog
+        let mut save = dialog
             .dialog()
             .file()
-            .set_title("Create a FossCut project")
-            .set_file_name("Untitled.fosscut")
-            .blocking_save_file()
-        else {
+            .set_title(word(&preferences.language, Word::CreateProject))
+            .set_file_name("Untitled.fosscut");
+        if let Some(folder) = preferred::projects_folder(&preferences, preferred::home().as_deref())
+        {
+            save = save.set_directory(folder);
+        }
+        let Some(file) = save.blocking_save_file() else {
             return Ok(None);
         };
-        let mut path = file
+        let path = file
             .into_path()
             .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, e.to_string()))?;
-        if path.extension().is_none_or(|ext| ext != "fosscut") {
-            path.set_extension("fosscut");
-        }
-        let new = NewProject {
-            path,
-            name: None,
-            width: width.unwrap_or(1920),
-            height: height.unwrap_or(1080),
-            rate: rate.unwrap_or_else(|| "30".into()),
-        };
+        let new = new_project(path, width, height, rate.as_deref(), &preferences);
         workspace.create(&new).map(Some)
     })
     .await?;
@@ -160,6 +163,27 @@ pub async fn project_new(
         crate::follow(&app, &state);
     }
     Ok(opened)
+}
+
+/// A new project at `path` (with the `.fosscut` extension), `width` by `height` (1920 by
+/// 1080 when omitted) at `rate`, or at the preferred frame rate when omitted.
+fn new_project(
+    mut path: PathBuf,
+    width: Option<u32>,
+    height: Option<u32>,
+    rate: Option<&str>,
+    preferences: &Preferences,
+) -> NewProject {
+    if path.extension().is_none_or(|ext| ext != "fosscut") {
+        path.set_extension("fosscut");
+    }
+    NewProject {
+        path,
+        name: None,
+        width: width.unwrap_or(1920),
+        height: height.unwrap_or(1080),
+        rate: preferred::new_project_rate(preferences, rate),
+    }
 }
 
 /// Closes the open project; agents then edit it on disk again.
@@ -238,6 +262,7 @@ pub async fn media_relink(
 ) -> Answer<Option<Response>> {
     let dialog = app.clone();
     let workspace = Arc::clone(&state.workspace);
+    let language = state.preferences.current().language;
     blocking(move || {
         let (bundle, _, _) = workspace
             .snapshot()
@@ -245,7 +270,7 @@ pub async fn media_relink(
         let Some(file) = dialog
             .dialog()
             .file()
-            .set_title("Find the media file")
+            .set_title(word(&language, Word::FindMedia))
             .blocking_pick_file()
         else {
             return Ok(None);
@@ -309,8 +334,9 @@ pub async fn color_suggest(
 }
 
 /// Measures the loudness of `clips` and returns the volumes that bring each to
-/// `target_lufs` (-14 LUFS when omitted) with peaks under -1 dBFS, with the `clip.set`
-/// calls that apply them; the window applies those with `execute`, as any edit.
+/// `target_lufs` (the preferred `editing.loudness_target` when omitted, -14 LUFS unless
+/// changed) with peaks under -1 dBFS, with the `clip.set` calls that apply them; the
+/// window applies those with `execute`, as any edit.
 #[tauri::command]
 pub async fn audio_normalize(
     state: State<'_, AppState>,
@@ -318,11 +344,12 @@ pub async fn audio_normalize(
     target_lufs: Option<f64>,
 ) -> Answer<Value> {
     let workspace = Arc::clone(&state.workspace);
-    blocking(move || normalize(&workspace, &clips, target_lufs)).await
+    let target = preferred::loudness_target(&state.preferences.current(), target_lufs);
+    blocking(move || normalize(&workspace, &clips, target)).await
 }
 
 /// What `audio_normalize` answers for the project open in `workspace`.
-fn normalize(workspace: &Workspace, clips: &[String], target_lufs: Option<f64>) -> Answer<Value> {
+fn normalize(workspace: &Workspace, clips: &[String], target_lufs: f64) -> Answer<Value> {
     let clips = clips
         .iter()
         .map(|text| {
@@ -336,7 +363,7 @@ fn normalize(workspace: &Workspace, clips: &[String], target_lufs: Option<f64>) 
         &project,
         &bundle,
         &clips,
-        target_lufs.unwrap_or(fosscut_engine::loudness::DEFAULT_TARGET_LUFS),
+        target_lufs,
         fosscut_engine::loudness::DEFAULT_CEILING_DBFS,
         true,
     )
@@ -633,16 +660,27 @@ pub async fn record_devices() -> Answer<Vec<fosscut_engine::record::Device>> {
     blocking(|| Ok(fosscut_engine::record::devices()?)).await
 }
 
-/// Starts recording a microphone, camera or screen into the open project's `recordings/`
-/// folder in the background, after choosing the devices and settings, and answers the
-/// job at once. Once it succeeds, `record_status` or `record_stop` imports the file and
-/// places it at `choice.at` (the playhead it started from), once.
+/// Starts recording a microphone, camera or screen into the preferred recordings folder,
+/// or the open project's `recordings/` folder, in the background, after choosing the
+/// devices and settings, and answers the job at once. Once it succeeds, `record_status`
+/// or `record_stop` imports the file and places it at `choice.at` (the playhead it
+/// started from), once, and a notification says so when the preferences allow.
 #[tauri::command]
-pub async fn record_start(state: State<'_, AppState>, choice: RecordChoice) -> Answer<RecordState> {
+pub async fn record_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    choice: RecordChoice,
+) -> Answer<RecordState> {
     let workspace = Arc::clone(&state.workspace);
     let jobs = Arc::clone(&state.jobs);
     let recordings = Arc::clone(&state.recordings);
-    blocking(move || recordings.start(&workspace, &jobs, &choice)).await
+    let folder = preferred::recordings_folder(&state.preferences.current());
+    let watched = Arc::clone(&jobs);
+    let started =
+        blocking(move || recordings.start_in(&workspace, &jobs, &choice, folder.as_deref()))
+            .await?;
+    crate::announce::watch(&app, &watched, started.status.job.clone());
+    Ok(started)
 }
 
 /// A recording's status (`progress.done` is the whole seconds recorded) and, once it
@@ -694,10 +732,24 @@ pub fn preview_viewport(
     ]));
 }
 
-/// Shows the frame at `flicks`, pausing playback.
+/// Shows the frame at `flicks`, pausing playback. With `scrub` (the window scrubs or
+/// skims), a moment of its sound plays too while `timeline.scrub_audio` is on.
 #[tauri::command]
-pub fn preview_show(state: State<'_, AppState>, flicks: i64) {
-    state.preview.send(Job::Show(Flicks::new(flicks)));
+pub fn preview_show(state: State<'_, AppState>, flicks: i64, scrub: Option<bool>) {
+    state.preview.send(show_job(
+        Flicks::new(flicks),
+        scrub.unwrap_or(false),
+        &state.preferences.current(),
+    ));
+}
+
+/// What the preview is asked to show the frame at `time` with.
+fn show_job(time: Flicks, scrub: bool, preferences: &Preferences) -> Job {
+    if scrub && preferences.timeline.scrub_audio {
+        Job::Scrub(time)
+    } else {
+        Job::Show(time)
+    }
 }
 
 /// Plays from the playhead.
@@ -916,16 +968,15 @@ pub async fn export_pick(
 ) -> Answer<Option<PathBuf>> {
     let dialog = app.clone();
     let workspace = Arc::clone(&state.workspace);
+    let preferences = state.preferences.current();
     blocking(move || {
         let mut file = dialog
             .dialog()
             .file()
-            .set_title("Export to")
+            .set_title(word(&preferences.language, Word::ExportTo))
             .set_file_name(name);
-        if let Some(folder) = workspace
-            .snapshot()
-            .and_then(|(bundle, _, _)| bundle.parent().map(PathBuf::from))
-        {
+        let bundle = workspace.snapshot().map(|(bundle, _, _)| bundle);
+        if let Some(folder) = preferred::exports_folder(&preferences, bundle.as_deref()) {
             file = file.set_directory(folder);
         }
         if let Some(extension) = given(extension.as_deref()) {
@@ -968,12 +1019,20 @@ pub struct ExportChoice {
 }
 
 /// Starts exporting the open project's primary timeline in the background, after checking
-/// everything an export checks before rendering, and returns the job at once.
+/// everything an export checks before rendering, and returns the job at once. When it
+/// finishes, the export sound plays and a notification shows, as the preferences allow.
 #[tauri::command]
-pub async fn export_start(state: State<'_, AppState>, choice: ExportChoice) -> Answer<JobStatus> {
+pub async fn export_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    choice: ExportChoice,
+) -> Answer<JobStatus> {
     let workspace = Arc::clone(&state.workspace);
     let jobs = Arc::clone(&state.jobs);
-    blocking(move || start_export(&workspace, &jobs, &choice)).await
+    let watched = Arc::clone(&jobs);
+    let started = blocking(move || start_export(&workspace, &jobs, &choice)).await?;
+    crate::announce::watch(&app, &watched, started.job.clone());
+    Ok(started)
 }
 
 /// What `export_start` does for the project open in `workspace`.
@@ -1074,6 +1133,229 @@ pub async fn export_cancel(state: State<'_, AppState>, job: String) -> Answer<Jo
     blocking(move || Ok(jobs.cancel(&job, CANCEL_WAIT)?)).await
 }
 
+/// Every preference, the defaults and where the preferences file is.
+#[tauri::command]
+pub fn preferences_get(state: State<'_, AppState>) -> PreferencesView {
+    state.preferences.view()
+}
+
+/// Sets the dotted preference `key` (`editing.frame_step`, `shortcuts.overrides.timeline.split`)
+/// to the JSON `value`, `null` returning it to its default, saves the file and answers
+/// every preference. A value out of range changes nothing and answers
+/// `fosscut.preferences.invalid` with the reason.
+#[tauri::command]
+pub async fn preferences_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    value: Value,
+) -> Answer<PreferencesView> {
+    let store = Arc::clone(&state.preferences);
+    let view = blocking(move || store.set(&key, value)).await?;
+    crate::apply_preferences(&app);
+    Ok(view)
+}
+
+/// Returns the dotted preference `key` to its default, saves the file and answers every
+/// preference.
+#[tauri::command]
+pub async fn preferences_reset(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+) -> Answer<PreferencesView> {
+    let store = Arc::clone(&state.preferences);
+    let view = blocking(move || store.reset(&key)).await?;
+    crate::apply_preferences(&app);
+    Ok(view)
+}
+
+/// Asks the release server for the latest release, off the main thread, unless the
+/// `updates` preference is off; then it asks nothing and says so. Answers `{policy,
+/// checked, current, latest, newer, url, published}` once asked, `{policy, checked:
+/// false, message}` otherwise.
+#[tauri::command]
+pub async fn update_check(state: State<'_, AppState>) -> Answer<UpdateAnswer> {
+    let policy = state.preferences.current().updates;
+    let answer =
+        blocking(move || preferred::check_for_updates(policy, env!("CARGO_PKG_VERSION"), None))
+            .await?;
+    if let Some(found) = &answer.found
+        && found.newer
+        && let Ok(mut release) = state.release.lock()
+    {
+        release.clone_from(&found.url);
+    }
+    Ok(answer)
+}
+
+/// Opens the page of the newer release the last `update_check` found in the browser.
+#[tauri::command]
+pub fn update_open(state: State<'_, AppState>) -> Answer<()> {
+    let page = state
+        .release
+        .lock()
+        .ok()
+        .and_then(|release| release.clone())
+        .ok_or_else(|| invalid("no newer release was found; check for updates first"))?;
+    if !page.starts_with("https://") {
+        return Err(invalid(format!("{page} is not a web page")));
+    }
+    browse(&page).map_err(|e| invalid(format!("cannot open {page}: {e}")))
+}
+
+/// Opens a web page in the system's browser.
+fn browse(page: &str) -> std::io::Result<()> {
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(windows) {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(page)
+        .spawn()
+        .map(|_| ())
+}
+
+/// Plays the library sound `name` once, as an export plays it when it finishes.
+#[tauri::command]
+pub fn sound_play(state: State<'_, AppState>, name: String) -> Answer<()> {
+    let item = fosscut_engine::library::find(&name, Some("sound"))?;
+    let speaker = state.speaker.as_ref().ok_or_else(|| {
+        ApiError::new(codes::INVALID_ARGUMENTS, "there is no sound output device")
+    })?;
+    if speaker.play_sound(&item.name) {
+        Ok(())
+    } else {
+        Err(invalid(format!("the library has no sound {name}")))
+    }
+}
+
+/// Asks for a folder, starting in `directory` when given, with the window's `title`;
+/// `None` when the user cancels.
+#[tauri::command]
+pub async fn folder_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    title: Option<String>,
+    directory: Option<PathBuf>,
+) -> Answer<Option<PathBuf>> {
+    let language = state.preferences.current().language;
+    blocking(move || {
+        let title = given(title.as_deref()).map_or_else(
+            || word(&language, Word::ChooseFolder).to_string(),
+            str::to_string,
+        );
+        let mut pick = app.dialog().file().set_title(title);
+        if let Some(directory) = directory.filter(|d| d.is_dir()) {
+            pick = pick.set_directory(directory);
+        }
+        let Some(folder) = pick.blocking_pick_folder() else {
+            return Ok(None);
+        };
+        folder
+            .into_path()
+            .map(Some)
+            .map_err(|e| invalid(e.to_string()))
+    })
+    .await
+}
+
+/// Each cache's folder, size in bytes and number of entries: analysis, proxies, remux and
+/// frames.
+#[tauri::command]
+pub async fn cache_info(
+    state: State<'_, AppState>,
+) -> Answer<Vec<fosscut_engine::cache::CacheUsage>> {
+    let cache = state.cache.clone();
+    blocking(move || Ok(crate::performance::cache_listing(&cache))).await
+}
+
+/// Empties the caches in `kinds` (`analysis`, `proxies`, `remux`, `frames`; every cache
+/// when empty) and answers `{freed_bytes, caches}`. The preview opens its media again, and
+/// copies the preferences want are made again.
+#[tauri::command]
+pub async fn cache_clear(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    kinds: Vec<String>,
+) -> Answer<Value> {
+    let cache = state.cache.clone();
+    let cleared = blocking(move || crate::performance::clear_caches(&cache, &kinds)).await?;
+    state.preview.send(Job::ResetCaches);
+    crate::plan_media(&app);
+    Ok(cleared)
+}
+
+/// The assets of the open project the preview decodes from a proxy (`{"proxy": "half"}`)
+/// or a remuxed copy (`"remux"`): those it has shown so, and those with such a copy made
+/// that the preferences let it use.
+#[tauri::command]
+pub async fn media_sources(state: State<'_, AppState>) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let shown = state.preview.sources();
+    let preferences = state.preferences.current();
+    let cache = state.cache.clone();
+    blocking(move || {
+        let Some((bundle, project, _)) = workspace.snapshot() else {
+            return Ok(json!({}));
+        };
+        Ok(json!(media_sources_of(
+            &project,
+            &bundle,
+            &preferences,
+            &cache,
+            &shown
+        )))
+    })
+    .await
+}
+
+/// What `media_sources` answers.
+fn media_sources_of(
+    project: &Project,
+    bundle: &std::path::Path,
+    preferences: &Preferences,
+    cache: &std::path::Path,
+    shown: &std::collections::BTreeMap<Id, fosscut_engine::preview::PreviewSource>,
+) -> std::collections::BTreeMap<String, fosscut_engine::preview::PreviewSource> {
+    use fosscut_engine::preview::PreviewSource;
+    let options = crate::performance::preview_options(preferences, cache);
+    let mut sources = std::collections::BTreeMap::new();
+    for id in project.media.assets.iter().map(|asset| &asset.id) {
+        let source = shown.get(id).copied().or_else(|| {
+            let proxy = options.proxies.filter(|size| {
+                matches!(
+                    fosscut_engine::proxy::existing_proxy(project, bundle, id, *size, cache),
+                    Ok(Some(_))
+                )
+            });
+            match proxy {
+                Some(size) => Some(PreviewSource::Proxy(size)),
+                None => (options.remuxed
+                    && matches!(
+                        fosscut_engine::remux::existing_remux(project, bundle, id, cache),
+                        Ok(Some(_))
+                    ))
+                .then_some(PreviewSource::Remux),
+            }
+        });
+        if let Some(source) = source.filter(|s| *s != PreviewSource::Original) {
+            sources.insert(id.to_string(), source);
+        }
+    }
+    sources
+}
+
+/// The proxies and remuxed copies being made: `{proxies: {done, total}, remux: {done,
+/// total}, failed}`; the window also hears it as the `media-work` event.
+#[tauri::command]
+pub fn media_work(state: State<'_, AppState>) -> crate::performance::MediaWork {
+    state.media_jobs.status()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1093,7 +1375,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&work);
         std::fs::create_dir_all(&work).unwrap();
         let workspace = Workspace::new(runtime.clone(), None);
-        let closed = normalize(&workspace, &["clip_0001".into()], None).unwrap_err();
+        let default = fosscut_engine::loudness::DEFAULT_TARGET_LUFS;
+        let closed = normalize(&workspace, &["clip_0001".into()], default).unwrap_err();
         assert_eq!(closed.code, codes::INVALID_ARGUMENTS);
         assert!(closed.message.contains("no project"), "{closed:?}");
 
@@ -1106,9 +1389,9 @@ mod tests {
                 rate: "25".into(),
             })
             .unwrap();
-        let unparsed = normalize(&workspace, &["not an id".into()], None).unwrap_err();
+        let unparsed = normalize(&workspace, &["not an id".into()], default).unwrap_err();
         assert_eq!(unparsed.code, codes::INVALID_ARGUMENTS);
-        let none = normalize(&workspace, &[], None).unwrap_err();
+        let none = normalize(&workspace, &[], default).unwrap_err();
         assert!(none.message.contains("at least one clip"), "{none:?}");
 
         let added = workspace
@@ -1118,10 +1401,10 @@ mod tests {
             ))
             .unwrap();
         let title = added.results[0]["clip"].as_str().unwrap().to_string();
-        let silent = normalize(&workspace, std::slice::from_ref(&title), None).unwrap_err();
+        let silent = normalize(&workspace, std::slice::from_ref(&title), default).unwrap_err();
         assert_eq!(silent.code, codes::INVALID_ARGUMENTS);
         assert!(silent.message.contains("without sound"), "{silent:?}");
-        let target = normalize(&workspace, &[title], Some(-60.0)).unwrap_err();
+        let target = normalize(&workspace, &[title], -60.0).unwrap_err();
         assert!(target.message.contains("target"), "{target:?}");
 
         workspace.close();
@@ -1188,6 +1471,134 @@ mod tests {
 
     fn clip<'a>(clips: &'a [Value], id: &Value) -> &'a Value {
         clips.iter().find(|c| &c["id"] == id).unwrap()
+    }
+
+    #[test]
+    fn new_projects_take_the_preferred_frame_rate_unless_asked_for_another() {
+        let (workspace, runtime, work) = workspace("newrate");
+        let mut preferences = Preferences::default();
+        preferences.set("timeline.frame_rate", "25").unwrap();
+        let new = new_project(work.join("Trip"), None, None, None, &preferences);
+        assert_eq!(
+            new.path,
+            work.join("Trip.fosscut"),
+            "the extension is added"
+        );
+        assert_eq!(
+            (new.width, new.height, new.rate.as_str()),
+            (1920, 1080, "25")
+        );
+        let opened = workspace.create(&new).unwrap();
+        let timeline = workspace
+            .query(
+                "timeline.read",
+                json!({ "timeline": opened.info["primary_timeline"] }),
+            )
+            .unwrap();
+        assert_eq!(timeline["format"]["rate"], "25", "{timeline}");
+        workspace.close();
+        let asked = new_project(
+            work.join("Tall.fosscut"),
+            Some(1080),
+            Some(1920),
+            Some("60"),
+            &preferences,
+        );
+        assert_eq!(
+            (asked.width, asked.height, asked.rate.as_str()),
+            (1080, 1920, "60")
+        );
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn media_marks_show_the_copies_the_preview_decodes() {
+        use fosscut_engine::preview::PreviewSource;
+        use fosscut_engine::proxy::ProxySize;
+        let (workspace, runtime, work) = workspace("sources");
+        open_new(&workspace, &work, 1280, 720);
+        let cache = work.join("cache");
+        // Media whose files exist, so their copies can be found.
+        let real = |name: &str, size: u64| {
+            let file = work.join(name);
+            std::fs::write(&file, b"media").unwrap();
+            let mut args = unplayable_video(name, size);
+            args["path"] = json!({ "absolute": file });
+            args
+        };
+        let a = import(&workspace, real("a.mov", 11));
+        let b = import(&workspace, real("b.ts", 12));
+        let (bundle, project, _) = workspace.snapshot().unwrap();
+        let mut preferences = Preferences::default();
+        let none = std::collections::BTreeMap::new();
+        assert!(media_sources_of(&project, &bundle, &preferences, &cache, &none).is_empty());
+        let identity = |id: &str| {
+            project
+                .media
+                .get(&Id::parse(id).unwrap())
+                .unwrap()
+                .identity
+                .clone()
+                .unwrap()
+        };
+        let proxy = fosscut_engine::proxy::proxy_path(&cache, &identity(&a), ProxySize::Half);
+        let remuxed = fosscut_engine::remux::remux_path(&cache, &identity(&b));
+        for file in [&proxy, &remuxed] {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, b"copy").unwrap();
+        }
+        let marks = media_sources_of(&project, &bundle, &preferences, &cache, &none);
+        assert_eq!(marks.len(), 1, "proxies are off: {marks:?}");
+        assert_eq!(marks[&b], PreviewSource::Remux);
+        preferences.set("performance.proxies", "on").unwrap();
+        let marks = media_sources_of(&project, &bundle, &preferences, &cache, &none);
+        assert_eq!(marks[&a], PreviewSource::Proxy(ProxySize::Half));
+        let shown =
+            std::collections::BTreeMap::from([(Id::parse(&a).unwrap(), PreviewSource::Original)]);
+        let marks = media_sources_of(&project, &bundle, &preferences, &cache, &shown);
+        assert!(
+            !marks.contains_key(&a),
+            "what the preview decodes wins: {marks:?}"
+        );
+        assert_eq!(
+            serde_json::to_value(media_sources_of(
+                &project,
+                &bundle,
+                &preferences,
+                &cache,
+                &none
+            ))
+            .unwrap(),
+            json!({ a.clone(): { "proxy": "half" }, b.clone(): "remux" })
+        );
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn scrubbing_plays_sound_only_while_the_preferences_say_so() {
+        let at = Flicks::new(SECOND);
+        let mut preferences = Preferences::default();
+        assert!(matches!(show_job(at, true, &preferences), Job::Scrub(t) if t == at));
+        assert!(matches!(show_job(at, false, &preferences), Job::Show(t) if t == at));
+        preferences.set("timeline.scrub_audio", "false").unwrap();
+        assert!(matches!(show_job(at, true, &preferences), Job::Show(t) if t == at));
+    }
+
+    #[test]
+    fn loudness_is_levelled_to_the_preferred_target() {
+        let (workspace, runtime, work) = workspace("loudpref");
+        open_new(&workspace, &work, 1280, 720);
+        let ding = add_from_library(&workspace, &add("ding")).unwrap();
+        let clip = ding.results[0]["clip"].as_str().unwrap().to_string();
+        let mut preferences = Preferences::default();
+        preferences.set("editing.loudness_target", "-20").unwrap();
+        let target = preferred::loudness_target(&preferences, None);
+        let levelled = normalize(&workspace, std::slice::from_ref(&clip), target).unwrap();
+        assert_eq!(levelled["target_lufs"], -20.0, "{levelled}");
+        let asked = preferred::loudness_target(&preferences, Some(-16.0));
+        let levelled = normalize(&workspace, &[clip], asked).unwrap();
+        assert_eq!(levelled["target_lufs"], -16.0);
+        done(workspace, runtime, work);
     }
 
     #[test]

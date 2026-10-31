@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
 import type { ClipView, MaskView } from "../engine/types";
+import { t } from "../i18n";
 import { findClip } from "../timeline/geometry";
 import { maskValues } from "../panels/maskFields";
 import { type Frame, fitCanvas, maskToPicture, pictureFrame, pictureToMask, toPicture, toScreen } from "./placement";
@@ -129,7 +130,7 @@ export function MaskOverlay({ editor, state }: { editor: Editor; state: EditorSt
         <foreignObject x={8} y={8} width={220} height={36}>
           <div className="overlay-buttons">
             <button onClick={finishPath} disabled={points.length < 3}>
-              Done
+              {t("preview.done")}
             </button>
             <button
               onClick={() => {
@@ -137,7 +138,7 @@ export function MaskOverlay({ editor, state }: { editor: Editor; state: EditorSt
                 editor.setMaskTool(null);
               }}
             >
-              Cancel
+              {t("preview.cancel")}
             </button>
           </div>
         </foreignObject>

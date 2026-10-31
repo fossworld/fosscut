@@ -1,6 +1,7 @@
 //! Built-in commands.
 
 mod arrange;
+mod canvas;
 mod caption;
 mod clip;
 mod clipboard;
@@ -23,6 +24,7 @@ mod track;
 mod util;
 
 pub use arrange::{Aligned, ClipAlign, ClipReplace, Horizontal, SplitAll, TimelineSplit, Vertical};
+pub use canvas::{CanvasChanged, ClipCanvas};
 pub use caption::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, Paging,
     WordInput,
@@ -108,6 +110,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<MarkerRemove>();
     registry.register::<ClipSet>();
     registry.register::<KeyframeSetAll>();
+    registry.register::<ClipCanvas>();
     registry.register::<KeyframeSet>();
     registry.register::<KeyframeRemove>();
     registry.register::<EffectAdd>();

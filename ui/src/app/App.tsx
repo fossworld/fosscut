@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-import { type Action, actionFor, isTyping } from "../keyboard";
+import { t, useLanguage } from "../i18n";
+import { MAC, keystroke } from "../keyboard";
 import { Activity } from "../panels/Activity";
 import { Inspector } from "../panels/Inspector";
 import { Library } from "../panels/Library";
@@ -11,64 +12,99 @@ import { Guides } from "../preview/Guides";
 import { MaskOverlay } from "../preview/MaskOverlay";
 import { PreviewHole } from "../preview/PreviewHole";
 import { RegionOverlay } from "../preview/RegionOverlay";
+import { type ActionId, type ShortcutContext, actionFor, hint } from "../shortcuts";
 import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
 import { TimelineTabs } from "../timeline/TimelineTabs";
 import { Transport } from "../transport/Transport";
-import type { Editor } from "./editor";
+import { type Editor, mediaWorkLine } from "./editor";
 import { Export } from "./Export";
+import { isMulticam } from "./multicam";
 import { recordedTime } from "./recorder";
+import { Settings } from "./Settings";
 import { Start } from "./Start";
 
 /** How often the list of connected agents is read, in milliseconds. */
 const CLIENTS_POLL = 2000;
 
-const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+/** The part of the window a keystroke happened in, for shortcuts that work only there. */
+export function focusOf(target: EventTarget | null): ShortcutContext {
+  const element = target as Element | null;
+  if (!element || typeof element.closest !== "function") return "global";
+  if (element.closest(".preview-hole")) return "canvas";
+  if (element.closest(".timeline")) return "timeline";
+  return "global";
+}
 
-function run(editor: Editor, action: Action): void {
-  const actions: Record<Action, () => unknown> = {
-    "toggle-play": () => editor.togglePlay(),
-    "step-back": () => editor.step(-1),
-    "step-forward": () => editor.step(1),
-    "second-back": () => editor.stepSeconds(-1),
-    "second-forward": () => editor.stepSeconds(1),
-    start: () => editor.seek(0),
-    end: () => editor.seekEnd(),
-    undo: () => editor.undo(),
-    redo: () => editor.redo(),
-    delete: () => editor.deleteSelection(),
-    split: () => editor.splitAtPlayhead(),
-    deselect: () => (editor.getState().fullscreen ? editor.toggleFullscreen() : editor.select(null)),
-    "toggle-enabled": () => editor.toggleEnabled(),
-    copy: () => editor.copy(),
-    cut: () => editor.cut(),
-    paste: () => editor.paste(),
-    "copy-attributes": () => editor.copyAttributes(),
-    "paste-attributes": () => editor.pasteAttributes(),
-    "delete-left": () => editor.deleteSide("left"),
-    "delete-right": () => editor.deleteSide("right"),
-    "split-all": () => editor.splitAll(),
-    group: () => editor.group(),
-    ungroup: () => editor.ungroup(),
-    marker: () => editor.toggleMarker(),
-    "previous-marker": () => editor.seekMarker(-1),
-    "next-marker": () => editor.seekMarker(1),
-    magnet: () => editor.setMagnet(!editor.getState().magnet),
-    "select-tool": () => editor.setTool("select"),
-    "blade-tool": () => editor.setTool("blade"),
-    snapping: () => editor.setSnapping(!editor.getState().snapping),
-    skimming: () => editor.setSkimming(!editor.getState().skimming),
-    "shuttle-back": () => editor.shuttle(-1),
-    "shuttle-stop": () => editor.shuttle(0),
-    "shuttle-forward": () => editor.shuttle(1),
-    "zoom-in": () => editor.zoom("in"),
-    "zoom-out": () => editor.zoom("out"),
-    "zoom-fit": () => editor.zoom("fit"),
-    fullscreen: () => editor.toggleFullscreen(),
-    rulers: () => editor.toggleRulers(),
-    compound: () => editor.compound(),
+/** What each shortcut does. */
+export function run(editor: Editor, action: ActionId): void {
+  const angle = /^multicam\.angle_(\d)$/.exec(action);
+  if (angle) {
+    const state = editor.getState();
+    const selected = state.timeline && state.selection ? findClip(state.timeline, state.selection) : null;
+    if (isMulticam(selected)) void editor.switchAngle(Number(angle[1]));
+    return;
+  }
+  const actions: Partial<Record<ActionId, () => unknown>> = {
+    "player.play": () => editor.togglePlay(),
+    "player.frame_back": () => editor.step(-1),
+    "player.frame_forward": () => editor.step(1),
+    "player.step_back": () => editor.stepMany(-1),
+    "player.step_forward": () => editor.stepMany(1),
+    "player.start": () => editor.seek(0),
+    "player.end": () => editor.seekEnd(),
+    "player.previous_marker": () => editor.seekMarker(-1),
+    "player.next_marker": () => editor.seekMarker(1),
+    "player.shuttle_back": () => editor.shuttle(-1),
+    "player.shuttle_stop": () => editor.shuttle(0),
+    "player.shuttle_forward": () => editor.shuttle(1),
+    "player.fullscreen": () => editor.toggleFullscreen(),
+    "player.rulers": () => editor.toggleRulers(),
+    "basic.undo": () => editor.undo(),
+    "basic.redo": () => editor.redo(),
+    "basic.copy": () => editor.copy(),
+    "basic.cut": () => editor.cut(),
+    "basic.paste": () => editor.paste(),
+    "basic.copy_attributes": () => editor.copyAttributes(),
+    "basic.paste_attributes": () => editor.pasteAttributes(),
+    "basic.deselect": () => (editor.getState().fullscreen ? editor.toggleFullscreen() : editor.select(null)),
+    "basic.settings": () => editor.openSettings(),
+    "timeline.split": () => editor.splitAtPlayhead(),
+    "timeline.split_all": () => editor.splitAll(),
+    "timeline.delete": () => editor.deleteSelection(),
+    "timeline.delete_left": () => editor.deleteSide("left"),
+    "timeline.delete_right": () => editor.deleteSide("right"),
+    "timeline.toggle_enabled": () => editor.toggleEnabled(),
+    "timeline.group": () => editor.group(),
+    "timeline.ungroup": () => editor.ungroup(),
+    "timeline.compound": () => editor.compound(),
+    "timeline.marker": () => editor.toggleMarker(),
+    "timeline.magnet": () => editor.setMagnet(!editor.getState().magnet),
+    "timeline.select_tool": () => editor.setTool("select"),
+    "timeline.blade_tool": () => editor.setTool("blade"),
+    "timeline.snapping": () => editor.setSnapping(!editor.getState().snapping),
+    "timeline.skimming": () => editor.setSkimming(!editor.getState().skimming),
+    "timeline.zoom_in": () => editor.zoom("in"),
+    "timeline.zoom_out": () => editor.zoom("out"),
+    "timeline.zoom_fit": () => editor.zoom("fit"),
+    "canvas.nudge_left": () => editor.nudge(-1, 0),
+    "canvas.nudge_right": () => editor.nudge(1, 0),
+    "canvas.nudge_up": () => editor.nudge(0, -1),
+    "canvas.nudge_down": () => editor.nudge(0, 1),
   };
-  void actions[action]();
+  void actions[action]?.();
+}
+
+/** A gear: the Settings button's icon. */
+function Gear() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M6.9 1h2.2l.4 1.9 1.2.5 1.6-1.1 1.6 1.6-1.1 1.6.5 1.2 1.9.4v2.2l-1.9.4-.5 1.2 1.1 1.6-1.6 1.6-1.6-1.1-1.2.5-.4 1.9H6.9l-.4-1.9-1.2-.5-1.6 1.1-1.6-1.6 1.1-1.6-.5-1.2L1 9.1V6.9l1.9-.4.5-1.2-1.1-1.6 1.6-1.6 1.6 1.1 1.2-.5zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"
+      />
+    </svg>
+  );
 }
 
 /** What the sidebar's bin shows: the project's media, or FossCut's own library. */
@@ -76,6 +112,8 @@ type Bin = "media" | "library";
 
 export function App({ editor }: { editor: Editor }) {
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
+  // Every text below follows the language the preferences choose.
+  useLanguage();
   const open = state.opened !== null;
   const [bin, setBin] = useState<Bin>("media");
 
@@ -98,23 +136,18 @@ export function App({ editor }: { editor: Editor }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // The export dialog is modal: Escape closes it, and editing keys wait.
-      if (editor.getState().exporting.open) {
+      const now = editor.getState();
+      // Settings and the export dialog are modal: Escape closes them, and editing keys wait.
+      if (now.settings.open) {
+        if (event.key === "Escape") editor.closeSettings();
+        return;
+      }
+      if (now.exporting.open) {
         if (event.key === "Escape") editor.closeExport();
         return;
       }
-      const action = actionFor(
-        {
-          key: event.key,
-          metaKey: event.metaKey,
-          ctrlKey: event.ctrlKey,
-          shiftKey: event.shiftKey,
-          altKey: event.altKey,
-          typing: isTyping(event.target),
-        },
-        MAC,
-      );
-      if (!action || !open) return;
+      const action = actionFor(keystroke(event), MAC, undefined, focusOf(event.target));
+      if (!action || (!open && action !== "basic.settings")) return;
       event.preventDefault();
       run(editor, action);
     };
@@ -124,61 +157,87 @@ export function App({ editor }: { editor: Editor }) {
 
   const agents = state.clients.filter((c) => c.name.startsWith("agent:"));
   const selected = state.timeline && state.selection ? findClip(state.timeline, state.selection) : null;
+  const working = mediaWorkLine(state.mediaWork);
+  const settingsButton = (
+    <button className="settings-button" onClick={() => editor.openSettings()} title={hint(t("app.settings"), "basic.settings")}>
+      <Gear />
+      <span>{t("app.settings")}</span>
+    </button>
+  );
   return (
     <div className={open ? (state.fullscreen ? "app fullscreen" : "app") : "app empty"}>
       {state.notice && (
         <div className={`notice ${state.notice.kind}`} role="status">
           <span>{state.notice.text}</span>
           <button className="link" onClick={() => editor.dismissNotice()}>
-            Dismiss
+            {t("app.dismiss")}
           </button>
         </div>
       )}
-      {!open && <Start editor={editor} state={state} />}
+      {state.update?.newer && (
+        <div className="notice info update" role="status">
+          <span>{t("app.update.available", { version: state.update.latest ?? "", current: state.update.current ?? "" })}</span>
+          {state.update.url && (
+            <button className="link" onClick={() => void editor.openRelease()}>
+              {t("app.update.open")}
+            </button>
+          )}
+          <button className="link" onClick={() => editor.dismissUpdate()}>
+            {t("app.dismiss")}
+          </button>
+        </div>
+      )}
+      {!open && <Start editor={editor} state={state} settings={settingsButton} />}
       {open && state.opened && (
         <>
           <header>
             <strong>{state.opened.info.name}</strong>
-            <span className="muted">revision {state.opened.info.revision}</span>
+            <span className="muted">{t("app.revision", { revision: state.opened.info.revision })}</span>
             {agents.length > 0 && (
               <span className="live" title={agents.map((a) => who(a.name)).join(", ")}>
-                {agents.length === 1 ? `${who(agents[0]?.name ?? "")} is editing` : `${agents.length} agents editing`}
+                {agents.length === 1
+                  ? t("app.agents.one", { name: who(agents[0]?.name ?? "") })
+                  : t("app.agents.many", { count: agents.length })}
+              </span>
+            )}
+            {working && (
+              <span className="media-work muted" role="status" title={t("app.work.help")}>
+                {working}
               </span>
             )}
             <span className="spacer" />
-            <button onClick={() => void editor.undo()} disabled={!state.opened.info.can_undo} title="Undo (Mod+Z)">
-              Undo
+            <button onClick={() => void editor.undo()} disabled={!state.opened.info.can_undo} title={hint(t("app.undo"), "basic.undo")}>
+              {t("app.undo")}
             </button>
-            <button onClick={() => void editor.redo()} disabled={!state.opened.info.can_redo} title="Redo (Mod+Shift+Z)">
-              Redo
+            <button onClick={() => void editor.redo()} disabled={!state.opened.info.can_redo} title={hint(t("app.redo"), "basic.redo")}>
+              {t("app.redo")}
             </button>
-            <button onClick={() => editor.toggleRulers()} aria-pressed={state.rulers} title="Rulers and guides (Mod+Shift+R)">
-              Rulers
+            <button onClick={() => editor.toggleRulers()} aria-pressed={state.rulers} title={hint(t("app.rulers.help"), "player.rulers")}>
+              {t("app.rulers")}
             </button>
-            <button onClick={() => void editor.toggleFullscreen()} title="Full screen (Mod+Shift+F; Escape leaves)">
-              Full screen
+            <button onClick={() => void editor.toggleFullscreen()} title={hint(t("app.fullscreen.help"), "player.fullscreen")}>
+              {t("app.fullscreen")}
             </button>
             <button
               className={state.recorder.job?.state === "running" ? "recording" : ""}
               aria-pressed={state.recorder.open}
               onClick={() => (state.recorder.open ? editor.closeRecorder() : void editor.openRecorder())}
-              title="Record a voiceover, a camera or the screen into the project, at the playhead"
+              title={t("app.record.help")}
             >
-              {state.recorder.job?.state === "running" ? `Recording ${recordedTime(state.recorder.job)}` : "Record"}
+              {state.recorder.job?.state === "running"
+                ? t("app.recording", { time: recordedTime(state.recorder.job) })
+                : t("app.record")}
             </button>
+            {settingsButton}
             <button
               className="primary"
               onClick={() => void editor.openExport()}
               disabled={!state.timeline}
-              title={
-                state.exporting.job?.state === "running"
-                  ? "An export is running: show its progress"
-                  : "Export the timeline to a video or audio file"
-              }
+              title={state.exporting.job?.state === "running" ? t("app.export.running.help") : t("app.export.help")}
             >
-              {state.exporting.job?.state === "running" ? "Exporting" : "Export"}
+              {state.exporting.job?.state === "running" ? t("app.exporting") : t("app.export")}
             </button>
-            <button onClick={() => void editor.close()}>Close</button>
+            <button onClick={() => void editor.close()}>{t("app.close")}</button>
           </header>
           <main>
             {state.recorder.open && <Record editor={editor} state={state} />}
@@ -197,12 +256,12 @@ export function App({ editor }: { editor: Editor }) {
                   luts={state.luts}
                   media={state.media}
                   others={(state.timeline?.tracks ?? [])
-                    .flatMap((t) => t.clips)
+                    .flatMap((track) => track.clips)
                     .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}
                 />
               )}
               <section className="bin">
-                <div className="bin-tabs" role="tablist" aria-label="Media and library">
+                <div className="bin-tabs" role="tablist" aria-label={t("app.bin")}>
                   {(["media", "library"] as const).map((tab) => (
                     <button
                       key={tab}
@@ -210,9 +269,9 @@ export function App({ editor }: { editor: Editor }) {
                       aria-selected={bin === tab}
                       className={bin === tab ? "active" : ""}
                       onClick={() => setBin(tab)}
-                      title={tab === "media" ? "The project's media" : "Shapes, stickers, titles, looks, sounds and music made by FossCut"}
+                      title={tab === "media" ? t("app.bin.media.help") : t("app.bin.library.help")}
                     >
-                      {tab === "media" ? "Media" : "Library"}
+                      {tab === "media" ? t("app.bin.media") : t("app.bin.library")}
                     </button>
                   ))}
                 </div>
@@ -229,6 +288,7 @@ export function App({ editor }: { editor: Editor }) {
           {state.exporting.open && <Export editor={editor} state={state} />}
         </>
       )}
+      {state.settings.open && <Settings editor={editor} state={state} />}
     </div>
   );
 }

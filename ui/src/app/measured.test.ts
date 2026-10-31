@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { FakeEngine } from "../engine/fake";
+import { t } from "../i18n";
 import type { EditRequest, TimelineView } from "../engine/types";
 import { clip, entry, moment, timeline, track } from "../test/fixtures";
 import { Editor } from "./editor";
@@ -72,7 +73,7 @@ describe("measured edits", () => {
       kind: "stabilize",
       clip: "clip_0003",
       busy: false,
-      report: "Stabilized over 90 frames, zoomed in 1.09x to hide the moving edges.",
+      report: t("motion.stabilized.zoom", { count: 90, zoom: "1.09" }),
       error: null,
     });
     expect(editor.getState().timeline?.revision, "read again after the engine applied it").toBe(5);
@@ -83,14 +84,16 @@ describe("measured edits", () => {
   it("splits at scenes and says where, or that there were none", async () => {
     const { editor, fake } = await started();
     await editor.splitAtScenes("clip_0003");
-    expect(editor.getState().measurement?.report).toBe("No scene changes found: the clip is one shot.");
+    expect(editor.getState().measurement?.report).toBe(t("motion.scenes.found.none"));
     fake.sceneCuts = [moment(2).flicks, moment(4).flicks];
     await editor.splitAtScenes("clip_0003");
     expect(fake.callsOf("measure.scenes")).toEqual([
       ["clip_0003", 4],
       ["clip_0003", 4],
     ]);
-    expect(editor.getState().measurement?.report).toBe("Split into 3 shots at 00:00:02:00 and 00:00:04:00.");
+    expect(editor.getState().measurement?.report).toBe(
+      t("motion.scenes.found", { count: 3, cuts: `00:00:02:00 ${t("motion.and")} 00:00:04:00` }),
+    );
   });
 
   it("shows refusals with their hint, and reloads on a newer revision", async () => {
@@ -127,7 +130,10 @@ describe("measured edits", () => {
       [{ clip: "clip_0003", region, at: moment(1).flicks, mask: "mask_0020", expected_revision: 4 }],
     ]);
     expect(editor.getState().measurement?.report).toBe(
-      "Tracked over 60 frames. Lost the region from 00:00:02:00 to 00:00:03:00; it holds its last place there.",
+      t("motion.tracked.lost", {
+        done: t("motion.tracked", { count: 60 }),
+        ranges: t("motion.tracked.range", { from: "00:00:02:00", to: "00:00:03:00" }),
+      }),
     );
     expect(editor.getState().regionPick, "done with the region").toBeNull();
 
@@ -149,7 +155,10 @@ describe("measured edits", () => {
     ]);
     expect(editor.getState().selection).toBe("clip_0057");
     expect(editor.getState().measurement?.report).toBe(
-      "Made a multicam clip of 2 angles, lined up by their sound: angle 2 starts 0.50 s after angle 1.",
+      t("motion.multicam.lined", {
+        made: t("motion.multicam.made", { count: 2 }),
+        offsets: t("motion.multicam.after", { number: 2, amount: t("motion.multicam.seconds", { seconds: "0.50" }) }),
+      }),
     );
     expect(await editor.createMulticam({ angles: ["asset_0001"], sync: false })).toBe(false);
     expect(editor.getState().measurement?.error).toMatchObject({ code: "fosscut.multicam.invalid", hint: expect.stringContaining("two or more") });

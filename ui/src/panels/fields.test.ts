@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { KeyframeView } from "../engine/types";
+import { setLanguage, t } from "../i18n";
 import { clip, moment } from "../test/fixtures";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import { change, fieldsFor, keyedPaths, toggleKey } from "./fields";
@@ -12,6 +13,20 @@ function key(seconds: number, value: number | [number, number], interpolation: K
 }
 
 describe("inspector", () => {
+  afterEach(() => setLanguage("en"));
+
+  it("labels fields in the interface's language, read each time they are shown", () => {
+    const video = clip("c1", "video", 0, 2);
+    const labels = () => Object.fromEntries(fieldsFor(video, at(0)).map((f) => [f.id, [f.label, f.unit]]));
+    expect(labels().x).toEqual([t("inspector.field.x"), "%"]);
+    expect(labels().x?.[0]).toBe("Position X");
+    expect(labels().fade_in).toEqual(["Fade in", "s"]);
+    setLanguage("hu");
+    expect(labels().x).toEqual(["X pozíció", "%"]);
+    expect(labels().crop_left?.[0]).toBe("Körülvágás balról");
+    expect(labels().fade_in, "seconds in Hungarian").toEqual(["Beúsztatás", "mp"]);
+  });
+
   it("shows picture fields for pictures and sound fields for sound", () => {
     const video = clip("c1", "video", 0, 2, {
       transform: { position: [0.25, -0.1], scale: 1.5 },

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 
 import type { Editor } from "../app/editor";
+import { t } from "../i18n";
 
 /**
  * The hole the preview shows through (ADR-0010, path A): a transparent box whose place on
@@ -29,7 +30,8 @@ export function PreviewHole({ editor, children }: { editor: Editor; children?: R
   }, [editor]);
 
   return (
-    <div className="preview-hole" ref={hole} aria-label="Preview">
+    // Focusable, so the canvas shortcuts (nudging the selected clips) work once clicked.
+    <div className="preview-hole" ref={hole} tabIndex={-1} aria-label={t("preview.label")}>
       {children}
     </div>
   );

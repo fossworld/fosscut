@@ -6,6 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
 import type {
   AppInfo,
+  CacheKind,
+  CacheUsage,
   CaptureDevice,
   Client,
   ColorSuggestion,
@@ -16,17 +18,21 @@ import type {
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
+  MediaWork,
   MotionResult,
   MulticamRequest,
   MulticamResult,
   Normalization,
   Opened,
+  PreferencesView,
+  PreviewSource,
   ProjectSummary,
   RecordChoice,
   RecordState,
   SceneSplit,
   TrackRequest,
   TrashEntry,
+  UpdateAnswer,
 } from "./types";
 
 /** True inside the desktop app. */
@@ -150,11 +156,14 @@ export class TauriEngine implements EngineClient {
   media = {
     reveal: (asset: string): Promise<void> => invoke("media_reveal", { asset }),
     relink: async (asset: string): Promise<boolean> => (await invoke("media_relink", { asset })) !== null,
+    sources: (): Promise<Record<string, PreviewSource>> => invoke("media_sources"),
+    work: (): Promise<MediaWork> => invoke("media_work"),
   };
 
   preview = {
     viewport: (rect: Rect): Promise<void> => invoke("preview_viewport", { ...rect }),
-    show: (flicks: number): Promise<void> => invoke("preview_show", { flicks: Math.round(flicks) }),
+    show: (flicks: number, scrub?: boolean): Promise<void> =>
+      invoke("preview_show", scrub ? { flicks: Math.round(flicks), scrub: true } : { flicks: Math.round(flicks) }),
     play: (): Promise<void> => invoke("preview_play"),
     pause: (): Promise<void> => invoke("preview_pause"),
     shuttle: (rate: number): Promise<void> => invoke("preview_shuttle", { rate }),
@@ -163,6 +172,30 @@ export class TauriEngine implements EngineClient {
   fullscreen(on: boolean): Promise<void> {
     return invoke("window_fullscreen", { on });
   }
+
+  preferences = {
+    get: (): Promise<PreferencesView> => invoke("preferences_get"),
+    set: (key: string, value: unknown): Promise<PreferencesView> => invoke("preferences_set", { key, value }),
+    reset: (key: string): Promise<PreferencesView> => invoke("preferences_reset", { key }),
+  };
+
+  updates = {
+    check: (): Promise<UpdateAnswer> => invoke("update_check"),
+    open: (): Promise<void> => invoke("update_open"),
+  };
+
+  playSound(name: string): Promise<void> {
+    return invoke("sound_play", { name });
+  }
+
+  pickFolder(title?: string, directory?: string): Promise<string | null> {
+    return invoke("folder_pick", { title: title ?? null, directory: directory ?? null });
+  }
+
+  cache = {
+    usage: async (): Promise<CacheUsage> => ({ caches: await invoke<CacheUsage["caches"]>("cache_info") }),
+    clear: (kind: CacheKind | "all"): Promise<CacheUsage> => invoke("cache_clear", { kinds: kind === "all" ? [] : [kind] }),
+  };
 
   on<E extends keyof EngineEvents>(
     event: E,

@@ -1,8 +1,9 @@
 // Edits measured from media, as the window offers and reports them: what a tracked
 // region can drive, and what stabilizing, splitting at scenes, tracking and making a
-// multicam clip did, in a sentence.
+// multicam clip did, in a sentence of the interface's language.
 
 import type { ClipView, MotionResult, MulticamResult, SceneSplit, TimelineView } from "../engine/types";
+import { type MessageKey, language, t } from "../i18n";
 import { FLICKS_PER_SECOND, type Rate, frameAt, timecode } from "../transport/time";
 
 /** Below this, a multicam angle's match by sound is doubtful (the engine's `SYNC_CONFIDENCE`). */
@@ -11,13 +12,10 @@ export const SYNC_CONFIDENCE = 0.3;
 /** The kinds of clip that can follow a tracked region: they have a place on the canvas. */
 const FOLLOWERS = new Set(["text", "shape", "video", "image", "timeline"]);
 
-const NAMES: Record<string, string> = {
-  text: "Title",
-  shape: "Sticker",
-  video: "Video",
-  image: "Image",
-  timeline: "Compound",
-};
+/** The name of a follower's kind, in the interface's language. */
+function kindName(kind: string): string {
+  return FOLLOWERS.has(kind) ? t(`motion.target.${kind}` as MessageKey) : kind;
+}
 
 /** Something a tracked region can drive: a mask of the clip, or another clip. */
 export interface TrackTarget {
@@ -33,7 +31,7 @@ export interface TrackTarget {
 export function trackTargets(clip: ClipView, timeline: TimelineView): TrackTarget[] {
   const masks = (clip.masks ?? []).map((mask, i) => ({
     value: `mask:${mask.id}`,
-    label: `Mask ${i + 1}: ${(mask.shape ?? "rectangle").replaceAll("_", " ")}`,
+    label: t("motion.target.mask", { number: i + 1, shape: (mask.shape ?? "rectangle").replaceAll("_", " ") }),
   }));
   const others = timeline.tracks
     .flatMap((t) => t.clips)
@@ -41,7 +39,10 @@ export function trackTargets(clip: ClipView, timeline: TimelineView): TrackTarge
     .filter((c) => c.start.flicks < clip.end.flicks && c.end.flicks > clip.start.flicks)
     .map((c) => ({
       value: `clip:${c.id}`,
-      label: `${NAMES[c.kind] ?? c.kind}: ${c.text ?? c.asset_name ?? c.timeline_name ?? c.shape ?? c.id}`,
+      label: t("motion.target.clip", {
+        kind: kindName(c.kind),
+        name: c.text ?? c.asset_name ?? c.timeline_name ?? c.shape ?? c.id,
+      }),
     }));
   return [...masks, ...others];
 }
@@ -57,55 +58,65 @@ export function targetOf(value: string): { mask: string } | { follow: string } |
 
 const at = (flicks: number, rate: Rate) => timecode(frameAt(flicks, rate), rate);
 
-/** A list in words: "a", "a and b", "a, b and c". */
+/** A list in words: "a", "a and b", "a, b and c", with the language's "and". */
 function listed(items: string[]): string {
   if (items.length <= 1) return items.join("");
-  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+  return `${items.slice(0, -1).join(", ")} ${t("motion.and")} ${items[items.length - 1]}`;
+}
+
+/** `value` with exactly `digits` decimals, as the interface's language writes them. */
+function fixed(value: number, digits: number): string {
+  return new Intl.NumberFormat(language(), {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  }).format(value);
 }
 
 /** What stabilizing did. */
 export function stabilized(result: MotionResult): string {
   const zoom = result.motion.zoom ?? 1;
-  const frames = `${result.motion.frames} frames`;
-  if (zoom <= 1.0005) return `Stabilized over ${frames}; no zoom was needed.`;
-  return `Stabilized over ${frames}, zoomed in ${zoom.toFixed(2)}x to hide the moving edges.`;
+  const count = result.motion.frames;
+  if (zoom <= 1.0005) return t("motion.stabilized.still", { count });
+  return t("motion.stabilized.zoom", { count, zoom: fixed(zoom, 2) });
 }
 
 /** What splitting at scenes did; at most five cuts are named. */
 export function splitAtScenes(result: SceneSplit, rate: Rate): string {
   const cuts = result.scenes.cuts;
-  if (cuts.length === 0) return "No scene changes found: the clip is one shot.";
+  if (cuts.length === 0) return t("motion.scenes.found.none");
   const shown = cuts.slice(0, 5).map((c) => at(c, rate));
-  if (cuts.length > 5) shown.push(`${cuts.length - 5} more`);
-  return `Split into ${cuts.length + 1} shots at ${listed(shown)}.`;
+  if (cuts.length > 5) shown.push(t("motion.scenes.more", { count: cuts.length - 5 }));
+  return t("motion.scenes.found", { count: cuts.length + 1, cuts: listed(shown) });
 }
 
 /** What tracking did, with the ranges where the region was lost. */
 export function tracked(result: MotionResult, rate: Rate): string {
   const lost = result.motion.lost ?? [];
-  const done = `Tracked over ${result.motion.frames} frames.`;
+  const done = t("motion.tracked", { count: result.motion.frames });
   if (lost.length === 0) return done;
-  const ranges = lost.map((r) => `${at(r.start, rate)} to ${at(r.end, rate)}`);
-  return `${done} Lost the region from ${listed(ranges)}; it holds its last place there.`;
+  const ranges = lost.map((r) => t("motion.tracked.range", { from: at(r.start, rate), to: at(r.end, rate) }));
+  return t("motion.tracked.lost", { done, ranges: listed(ranges) });
 }
 
 /** What making a multicam clip did, with each angle's offset and doubtful matches. */
 export function multicamMade(result: MulticamResult, count: number): string {
-  const made = `Made a multicam clip of ${count} angles`;
+  const made = t("motion.multicam.made", { count });
   const sync = result.sync;
-  if (!sync) return `${made}, all starting together.`;
+  if (!sync) return t("motion.multicam.together", { made });
   const first = sync.offsets[0] ?? 0;
   const offsets = sync.offsets.slice(1).map((offset, i) => {
     const seconds = (offset - first) / FLICKS_PER_SECOND;
-    const amount = `${Math.abs(seconds).toFixed(2)} s`;
-    const when = Math.abs(seconds) < 0.005 ? "with angle 1" : seconds > 0 ? `${amount} after angle 1` : `${amount} before angle 1`;
-    return `angle ${i + 2} starts ${when}`;
+    const number = i + 2;
+    const amount = t("motion.multicam.seconds", { seconds: fixed(Math.abs(seconds), 2) });
+    if (Math.abs(seconds) < 0.005) return t("motion.multicam.with", { number });
+    return t(seconds > 0 ? "motion.multicam.after" : "motion.multicam.before", { number, amount });
   });
   const doubtful = sync.confidence
     .map((c, i) => ({ c, angle: i + 1 }))
     .filter(({ c, angle }) => angle > 1 && c < SYNC_CONFIDENCE)
-    .map(({ angle }) => `angle ${angle}`);
-  const lined = `${made}, lined up by their sound: ${listed(offsets)}.`;
+    .map(({ angle }) => t("motion.multicam.angle", { number: angle }));
+  const lined = t("motion.multicam.lined", { made, offsets: listed(offsets) });
   if (doubtful.length === 0) return lined;
-  return `${lined} The match for ${listed(doubtful)} is doubtful; check ${doubtful.length === 1 ? "it" : "them"} by eye.`;
+  return t("motion.multicam.doubtful", { lined, angles: listed(doubtful), count: doubtful.length });
 }

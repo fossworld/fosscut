@@ -73,6 +73,19 @@ describe("the Tauri engine client", () => {
     await engine.record.start({ what: "camera", device: "FaceTime HD Camera", microphone: "none", at: 705_600_000 });
     await engine.record.status("job_0002");
     await engine.record.stop("job_0002");
+    await engine.preview.show(500, true);
+    await engine.preferences.get();
+    await engine.preferences.set("editing.frame_step", 5);
+    await engine.preferences.reset("editing.frame_step");
+    await engine.updates.check();
+    await engine.updates.open();
+    await engine.playSound("ding");
+    await engine.pickFolder("Folder for exports", "/work");
+    await engine.pickFolder();
+    await engine.cache.clear("all");
+    await engine.cache.clear("proxies");
+    await engine.media.sources();
+    await engine.media.work();
     invoke.mockResolvedValueOnce(null);
     expect(await engine.media.relink("asset_0001"), "a cancelled dialog").toBe(false);
     expect(invoke.mock.calls).toEqual([
@@ -133,8 +146,29 @@ describe("the Tauri engine client", () => {
       ["record_start", { choice: { what: "camera", device: "FaceTime HD Camera", microphone: "none", at: 705_600_000 } }],
       ["record_status", { job: "job_0002" }],
       ["record_stop", { job: "job_0002" }],
+      ["preview_show", { flicks: 500, scrub: true }],
+      ["preferences_get"],
+      ["preferences_set", { key: "editing.frame_step", value: 5 }],
+      ["preferences_reset", { key: "editing.frame_step" }],
+      ["update_check"],
+      ["update_open"],
+      ["sound_play", { name: "ding" }],
+      ["folder_pick", { title: "Folder for exports", directory: "/work" }],
+      ["folder_pick", { title: null, directory: null }],
+      ["cache_clear", { kinds: [] }],
+      ["cache_clear", { kinds: ["proxies"] }],
+      ["media_sources"],
+      ["media_work"],
       ["media_relink", { asset: "asset_0001" }],
     ]);
+  });
+
+  it("reads the caches' sizes as the app lists them", async () => {
+    const engine = new TauriEngine();
+    const caches = [{ kind: "proxies", path: "/cache/proxies", bytes: 300, entries: 1 }];
+    invoke.mockImplementationOnce((async () => caches) as unknown as () => Promise<null>);
+    expect(await engine.cache.usage()).toEqual({ caches });
+    expect(invoke).toHaveBeenCalledWith("cache_info");
   });
 
   it("delivers event payloads and stops listening when asked, even before listening began", async () => {

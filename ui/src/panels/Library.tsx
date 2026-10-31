@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
+import { t } from "../i18n";
 import {
   EVERYTHING,
   KINDS,
@@ -9,6 +10,7 @@ import {
   counts,
   itemDetail,
   kindName,
+  kindPlural,
   placingOf,
   shownItems,
   titleOf,
@@ -33,26 +35,26 @@ export function Library({ editor, state }: { editor: Editor; state: EditorState 
     <section className="library">
       <input
         type="search"
-        placeholder="Search the library"
-        aria-label="Search the library"
+        placeholder={t("media.library.search")}
+        aria-label={t("media.library.search")}
         value={filter.search}
         onChange={(e) => setFilter({ ...filter, search: e.target.value })}
       />
       <div className="filters">
         <select
-          aria-label="Kind"
+          aria-label={t("media.library.kind")}
           value={filter.kind}
           onChange={(e) => setFilter({ ...filter, kind: e.target.value as LibraryFilter["kind"] })}
         >
-          <option value="">Everything ({items.length})</option>
-          {KINDS.map(({ kind, plural }) => (
+          <option value="">{t("media.library.everything", { count: items.length })}</option>
+          {KINDS.map(({ kind }) => (
             <option key={kind} value={kind} disabled={per[kind] === 0}>
-              {plural} ({per[kind]})
+              {t("media.library.count", { kind: kindPlural(kind), count: per[kind] })}
             </option>
           ))}
         </select>
       </div>
-      <p className="muted note">Made by FossCut: everything here is free to use, also commercially.</p>
+      <p className="muted note">{t("media.library.note")}</p>
       <ul className="items">
         {shown.map((item) => {
           const plan = addPlan(item, at);
@@ -73,13 +75,13 @@ export function Library({ editor, state }: { editor: Editor; state: EditorState 
                 title={"blocked" in plan ? plan.blocked : plan.does}
                 onClick={() => "request" in plan && void editor.addFromLibrary(plan.request)}
               >
-                {restyles ? "Apply" : "Add"}
+                {restyles ? t("media.library.apply") : t("media.library.add")}
               </button>
             </li>
           );
         })}
-        {state.library === null && <li className="muted">Reading the library.</li>}
-        {state.library !== null && shown.length === 0 && <li className="muted">Nothing matches.</li>}
+        {state.library === null && <li className="muted">{t("media.library.reading")}</li>}
+        {state.library !== null && shown.length === 0 && <li className="muted">{t("media.nothing")}</li>}
       </ul>
     </section>
   );

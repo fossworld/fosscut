@@ -83,6 +83,8 @@ Illustrative clip (not normative; the generated schema is):
 
 - **Multicam angles** (format 0.13.0): a compound clip may carry `angle`, the video track of its timeline whose picture shows, as decided in [ADR-0029](0029-cut-multicam-angles-on-compound-clips.md). Stabilization and tracking add no stored data of their own: they write ordinary keyframes ([ADR-0030](0030-apply-measured-motion-as-keyframes.md)). Recordings are files in the bundle's `recordings/` folder, imported as ordinary assets.
 
+- **Canvas fills** (format 0.14.0): a video or image clip may carry `canvas`, what fills the canvas around its picture: `{"kind": "color", "color"}`, or `{"kind": "blur", "amount"}`, its own picture scaled to cover and blurred (`clip.canvas`). User preferences never enter a project; they live in a file of their own ([ADR-0031](0031-keep-user-preferences-outside-projects.md)).
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.

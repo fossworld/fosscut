@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { Editor } from "../app/editor";
 import type { Catalog, ClipView, TimelineView } from "../engine/types";
+import { t } from "../i18n";
 import { FLICKS_PER_SECOND } from "../transport/time";
 
 const words = (name: string) => name.replaceAll("_", " ");
@@ -53,16 +54,16 @@ export function Motion({
   const next = nextClip(timeline, clip);
   const transition = clip.transition;
   const seconds = (flicks: number) => flicks / FLICKS_PER_SECOND;
-  const spec = catalog?.transitions.find((t) => t.type === transition?.type);
+  const spec = catalog?.transitions.find((candidate) => candidate.type === transition?.type);
   const direction = spec?.params.find((p) => p.name === "direction");
   const presets = (place: "in" | "combo") =>
     (catalog?.animations ?? []).filter((a) => (place === "combo" ? a.applies === "combo" : a.applies !== "combo"));
   const animation = (place: "in" | "out" | "combo") => clip.animations?.[place];
   return (
     <section className="effects motion">
-      <h2>Motion</h2>
-      <label className="choice" title={next ? "Over the cut to the next clip" : "The next clip must start where this one ends"}>
-        <span>Transition</span>
+      <h2>{t("motion.title")}</h2>
+      <label className="choice" title={next ? t("motion.transition.over") : t("motion.transition.touch")}>
+        <span>{t("motion.transition")}</span>
         <select
           value={transition?.type ?? ""}
           disabled={!next}
@@ -70,10 +71,10 @@ export function Motion({
             void editor.setTransition(clip.id, event.target.value, transition ? seconds(transition.duration.flicks) : 0.5)
           }
         >
-          <option value="">None</option>
-          {catalog?.transitions.map((t) => (
-            <option key={t.type} value={t.type} title={t.summary}>
-              {t.title}
+          <option value="">{t("motion.none")}</option>
+          {catalog?.transitions.map((type) => (
+            <option key={type.type} value={type.type} title={type.summary}>
+              {type.title}
             </option>
           ))}
         </select>
@@ -86,7 +87,7 @@ export function Motion({
       </label>
       {transition && direction && (
         <label className="choice">
-          <span>Direction</span>
+          <span>{t("motion.direction")}</span>
           <select
             value={String(transition.params?.direction ?? direction.default)}
             onChange={(event) =>
@@ -108,12 +109,12 @@ export function Motion({
         const current = animation(place);
         return (
           <label key={place} className="choice">
-            <span>{place === "in" ? "Animate in" : place === "out" ? "Animate out" : "Loop"}</span>
+            <span>{t(`motion.animate.${place}`)}</span>
             <select
               value={current?.preset ?? ""}
               onChange={(event) => void editor.setAnimation(clip.id, place, event.target.value)}
             >
-              <option value="">None</option>
+              <option value="">{t("motion.none")}</option>
               {presets(place === "combo" ? "combo" : "in").map((a) => (
                 <option key={a.preset} value={a.preset} title={a.meaning}>
                   {words(a.preset)}

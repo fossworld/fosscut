@@ -4,6 +4,7 @@
 // An outline always sends `enabled`, which the engine needs to read it.
 
 import type { ClipView, ShapeContentView, ShapeKind } from "../engine/types";
+import type { MessageKey } from "../i18n";
 import { TEXT_DEFAULTS, normalColor } from "./textFields";
 
 /** Every field of a shape with a value, flat, as the panel shows them. */
@@ -60,7 +61,8 @@ export function shapeKinds(clip: ClipView): ShapeKind[] {
 
 /** How a number field is shown: `scale` times the engine value, within `min` and `max` shown. */
 export interface ShapeNumber {
-  label: string;
+  /** The field's name, translated where it shows. */
+  label: MessageKey;
   min: number;
   max: number;
   step: number;
@@ -69,14 +71,14 @@ export interface ShapeNumber {
 }
 
 export const SHAPE_NUMBERS: Partial<Record<ShapeField, ShapeNumber>> = {
-  width: { label: "Width", min: 0.01, max: 400, step: 1, scale: 100, unit: "%" },
-  height: { label: "Height", min: 0.01, max: 400, step: 1, scale: 100, unit: "%" },
-  roundness: { label: "Roundness", min: 0, max: 100, step: 5, scale: 100, unit: "%" },
-  angle: { label: "Angle", min: -360, max: 360, step: 15, scale: 1, unit: "deg" },
-  outline_width: { label: "Width", min: 0, max: 50, step: 0.5, scale: 100, unit: "%" },
-  label_size: { label: "Size", min: 0.5, max: 100, step: 0.5, scale: 100, unit: "%" },
-  label_x: { label: "Across", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
-  label_y: { label: "Down", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
+  width: { label: "shape.number.width", min: 0.01, max: 400, step: 1, scale: 100, unit: "%" },
+  height: { label: "shape.number.height", min: 0.01, max: 400, step: 1, scale: 100, unit: "%" },
+  roundness: { label: "shape.number.roundness", min: 0, max: 100, step: 5, scale: 100, unit: "%" },
+  angle: { label: "shape.number.angle", min: -360, max: 360, step: 15, scale: 1, unit: "deg" },
+  outline_width: { label: "shape.number.outline_width", min: 0, max: 50, step: 0.5, scale: 100, unit: "%" },
+  label_size: { label: "shape.number.label_size", min: 0.5, max: 100, step: 0.5, scale: 100, unit: "%" },
+  label_x: { label: "shape.number.label_x", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
+  label_y: { label: "shape.number.label_y", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
 };
 
 const COLORS: ShapeField[] = ["color", "gradient_to", "outline_color", "label_color"];

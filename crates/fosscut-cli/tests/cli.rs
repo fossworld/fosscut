@@ -18,6 +18,8 @@ fn command(dir: &Path) -> Command {
         .env_remove("FOSSCUT_PROJECT")
         .env("FOSSCUT_ACTOR", "agent:test")
         .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
+        // Preferences of this test only, never the user's.
+        .env("FOSSCUT_CONFIG_DIR", dir.join("config"))
         // Models live in the cache folder above unless a test names another.
         .env_remove("FOSSCUT_MODELS_DIR");
     command
@@ -390,7 +392,7 @@ fn errors_explain_what_to_do() {
             .unwrap()
             .contains("already exists")
     );
-    let bad_rate = fails(&dir, &["project", "new", "C.fosscut", "--rate", "29.97"]);
+    let bad_rate = fails(&dir, &["project", "new", "C.fosscut", "--rate", "fast"]);
     assert!(
         bad_rate["code"]
             .as_str()
@@ -3585,4 +3587,237 @@ fn recordings_go_into_the_project_and_onto_the_timeline() {
     assert_eq!(again["code"], "fosscut.guard.destructive", "{again}");
     let what = fails(&dir, &[&p[..], &["record", "radio"]].concat());
     assert_eq!(what["code"], "fosscut.request.invalid_arguments");
+}
+
+#[test]
+fn preferences_fill_defaults_and_updates_are_checked() {
+    let dir = workspace("preferences");
+    let all = ok(&dir, &["preferences"]);
+    assert_eq!(all["editing"]["frame_step"], 10, "{all}");
+    let path = ok(&dir, &["preferences", "path"]);
+    assert!(
+        Path::new(path["path"].as_str().unwrap()).ends_with("config/preferences.json"),
+        "{path}"
+    );
+    // A new project takes the preferred rate.
+    let set = ok(&dir, &["preferences", "set", "timeline.frame_rate", "25"]);
+    assert_eq!(set["timeline.frame_rate"], "25");
+    assert_eq!(
+        ok(&dir, &["preferences", "get", "timeline.frame_rate"]),
+        json!("25")
+    );
+    let made = ok(&dir, &["project", "new", "Pal.fosscut"]);
+    assert_eq!(made["timelines"][0]["format"]["rate"], "25", "{made}");
+    let explicit = ok(&dir, &["project", "new", "Ntsc.fosscut", "--rate", "29.97"]);
+    assert_eq!(
+        explicit["timelines"][0]["format"]["rate"], "30000/1001",
+        "{explicit}"
+    );
+    let stored: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("config/preferences.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        stored,
+        json!({ "version": 1, "timeline": { "frame_rate": "25" } }),
+        "only the change is stored"
+    );
+    ok(&dir, &["preferences", "reset", "timeline.frame_rate"]);
+    assert_eq!(
+        ok(&dir, &["preferences", "get", "timeline.frame_rate"]),
+        json!("30")
+    );
+    let bad = fails(&dir, &["preferences", "set", "editing.frame_step", "0"]);
+    assert_eq!(bad["code"], "fosscut.preferences.invalid", "{bad}");
+    let unknown = fails(&dir, &["preferences", "get", "editing.nothing"]);
+    assert_eq!(unknown["code"], "fosscut.preferences.invalid");
+
+    // An update check against a release description in a file.
+    std::fs::write(
+        dir.join("latest.json"),
+        r#"{ "tag_name": "v99.0.0", "html_url": "https://example.org/release" }"#,
+    )
+    .unwrap();
+    let address = format!(
+        "file:///{}",
+        dir.join("latest.json")
+            .display()
+            .to_string()
+            .replace('\\', "/")
+            .trim_start_matches('/')
+    );
+    let update = ok(&dir, &["update", "--from", &address]);
+    assert_eq!(update["latest"], "99.0.0", "{update}");
+    assert_eq!(update["newer"], true);
+    assert_eq!(update["current"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn canvas_fills_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("canvas");
+    test_pattern(&dir);
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Tall.fosscut",
+            "--width",
+            "360",
+            "--height",
+            "640",
+        ],
+    );
+    let p = ["-p", "Tall.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    run(&["media", "import", "test-pattern.mp4"]);
+    let clip =
+        run(&["clip", "add", "--asset", "asset_0001", "--duration", "1s"])["results"][0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    ok(
+        &dir,
+        &[&p[..], &["frame", "0.5s", "--out", "plain.png"]].concat(),
+    );
+    let blurred = run(&["clip", "canvas", "--clip", &clip, "--blur"]);
+    assert_eq!(
+        blurred["results"][0]["fill"],
+        json!({ "kind": "blur", "amount": 0.05 })
+    );
+    ok(
+        &dir,
+        &[&p[..], &["frame", "0.5s", "--out", "blurred.png"]].concat(),
+    );
+    assert_ne!(
+        std::fs::read(dir.join("plain.png")).unwrap(),
+        std::fs::read(dir.join("blurred.png")).unwrap(),
+        "the bars above and below are filled"
+    );
+    run(&["clip", "canvas", "--clip", &clip, "--color", "#203040"]);
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    assert_eq!(
+        read["tracks"][0]["clips"][0]["canvas"],
+        json!({ "kind": "color", "color": "#203040" })
+    );
+    run(&["clip", "canvas", "--clip", &clip, "--none"]);
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    assert!(read["tracks"][0]["clips"][0].get("canvas").is_none());
+    let neither = fails(
+        &dir,
+        &[&p[..], &["clip", "canvas", "--clip", &clip]].concat(),
+    );
+    assert_eq!(neither["code"], "fosscut.request.invalid_arguments");
+    // A still image takes the preferred length.
+    ok(&dir, &["preferences", "set", "editing.image_duration", "2"]);
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x406080:s=320x180",
+            "-frames:v",
+            "1",
+            "still.png",
+        ],
+    );
+    let still = run(&["media", "import", "still.png"])["results"][0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let placed = run(&["clip", "add", "--asset", &still, "--start", "1s"]);
+    assert_eq!(placed["results"][0]["duration"]["seconds"], "2", "{placed}");
+}
+
+#[test]
+fn proxies_remuxes_and_caches_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("caches");
+    test_pattern(&dir);
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=25:d=2",
+            "-c:v",
+            "mpeg2video",
+            "-f",
+            "mpegts",
+            "broadcast.ts",
+        ],
+    );
+    ok(&dir, &["project", "new", "Cache.fosscut"]);
+    let p = ["-p", "Cache.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    run(&["media", "import", "test-pattern.mp4"]);
+    let ts = run(&["media", "import", "broadcast.ts"])["results"][0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let proxy = run(&["media", "proxy", "asset_0001", "--size", "quarter"]);
+    assert_eq!(
+        (proxy["width"].as_u64(), proxy["height"].as_u64()),
+        (Some(320), Some(180)),
+        "{proxy}"
+    );
+    assert_eq!(proxy["frames"], 240);
+    assert_eq!(proxy["reused"], false);
+    let path = std::path::PathBuf::from(proxy["path"].as_str().unwrap());
+    assert!(
+        path.starts_with(dir.join("cache").join("proxies")),
+        "{proxy}"
+    );
+    assert!(path.is_file());
+    let again = run(&["media", "proxy", "asset_0001", "--size", "quarter"]);
+    assert_eq!(again["reused"], true, "made once per content and size");
+
+    let not_needed = fails(&dir, &[&p[..], &["media", "remux", "asset_0001"]].concat());
+    assert_eq!(
+        not_needed["code"], "fosscut.cache.remux_not_needed",
+        "{not_needed}"
+    );
+    let remuxed = run(&["media", "remux", &ts]);
+    assert!(
+        std::path::Path::new(remuxed["path"].as_str().unwrap()).is_file(),
+        "{remuxed}"
+    );
+
+    let info = ok(&dir, &["cache", "info"]);
+    let size = |info: &Value, kind: &str| {
+        info["caches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["kind"] == kind)
+            .unwrap()["bytes"]
+            .as_u64()
+            .unwrap()
+    };
+    assert!(
+        size(&info, "proxies") > 0 && size(&info, "remux") > 0,
+        "{info}"
+    );
+    let cleared = ok(&dir, &["cache", "clear", "proxies"]);
+    assert!(cleared["freed_bytes"].as_u64().unwrap() > 0);
+    let info = ok(&dir, &["cache", "info"]);
+    assert_eq!(size(&info, "proxies"), 0);
+    assert!(size(&info, "remux") > 0, "other caches stay");
+    assert!(!path.exists());
+    // Nothing is old yet, so cleaning keeps the copy.
+    let cleaned = ok(&dir, &["cache", "clean"]);
+    assert_eq!(cleaned["removed"], 0, "{cleaned}");
+    let wrong = fails(&dir, &["cache", "clear", "everything"]);
+    assert_eq!(
+        wrong["code"], "fosscut.request.invalid_arguments",
+        "{wrong}"
+    );
 }

@@ -1,5 +1,7 @@
-import type { Editor, EditorState } from "../app/editor";
-import { frameAt, parseRate, timecode } from "./time";
+import { type Editor, type EditorState, preferencesOf } from "../app/editor";
+import { t } from "../i18n";
+import { hint } from "../shortcuts";
+import { formatTime, parseRate } from "./time";
 
 function Icon({ path }: { path: string }) {
   return (
@@ -19,139 +21,137 @@ const END = "M11 2.5h2v11h-2zM3 2.5v11L10 8z";
 /** The title picker's choice for plain text rather than a template. */
 const PLAIN = "*plain";
 
-/** Play, pause, frame steps and the playhead's timecode. */
+/** Play, pause, frame steps and the playhead's time, shown as the preferences say. */
 export function Transport({ editor, state }: { editor: Editor; state: EditorState }) {
   const timeline = state.timeline;
   const rate = parseRate(timeline?.format.rate ?? "30");
-  const now = timecode(frameAt(state.playhead, rate), rate);
+  const display = preferencesOf(state).timeline.time_display;
+  const now = formatTime(state.playhead, rate, display);
+  const length = formatTime(timeline?.duration.flicks ?? 0, rate, display);
   return (
     <div className="transport">
-      <button title="Start (Home)" onClick={() => void editor.seek(0)} disabled={!timeline}>
+      <button title={hint(t("transport.start"), "player.start")} onClick={() => void editor.seek(0)} disabled={!timeline}>
         <Icon path={START} />
       </button>
-      <button title="Previous frame (Left arrow)" onClick={() => void editor.step(-1)} disabled={!timeline}>
+      <button title={hint(t("transport.previous"), "player.frame_back")} onClick={() => void editor.step(-1)} disabled={!timeline}>
         <Icon path={BACK} />
       </button>
       <button
         className="play"
-        title={state.playing ? "Pause (Space)" : "Play (Space)"}
+        title={hint(state.playing ? t("transport.pause") : t("transport.play"), "player.play")}
         onClick={() => void editor.togglePlay()}
         disabled={!timeline}
       >
         <Icon path={state.playing ? PAUSE : PLAY} />
       </button>
-      <button title="Next frame (Right arrow)" onClick={() => void editor.step(1)} disabled={!timeline}>
+      <button title={hint(t("transport.next"), "player.frame_forward")} onClick={() => void editor.step(1)} disabled={!timeline}>
         <Icon path={FORWARD} />
       </button>
-      <button title="End (End)" onClick={() => void editor.seekEnd()} disabled={!timeline}>
+      <button title={hint(t("transport.end"), "player.end")} onClick={() => void editor.seekEnd()} disabled={!timeline}>
         <Icon path={END} />
       </button>
       <span className="timecode">
         {now}
-        <span className="muted"> / {timeline?.duration.timecode ?? "00:00:00:00"}</span>
+        <span className="muted"> / {length}</span>
       </span>
-      {state.shuttle !== 0 && state.shuttle !== 1 && <span className="rate">{state.shuttle}x</span>}
+      {state.shuttle !== 0 && state.shuttle !== 1 && <span className="rate">{t("transport.rate", { rate: state.shuttle })}</span>}
       <span className="spacer" />
-      <span className="tools" role="group" aria-label="Tool">
+      <span className="tools" role="group" aria-label={t("transport.tool")}>
         <button
           className={state.tool === "select" ? "active" : ""}
           aria-pressed={state.tool === "select"}
-          title="Select and drag clips (A)"
+          title={hint(t("transport.select.help"), "timeline.select_tool")}
           onClick={() => editor.setTool("select")}
         >
-          Select
+          {t("transport.select")}
         </button>
         <button
           className={state.tool === "blade" ? "active" : ""}
           aria-pressed={state.tool === "blade"}
-          title="Click a clip to split it there (B)"
+          title={hint(t("transport.blade.help"), "timeline.blade_tool")}
           onClick={() => editor.setTool("blade")}
         >
-          Blade
+          {t("transport.blade")}
         </button>
       </span>
-      <label className="toggle" title="Dragged edges snap to clip edges, the playhead and markers (N)">
+      <label className="toggle" title={hint(t("transport.snap.help"), "timeline.snapping")}>
         <input type="checkbox" checked={state.snapping} onChange={(e) => editor.setSnapping(e.target.checked)} />
-        <span>Snap</span>
+        <span>{t("transport.snap")}</span>
       </label>
-      <label className="toggle" title="Hovering over the timeline shows that frame (S)">
+      <label className="toggle" title={hint(t("transport.skim.help"), "timeline.skimming")}>
         <input type="checkbox" checked={state.skimming} onChange={(e) => editor.setSkimming(e.target.checked)} />
-        <span>Skim</span>
+        <span>{t("transport.skim")}</span>
       </label>
-      <label className="toggle" title="Edits of a grouped clip edit its whole group">
+      <label className="toggle" title={t("transport.linked.help")}>
         <input type="checkbox" checked={state.linkage} onChange={(e) => editor.setLinkage(e.target.checked)} />
-        <span>Linkage</span>
+        <span>{t("transport.linked")}</span>
       </label>
-      <label className="toggle" title="Keep the main track gapless: deleting from it closes the gap (P)">
+      <label className="toggle" title={hint(t("transport.magnet.help"), "timeline.magnet")}>
         <input type="checkbox" checked={state.magnet} onChange={(e) => editor.setMagnet(e.target.checked)} />
-        <span>Magnet</span>
+        <span>{t("transport.magnet")}</span>
       </label>
       <select
         className="titles"
         value=""
-        aria-label="Add a title at the playhead"
-        title="Add a title at the playhead"
+        aria-label={t("transport.title.add")}
+        title={t("transport.title.add")}
         disabled={!timeline}
         onChange={(event) => {
           const choice = event.target.value;
           if (choice) void editor.addTitle(choice === PLAIN ? "" : choice);
         }}
       >
-        <option value="">Title</option>
-        <option value={PLAIN} title="Plain white text, to style in the inspector">
-          Plain text
+        <option value="">{t("transport.title")}</option>
+        <option value={PLAIN} title={t("transport.title.plain.help")}>
+          {t("transport.title.plain")}
         </option>
         {(state.catalog?.text.templates ?? []).length > 0 && (
-          <optgroup label="Templates">
-            {state.catalog?.text.templates.map((t) => (
-              <option key={t.name} value={t.name} title={t.description}>
-                {t.name.replaceAll("-", " ")}
+          <optgroup label={t("transport.title.templates")}>
+            {state.catalog?.text.templates.map((template) => (
+              <option key={template.name} value={template.name} title={template.description}>
+                {template.name.replaceAll("-", " ")}
               </option>
             ))}
           </optgroup>
         )}
       </select>
-      <button
-        title="Add an adjustment layer at the playhead: effects on it change every picture below"
-        onClick={() => void editor.addAdjustment()}
-        disabled={!timeline}
-      >
-        Adjustment
+      <button title={t("transport.adjustment.help")} onClick={() => void editor.addAdjustment()} disabled={!timeline}>
+        {t("transport.adjustment")}
       </button>
       <button
-        title="Split at the playhead (Mod+B)"
+        title={hint(t("transport.split.help"), "timeline.split")}
         onClick={() => void editor.splitAtPlayhead()}
         disabled={!timeline}
       >
-        Split
+        {t("transport.split")}
       </button>
       <button
-        title="Split every clip under the playhead (Mod+Shift+B)"
+        title={hint(t("transport.splitAll.help"), "timeline.split_all")}
         onClick={() => void editor.splitAll()}
         disabled={!timeline}
       >
-        Split all
+        {t("transport.splitAll")}
       </button>
       <button
-        title="Turn the selected clips into one compound clip (Mod+Alt+G)"
+        title={hint(t("transport.compound.help"), "timeline.compound")}
         onClick={() => void editor.compound()}
         disabled={!state.selection}
       >
-        Compound
+        {t("transport.compound")}
       </button>
       <button
-        title="Add a marker at the playhead, or remove the one there (M)"
+        title={hint(t("transport.marker.help"), "timeline.marker")}
         onClick={() => void editor.toggleMarker()}
         disabled={!timeline}
       >
-        Marker
+        {t("transport.marker")}
       </button>
       <button
-        title="Delete the selected clip (Delete)"
+        title={hint(t("transport.delete.help"), "timeline.delete")}
         onClick={() => void editor.deleteSelection()}
         disabled={!state.selection}
       >
-        Delete
+        {t("transport.delete")}
       </button>
     </div>
   );

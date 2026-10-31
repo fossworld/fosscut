@@ -1,8 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
-import { isMulticam } from "../app/multicam";
-import { angleKey, isTyping } from "../keyboard";
+import { t, useLanguage } from "../i18n";
 import { drawTimeline } from "./draw";
 import { parseRate } from "../transport/time";
 import {
@@ -10,7 +9,6 @@ import {
   type DragTarget,
   type View,
   dragTarget,
-  findClip,
   grabAt,
   hitTest,
   onRuler,
@@ -31,7 +29,8 @@ interface Props {
  * it, drag its edges to trim it, drag on the ruler to move the playhead, scroll to move
  * along it, and pinch or Mod+scroll to zoom. Dragged edges snap when snapping is on, and
  * hovering shows the frame there when skimming is on. With a multicam clip selected and
- * the timeline focused, 1 to 9 cut to that angle at the playhead. */
+ * the timeline focused, the angle shortcuts (1 to 9) cut to that angle at the playhead;
+ * the app's keyboard handler finds them (`multicam.angle_*` in ../shortcuts). */
 export function Timeline({ editor, state }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -46,6 +45,8 @@ export function Timeline({ editor, state }: Props) {
   const [target, setTarget] = useState<DragTarget | null>(null);
   const latest = useRef<DragTarget | null>(null);
   const snaps = useRef<number[]>([]);
+  // Track names and clip labels are drawn in the interface's language.
+  const lang = useLanguage();
 
   useLayoutEffect(() => {
     const element = box.current;
@@ -101,7 +102,7 @@ export function Timeline({ editor, state }: Props) {
           ? { clip: drag.clip.id, start: target.start, end: target.end, track: target.track.id }
           : null,
     });
-  }, [timeline, view, size, state.playhead, state.skim, state.selection, state.also, target]);
+  }, [timeline, view, size, state.playhead, state.skim, state.selection, state.also, target, lang]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -129,21 +130,7 @@ export function Timeline({ editor, state }: Props) {
       className="timeline"
       ref={box}
       tabIndex={0}
-      aria-label="Timeline"
-      onKeyDown={(event) => {
-        const angle = angleKey({
-          key: event.key,
-          metaKey: event.metaKey,
-          ctrlKey: event.ctrlKey,
-          shiftKey: event.shiftKey,
-          altKey: event.altKey,
-          typing: isTyping(event.target),
-        });
-        const selected = timeline && state.selection ? findClip(timeline, state.selection) : null;
-        if (angle === null || !isMulticam(selected)) return;
-        event.preventDefault();
-        void editor.switchAngle(angle);
-      }}
+      aria-label={t("timeline.label")}
     >
       <canvas
         ref={canvas}
@@ -176,7 +163,7 @@ export function Timeline({ editor, state }: Props) {
         onPointerMove={(event) => {
           const { x, y } = pointer(event);
           if (scrubbing.current) {
-            void editor.seek(xToTime(x, view));
+            void editor.scrub(xToTime(x, view));
             return;
           }
           const drag = dragging.current;

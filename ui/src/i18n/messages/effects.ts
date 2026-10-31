@@ -1,0 +1,58 @@
+// Messages of the effects panel: a clip's effects, looks and automatic colour; keys start
+// with "effects.". Effect, look and parameter names come from the engine as written.
+
+import type { Messages, Translation } from "../types";
+
+export const en = {
+  "effects.title": "Effects",
+  "effects.key.remove": "Remove the keyframe at the playhead",
+  "effects.key.add": "Add a keyframe at the playhead",
+  "effects.channel.master": "Master",
+  "effects.channel.red": "Red",
+  "effects.channel.green": "Green",
+  "effects.channel.blue": "Blue",
+  "effects.curve": "{channel} curve",
+  "effects.lut.choose": "Choose a LUT",
+  "effects.bypass": "Bypass",
+  "effects.apply": "Apply",
+  "effects.earlier": "Apply earlier",
+  "effects.later": "Apply later",
+  "effects.remove": "Remove the effect",
+  "effects.group.picture": "Picture",
+  "effects.group.sound": "Sound",
+  "effects.add": "Add an effect",
+  "effects.add.sound": "Add a sound effect",
+  "effects.look": "Apply a look",
+  "effects.auto.title": "Correct white balance, brightness and levels",
+  "effects.auto": "Auto color",
+  "effects.match.title": "Match the color of another clip",
+  "effects.match": "Match color to",
+  "effects.match.clip": "{name} at {time}",
+} satisfies Messages;
+
+export const hu: Translation<typeof en> = {
+  "effects.title": "Effektek",
+  "effects.key.remove": "A kulcskocka eltávolítása a lejátszófejnél",
+  "effects.key.add": "Kulcskocka hozzáadása a lejátszófejnél",
+  "effects.channel.master": "Összes",
+  "effects.channel.red": "Vörös",
+  "effects.channel.green": "Zöld",
+  "effects.channel.blue": "Kék",
+  "effects.curve": "{channel} görbe",
+  "effects.lut.choose": "LUT kiválasztása",
+  "effects.bypass": "Kikapcsolás",
+  "effects.apply": "Bekapcsolás",
+  "effects.earlier": "Előrébb a sorban",
+  "effects.later": "Hátrébb a sorban",
+  "effects.remove": "Az effekt eltávolítása",
+  "effects.group.picture": "Kép",
+  "effects.group.sound": "Hang",
+  "effects.add": "Effekt hozzáadása",
+  "effects.add.sound": "Hangeffekt hozzáadása",
+  "effects.look": "Színvilág alkalmazása",
+  "effects.auto.title": "A fehéregyensúly, a fényerő és a szintek javítása",
+  "effects.auto": "Automatikus színkorrekció",
+  "effects.match.title": "Igazítás egy másik klip színeihez",
+  "effects.match": "Színillesztés ehhez:",
+  "effects.match.clip": "{name}, {time}",
+};

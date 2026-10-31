@@ -8,6 +8,7 @@
 use std::ffi::CString;
 use std::path::Path;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 use rsmpeg::avformat::AVFormatContextOutput;
@@ -18,8 +19,9 @@ use rsmpeg::swscale::SwsContext;
 
 use crate::palette::Quantizer;
 use crate::{
-    AudioBuffer, AudioCodec, AudioSettings, Container, EncoderCapabilities, EncoderInfo,
-    MediaError, OutputSettings, PixelFormat, RgbaFrame, VideoCodec, VideoFrame, VideoSettings,
+    AudioBuffer, AudioCodec, AudioSettings, ColorInfo, Container, EncoderCapabilities, EncoderInfo,
+    HardwareEncoding, Matrix, MediaError, OutputSettings, PixelFormat, Primaries, Range, RgbaFrame,
+    Transfer, VideoCodec, VideoFrame, VideoSettings,
 };
 
 /// Candidate encoders per video codec, in order of preference, with whether each is a
@@ -52,6 +54,38 @@ fn video_candidates(codec: VideoCodec) -> &'static [(&'static str, bool)] {
         ],
         VideoCodec::Vp9 => &[("libvpx-vp9", false)],
         VideoCodec::Gif => &[("gif", false)],
+    }
+}
+
+/// The candidates for `codec` that `hardware` allows, in order of preference: every one
+/// when hardware encoders may be used, otherwise only the software encoders.
+fn allowed_candidates(
+    codec: VideoCodec,
+    hardware: HardwareEncoding,
+) -> impl Iterator<Item = &'static (&'static str, bool)> {
+    video_candidates(codec)
+        .iter()
+        .filter(move |(_, is_hardware)| hardware == HardwareEncoding::Auto || !is_hardware)
+}
+
+/// Whether hardware encoders may be used when no choice is passed; see
+/// [`set_hardware_encoding`].
+static HARDWARE_ENCODERS: AtomicBool = AtomicBool::new(true);
+
+/// Sets, for the whole process, whether [`FfmpegWriter::create`], [`video_encoder`] and
+/// [`encoder_capabilities`] may use hardware encoders (ADR-0032, item 6). Hosts set it
+/// from the user's `performance.hardware_encoding` preference; it changes which encoder
+/// writes a codec, never the codec. [`HardwareEncoding::Auto`] until set.
+pub fn set_hardware_encoding(choice: HardwareEncoding) {
+    HARDWARE_ENCODERS.store(choice == HardwareEncoding::Auto, Ordering::Relaxed);
+}
+
+/// The process's hardware encoding choice; see [`set_hardware_encoding`].
+pub fn hardware_encoding() -> HardwareEncoding {
+    if HARDWARE_ENCODERS.load(Ordering::Relaxed) {
+        HardwareEncoding::Auto
+    } else {
+        HardwareEncoding::Off
     }
 }
 
@@ -159,11 +193,62 @@ fn default_bit_rate(codec: VideoCodec, settings: &VideoSettings) -> i64 {
     (pixels_per_second * bits_per_pixel) as i64
 }
 
+/// FFmpeg's values for color tags: range, matrix, primaries and transfer.
+type AvColor = (
+    ffi::AVColorRange,
+    ffi::AVColorSpace,
+    ffi::AVColorPrimaries,
+    ffi::AVColorTransferCharacteristic,
+);
+
+/// FFmpeg's tags for `color`.
+fn av_color(color: ColorInfo) -> AvColor {
+    (
+        match color.range {
+            Range::Limited => ffi::AVCOL_RANGE_MPEG,
+            Range::Full => ffi::AVCOL_RANGE_JPEG,
+            Range::Unspecified => ffi::AVCOL_RANGE_UNSPECIFIED,
+        },
+        match color.matrix {
+            Matrix::Bt601 => ffi::AVCOL_SPC_SMPTE170M,
+            Matrix::Bt709 => ffi::AVCOL_SPC_BT709,
+            Matrix::Bt2020Ncl => ffi::AVCOL_SPC_BT2020_NCL,
+            Matrix::Identity => ffi::AVCOL_SPC_RGB,
+            Matrix::Unspecified => ffi::AVCOL_SPC_UNSPECIFIED,
+        },
+        match color.primaries {
+            Primaries::Bt709 => ffi::AVCOL_PRI_BT709,
+            Primaries::Bt601Ntsc => ffi::AVCOL_PRI_SMPTE170M,
+            Primaries::Bt601Pal => ffi::AVCOL_PRI_BT470BG,
+            Primaries::Bt2020 => ffi::AVCOL_PRI_BT2020,
+            Primaries::DisplayP3 => ffi::AVCOL_PRI_SMPTE432,
+            Primaries::Unspecified => ffi::AVCOL_PRI_UNSPECIFIED,
+        },
+        match color.transfer {
+            Transfer::Bt709 => ffi::AVCOL_TRC_BT709,
+            Transfer::Srgb => ffi::AVCOL_TRC_IEC61966_2_1,
+            Transfer::Linear => ffi::AVCOL_TRC_LINEAR,
+            Transfer::Pq => ffi::AVCOL_TRC_SMPTE2084,
+            Transfer::Hlg => ffi::AVCOL_TRC_ARIB_STD_B67,
+            Transfer::Unspecified => ffi::AVCOL_TRC_UNSPECIFIED,
+        },
+    )
+}
+
+/// BT.709 limited range, what [`FfmpegWriter::push_rgba`] produces.
+const BT709: ColorInfo = ColorInfo {
+    matrix: Matrix::Bt709,
+    range: Range::Limited,
+    primaries: Primaries::Bt709,
+    transfer: Transfer::Bt709,
+};
+
 fn open_video_encoder(
     name: &str,
     codec: VideoCodec,
     settings: &VideoSettings,
     global_header: bool,
+    color: ColorInfo,
 ) -> Result<(AVCodecContext, i32), String> {
     let encoder = AVCodec::find_encoder_by_name(&c(name))
         .ok_or_else(|| format!("{name} is not in this FFmpeg build"))?;
@@ -188,14 +273,15 @@ fn open_video_encoder(
         context.set_flags(context.flags | ffi::AV_CODEC_FLAG_GLOBAL_HEADER as i32);
     }
     if format != ffi::AV_PIX_FMT_PAL8 {
+        let (range, matrix, primaries, transfer) = av_color(color);
         // SAFETY: plain enum fields of a context we own that is not open yet.
         unsafe {
             use rsmpeg::UnsafeDerefMut;
             let raw = context.deref_mut();
-            raw.color_range = ffi::AVCOL_RANGE_MPEG;
-            raw.colorspace = ffi::AVCOL_SPC_BT709;
-            raw.color_primaries = ffi::AVCOL_PRI_BT709;
-            raw.color_trc = ffi::AVCOL_TRC_BT709;
+            raw.color_range = range;
+            raw.colorspace = matrix;
+            raw.color_primaries = primaries;
+            raw.color_trc = transfer;
         }
     }
     context
@@ -290,16 +376,28 @@ fn open_audio_encoder(
     Ok(context)
 }
 
-/// The encoder this machine uses for a video codec, if any. Candidates are opened at a
-/// small size, because an encoder can be compiled in and still be unusable (for example a
-/// hardware encoder in a virtual machine). Probed once per codec and process, only when
-/// asked, so an H.264 export never loads the AV1 encoders (whose libraries print banners).
+/// The encoder this machine uses for a video codec, if any, under the process's
+/// [`hardware_encoding`] choice. Candidates are opened at a small size, because an encoder
+/// can be compiled in and still be unusable (for example a hardware encoder in a virtual
+/// machine). Probed once per codec, choice and process, only when asked, so an H.264
+/// export never loads the AV1 encoders (whose libraries print banners).
 pub fn video_encoder(codec: VideoCodec) -> Option<&'static EncoderInfo> {
-    static PROBED: [OnceLock<Option<EncoderInfo>>; VideoCodec::ALL.len()] =
-        [const { OnceLock::new() }; VideoCodec::ALL.len()];
+    video_encoder_for(codec, hardware_encoding())
+}
+
+/// The encoder this machine uses for a video codec when `hardware` decides whether hardware
+/// encoders may be used; probed like [`video_encoder`]. With [`HardwareEncoding::Off`] a
+/// codec that only hardware encodes here (H.264 and HEVC on macOS) has none.
+pub fn video_encoder_for(
+    codec: VideoCodec,
+    hardware: HardwareEncoding,
+) -> Option<&'static EncoderInfo> {
+    static PROBED: [[OnceLock<Option<EncoderInfo>>; VideoCodec::ALL.len()]; 2] =
+        [const { [const { OnceLock::new() }; VideoCodec::ALL.len()] }; 2];
     let index = VideoCodec::ALL.iter().position(|c| *c == codec)?;
+    let row = usize::from(hardware == HardwareEncoding::Off);
     super::quiet();
-    PROBED[index]
+    PROBED[row][index]
         .get_or_init(|| {
             let probe = VideoSettings {
                 codec,
@@ -308,9 +406,8 @@ pub fn video_encoder(codec: VideoCodec) -> Option<&'static EncoderInfo> {
                 rate: fosscut_time::Rate::FPS_30,
                 bit_rate: None,
             };
-            video_candidates(codec)
-                .iter()
-                .find(|(name, _)| open_video_encoder(name, codec, &probe, false).is_ok())
+            allowed_candidates(codec, hardware)
+                .find(|(name, _)| open_video_encoder(name, codec, &probe, false, BT709).is_ok())
                 .map(|(name, hardware)| EncoderInfo {
                     encoder: (*name).to_string(),
                     hardware: *hardware,
@@ -341,18 +438,27 @@ pub fn audio_encoder(codec: AudioCodec) -> Option<&'static EncoderInfo> {
         .as_ref()
 }
 
-/// Every codec this machine can encode (probes all of them).
+/// Every codec this machine can encode under the process's [`hardware_encoding`] choice
+/// (probes all of them).
 pub fn encoder_capabilities() -> &'static EncoderCapabilities {
-    static CAPABILITIES: OnceLock<EncoderCapabilities> = OnceLock::new();
-    CAPABILITIES.get_or_init(|| EncoderCapabilities {
-        video: VideoCodec::ALL
-            .iter()
-            .filter_map(|&c| video_encoder(c).map(|e| (c, e.clone())))
-            .collect(),
-        audio: AudioCodec::ALL
-            .iter()
-            .filter_map(|&c| audio_encoder(c).map(|e| (c, e.clone())))
-            .collect(),
+    encoder_capabilities_for(hardware_encoding())
+}
+
+/// Every codec this machine can encode when `hardware` decides whether hardware encoders
+/// may be used.
+pub fn encoder_capabilities_for(hardware: HardwareEncoding) -> &'static EncoderCapabilities {
+    static CAPABILITIES: [OnceLock<EncoderCapabilities>; 2] = [const { OnceLock::new() }; 2];
+    CAPABILITIES[usize::from(hardware == HardwareEncoding::Off)].get_or_init(|| {
+        EncoderCapabilities {
+            video: VideoCodec::ALL
+                .iter()
+                .filter_map(|&c| video_encoder_for(c, hardware).map(|e| (c, e.clone())))
+                .collect(),
+            audio: AudioCodec::ALL
+                .iter()
+                .filter_map(|&c| audio_encoder(c).map(|e| (c, e.clone())))
+                .collect(),
+        }
     })
 }
 
@@ -392,6 +498,26 @@ struct VideoOut {
     scaler: Option<(i32, SwsContext)>,
     /// Turns RGBA into palette frames for GIF.
     quantizer: Option<Quantizer>,
+    /// Scales frames of another size, keyed by their format, size and range; see
+    /// [`FfmpegWriter::push_frame_scaled`].
+    resizer: Option<(ResizeKey, SwsContext)>,
+    /// The color tags written with every frame.
+    color: ColorInfo,
+}
+
+/// What a resizing scaler converts from: pixel format, width, height and full range.
+type ResizeKey = (i32, u32, u32, bool);
+
+/// How a writer encodes, besides its streams' settings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WriterOptions {
+    /// Whether hardware encoders may be used (ADR-0032, item 6).
+    pub hardware: HardwareEncoding,
+    /// The color tags of the video stream, for frames pushed with
+    /// [`FfmpegWriter::push_frame`] and [`FfmpegWriter::push_frame_scaled`], whose Y'CbCr
+    /// values are stored as they are. `None` tags BT.709 limited range, what
+    /// [`FfmpegWriter::push_rgba`] produces; RGBA frames are refused with other tags.
+    pub color: Option<ColorInfo>,
 }
 
 struct AudioOut {
@@ -417,8 +543,27 @@ pub struct FfmpegWriter {
 }
 
 impl FfmpegWriter {
-    /// Creates `path` with the streams in `settings`, using the encoders this machine has.
+    /// Creates `path` with the streams in `settings`, using the encoders this machine has
+    /// under the process's [`hardware_encoding`] choice.
     pub fn create(path: &Path, settings: &OutputSettings) -> Result<FfmpegWriter, MediaError> {
+        FfmpegWriter::create_with(
+            path,
+            settings,
+            &WriterOptions {
+                hardware: hardware_encoding(),
+                color: None,
+            },
+        )
+    }
+
+    /// Creates `path` with the streams in `settings` as `options` say. A video codec that no
+    /// allowed encoder writes fails with [`MediaError::EncoderUnavailable`], listing the
+    /// codecs that can be written with the same choice; another codec is never used.
+    pub fn create_with(
+        path: &Path,
+        settings: &OutputSettings,
+        options: &WriterOptions,
+    ) -> Result<FfmpegWriter, MediaError> {
         let shown = path.display().to_string();
         let video_codec = settings.video.as_ref().map(|v| v.codec);
         let audio_codec = settings.audio.as_ref().map(|a| a.codec);
@@ -445,14 +590,12 @@ impl FfmpegWriter {
             });
         }
         let video_encoder = match video_codec {
-            Some(codec) => {
-                Some(
-                    video_encoder(codec).ok_or_else(|| MediaError::EncoderUnavailable {
-                        codec: codec.probe_name().to_string(),
-                        available: available_names(encoder_capabilities(), false),
-                    })?,
-                )
-            }
+            Some(codec) => Some(video_encoder_for(codec, options.hardware).ok_or_else(|| {
+                MediaError::EncoderUnavailable {
+                    codec: codec.probe_name().to_string(),
+                    available: available_names(encoder_capabilities_for(options.hardware), false),
+                }
+            })?),
             None => None,
         };
         let audio_encoder = match audio_codec {
@@ -490,10 +633,16 @@ impl FfmpegWriter {
         let global_header = output.oformat().flags & ffi::AVFMT_GLOBALHEADER as i32 != 0;
 
         let mut video = None;
+        let color = options.color.unwrap_or(BT709);
         if let (Some(settings), Some(info)) = (&settings.video, video_encoder) {
-            let (encoder, format) =
-                open_video_encoder(&info.encoder, settings.codec, settings, global_header)
-                    .map_err(|message| MediaError::EncodeFailed { message })?;
+            let (encoder, format) = open_video_encoder(
+                &info.encoder,
+                settings.codec,
+                settings,
+                global_header,
+                color,
+            )
+            .map_err(|message| MediaError::EncodeFailed { message })?;
             let mut stream = output.new_stream();
             stream.codecpar_mut().from_context(&encoder);
             stream.set_time_base(encoder.time_base);
@@ -508,6 +657,8 @@ impl FfmpegWriter {
                 next_pts: 0,
                 scaler: None,
                 quantizer: (settings.codec == VideoCodec::Gif).then(Quantizer::new),
+                resizer: None,
+                color,
             });
         }
         let mut audio = None;
@@ -598,6 +749,77 @@ impl FfmpegWriter {
         self.encode_video(&source)
     }
 
+    /// Encodes the next video frame (NV12 or YUV 4:2:0) of any size, scaled to the output
+    /// size by averaging areas. Its Y'CbCr values keep their matrix, so the output should be
+    /// tagged with the frame's colors ([`WriterOptions::color`]); a full-range frame becomes
+    /// limited range when the output is tagged limited. GIF outputs refuse it.
+    pub fn push_frame_scaled(&mut self, frame: &VideoFrame) -> Result<(), MediaError> {
+        let Some(video) = &mut self.video else {
+            return Err(MediaError::Unsupported {
+                message: "this output has no video stream".into(),
+            });
+        };
+        if video.quantizer.is_some() {
+            return Err(MediaError::Unsupported {
+                message: "GIF outputs take frames of their own size".into(),
+            });
+        }
+        let source_format = match frame.format {
+            PixelFormat::Nv12 => ffi::AV_PIX_FMT_NV12,
+            PixelFormat::Yuv420p => ffi::AV_PIX_FMT_YUV420P,
+        };
+        let mut source = AVFrame::new();
+        source.set_format(source_format);
+        source.set_width(frame.width as i32);
+        source.set_height(frame.height as i32);
+        source.alloc_buffer().map_err(|e| encode_failed(&e))?;
+        for (index, plane) in frame.planes.iter().enumerate() {
+            let (row_bytes, rows) = frame.format.plane_size(index, frame.width, frame.height);
+            fill_plane(
+                &mut source,
+                index,
+                &plane.data,
+                plane.stride,
+                row_bytes,
+                rows,
+            );
+        }
+        let full_in = frame.color.range == Range::Full;
+        let full_out = video.color.range == Range::Full;
+        let key = (source_format, frame.width, frame.height, full_in);
+        let scaler = match &mut video.resizer {
+            Some((kept, scaler)) if *kept == key => scaler,
+            slot => {
+                let scaler = SwsContext::get_context(
+                    frame.width as i32,
+                    frame.height as i32,
+                    source_format,
+                    video.width as i32,
+                    video.height as i32,
+                    video.format,
+                    ffi::SWS_AREA,
+                    None,
+                    None,
+                    None,
+                )
+                .ok_or_else(|| MediaError::EncodeFailed {
+                    message: "cannot scale frames to the output size".into(),
+                })?;
+                set_ranges(&scaler, full_in, full_out);
+                &mut slot.insert((key, scaler)).1
+            }
+        };
+        let mut scaled = AVFrame::new();
+        scaled.set_format(video.format);
+        scaled.set_width(video.width as i32);
+        scaled.set_height(video.height as i32);
+        scaled.alloc_buffer().map_err(|e| encode_failed(&e))?;
+        scaler
+            .scale_frame(&source, 0, frame.height as i32, &mut scaled)
+            .map_err(|e| encode_failed(&e))?;
+        self.encode_video(&scaled)
+    }
+
     /// Encodes the next video frame from non-linear BT.709 RGBA, converting it to the
     /// encoder's limited-range BT.709 Y'CbCr. ProRes 4444 keeps the alpha bytes as its
     /// alpha channel; GIF indexes the colours with a palette per frame and ignores alpha.
@@ -616,6 +838,12 @@ impl FfmpegWriter {
         }
         if self.video.as_ref().is_some_and(|v| v.quantizer.is_some()) {
             return self.push_indexed(&frame.rgba, frame.width, frame.height);
+        }
+        if self.video.as_ref().is_some_and(|v| v.color != BT709) {
+            return Err(MediaError::Unsupported {
+                message: "RGBA frames are written as BT.709; this output is tagged otherwise"
+                    .into(),
+            });
         }
         let mut source = self.source_frame(ffi::AV_PIX_FMT_RGBA, frame.width, frame.height)?;
         fill_plane(&mut source, 0, &frame.rgba, row, row, frame.height as usize);
@@ -723,14 +951,15 @@ impl FfmpegWriter {
         };
         frame.set_pts(video.next_pts);
         if video.format != ffi::AV_PIX_FMT_PAL8 {
+            let (range, matrix, primaries, transfer) = av_color(video.color);
             // SAFETY: plain enum fields of a frame we own.
             unsafe {
                 use rsmpeg::UnsafeDerefMut;
                 let raw = frame.deref_mut();
-                raw.color_range = ffi::AVCOL_RANGE_MPEG;
-                raw.colorspace = ffi::AVCOL_SPC_BT709;
-                raw.color_primaries = ffi::AVCOL_PRI_BT709;
-                raw.color_trc = ffi::AVCOL_TRC_BT709;
+                raw.color_range = range;
+                raw.colorspace = matrix;
+                raw.color_primaries = primaries;
+                raw.color_trc = transfer;
             }
         }
         video.next_pts += 1;
@@ -961,6 +1190,27 @@ fn set_bt709(scaler: &SwsContext, rgb_in: bool, rgb_out: bool) {
     }
 }
 
+/// Makes a Y'CbCr to Y'CbCr scaler convert from full range (`full_in`) or limited range to
+/// full range (`full_out`) or limited range, keeping swscale's default coefficients, which
+/// only matter when converting to or from RGB.
+fn set_ranges(scaler: &SwsContext, full_in: bool, full_out: bool) {
+    // SAFETY: `sws_getCoefficients` returns a pointer to a static table, and the context is
+    // valid and owned by the caller for the duration of the call.
+    unsafe {
+        let table = ffi::sws_getCoefficients(ffi::SWS_CS_DEFAULT as i32);
+        ffi::sws_setColorspaceDetails(
+            scaler.as_ptr() as *mut _,
+            table,
+            i32::from(full_in),
+            table,
+            i32::from(full_out),
+            0,
+            1 << 16,
+            1 << 16,
+        );
+    }
+}
+
 fn encode_failed(error: &RsmpegError) -> MediaError {
     MediaError::EncodeFailed {
         message: error.to_string(),
@@ -970,6 +1220,80 @@ fn encode_failed(error: &RsmpegError) -> MediaError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turning_hardware_encoding_off_keeps_only_software_candidates() {
+        let names = |codec, hardware| -> Vec<&str> {
+            allowed_candidates(codec, hardware)
+                .map(|(name, _)| *name)
+                .collect()
+        };
+        assert_eq!(
+            names(VideoCodec::H264, HardwareEncoding::Auto),
+            [
+                "h264_videotoolbox",
+                "h264_nvenc",
+                "h264_qsv",
+                "h264_amf",
+                "h264_mf"
+            ],
+            "every candidate, hardware first"
+        );
+        assert_eq!(
+            names(VideoCodec::H264, HardwareEncoding::Off),
+            ["h264_mf"],
+            "only Media Foundation, which may run in software"
+        );
+        assert_eq!(names(VideoCodec::Hevc, HardwareEncoding::Off), ["hevc_mf"]);
+        for codec in VideoCodec::ALL {
+            let off: Vec<_> = allowed_candidates(codec, HardwareEncoding::Off).collect();
+            assert!(
+                off.iter().all(|(_, hardware)| !hardware),
+                "{codec:?} keeps no hardware encoder"
+            );
+            let software = video_candidates(codec).iter().filter(|(_, h)| !h).count();
+            assert_eq!(
+                off.len(),
+                software,
+                "{codec:?} keeps every software encoder"
+            );
+        }
+        assert_eq!(
+            names(VideoCodec::ProResProxy, HardwareEncoding::Off),
+            ["prores_ks"]
+        );
+        assert_eq!(
+            names(VideoCodec::Av1, HardwareEncoding::Off),
+            names(VideoCodec::Av1, HardwareEncoding::Auto),
+            "software codecs are not affected"
+        );
+    }
+
+    #[test]
+    fn color_tags_map_to_ffmpeg_and_back() {
+        let tags = ColorInfo {
+            matrix: Matrix::Bt601,
+            range: Range::Full,
+            primaries: Primaries::Bt601Pal,
+            transfer: Transfer::Hlg,
+        };
+        let (range, matrix, primaries, transfer) = av_color(tags);
+        assert_eq!(
+            super::super::color_info(matrix, range, primaries, transfer),
+            tags
+        );
+        let (range, matrix, primaries, transfer) = av_color(BT709);
+        assert_eq!(
+            (range, matrix, primaries, transfer),
+            (
+                ffi::AVCOL_RANGE_MPEG,
+                ffi::AVCOL_SPC_BT709,
+                ffi::AVCOL_PRI_BT709,
+                ffi::AVCOL_TRC_BT709
+            ),
+            "what every writer wrote before tags were a choice"
+        );
+    }
 
     #[test]
     fn samples_are_rounded_and_clipped_to_integers() {

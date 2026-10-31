@@ -2,19 +2,20 @@
 // what adding one does where the editor stands (ADR-0028).
 
 import type { AssetView, ClipView, LibraryAddRequest, LibraryItem, LibraryKind, TimelineView } from "../engine/types";
+import { t } from "../i18n";
 
-/** The kinds in the order the panel offers them, with their names in the plural and one. */
-export const KINDS: { kind: LibraryKind; plural: string; one: string }[] = [
-  { kind: "sticker", plural: "Stickers", one: "Sticker" },
-  { kind: "shape", plural: "Shapes", one: "Shape" },
-  { kind: "background", plural: "Backgrounds", one: "Background" },
-  { kind: "title", plural: "Titles", one: "Title" },
-  { kind: "text_style", plural: "Text styles", one: "Text style" },
-  { kind: "caption_style", plural: "Caption styles", one: "Caption style" },
-  { kind: "look", plural: "Looks", one: "Look" },
-  { kind: "template", plural: "Templates", one: "Template" },
-  { kind: "sound", plural: "Sound effects", one: "Sound effect" },
-  { kind: "music", plural: "Music", one: "Music loop" },
+/** The kinds in the order the panel offers them; `kindName` and `kindPlural` name them. */
+export const KINDS: { kind: LibraryKind }[] = [
+  { kind: "sticker" },
+  { kind: "shape" },
+  { kind: "background" },
+  { kind: "title" },
+  { kind: "text_style" },
+  { kind: "caption_style" },
+  { kind: "look" },
+  { kind: "template" },
+  { kind: "sound" },
+  { kind: "music" },
 ];
 
 export interface LibraryFilter {
@@ -43,9 +44,14 @@ export function counts(items: LibraryItem[]): Record<LibraryKind, number> {
   return all;
 }
 
-/** The name of one item of `kind`. */
+/** The name of one item of `kind`, in the interface's language. */
 export function kindName(kind: LibraryKind): string {
-  return KINDS.find((k) => k.kind === kind)?.one ?? kind;
+  return KINDS.some((k) => k.kind === kind) ? t(`media.library.one.${kind}`) : kind;
+}
+
+/** The name of items of `kind` in the plural, in the interface's language. */
+export function kindPlural(kind: LibraryKind): string {
+  return KINDS.some((k) => k.kind === kind) ? t(`media.library.plural.${kind}`) : kind;
 }
 
 /** An item's title; names used as titles (`vertical-promo`) read as words. */
@@ -55,21 +61,21 @@ export function titleOf(item: LibraryItem): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** Seconds as people read them: 0.4 s, 2.5 s, 12 s, 1 min 5 s. */
+/** Seconds as people read them: 0.4 s, 2.5 s, 12 s, 1 min 5 s (in the interface's language). */
 export function seconds(value: number): string {
   if (value >= 60) {
     const minutes = Math.floor(value / 60);
     const rest = Math.round(value - minutes * 60);
-    return rest === 0 ? `${minutes} min` : `${minutes} min ${rest} s`;
+    return rest === 0 ? t("media.library.minutes", { minutes }) : t("media.library.minutesSeconds", { minutes, seconds: rest });
   }
-  return value < 10 ? `${Math.round(value * 10) / 10} s` : `${Math.round(value)} s`;
+  return t("media.library.seconds", { seconds: value < 10 ? Math.round(value * 10) / 10 : Math.round(value) });
 }
 
 /** A sound's length, with a music loop's tempo: "1.2 s", "8 s at 120 BPM"; "" for others. */
 export function itemDetail(item: LibraryItem): string {
   if (item.seconds === undefined) return "";
   const length = seconds(item.seconds);
-  return item.bpm === undefined ? length : `${length} at ${Math.round(item.bpm)} BPM`;
+  return item.bpm === undefined ? length : t("media.library.tempo", { length, bpm: Math.round(item.bpm) });
 }
 
 /** The track holding `clip`, or null. */
@@ -102,21 +108,20 @@ export function addPlan(item: LibraryItem, at: Placing): AddPlan {
   const base: LibraryAddRequest = { name: item.name, kind: item.kind };
   switch (item.kind) {
     case "look": {
-      if (!at.selected || at.selected.kind === "audio") return { blocked: "Select a clip with a picture to apply the look to." };
-      return { request: { ...base, clip: at.selected.id }, does: "Apply to the selected clip" };
+      if (!at.selected || at.selected.kind === "audio") return { blocked: t("media.library.look.blocked") };
+      return { request: { ...base, clip: at.selected.id }, does: t("media.library.look.does") };
     }
     case "caption_style": {
-      if (!at.captionTrack) return { blocked: "Add captions first: caption styles restyle a caption track." };
-      return { request: { ...base, track: at.captionTrack }, does: "Restyle the captions" };
+      if (!at.captionTrack) return { blocked: t("media.library.captions.blocked") };
+      return { request: { ...base, track: at.captionTrack }, does: t("media.library.captions.does") };
     }
     case "template": {
       const media = at.chosen.filter((a) => a.kind === "video" || a.kind === "image").map((a) => a.id);
-      if (media.length === 0) return { request: base, does: "Build a new timeline from the template" };
-      const what = media.length === 1 ? "the chosen video or image" : `the ${media.length} chosen videos and images`;
-      return { request: { ...base, media }, does: `Build a new timeline with ${what}` };
+      if (media.length === 0) return { request: base, does: t("media.library.template.does") };
+      return { request: { ...base, media }, does: t("media.library.template.with", { count: media.length }) };
     }
     default:
-      return { request: { ...base, start_flicks: at.playhead }, does: "Add at the playhead" };
+      return { request: { ...base, start_flicks: at.playhead }, does: t("media.library.add.does") };
   }
 }
 

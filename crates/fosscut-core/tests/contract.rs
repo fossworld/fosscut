@@ -74,6 +74,7 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             let at = placed["start"]["flicks"].as_i64().unwrap() + 705_600_000;
             json!({ "clip": placed["clip"], "at": { "flicks": at }, "angle": 2 })
         }
+        "clip.canvas" => json!({ "clips": [clip], "fill": { "kind": "blur", "amount": 0.05 } }),
         "keyframe.set_all" => json!({ "clip": clip, "property": "opacity", "keys": [
             { "offset": "0s", "value": 1 }, { "offset": "1s", "value": 0.5 }
         ] }),
