@@ -571,8 +571,18 @@ type Decoder = Box<dyn VideoDecoder + Send>;
 /// before its first frame (AVI with reordered frames, see
 /// [`fosscut_media::ffmpeg::remux`]; a proxy made from it inherits that).
 fn open_copy(path: &Path, original: &Path, decoding: DecoderOptions) -> Option<Decoder> {
-    let mut copy = FfmpegVideoDecoder::open(path, decoding).ok()?;
-    let first_copied = copy.next_frame().ok()??.pts;
+    // Some machines cannot decode a copy's codec in hardware (ProRes needs a ProRes engine);
+    // the copy is still better than the original in software, so try that before giving up.
+    let first = |decoding: DecoderOptions| {
+        let mut copy = FfmpegVideoDecoder::open(path, decoding).ok()?;
+        let pts = copy.next_frame().ok()??.pts;
+        Some((copy, pts))
+    };
+    let (copy, first_copied) = first(decoding).or_else(|| {
+        first(DecoderOptions {
+            hardware: HardwareDecoding::Off,
+        })
+    })?;
     let first_original = FfmpegVideoDecoder::open(original, decoding)
         .ok()?
         .next_frame()

@@ -294,6 +294,20 @@ fn proxies_are_made_once_per_content_and_show_the_same_picture() {
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
 
+    // The proxy decodes, in hardware where the machine can and in software otherwise; a
+    // failure here names the reason the preview would fall back to the original.
+    for hardware in [HardwareDecoding::Auto, HardwareDecoding::Off] {
+        let decoded = FfmpegVideoDecoder::open(&path, DecoderOptions { hardware })
+            .and_then(|mut decoder| decoder.next_frame());
+        println!(
+            "proxy decoded with {hardware:?}: {:?}",
+            decoded.as_ref().map(|f| f.is_some())
+        );
+        if hardware == HardwareDecoding::Off {
+            assert!(decoded.unwrap().is_some(), "the proxy decodes in software");
+        }
+    }
+
     // The preview shows the proxy with the original's picture and framing.
     let mut original = Previewer::with_options(options(&cache));
     let mut proxied = Previewer::with_options(PreviewOptions {
