@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
+import type { EngineClient, EngineEvents, NewProjectFormat, Rect, ThumbnailRequest, Unsubscribe } from "./client";
 import type {
   AppInfo,
   CacheKind,
@@ -16,7 +16,10 @@ import type {
   EditRequest,
   EditResponse,
   ExportChoice,
+  BeatCutsResult,
+  BeatMarkersResult,
   ExportPresets,
+  ImportResult,
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
@@ -33,7 +36,12 @@ import type {
   ProjectSummary,
   RecordChoice,
   RecordState,
+  ReframeRequest,
+  ReframeResult,
   SceneSplit,
+  ShortCandidates,
+  ShortRequest,
+  ShortResult,
   SpeechPreview,
   SpeechRequest,
   SpeechResult,
@@ -41,10 +49,26 @@ import type {
   TrackRequest,
   TranslateCaptionsRequest,
   TranslateCaptionsResult,
+  ThumbnailStrip,
   TrashEntry,
   UpdateAnswer,
+  VerticalRequest,
+  VerticalResult,
   VoiceInfo,
+  Waveform,
 } from "./types";
+
+/** A reframe request as the desktop's commands take it: flat, with nulls for what is left out. */
+function reframeArgs(request: ReframeRequest): Record<string, unknown> {
+  return {
+    clip: request.clip,
+    source: request.source,
+    region: request.region ?? null,
+    at: request.at === undefined ? null : Math.round(request.at),
+    shots: request.shots ?? null,
+    expectedRevision: request.expected_revision ?? null,
+  };
+}
 
 /** True inside the desktop app. */
 export function inDesktopApp(): boolean {
@@ -169,6 +193,15 @@ export class TauriEngine implements EngineClient {
     relink: async (asset: string): Promise<boolean> => (await invoke("media_relink", { asset })) !== null,
     sources: (): Promise<Record<string, PreviewSource>> => invoke("media_sources"),
     work: (): Promise<MediaWork> => invoke("media_work"),
+    thumbnails: (request: ThumbnailRequest): Promise<ThumbnailStrip> =>
+      invoke("media_thumbnails", {
+        asset: request.asset,
+        times: request.times?.map(Math.round) ?? null,
+        count: request.count ?? null,
+        height: request.height ?? null,
+      }),
+    waveform: (asset: string, buckets: number): Promise<Waveform> => invoke("media_waveform", { asset, buckets }),
+    import: (paths?: string[]): Promise<ImportResult | null> => invoke("media_import", { paths: paths ?? null }),
   };
 
   preview = {
@@ -228,6 +261,57 @@ export class TauriEngine implements EngineClient {
     dub: (request: DubCaptionsRequest): Promise<DubCaptionsResult> => invoke("captions_dub", { request }),
   };
 
+  reframe = {
+    clip: (request: ReframeRequest): Promise<ReframeResult> => invoke("clip_reframe", reframeArgs(request)),
+    camera: (request: ReframeRequest & { zoom: number }): Promise<ReframeResult> => {
+      // Camera tracking frames the clip as one move: it takes no shots.
+      const args = reframeArgs(request);
+      delete args.shots;
+      return invoke("clip_camera_track", { ...args, zoom: request.zoom });
+    },
+    vertical: (request: VerticalRequest): Promise<VerticalResult> =>
+      invoke("timeline_vertical", {
+        timeline: request.timeline ?? null,
+        source: request.source,
+        width: request.width ?? null,
+        height: request.height ?? null,
+        name: request.name ?? null,
+        shots: request.shots ?? null,
+        expectedRevision: request.expected_revision ?? null,
+      }),
+  };
+
+  beats = {
+    markers: (clip: string, every?: number, expectedRevision?: number): Promise<BeatMarkersResult> =>
+      invoke("beats_markers", { clip, every: every ?? null, expectedRevision: expectedRevision ?? null }),
+    cut: (track: string, music: string, every?: number, expectedRevision?: number): Promise<BeatCutsResult> =>
+      invoke("beats_cut", { track, music, every: every ?? null, expectedRevision: expectedRevision ?? null }),
+  };
+
+  shorts = {
+    candidates: (clip: string, options: { min_seconds?: number; max_seconds?: number; count?: number } = {}): Promise<ShortCandidates> =>
+      invoke("shorts_candidates", {
+        clip,
+        minSeconds: options.min_seconds ?? null,
+        maxSeconds: options.max_seconds ?? null,
+        count: options.count ?? null,
+      }),
+    make: (request: ShortRequest): Promise<ShortResult> =>
+      invoke("shorts_make", {
+        clip: request.clip,
+        start: Math.round(request.start),
+        end: Math.round(request.end),
+        name: request.name ?? null,
+        width: request.width ?? null,
+        height: request.height ?? null,
+        follow: request.follow ?? null,
+        captions: request.captions ?? null,
+        captionPreset: request.caption_preset ?? null,
+        title: request.title ?? null,
+        expectedRevision: request.expected_revision ?? null,
+      }),
+  };
+
   cache = {
     usage: async (): Promise<CacheUsage> => ({ caches: await invoke<CacheUsage["caches"]>("cache_info") }),
     clear: (kind: CacheKind | "all"): Promise<CacheUsage> => invoke("cache_clear", { kinds: kind === "all" ? [] : [kind] }),
@@ -239,7 +323,12 @@ export class TauriEngine implements EngineClient {
   ): Unsubscribe {
     let stop: (() => void) | null = null;
     let stopped = false;
-    void listen<EngineEvents[E]>(event, (message) => handler(message.payload)).then((unlisten) => {
+    // Files dropped from the system arrive as the window's own drag and drop event.
+    const listening =
+      event === "files-dropped"
+        ? listen<{ paths?: string[] }>("tauri://drag-drop", (message) => handler((message.payload.paths ?? []) as EngineEvents[E]))
+        : listen<EngineEvents[E]>(event, (message) => handler(message.payload));
+    void listening.then((unlisten) => {
       if (stopped) unlisten();
       else stop = unlisten;
     });

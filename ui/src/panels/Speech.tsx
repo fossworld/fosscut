@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { defaultVoice, voiceGroups, voiceName } from "../app/assist";
 import type { Editor, EditorState } from "../app/editor";
-import { Problem } from "../app/Export";
+import { Problem } from "../app/Problem";
 import type { VoiceInfo } from "../engine/types";
 import { formatNumber, t } from "../i18n";
 import { AssistState, assistFor } from "./Subject";
@@ -43,8 +43,12 @@ export function VoiceSelect({
  * Text to speech (ADR-0033 item 5): written text spoken by a voice of the voice model on
  * this computer, previewed through the app's sound, then inserted at the playhead.
  */
-export function Speech({ editor, state }: { editor: Editor; state: EditorState }) {
+export function Speech({ editor, state, embedded = false }: { editor: Editor; state: EditorState; embedded?: boolean }) {
   const { voices, error } = state.speech;
+  // In the browser's Voice category the voices are read when it shows.
+  useEffect(() => {
+    if (embedded) void editor.loadVoices();
+  }, [editor, embedded]);
   const [text, setText] = useState("");
   const [voice, setVoice] = useState("");
   const [speed, setSpeed] = useState(1);
@@ -53,12 +57,18 @@ export function Speech({ editor, state }: { editor: Editor; state: EditorState }
   const mine = assistFor(state.assist, ["speech", "preview"], null);
   const ready = text.trim().length > 0 && chosen !== "" && !busy;
   return (
-    <section className="record-panel speech-panel" role="dialog" aria-label={t("voice.title")}>
+    <section
+      className={embedded ? "speech-panel embedded" : "record-panel speech-panel"}
+      role={embedded ? undefined : "dialog"}
+      aria-label={t("voice.title")}
+    >
       <div className="record-head">
         <h2>{t("voice.title")}</h2>
-        <button className="link" onClick={() => editor.closeSpeech()}>
-          {t("voice.close")}
-        </button>
+        {!embedded && (
+          <button className="link" onClick={() => editor.closeSpeech()}>
+            {t("voice.close")}
+          </button>
+        )}
       </div>
       <label className="speech-text">
         <span>{t("voice.text")}</span>

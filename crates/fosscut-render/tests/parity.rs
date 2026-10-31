@@ -314,3 +314,105 @@ fn text_matches_between_preview_and_export() {
         );
     }
 }
+
+/// Temporal effects and optical-flow slow motion (ADR-0035) read neighbouring frames, so
+/// preview and export must agree on them as on everything else, and a frame must render
+/// the same whether the frames before it were rendered first (export plays forward) or not
+/// (a frame grab or a preview seek).
+#[test]
+fn temporal_effects_match_between_preview_and_export() {
+    use fosscut_model::{
+        Effect, Interpolate, Interpolation, KeyValue, Keyframe, ParamValue, Speed,
+    };
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let (mut project, timeline) = project();
+    let effect = |id: u64, kind: &str, params: &[(&str, ParamValue)]| Effect {
+        id: Id::new(IdKind::Effect, id),
+        effect_type: kind.into(),
+        version: 1,
+        enabled: true,
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect(),
+        keyframes: Default::default(),
+    };
+    let doc = project.timelines.get_mut(&timeline).unwrap();
+    let base = &mut doc.tracks[0].clips[0];
+    base.effects = vec![
+        effect(50, "color.deflicker", &[]),
+        effect(
+            51,
+            "detail.denoise",
+            &[("strength", ParamValue::Number(0.4))],
+        ),
+        effect(52, "motion.blur", &[]),
+    ];
+    // Half speed, its in-between frames made along the flow.
+    base.speed = Some(Speed {
+        interpolate: Interpolate::Flow,
+        ..Speed::constant(0.5)
+    });
+    base.duration = frames(180);
+    let overlay = &mut doc.tracks[1].clips[0];
+    overlay.effects = vec![effect(
+        53,
+        "motion.blur",
+        &[("amount", ParamValue::Number(0.8))],
+    )];
+    overlay.keyframes.insert(
+        "transform.position".into(),
+        vec![
+            Keyframe {
+                time: Flicks::ZERO,
+                value: KeyValue::Pair([-0.3, 0.15]),
+                interpolation: Interpolation::Linear,
+            },
+            Keyframe {
+                time: frames(60),
+                value: KeyValue::Pair([0.3, 0.15]),
+                interpolation: Interpolation::Linear,
+            },
+        ],
+    );
+    assert!(fosscut_model::validate(&project).is_empty());
+    let export = ExportGraph::new(&project, &timeline).unwrap();
+    let preview = PreviewGraph::new(&project, &timeline, (640, 640)).unwrap();
+    let mut provider = Frames::default();
+    provider.moving.insert(asset(1), (1280, 720));
+    provider.moving.insert(asset(2), (1280, 720));
+    let plan = fosscut_render::plan::plan_frame(&project, &timeline, frames(61)).unwrap();
+    assert!(plan.layers[0].flow && plan.layers[0].next_frame.is_some());
+    assert_eq!(
+        plan.layers[0].neighbours.before.len(),
+        3,
+        "the deflicker window"
+    );
+    assert!(!plan.layers[1].shutter.is_empty(), "the overlay moves");
+
+    // Export plays forward from before the frame; the preview grabs it straight away.
+    let mut played = None;
+    for n in 55..=61 {
+        played = Some(
+            export
+                .render(&mut renderer, &project, &mut provider, frames(n))
+                .unwrap(),
+        );
+    }
+    let played = played.unwrap();
+    let mut fresh = support::renderer().unwrap();
+    let alone = export
+        .render(&mut fresh, &project, &mut provider, frames(61))
+        .unwrap();
+    let same = played.psnr(&alone).unwrap();
+    eprintln!("temporal frame played forward and alone: {same:.1} dB");
+    assert!(same > 60.0, "{same:.1} dB");
+    let small = preview
+        .grab(&mut fresh, &project, &mut provider, frames(61))
+        .unwrap();
+    let psnr = half(&played).psnr(&small).unwrap();
+    eprintln!("temporal parity: {psnr:.1} dB");
+    assert!(psnr > 40.0, "temporal parity: PSNR {psnr:.1} dB");
+}

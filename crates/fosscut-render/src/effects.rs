@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 
+use fosscut_media::VideoFrame;
 use fosscut_model::{HSL_PARAMS, ParamValue};
 
 /// Vec4 slots in an effect pass's uniform.
@@ -47,6 +48,14 @@ impl PlannedEffect {
         }
     }
 
+    /// A flag parameter, or `default`.
+    pub fn flag(&self, name: &str, default: bool) -> bool {
+        match self.values.get(name) {
+            Some(ParamValue::Flag(v)) => *v,
+            _ => default,
+        }
+    }
+
     /// The asset id of an asset parameter.
     pub fn asset(&self, name: &str) -> Option<&fosscut_model::Id> {
         match self.values.get(name) {
@@ -69,6 +78,21 @@ pub enum Pass {
     Mipped(&'static str),
     /// One per-pixel pass that reads a clip's cached matte or pose ([`crate::subject`]).
     Subject(&'static str),
+    /// Passes that read the neighbouring source frames, their optical flow or their
+    /// brightness (ADR-0035).
+    Temporal(Temporal),
+}
+
+/// The effects that compare a frame with the source frames around it (ADR-0035).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Temporal {
+    /// `motion.blur`: along the optical flow to the neighbouring frames.
+    MotionBlur,
+    /// `detail.denoise`: averaging with the neighbours along their flow, then
+    /// edge-preserving smoothing.
+    Denoise,
+    /// `color.deflicker`: a gain toward the neighbours' smoothed brightness.
+    Deflicker,
 }
 
 /// The pass of an effect type, or `None` for a type this renderer does not draw.
@@ -101,12 +125,148 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "body.glow" => Pass::Subject("fs_body_glow"),
         "body.shadow" => Pass::Subject("fs_body_shadow"),
         "body.sparkle" => Pass::Subject("fs_body_sparkle"),
+        "motion.blur" => Pass::Temporal(Temporal::MotionBlur),
+        "detail.denoise" => Pass::Temporal(Temporal::Denoise),
+        "color.deflicker" => Pass::Temporal(Temporal::Deflicker),
         _ => return None,
     })
 }
 
+/// How many source frames on each side of the shown one `effects` read: one for motion
+/// blur and temporal noise reduction (the flow to the next and previous frames), and for
+/// flicker removal the reach of its window ([`deflicker_weights`]). 0 when none acts.
+pub fn neighbours_needed(effects: &[PlannedEffect]) -> usize {
+    effects
+        .iter()
+        .map(|effect| match effect.effect_type.as_str() {
+            "motion.blur" if effect.number("amount") > 0.0 => 1,
+            "detail.denoise"
+                if effect.number("strength") > 0.0 && effect.flag("temporal", true) =>
+            {
+                1
+            }
+            "color.deflicker" if effect.number("strength") > 0.0 => {
+                deflicker_weights(effect.number("window")).len() - 1
+            }
+            _ => 0,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// True when `effects` read the optical flow to the neighbouring frames: a motion blur, or
+/// a temporal noise reduction.
+pub fn needs_flow(effects: &[PlannedEffect]) -> bool {
+    effects
+        .iter()
+        .any(|effect| match effect.effect_type.as_str() {
+            "motion.blur" => effect.number("amount") > 0.0,
+            "detail.denoise" => effect.number("strength") > 0.0 && effect.flag("temporal", true),
+            _ => false,
+        })
+}
+
+/// True when `effects` read the brightness of the neighbouring frames: a flicker removal.
+pub fn needs_levels(effects: &[PlannedEffect]) -> bool {
+    effects
+        .iter()
+        .any(|e| e.effect_type == "color.deflicker" && e.number("strength") > 0.0)
+}
+
+/// The mean linear luminance of a frame, 0 to 1: its luma codes decoded with the frame's
+/// range and transfer function, averaged over a grid of about 480 by 270 samples. Luma
+/// decoded alone stands in for luminance, which is close for the brightness changes flicker
+/// removal compares.
+pub fn mean_luminance(frame: &VideoFrame) -> f32 {
+    let Some(plane) = frame.planes.first() else {
+        return 0.0;
+    };
+    let transfer = crate::color::TransferFunction::for_source(frame.color.transfer)
+        .unwrap_or(crate::color::TransferFunction::Bt709);
+    let (scale, offset) = match frame.color.range {
+        fosscut_media::Range::Full => (1.0 / 255.0, 0.0),
+        _ => (1.0 / 219.0, -16.0 / 219.0),
+    };
+    let table: Vec<f32> = (0..256)
+        .map(|code| transfer.decode((code as f32 * scale + offset).clamp(0.0, 1.0)))
+        .collect();
+    let (width, height) = (frame.width as usize, frame.height as usize);
+    let step = (height / 270).max(1);
+    let (mut sum, mut count) = (0.0f64, 0u64);
+    for y in (0..height).step_by(step) {
+        let Some(row) = plane.data.get(y * plane.stride..y * plane.stride + width) else {
+            continue;
+        };
+        for code in row.iter().step_by(step) {
+            sum += f64::from(table[usize::from(*code)]);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        0.0
+    } else {
+        (sum / count as f64) as f32
+    }
+}
+
+/// The shutter (a fraction of a frame) and the whole number of samples of the first motion
+/// blur in `effects` that blurs at all.
+pub fn motion_blur(effects: &[PlannedEffect]) -> Option<(f64, usize)> {
+    effects
+        .iter()
+        .filter(|e| e.effect_type == "motion.blur")
+        .map(|e| (f64::from(e.number("amount")), samples(e)))
+        .find(|(amount, _)| *amount > 0.0)
+}
+
+/// The whole number of samples of a motion blur, 2 to 32.
+pub fn samples(effect: &PlannedEffect) -> usize {
+    effect.number("samples").round().clamp(2.0, 32.0) as usize
+}
+
+/// Weights of the frames at distance 0, 1, 2 and so on from a frame, for averaging the
+/// brightness over a `window` frames wide: a box `window` frames wide centred on the frame,
+/// each frame weighted by how much of its own frame-wide span the box covers. A window of 4
+/// weighs (0.5, 1, 1, 1, 0.5), which cancels a flicker every other frame exactly, and any
+/// symmetric window keeps a steady fade.
+pub fn deflicker_weights(window: f32) -> Vec<f32> {
+    let half = window.clamp(1.0, 64.0) / 2.0;
+    (0..)
+        .map(|d: u32| (half + 0.5 - d as f32).clamp(0.0, 1.0))
+        .take_while(|w| *w > 0.0)
+        .collect()
+}
+
+/// The gain that brings a frame of brightness `level` toward the weighted mean of its own
+/// and its neighbours' brightness (`before` and `after`, nearest first), `strength` of the
+/// way in stops. Only the distances that both sides have count, so the average stays
+/// centred near the ends of the media and a fade keeps its course. Between a quarter and
+/// four times.
+pub fn deflicker_gain(
+    level: f32,
+    before: &[f32],
+    after: &[f32],
+    window: f32,
+    strength: f32,
+) -> f32 {
+    let weights = deflicker_weights(window);
+    let reach = before.len().min(after.len()).min(weights.len() - 1);
+    if level <= 1e-6 || reach == 0 || strength <= 0.0 {
+        return 1.0;
+    }
+    let (mut sum, mut total) = (level * weights[0], weights[0]);
+    for d in 1..=reach {
+        sum += weights[d] * (before[d - 1] + after[d - 1]);
+        total += 2.0 * weights[d];
+    }
+    let target = sum / total;
+    (target / level)
+        .powf(strength.clamp(0.0, 1.0))
+        .clamp(0.25, 4.0)
+}
+
 /// Every per-pixel entry point, for building pipelines.
-pub const PIXEL_ENTRIES: [&str; 32] = [
+pub const PIXEL_ENTRIES: [&str; 34] = [
     "fs_copy",
     "fs_mix",
     "fs_adjust",
@@ -139,6 +299,8 @@ pub const PIXEL_ENTRIES: [&str; 32] = [
     "fs_body_glow",
     "fs_body_shadow",
     "fs_body_sparkle",
+    "fs_gain",
+    "fs_bilateral",
 ];
 
 /// The uniform of a per-pixel pass for `effect` on a picture `size` pixels large.
@@ -406,6 +568,117 @@ mod tests {
         assert_eq!(lut_ref.asset("lut").map(|a| a.as_str()), Some("asset_0004"));
         assert_eq!(lut_ref.asset("intensity"), None);
         assert_eq!(lut_ref.points("master"), vec![[0.0, 0.0], [1.0, 1.0]]);
+    }
+
+    #[test]
+    fn temporal_effects_read_the_neighbours_they_need() {
+        let n = ParamValue::Number;
+        let blur = planned("motion.blur", &[("amount", n(0.5)), ("samples", n(7.6))]);
+        let still = planned("motion.blur", &[("amount", n(0.0))]);
+        let denoise = planned("detail.denoise", &[("strength", n(0.5))]);
+        let spatial = planned(
+            "detail.denoise",
+            &[("strength", n(0.5)), ("temporal", ParamValue::Flag(false))],
+        );
+        let deflicker = planned(
+            "color.deflicker",
+            &[("strength", n(1.0)), ("window", n(6.0))],
+        );
+        assert_eq!(neighbours_needed(&[]), 0);
+        assert_eq!(neighbours_needed(std::slice::from_ref(&blur)), 1);
+        assert_eq!(neighbours_needed(std::slice::from_ref(&still)), 0);
+        assert_eq!(
+            neighbours_needed(std::slice::from_ref(&denoise)),
+            1,
+            "temporal by default"
+        );
+        assert_eq!(neighbours_needed(std::slice::from_ref(&spatial)), 0);
+        assert_eq!(neighbours_needed(&[blur.clone(), deflicker.clone()]), 3);
+        assert!(
+            needs_flow(&[spatial.clone(), blur.clone()])
+                && !needs_flow(&[spatial, deflicker.clone()])
+        );
+        assert!(needs_levels(&[deflicker]) && !needs_levels(std::slice::from_ref(&blur)));
+        assert_eq!(
+            motion_blur(&[still, blur]),
+            Some((0.5, 8)),
+            "the first that blurs"
+        );
+        assert_eq!(
+            pass_for("motion.blur"),
+            Some(Pass::Temporal(Temporal::MotionBlur))
+        );
+    }
+
+    #[test]
+    fn deflicker_averages_over_its_window_and_keeps_fades() {
+        assert_eq!(deflicker_weights(4.0), [1.0, 1.0, 0.5]);
+        assert_eq!(deflicker_weights(5.0), [1.0, 1.0, 1.0]);
+        assert_eq!(deflicker_weights(6.0), [1.0, 1.0, 1.0, 0.5]);
+        assert_eq!(deflicker_weights(2.0), [1.0, 0.5]);
+        // A frame 5% bright among neighbours 5% dark and bright in turn: back to the mean.
+        let levels = |d: i32| if d % 2 == 0 { 1.05 } else { 0.95 };
+        let before: Vec<f32> = (1..=3).map(|d| levels(-d)).collect();
+        let after: Vec<f32> = (1..=3).map(levels).collect();
+        let gain = deflicker_gain(1.05, &before, &after, 6.0, 1.0);
+        assert!((gain * 1.05 - 1.0).abs() < 1e-6, "{gain}");
+        assert!((deflicker_gain(1.05, &before, &after, 6.0, 0.5) - gain.sqrt()).abs() < 1e-6);
+        assert_eq!(deflicker_gain(1.05, &before, &after, 6.0, 0.0), 1.0);
+        // A steady fade stays as it is.
+        let fade = |d: f32| 0.5 + 0.02 * d;
+        let before: Vec<f32> = (1..=3).map(|d| fade(-(d as f32))).collect();
+        let after: Vec<f32> = (1..=3).map(|d| fade(d as f32)).collect();
+        assert!((deflicker_gain(fade(0.0), &before, &after, 6.0, 1.0) - 1.0).abs() < 1e-6);
+        // Only distances both sides have count, and black frames are left alone.
+        assert_eq!(deflicker_gain(0.5, &[], &[0.9, 0.9], 6.0, 1.0), 1.0);
+        assert!((deflicker_gain(0.5, &[0.6], &[0.7, 0.9], 6.0, 1.0) - 1.2).abs() < 1e-6);
+        assert_eq!(deflicker_gain(0.0, &[0.5], &[0.5], 6.0, 1.0), 1.0);
+        assert_eq!(
+            deflicker_gain(0.1, &[1.0], &[1.0], 2.0, 1.0),
+            4.0,
+            "at most four times"
+        );
+    }
+
+    #[test]
+    fn mean_luminance_decodes_luma() {
+        use fosscut_media::{ColorInfo, Matrix, PixelFormat, Plane, Primaries, Range, Transfer};
+        let frame = |code: u8, range| VideoFrame {
+            pts: fosscut_time::Flicks::ZERO,
+            duration: fosscut_time::Flicks::new(1),
+            width: 4,
+            height: 2,
+            format: PixelFormat::Yuv420p,
+            planes: vec![
+                Plane {
+                    stride: 4,
+                    rows: 2,
+                    data: vec![code; 8].into(),
+                },
+                Plane {
+                    stride: 2,
+                    rows: 1,
+                    data: vec![128; 2].into(),
+                },
+                Plane {
+                    stride: 2,
+                    rows: 1,
+                    data: vec![128; 2].into(),
+                },
+            ],
+            color: ColorInfo {
+                matrix: Matrix::Bt709,
+                range,
+                primaries: Primaries::Bt709,
+                transfer: Transfer::Bt709,
+            },
+        };
+        assert_eq!(mean_luminance(&frame(235, Range::Limited)), 1.0);
+        assert_eq!(mean_luminance(&frame(16, Range::Limited)), 0.0);
+        assert_eq!(mean_luminance(&frame(255, Range::Full)), 1.0);
+        let mid = mean_luminance(&frame(126, Range::Limited));
+        let expected = crate::color::TransferFunction::Bt709.decode(110.0 / 219.0);
+        assert!((mid - expected).abs() < 1e-6, "{mid} vs {expected}");
     }
 
     #[test]

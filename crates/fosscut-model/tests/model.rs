@@ -623,7 +623,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
     for older in [
         "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-        "0.11.0", "0.12.0", "0.13.0",
+        "0.11.0", "0.12.0", "0.13.0", "0.14.0",
     ] {
         manifest["format_version"] = older.into();
         store
@@ -634,7 +634,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.14.0");
+    assert_eq!(FORMAT_VERSION, "0.15.0");
 }
 
 #[test]

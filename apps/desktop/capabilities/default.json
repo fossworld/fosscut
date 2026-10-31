@@ -66,6 +66,16 @@
     "allow-speech-preview",
     "allow-speech-add",
     "allow-captions-translate",
-    "allow-captions-dub"
+    "allow-captions-dub",
+    "allow-media-thumbnails",
+    "allow-media-waveform",
+    "allow-media-import",
+    "allow-clip-reframe",
+    "allow-clip-camera-track",
+    "allow-timeline-vertical",
+    "allow-beats-markers",
+    "allow-beats-cut",
+    "allow-shorts-candidates",
+    "allow-shorts-make"
   ]
 }

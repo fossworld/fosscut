@@ -132,6 +132,40 @@ pub struct Layer {
     /// For smooth slow motion (ADR-0023 item 8): the next source frame, and how much of it
     /// mixes into the frame the source shows, 0 to 1.
     pub next_frame: Option<(SourceRef, f32)>,
+    /// True when `next_frame` mixes in along the optical flow between the two frames
+    /// (`Interpolate::Flow`, ADR-0035), so moving things stay sharp; false blends the two
+    /// frames as they are.
+    pub flow: bool,
+    /// The source frames around the one shown, for effects that read them: motion blur,
+    /// temporal noise reduction and flicker removal (ADR-0035).
+    pub neighbours: Neighbours,
+    /// Where the layer is placed at evenly spaced moments while a motion blur's shutter is
+    /// open, earliest first, when it moves during the frame; empty when it holds still or
+    /// has no motion blur. The layer is drawn at each placement and the draws averaged, so
+    /// it streaks along its path.
+    pub shutter: Vec<Transform>,
+}
+
+/// The source frames around the one a layer shows, nearest first on each side, within the
+/// media (ADR-0035). Effects that compare a frame with its neighbours read them: they are
+/// empty when no effect of the layer needs them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Neighbours {
+    /// Earlier source frames, nearest first.
+    pub before: Vec<SourceRef>,
+    /// Later source frames, nearest first.
+    pub after: Vec<SourceRef>,
+    /// How many source frames pass during one frame of the timeline at the layer's speed:
+    /// the motion between neighbouring source frames times this is the motion during one
+    /// frame. 0 for a freeze frame.
+    pub per_frame: f64,
+}
+
+impl Neighbours {
+    /// True when there are no neighbouring frames.
+    pub fn is_empty(&self) -> bool {
+        self.before.is_empty() && self.after.is_empty()
+    }
 }
 
 impl Layer {
@@ -170,6 +204,9 @@ impl Layer {
             effects: Vec::new(),
             masks: Vec::new(),
             next_frame: None,
+            flow: false,
+            neighbours: Neighbours::default(),
+            shutter: Vec::new(),
         }
     }
 }
@@ -209,7 +246,7 @@ impl RenderPlan {
 /// The version of [`RenderPlan::cache_key_bytes`]: bump it whenever planning, the
 /// compositor, an effect or a shader changes the pixels a plan renders, or the encoding
 /// changes, so frames cached by an older renderer are never shown again (ADR-0032, item 4).
-pub const CACHE_KEY_VERSION: u32 = 1;
+pub const CACHE_KEY_VERSION: u32 = 2;
 
 impl RenderPlan {
     /// A stable encoding of everything in this plan that affects its pixels when rendered at
@@ -330,6 +367,9 @@ impl KeyBytes {
             effects,
             masks,
             next_frame,
+            flow,
+            neighbours,
+            shutter,
         } = layer;
         self.layer_source(source);
         self.u32(u32::from(*rotation));
@@ -393,6 +433,23 @@ impl KeyBytes {
                 self.source_ref(source);
                 self.f32(*amount);
             }
+        }
+        self.bool(*flow);
+        let Neighbours {
+            before,
+            after,
+            per_frame,
+        } = neighbours;
+        for side in [before, after] {
+            self.len(side.len());
+            for source in side {
+                self.source_ref(source);
+            }
+        }
+        self.f64(*per_frame);
+        self.len(shutter.len());
+        for transform in shutter {
+            self.transform(transform);
         }
     }
 
@@ -521,27 +578,43 @@ fn layer_for(
         .filter(|m| m.enabled)
         .map(|m| m.at(offset))
         .collect();
-    let motion = animate(&clip.animations, offset, clip.duration);
-    let mut transform = clip.transform_at(offset);
-    transform.position[0] += motion.offset[0];
-    transform.position[1] += motion.offset[1];
-    transform.scale *= motion.scale;
-    transform.rotation += motion.rotation;
+    // The clip's keyframed placement with its animations, at any offset.
+    let placement = |at: Flicks| {
+        let motion = animate(&clip.animations, at, clip.duration);
+        let mut transform = clip.transform_at(at);
+        transform.position[0] += motion.offset[0];
+        transform.position[1] += motion.offset[1];
+        transform.scale *= motion.scale;
+        transform.rotation += motion.rotation;
+        (transform, motion.opacity)
+    };
+    let (transform, motion_opacity) = placement(offset);
+    let shutter = crate::effects::motion_blur(&effects)
+        .map(|(amount, samples)| {
+            let open = format.rate.frame_duration().get() as f64 * amount;
+            shutter_path(&|at| placement(at).0, offset, open, samples, &transform)
+        })
+        .unwrap_or_default();
     let placed = |source: LayerSource, rotation: u16| Layer {
         clip: Some(clip.id.clone()),
         source,
         rotation,
         transform: transform.clone(),
         crop: clip.crop_at(offset).kept(),
-        opacity: (clip.opacity_at(offset) * motion.opacity).clamp(0.0, 1.0) as f32,
+        opacity: (clip.opacity_at(offset) * motion_opacity).clamp(0.0, 1.0) as f32,
         blend: clip.blend,
         mask: None,
         lut: None,
         effects: effects.clone(),
         masks: masks.clone(),
         next_frame: None,
+        flow: false,
+        neighbours: Neighbours::default(),
+        shutter: shutter.clone(),
     };
     let mut next_frame = None;
+    let mut flow = false;
+    let mut neighbours = Neighbours::default();
     let source = match (&clip.content, track.kind) {
         (ClipContent::Video { asset, .. }, TrackKind::Video) => {
             let info = project.media.get(asset).map(|a| &a.info);
@@ -554,15 +627,36 @@ fn layer_for(
             let position = clip.source_position(offset).unwrap_or(0.0);
             let source_rate = info.and_then(|i| i.video.as_ref()).and_then(|v| v.rate);
             if let (Some(speed), Some(source_rate)) = (&clip.speed, source_rate)
-                && speed.interpolate == Interpolate::Blend
+                && matches!(speed.interpolate, Interpolate::Blend | Interpolate::Flow)
                 && !speed.is_frozen()
             {
                 next_frame = between_frames(asset, position, source_rate, held);
+                flow = speed.interpolate == Interpolate::Flow;
             }
-            SourceRef {
+            let shown = SourceRef {
                 asset: asset.clone(),
                 time: held(Flicks::new(position.round() as i64)),
+            };
+            let reach = crate::effects::neighbours_needed(&effects);
+            if reach > 0
+                && let Some(source_rate) = source_rate
+            {
+                // Source frames per timeline frame: the clip's rate here times the ratio
+                // of the frame rates (ADR-0023: the map's slope is the rate).
+                let rate = match &clip.speed {
+                    Some(speed) if speed.is_frozen() => 0.0,
+                    Some(speed) => {
+                        let at = offset.get() as f64 / clip.duration.get().max(1) as f64;
+                        speed.rate_at(at).abs()
+                    }
+                    None => 1.0,
+                };
+                let fps = |r: fosscut_time::Rate| f64::from(r.num()) / f64::from(r.den().max(1));
+                let per_frame = rate * fps(source_rate) / fps(format.rate);
+                let end = info.and_then(|i| i.duration);
+                neighbours = around(asset, shown.time, source_rate, reach, end, per_frame);
             }
+            shown
         }
         (ClipContent::Image { asset }, TrackKind::Video) => SourceRef {
             asset: asset.clone(),
@@ -608,8 +702,71 @@ fn layer_for(
     let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
     Some(Layer {
         next_frame,
+        flow,
+        neighbours,
         ..placed(LayerSource::Frame(source), rotation)
     })
+}
+
+/// The placements `placement` gives at `samples` moments spread evenly over a shutter open
+/// for `open` flicks around `offset`, each in the middle of its share of the opening, or
+/// nothing when they all equal `main`: the layer does not move during the frame.
+fn shutter_path(
+    placement: &dyn Fn(Flicks) -> Transform,
+    offset: Flicks,
+    open: f64,
+    samples: usize,
+    main: &Transform,
+) -> Vec<Transform> {
+    let samples = samples.max(1);
+    let path: Vec<Transform> = (0..samples)
+        .map(|i| {
+            let share = (i as f64 + 0.5) / samples as f64 - 0.5;
+            placement(offset + Flicks::new((share * open).round() as i64))
+        })
+        .collect();
+    if path.iter().all(|t| t == main) {
+        Vec::new()
+    } else {
+        path
+    }
+}
+
+/// The source frames up to `reach` away from the one shown at `time` in a `rate` source of
+/// `asset` that lasts `end` (unbounded when unknown), each at its middle, nearest first on
+/// each side, never before the first frame or after the last.
+fn around(
+    asset: &Id,
+    time: Flicks,
+    rate: fosscut_time::Rate,
+    reach: usize,
+    end: Option<Flicks>,
+    per_frame: f64,
+) -> Neighbours {
+    let index = rate.frame_at(time);
+    let last = end.map(|d| rate.frame_at(d - Flicks::new(1)));
+    let at = |i: i64| {
+        let start = rate.frames_to_flicks(i);
+        let width = rate.frames_to_flicks(i + 1) - start;
+        SourceRef {
+            asset: asset.clone(),
+            time: start + Flicks::new(width.get() / 2),
+        }
+    };
+    let reach = reach as i64;
+    Neighbours {
+        before: (1..=reach)
+            .map(|k| index - k)
+            .take_while(|i| *i >= 0)
+            .map(at)
+            .collect(),
+        after: (1..=reach)
+            .map(|k| index + k)
+            .take_while(|i| last.is_none_or(|l| *i <= l))
+            .map(at)
+            .collect(),
+        per_frame,
+    }
 }
 
 /// The source frame after the one at `position` and how far `position` lies towards it,
@@ -1199,6 +1356,208 @@ mod tests {
             time(&at(&project, 50).layers[0]),
             Some(frames(30)),
             "frozen"
+        );
+    }
+
+    #[test]
+    fn temporal_effects_plan_neighbouring_frames() {
+        let (mut project, timeline) = project();
+        project
+            .timelines
+            .get_mut(&timeline)
+            .unwrap()
+            .tracks
+            .truncate(1);
+        let effect =
+            |kind: &str, params: &[(&str, fosscut_model::ParamValue)]| fosscut_model::Effect {
+                id: Id::new(fosscut_model::IdKind::Effect, 9),
+                effect_type: kind.into(),
+                version: 1,
+                enabled: true,
+                params: params
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.clone()))
+                    .collect(),
+                keyframes: Default::default(),
+            };
+        let number = fosscut_model::ParamValue::Number;
+        let edit = |project: &mut Project, change: &dyn Fn(&mut Clip)| {
+            change(&mut project.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]);
+        };
+        let at = |project: &Project, n: i64| {
+            plan_frame(project, &timeline, frames(n)).unwrap().layers[0].clone()
+        };
+        // Frame middles of the 30 fps source.
+        let middle = |i: i64| frames(i) + Flicks::new(frames(1).get() / 2);
+        let times = |side: &[SourceRef]| side.iter().map(|s| s.time).collect::<Vec<_>>();
+
+        assert!(
+            at(&project, 10).neighbours.is_empty(),
+            "nothing asks for them"
+        );
+        edit(&mut project, &|clip| {
+            clip.effects = vec![effect("detail.denoise", &[])]
+        });
+        let layer = at(&project, 10);
+        assert_eq!(time(&layer), Some(frames(40)), "30 frames in, 10 more");
+        assert_eq!(times(&layer.neighbours.before), [middle(39)]);
+        assert_eq!(times(&layer.neighbours.after), [middle(41)]);
+        assert_eq!(layer.neighbours.per_frame, 1.0);
+        assert!(layer.shutter.is_empty() && !layer.flow);
+
+        edit(&mut project, &|clip| {
+            clip.effects = vec![effect(
+                "detail.denoise",
+                &[("temporal", fosscut_model::ParamValue::Flag(false))],
+            )]
+        });
+        assert!(at(&project, 10).neighbours.is_empty(), "spatial only");
+
+        // A window of 6 frames reaches 3 to each side, within the media.
+        edit(&mut project, &|clip| {
+            clip.effects = vec![effect("color.deflicker", &[("window", number(6.0))])]
+        });
+        let layer = at(&project, 10);
+        assert_eq!(
+            times(&layer.neighbours.before),
+            [middle(39), middle(38), middle(37)]
+        );
+        assert_eq!(
+            times(&layer.neighbours.after),
+            [middle(41), middle(42), middle(43)]
+        );
+        edit(&mut project, &|clip| {
+            clip.content = ClipContent::Video {
+                asset: Id::new(fosscut_model::IdKind::Asset, 1),
+                source_in: frames(1),
+            }
+        });
+        let layer = at(&project, 0);
+        assert_eq!(
+            times(&layer.neighbours.before),
+            [middle(0)],
+            "the media's first frame"
+        );
+        edit(&mut project, &|clip| {
+            clip.content = ClipContent::Video {
+                asset: Id::new(fosscut_model::IdKind::Asset, 1),
+                source_in: frames(298),
+            };
+            clip.duration = frames(2);
+        });
+        let layer = at(&project, 1);
+        assert!(
+            layer.neighbours.after.is_empty(),
+            "past the media's last frame"
+        );
+        assert_eq!(layer.neighbours.before.len(), 3);
+
+        // Speed scales the motion per frame; a freeze has none.
+        edit(&mut project, &|clip| {
+            clip.content = ClipContent::Video {
+                asset: Id::new(fosscut_model::IdKind::Asset, 1),
+                source_in: frames(30),
+            };
+            clip.duration = frames(100);
+            clip.effects = vec![effect("motion.blur", &[])];
+            clip.speed = Some(fosscut_model::Speed::constant(2.0));
+        });
+        assert_eq!(at(&project, 10).neighbours.per_frame, 2.0);
+        edit(&mut project, &|clip| {
+            clip.speed = Some(fosscut_model::Speed::constant(0.0))
+        });
+        assert_eq!(at(&project, 10).neighbours.per_frame, 0.0);
+        // Optical-flow slow motion carries both frames, like blending, and says so.
+        edit(&mut project, &|clip| {
+            clip.effects.clear();
+            clip.speed = Some(fosscut_model::Speed {
+                interpolate: Interpolate::Flow,
+                ..fosscut_model::Speed::constant(0.5)
+            })
+        });
+        let layer = at(&project, 1);
+        assert!(layer.flow);
+        let (next, amount) = layer.next_frame.clone().unwrap();
+        assert_eq!(Rate::FPS_30.frame_at(next.time), 31);
+        assert!((amount - 0.5).abs() < 1e-6);
+        assert!(layer.neighbours.is_empty());
+        let blend_key = {
+            let mut blended = project.clone();
+            edit(&mut blended, &|clip| {
+                clip.speed.as_mut().unwrap().interpolate = Interpolate::Blend
+            });
+            plan_frame(&blended, &timeline, frames(1))
+                .unwrap()
+                .cache_key_bytes((640, 360))
+        };
+        assert_ne!(
+            plan_frame(&project, &timeline, frames(1))
+                .unwrap()
+                .cache_key_bytes((640, 360)),
+            blend_key,
+            "flow and blending render differently"
+        );
+    }
+
+    #[test]
+    fn motion_blur_spreads_placements_over_the_shutter() {
+        let (mut project, timeline) = project();
+        let title = &mut project.timelines.get_mut(&timeline).unwrap().tracks[2].clips[0];
+        let key = |frame: i64, x: f64| fosscut_model::Keyframe {
+            time: frames(frame),
+            value: fosscut_model::KeyValue::Pair([x, 0.0]),
+            interpolation: fosscut_model::Interpolation::Linear,
+        };
+        // Moves 0.3 of the canvas a frame.
+        title
+            .keyframes
+            .insert("transform.position".into(), vec![key(0, 0.0), key(2, 0.6)]);
+        title.effects = vec![fosscut_model::Effect {
+            id: Id::new(fosscut_model::IdKind::Effect, 9),
+            effect_type: "motion.blur".into(),
+            version: 1,
+            enabled: true,
+            params: [
+                ("amount".to_string(), fosscut_model::ParamValue::Number(0.5)),
+                (
+                    "samples".to_string(),
+                    fosscut_model::ParamValue::Number(4.4),
+                ),
+            ]
+            .into(),
+            keyframes: Default::default(),
+        }];
+        let layer = |project: &Project, n: i64| {
+            plan_frame(project, &timeline, frames(n))
+                .unwrap()
+                .layers
+                .into_iter()
+                .find(|l| matches!(l.source, LayerSource::Text(_)))
+                .unwrap()
+        };
+        let moving = layer(&project, 1);
+        assert_eq!(moving.transform.position[0], 0.3);
+        let xs: Vec<f64> = moving.shutter.iter().map(|t| t.position[0]).collect();
+        assert_eq!(xs.len(), 4, "samples round to a whole number");
+        // A half-frame shutter around the frame: 0.15 of the canvas, sampled at the middle
+        // of each quarter.
+        for (x, expected) in xs.iter().zip([0.24375, 0.28125, 0.31875, 0.35625]) {
+            assert!((x - expected).abs() < 1e-6, "{xs:?}");
+        }
+        // Holding still after the last keyframe: no streak.
+        assert!(layer(&project, 50).shutter.is_empty());
+        let mut closed = project.clone();
+        closed.timelines.get_mut(&timeline).unwrap().tracks[2].clips[0].effects[0]
+            .params
+            .insert("amount".into(), fosscut_model::ParamValue::Number(0.0));
+        assert!(layer(&closed, 1).shutter.is_empty(), "a closed shutter");
+        assert_ne!(
+            plan_frame(&project, &timeline, frames(1))
+                .unwrap()
+                .cache_key_bytes((640, 360)),
+            plan_frame(&closed, &timeline, frames(1))
+                .unwrap()
+                .cache_key_bytes((640, 360)),
         );
     }
 

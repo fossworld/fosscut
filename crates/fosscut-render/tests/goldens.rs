@@ -1220,3 +1220,173 @@ fn body_effects_on_a_figure() {
         (640, 360),
     );
 }
+
+/// A source frame of [`scene`] at time `t` for the temporal goldens (ADR-0035).
+fn scene_at(t: f32) -> fosscut_media::VideoFrame {
+    frame_of(move |x, y| scene(x, y, t))
+}
+
+/// Optical-flow slow motion: half way between two frames of a textured background panning
+/// left and a disc moving right over it, both shown once and sharp (blending shows the disc
+/// twice, see `blended-slow-motion`).
+#[test]
+fn flow_slow_motion() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default()
+        .with(1, scene_at(0.0))
+        .with(2, scene_at(1.0));
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![Layer {
+            next_frame: Some((source(2), 0.5)),
+            flow: true,
+            ..Layer::new(source(1))
+        }],
+        skipped: Vec::new(),
+    };
+    check("flow-slow-motion", &mut renderer, &plan, &mut frames);
+}
+
+fn neighbours(before: &[u64], after: &[u64]) -> fosscut_render::plan::Neighbours {
+    fosscut_render::plan::Neighbours {
+        before: before.iter().map(|&n| source(n)).collect(),
+        after: after.iter().map(|&n| source(n)).collect(),
+        per_frame: 1.0,
+    }
+}
+
+/// Motion blur: the moving scene with a full-frame shutter (the disc streaks right, the
+/// background a little left), and over it a white bar animated across the top, drawn at
+/// twelve placements of a half-frame shutter, so it streaks along its path.
+#[test]
+fn motion_blur() {
+    use fosscut_model::ParamValue::Number;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default()
+        .with(1, scene_at(0.0))
+        .with(2, scene_at(-1.0))
+        .with(3, scene_at(1.0))
+        .with(4, solid(64, 16, [235, 128, 128]));
+    let picture = Layer {
+        effects: vec![planned(
+            "motion.blur",
+            &[("amount", Number(1.0)), ("samples", Number(24.0))],
+        )],
+        neighbours: neighbours(&[2], &[3]),
+        ..Layer::new(source(1))
+    };
+    let at = |x: f64| Transform {
+        position: [x, -0.35],
+        scale: 0.2,
+        ..Transform::default()
+    };
+    let bar = Layer {
+        transform: at(0.0),
+        shutter: (0..12)
+            .map(|i| at(-0.15 + 0.3 * f64::from(i) / 11.0))
+            .collect(),
+        ..Layer::new(source(4))
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![picture, bar],
+        skipped: Vec::new(),
+    };
+    check("motion-blur", &mut renderer, &plan, &mut frames);
+}
+
+/// A dark and a light half with fine texture and strong per-frame noise: as it is on the
+/// left, and with `detail.denoise` (temporal, strength 0.7) on the right, where the noise
+/// is gone and the edge between the halves stays sharp.
+#[test]
+fn denoise() {
+    use fosscut_model::ParamValue::Number;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let noisy = |seed: u32| {
+        frame_of(move |x, y| {
+            let base = if y < 90.0 { 0.06 } else { 0.35 };
+            let texture = 0.05 * value_noise(x, y, 9.0, 3)
+                + if (x / 40.0).floor() as i32 % 2 == 0 {
+                    0.03
+                } else {
+                    0.0
+                };
+            let noise = (hash(x.floor() as i32, y.floor() as i32, seed) - 0.5) * 0.18;
+            let encoded =
+                fosscut_render::color::TransferFunction::Srgb.encode(base + texture) + noise;
+            let l = fosscut_render::color::TransferFunction::Srgb.decode(encoded.clamp(0.0, 1.0));
+            [l, l * 0.95, l * 0.9]
+        })
+    };
+    let mut frames = Frames::default()
+        .with(1, noisy(31))
+        .with(2, noisy(32))
+        .with(3, noisy(33));
+    let tile = |x: f64, effects| Layer {
+        transform: Transform {
+            position: [x, 0.0],
+            scale: 0.5,
+            ..Transform::default()
+        },
+        effects,
+        neighbours: neighbours(&[2], &[3]),
+        ..Layer::new(source(1))
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![
+            tile(-0.25, Vec::new()),
+            tile(
+                0.25,
+                vec![planned("detail.denoise", &[("strength", Number(0.7))])],
+            ),
+        ],
+        skipped: Vec::new(),
+    };
+    check("denoise", &mut renderer, &plan, &mut frames);
+}
+
+/// A frame 8% brighter than its neighbours, which flicker 8% darker and brighter in turn:
+/// as it is on the left, and with `color.deflicker` on the right, back at their average
+/// brightness.
+#[test]
+fn deflicker() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let lit = |gain: f32| {
+        frame_of(move |x, y| {
+            let v = 0.05 + 0.45 * value_noise(x, y, 14.0, 5) + if x > 160.0 { 0.15 } else { 0.0 };
+            [v * gain, v * gain * 0.92, v * gain * 0.8]
+        })
+    };
+    let mut frames = Frames::default().with(1, lit(1.08));
+    for (n, gain) in [(2, 0.92), (3, 1.08), (4, 0.92), (5, 1.08)] {
+        frames = frames.with(n, lit(gain));
+    }
+    let tile = |x: f64, effects| Layer {
+        transform: Transform {
+            position: [x, 0.0],
+            scale: 0.5,
+            ..Transform::default()
+        },
+        effects,
+        neighbours: neighbours(&[2, 3], &[4, 5]),
+        ..Layer::new(source(1))
+    };
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers: vec![
+            tile(-0.25, Vec::new()),
+            tile(0.25, vec![planned("color.deflicker", &[])]),
+        ],
+        skipped: Vec::new(),
+    };
+    check("deflicker", &mut renderer, &plan, &mut frames);
+}

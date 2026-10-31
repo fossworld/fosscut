@@ -1,3 +1,4 @@
+import { Database, Download, FolderOpen, Gauge, Keyboard, Pencil, Settings as Gear, SlidersHorizontal, Timer, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { CACHE_KINDS } from "../engine/cache";
@@ -20,6 +21,20 @@ import {
   withSet,
 } from "./shortcutDraft";
 import { readableSize } from "./Start";
+import { THEME_CHOICES, setTheme, useThemeChoice } from "../theme/theme";
+import { Glyph, IconButton, Segmented } from "../ui/controls";
+
+/** The icon of each section of Settings. */
+const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
+  general: SlidersHorizontal,
+  locations: FolderOpen,
+  editing: Pencil,
+  timeline: Timer,
+  export: Download,
+  performance: Gauge,
+  cache: Database,
+  shortcuts: Keyboard,
+};
 
 /** Each language's name in itself, as language choices show them. */
 export const LANGUAGE_NAMES: Record<string, string> = { en: "English", hu: "Magyar" };
@@ -156,10 +171,30 @@ export function Entry({
   );
 }
 
+/** The theme of this computer's window: dark, light or the system's. */
+function Appearance() {
+  const theme = useThemeChoice();
+  return (
+    <div className="setting">
+      <div className="choice">
+        <span>{t("settings.general.theme")}</span>
+        <Segmented
+          label={t("settings.general.theme")}
+          value={theme}
+          onChange={setTheme}
+          options={THEME_CHOICES.map((choice) => ({ id: choice, label: t(`app.theme.${choice}`) }))}
+        />
+      </div>
+      <p className="muted hint">{t("settings.general.theme.help")}</p>
+    </div>
+  );
+}
+
 export function GeneralSection({ editor, state }: Props) {
   const view = state.preferences;
   return (
     <>
+      <Appearance />
       <Choice
         editor={editor}
         state={state}
@@ -557,23 +592,25 @@ export function Settings({ editor, state }: Props) {
   return (
     <div className="dialog-backdrop" onClick={(event) => event.target === event.currentTarget && editor.closeSettings()}>
       <div className="dialog settings" role="dialog" aria-modal="true" aria-label={t("settings.title")}>
-        <h2>
-          {t("settings.title")}
-          <span className="spacer" />
-          <button className="link" onClick={() => editor.closeSettings()}>
-            {t("settings.close")}
-          </button>
-        </h2>
+        <header className="dialog-head">
+          <span className="dialog-icon" aria-hidden="true">
+            <Glyph icon={Gear} />
+          </span>
+          <h2>{t("settings.title")}</h2>
+          <IconButton icon={X} label={t("settings.close")} onClick={() => editor.closeSettings()} />
+        </header>
         <div className="settings-body">
           <nav aria-label={t("settings.sections")}>
             {SETTINGS_SECTIONS.map((id) => (
               <button
                 key={id}
+                type="button"
                 className={id === section ? "active" : ""}
                 aria-current={id === section ? "page" : undefined}
                 onClick={() => editor.showSettings(id)}
               >
-                {t(`settings.section.${id}`)}
+                <Glyph icon={SECTION_ICONS[id]} size="sm" />
+                <span>{t(`settings.section.${id}`)}</span>
               </button>
             ))}
           </nav>

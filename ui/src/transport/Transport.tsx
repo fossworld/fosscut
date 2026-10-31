@@ -1,158 +1,81 @@
+import { Expand, Pause, Play, Ruler, ScanSearch, SkipBack, SkipForward, SquareDashed, StepBack, StepForward } from "lucide-react";
+
 import { type Editor, type EditorState, preferencesOf } from "../app/editor";
-import { t } from "../i18n";
-import { hint } from "../shortcuts";
+import { aspectName } from "../app/layout";
+import { formatNumber, t } from "../i18n";
+import { ZOOMS } from "../preview/PreviewHole";
+import { Glyph, IconButton, Menu } from "../ui/controls";
 import { formatTime, parseRate } from "./time";
 
-function Icon({ path }: { path: string }) {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <path d={path} fill="currentColor" />
-    </svg>
-  );
-}
-
-const PLAY = "M4 2.5v11l9-5.5z";
-const PAUSE = "M4 2.5h3v11H4zM9 2.5h3v11H9z";
-const START = "M3 2.5h2v11H3zM13 2.5v11L6 8z";
-const BACK = "M11 2.5v11L4 8z";
-const FORWARD = "M5 2.5v11l7-5.5z";
-const END = "M11 2.5h2v11h-2zM3 2.5v11L10 8z";
-
-/** The title picker's choice for plain text rather than a template. */
-const PLAIN = "*plain";
-
-/** Play, pause, frame steps and the playhead's time, shown as the preferences say. */
-export function Transport({ editor, state }: { editor: Editor; state: EditorState }) {
+/**
+ * The player's control bar: the playhead's time and the timeline's length (shown as the
+ * preferences say), going to the start, a frame back, play and pause, a frame on and the
+ * end, and on the right the preview's zoom, safe zones, rulers and guides, and full screen.
+ */
+export function Transport({
+  editor,
+  state,
+  zoom,
+  onZoom,
+  safeZones,
+  onSafeZones,
+}: {
+  editor: Editor;
+  state: EditorState;
+  zoom: number;
+  onZoom: (zoom: number) => void;
+  safeZones: boolean;
+  onSafeZones: (on: boolean) => void;
+}) {
   const timeline = state.timeline;
   const rate = parseRate(timeline?.format.rate ?? "30");
   const display = preferencesOf(state).timeline.time_display;
   const now = formatTime(state.playhead, rate, display);
   const length = formatTime(timeline?.duration.flicks ?? 0, rate, display);
+  const format = timeline?.format;
+  const zoomName = (z: number) => (z === 1 ? t("transport.zoom.fit") : t("transport.zoom.percent", { percent: z * 100 }));
   return (
-    <div className="transport">
-      <button title={hint(t("transport.start"), "player.start")} onClick={() => void editor.seek(0)} disabled={!timeline}>
-        <Icon path={START} />
-      </button>
-      <button title={hint(t("transport.previous"), "player.frame_back")} onClick={() => void editor.step(-1)} disabled={!timeline}>
-        <Icon path={BACK} />
-      </button>
-      <button
-        className="play"
-        title={hint(state.playing ? t("transport.pause") : t("transport.play"), "player.play")}
-        onClick={() => void editor.togglePlay()}
-        disabled={!timeline}
-      >
-        <Icon path={state.playing ? PAUSE : PLAY} />
-      </button>
-      <button title={hint(t("transport.next"), "player.frame_forward")} onClick={() => void editor.step(1)} disabled={!timeline}>
-        <Icon path={FORWARD} />
-      </button>
-      <button title={hint(t("transport.end"), "player.end")} onClick={() => void editor.seekEnd()} disabled={!timeline}>
-        <Icon path={END} />
-      </button>
-      <span className="timecode">
-        {now}
-        <span className="muted"> / {length}</span>
-      </span>
-      {state.shuttle !== 0 && state.shuttle !== 1 && <span className="rate">{t("transport.rate", { rate: state.shuttle })}</span>}
-      <span className="spacer" />
-      <span className="tools" role="group" aria-label={t("transport.tool")}>
-        <button
-          className={state.tool === "select" ? "active" : ""}
-          aria-pressed={state.tool === "select"}
-          title={hint(t("transport.select.help"), "timeline.select_tool")}
-          onClick={() => editor.setTool("select")}
-        >
-          {t("transport.select")}
-        </button>
-        <button
-          className={state.tool === "blade" ? "active" : ""}
-          aria-pressed={state.tool === "blade"}
-          title={hint(t("transport.blade.help"), "timeline.blade_tool")}
-          onClick={() => editor.setTool("blade")}
-        >
-          {t("transport.blade")}
-        </button>
-      </span>
-      <label className="toggle" title={hint(t("transport.snap.help"), "timeline.snapping")}>
-        <input type="checkbox" checked={state.snapping} onChange={(e) => editor.setSnapping(e.target.checked)} />
-        <span>{t("transport.snap")}</span>
-      </label>
-      <label className="toggle" title={hint(t("transport.skim.help"), "timeline.skimming")}>
-        <input type="checkbox" checked={state.skimming} onChange={(e) => editor.setSkimming(e.target.checked)} />
-        <span>{t("transport.skim")}</span>
-      </label>
-      <label className="toggle" title={t("transport.linked.help")}>
-        <input type="checkbox" checked={state.linkage} onChange={(e) => editor.setLinkage(e.target.checked)} />
-        <span>{t("transport.linked")}</span>
-      </label>
-      <label className="toggle" title={hint(t("transport.magnet.help"), "timeline.magnet")}>
-        <input type="checkbox" checked={state.magnet} onChange={(e) => editor.setMagnet(e.target.checked)} />
-        <span>{t("transport.magnet")}</span>
-      </label>
-      <select
-        className="titles"
-        value=""
-        aria-label={t("transport.title.add")}
-        title={t("transport.title.add")}
-        disabled={!timeline}
-        onChange={(event) => {
-          const choice = event.target.value;
-          if (choice) void editor.addTitle(choice === PLAIN ? "" : choice);
-        }}
-      >
-        <option value="">{t("transport.title")}</option>
-        <option value={PLAIN} title={t("transport.title.plain.help")}>
-          {t("transport.title.plain")}
-        </option>
-        {(state.catalog?.text.templates ?? []).length > 0 && (
-          <optgroup label={t("transport.title.templates")}>
-            {state.catalog?.text.templates.map((template) => (
-              <option key={template.name} value={template.name} title={template.description}>
-                {template.name.replaceAll("-", " ")}
-              </option>
-            ))}
-          </optgroup>
+    <div className="transport" role="toolbar" aria-label={t("transport.label")}>
+      <div className="transport-time">
+        <span className="timecode now">{now}</span>
+        <span className="timecode total">/ {length}</span>
+        {state.shuttle !== 0 && state.shuttle !== 1 && <span className="rate">{t("transport.rate", { rate: formatNumber(state.shuttle) })}</span>}
+      </div>
+      <div className="transport-buttons">
+        <IconButton icon={SkipBack} label={t("transport.start")} action="player.start" className="secondary" onClick={() => void editor.seek(0)} disabled={!timeline} />
+        <IconButton icon={StepBack} label={t("transport.previous")} action="player.frame_back" onClick={() => void editor.step(-1)} disabled={!timeline} />
+        <IconButton
+          icon={state.playing ? Pause : Play}
+          label={state.playing ? t("transport.pause") : t("transport.play")}
+          action="player.play"
+          className="play"
+          size="lg"
+          variant="solid"
+          onClick={() => void editor.togglePlay()}
+          disabled={!timeline}
+        />
+        <IconButton icon={StepForward} label={t("transport.next")} action="player.frame_forward" onClick={() => void editor.step(1)} disabled={!timeline} />
+        <IconButton icon={SkipForward} label={t("transport.end")} action="player.end" className="secondary" onClick={() => void editor.seekEnd()} disabled={!timeline} />
+      </div>
+      <div className="transport-view">
+        {format && (
+          <span className="chip quiet" title={t("transport.canvas.help", { width: format.width, height: format.height, rate: format.rate })}>
+            {aspectName(format.width, format.height)}
+          </span>
         )}
-      </select>
-      <button title={t("transport.adjustment.help")} onClick={() => void editor.addAdjustment()} disabled={!timeline}>
-        {t("transport.adjustment")}
-      </button>
-      <button
-        title={hint(t("transport.split.help"), "timeline.split")}
-        onClick={() => void editor.splitAtPlayhead()}
-        disabled={!timeline}
-      >
-        {t("transport.split")}
-      </button>
-      <button
-        title={hint(t("transport.splitAll.help"), "timeline.split_all")}
-        onClick={() => void editor.splitAll()}
-        disabled={!timeline}
-      >
-        {t("transport.splitAll")}
-      </button>
-      <button
-        title={hint(t("transport.compound.help"), "timeline.compound")}
-        onClick={() => void editor.compound()}
-        disabled={!state.selection}
-      >
-        {t("transport.compound")}
-      </button>
-      <button
-        title={hint(t("transport.marker.help"), "timeline.marker")}
-        onClick={() => void editor.toggleMarker()}
-        disabled={!timeline}
-      >
-        {t("transport.marker")}
-      </button>
-      <button
-        title={hint(t("transport.delete.help"), "timeline.delete")}
-        onClick={() => void editor.deleteSelection()}
-        disabled={!state.selection}
-      >
-        {t("transport.delete")}
-      </button>
+        <Menu
+          label={t("transport.zoom")}
+          align="end"
+          buttonClassName="chip-button"
+          items={ZOOMS.map((z) => ({ id: String(z), label: zoomName(z), checked: z === zoom, onSelect: () => onZoom(z) }))}
+        >
+          <Glyph icon={ScanSearch} size="sm" />
+          <span>{zoomName(zoom)}</span>
+        </Menu>
+        <IconButton icon={SquareDashed} label={t("transport.safe")} tooltip={t("transport.safe.help")} className="tertiary" pressed={safeZones} onClick={() => onSafeZones(!safeZones)} />
+        <IconButton icon={Ruler} label={t("app.rulers")} tooltip={t("app.rulers.help")} action="player.rulers" className="secondary" pressed={state.rulers} onClick={() => editor.toggleRulers()} />
+        <IconButton icon={Expand} label={t("app.fullscreen")} tooltip={t("app.fullscreen.help")} action="player.fullscreen" pressed={state.fullscreen} onClick={() => void editor.toggleFullscreen()} />
+      </div>
     </div>
   );
 }

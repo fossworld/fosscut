@@ -30,6 +30,15 @@ export const en = {
   "effects.match.title": "Match the color of another clip",
   "effects.match": "Match color to",
   "effects.match.clip": "{name} at {time}",
+  "effects.color.title": "Colour",
+  "effects.sound.title": "Sound effects",
+  "effects.none": "No effects yet.",
+  "effects.none.sound": "No sound effects yet.",
+  "effects.voice.title": "Voice filters",
+  "effects.voice.preset": "Preset",
+  "effects.voice.choose": "Apply a voice preset",
+  "effects.voice.replace": "Replace the voice filters it has",
+  "effects.voice.replace.help": "Off: the preset's filters are added after the ones the clip has",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -59,4 +68,13 @@ export const hu: Translation<typeof en> = {
   "effects.match.title": "Igazítás egy másik klip színeihez",
   "effects.match": "Színillesztés ehhez:",
   "effects.match.clip": "{name}, {time}",
+  "effects.color.title": "Szín",
+  "effects.sound.title": "Hangeffektek",
+  "effects.none": "Még nincs effekt.",
+  "effects.none.sound": "Még nincs hangeffekt.",
+  "effects.voice.title": "Hangszűrők",
+  "effects.voice.preset": "Előbeállítás",
+  "effects.voice.choose": "Hang-előbeállítás alkalmazása",
+  "effects.voice.replace": "A meglévő hangszűrők cseréje",
+  "effects.voice.replace.help": "Kikapcsolva az előbeállítás szűrői a klip meglévő szűrői után kerülnek",
 };

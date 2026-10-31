@@ -568,6 +568,31 @@ pub fn effect_types() -> Vec<EffectSpec> {
             ],
         },
         EffectSpec {
+            name: "color.deflicker",
+            version: 1,
+            title: "Remove flicker",
+            category: EffectCategory::Color,
+            summary: "Evens out brightness that flickers from frame to frame, as under mains-powered lights or in time-lapses, by scaling each frame toward the average brightness of the source frames around it; slower changes such as fades stay. Reads neighbouring frames, so it costs more to render.",
+            params: vec![
+                number(
+                    "strength",
+                    1.0,
+                    0.0,
+                    1.0,
+                    "",
+                    "how much of the flicker is removed: 0 none, 1 all of it",
+                ),
+                number(
+                    "window",
+                    6.0,
+                    2.0,
+                    16.0,
+                    "frames",
+                    "how many source frames the brightness is averaged over, centred on the frame: flicker faster than this is removed, slower changes stay",
+                ),
+            ],
+        },
+        EffectSpec {
             name: "stylize.glitch",
             version: 1,
             title: "Glitch",
@@ -731,6 +756,31 @@ pub fn effect_types() -> Vec<EffectSpec> {
             params: vec![
                 number("amount", 0.1, 0.0, 0.5, "", "how far it zooms"),
                 number("rate", 2.0, 0.1, 10.0, "per second", "pulses per second"),
+            ],
+        },
+        EffectSpec {
+            name: "motion.blur",
+            version: 1,
+            title: "Motion blur",
+            category: EffectCategory::Motion,
+            summary: "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path. Reads neighbouring frames, so it costs more to render.",
+            params: vec![
+                number(
+                    "amount",
+                    0.5,
+                    0.0,
+                    1.0,
+                    "of a frame",
+                    "how long the shutter stays open, as a fraction of a frame: 0.5 is a 180-degree shutter, 0 no blur",
+                ),
+                number(
+                    "samples",
+                    12.0,
+                    2.0,
+                    32.0,
+                    "",
+                    "how many positions along the motion are averaged, rounded to a whole number: more is smoother and slower",
+                ),
             ],
         },
         EffectSpec {
@@ -980,6 +1030,34 @@ pub fn effect_types() -> Vec<EffectSpec> {
             ],
         },
         EffectSpec {
+            name: "detail.denoise",
+            version: 1,
+            title: "Reduce image noise",
+            category: EffectCategory::Detail,
+            summary: "Reduces grain and sensor noise while keeping edges: edge-preserving smoothing within the frame and, with temporal on, averaging with the matching parts of the neighbouring source frames along their motion, leaving out what moved out of view or changed. Temporal reads neighbouring frames, so it costs more to render.",
+            params: vec![
+                number(
+                    "strength",
+                    0.5,
+                    0.0,
+                    1.0,
+                    "",
+                    "how much noise is removed: 0 none, 1 the most, which also smooths fine texture",
+                ),
+                ParamSpec {
+                    name: "temporal",
+                    kind: ParamKind::Bool,
+                    default: ParamDefault::Bool(true),
+                    min: None,
+                    max: None,
+                    unit: "",
+                    choices: &[],
+                    animatable: false,
+                    meaning: "also average with the neighbouring frames, following their motion: stronger on still and slowly moving parts",
+                },
+            ],
+        },
+        EffectSpec {
             name: "stylize.grain",
             version: 1,
             title: "Film grain",
@@ -1066,6 +1144,9 @@ pub fn effect_types() -> Vec<EffectSpec> {
             ],
         },
     ]
+    .into_iter()
+    .chain(crate::voice_filters::specs())
+    .collect()
 }
 
 /// The built-in effect type called `name`.

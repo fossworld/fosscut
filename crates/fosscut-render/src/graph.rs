@@ -2,7 +2,7 @@
 //! frame with [`plan_frame`] and render it with the same [`Renderer`], so they differ only
 //! in how they are driven (resolution, which frames, where the pixels go).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use fosscut_media::{VideoDecoder, VideoFrame};
@@ -55,14 +55,37 @@ pub trait FrameProvider {
     }
 }
 
+/// How many bytes of decoded frames a [`DecoderFrames`] keeps by default: enough for the
+/// widest window of neighbouring frames temporal effects read (17 frames of 4K) to be
+/// decoded once while frames are rendered in order (ADR-0035).
+pub const WINDOW_BYTES: usize = 256 << 20;
+
 /// Frames from one [`VideoDecoder`] per asset. Decoders must be `Send` so the provider can
 /// live on a render thread.
-#[derive(Default)]
+///
+/// The frames decoded most recently are kept, up to [`WINDOW_BYTES`] (the least recently
+/// used go first), and answer every time they cover. Temporal effects and smooth slow
+/// motion ask for a frame's neighbours as well (ADR-0035), so rendering frames in order asks
+/// again for frames decoded a moment before; keeping them means decoders only ever read
+/// forward instead of seeking back for each frame.
 pub struct DecoderFrames {
     decoders: HashMap<Id, Box<dyn VideoDecoder + Send>>,
     luts: HashMap<Id, Arc<Lut3d>>,
     fonts: HashMap<String, Arc<[u8]>>,
     subjects: HashMap<Id, Arc<dyn SubjectData>>,
+    window: FrameWindow,
+}
+
+impl Default for DecoderFrames {
+    fn default() -> DecoderFrames {
+        DecoderFrames {
+            decoders: HashMap::new(),
+            luts: HashMap::new(),
+            fonts: HashMap::new(),
+            subjects: HashMap::new(),
+            window: FrameWindow::new(WINDOW_BYTES),
+        }
+    }
 }
 
 impl DecoderFrames {
@@ -71,8 +94,23 @@ impl DecoderFrames {
         DecoderFrames::default()
     }
 
-    /// Uses `decoder` for `asset`'s frames.
+    /// Keeps at most `bytes` of decoded frames from now on; 0 keeps none, for callers with
+    /// a frame cache of their own.
+    pub fn set_window_bytes(&mut self, bytes: usize) {
+        self.window.budget = bytes;
+        self.window.shrink();
+    }
+
+    /// Bytes of decoded frames kept.
+    pub fn window_bytes(&self) -> usize {
+        self.window.bytes
+    }
+
+    /// Uses `decoder` for `asset`'s frames, forgetting frames kept from an earlier one.
     pub fn insert(&mut self, asset: Id, decoder: Box<dyn VideoDecoder + Send>) {
+        if let Some(kept) = self.window.frames.remove(&asset) {
+            self.window.bytes -= kept.values().map(|(f, _)| frame_bytes(f)).sum::<usize>();
+        }
         self.decoders.insert(asset, decoder);
     }
 
@@ -109,8 +147,90 @@ impl DecoderFrames {
     }
 }
 
+/// Decoded frames by asset and start time, the least recently used dropped first beyond a
+/// byte budget.
+struct FrameWindow {
+    budget: usize,
+    bytes: usize,
+    tick: u64,
+    frames: HashMap<Id, BTreeMap<i64, (VideoFrame, u64)>>,
+}
+
+impl FrameWindow {
+    fn new(budget: usize) -> FrameWindow {
+        FrameWindow {
+            budget,
+            bytes: 0,
+            tick: 0,
+            frames: HashMap::new(),
+        }
+    }
+
+    /// The kept frame of `source.asset` showing at `source.time`.
+    fn get(&mut self, source: &SourceRef) -> Option<VideoFrame> {
+        self.tick += 1;
+        let time = source.time.get();
+        let (_, (frame, used)) = self
+            .frames
+            .get_mut(&source.asset)?
+            .range_mut(..=time)
+            .next_back()?;
+        let covers = time == frame.pts.get() || time < (frame.pts + frame.duration).get();
+        if !covers {
+            return None;
+        }
+        *used = self.tick;
+        Some(frame.clone())
+    }
+
+    fn insert(&mut self, asset: &Id, frame: VideoFrame) {
+        let size = frame_bytes(&frame);
+        if size > self.budget {
+            return;
+        }
+        self.tick += 1;
+        let kept = self.frames.entry(asset.clone()).or_default();
+        if let Some((old, _)) = kept.insert(frame.pts.get(), (frame, self.tick)) {
+            self.bytes -= frame_bytes(&old);
+        }
+        self.bytes += size;
+        self.shrink();
+    }
+
+    /// Drops the least recently used frames until the rest fit the budget.
+    fn shrink(&mut self) {
+        while self.bytes > self.budget {
+            let oldest = self
+                .frames
+                .iter()
+                .flat_map(|(asset, kept)| {
+                    kept.iter()
+                        .map(move |(pts, (_, used))| (*used, asset.clone(), *pts))
+                })
+                .min();
+            let Some((_, asset, pts)) = oldest else {
+                break;
+            };
+            if let Some((frame, _)) = self
+                .frames
+                .get_mut(&asset)
+                .and_then(|kept| kept.remove(&pts))
+            {
+                self.bytes -= frame_bytes(&frame);
+            }
+        }
+    }
+}
+
+fn frame_bytes(frame: &VideoFrame) -> usize {
+    frame.planes.iter().map(|plane| plane.data.len()).sum()
+}
+
 impl FrameProvider for DecoderFrames {
     fn frame(&mut self, source: &SourceRef) -> Result<VideoFrame, RenderError> {
+        if let Some(frame) = self.window.get(source) {
+            return Ok(frame);
+        }
         let missing = |message: String| RenderError::MissingFrame {
             asset: source.asset.to_string(),
             message,
@@ -119,9 +239,11 @@ impl FrameProvider for DecoderFrames {
             .decoders
             .get_mut(&source.asset)
             .ok_or_else(|| missing("no decoder is open for this asset".to_string()))?;
-        decoder
+        let frame = decoder
             .frame_at(source.time)
-            .map_err(|e| missing(format!("{e} ({})", e.code())))
+            .map_err(|e| missing(format!("{e} ({})", e.code())))?;
+        self.window.insert(&source.asset, frame.clone());
+        Ok(frame)
     }
 
     fn font(&mut self, family: &str) -> Result<Option<Arc<[u8]>>, RenderError> {

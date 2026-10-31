@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { Editor, Measurement, RegionPick } from "../app/editor";
-import { Problem } from "../app/Export";
+import { Problem } from "../app/Problem";
 import { trackTargets } from "../app/measure";
 import type { ClipView, TimelineView } from "../engine/types";
 import { t } from "../i18n";

@@ -1547,3 +1547,156 @@ async fn agents_speak_text_and_translate_captions_with_local_models() {
     assert_eq!(wrong["code"], "fosscut.request.invalid_arguments");
     client.cancel().await.unwrap();
 }
+
+#[tokio::test]
+async fn agents_reframe_mark_beats_make_shorts_and_apply_voices() {
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("measured-edits");
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x202020:s=320x180:r=30:d=3[bg];color=c=white:s=40x40:r=30:d=3[sq];[bg][sq]overlay=x='40+50*t':y=70,format=yuv420p",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "2",
+            "wide.mp4",
+        ],
+    );
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc='gte(t,0.2)*(0.4+0.4*eq(mod(floor((t-0.2)/0.5),4),0))*sin(2*PI*2000*t)*exp(-mod(t-0.2,0.5)/0.0015)':s=48000:d=8",
+            "-c:a",
+            "pcm_s16le",
+            "clicks.wav",
+        ],
+    );
+    let client = connect(None).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Tall.fosscut"), "width": 180, "height": 320 }),
+    )
+    .await;
+    ok(
+        &client,
+        "media_import",
+        json!({ "files": [dir.join("wide.mp4"), dir.join("clicks.wav")] }),
+    )
+    .await;
+    let placed = ok(
+        &client,
+        "edit",
+        json!({ "commands": [
+            { "command": "clip.add", "args": { "asset": "asset_0001" } },
+            { "command": "clip.add", "args": { "asset": "asset_0002", "start": "0s" } }
+        ] }),
+    )
+    .await;
+    let wide = placed["results"][0]["clip"].as_str().unwrap().to_string();
+    let music = placed["results"][1]["clip"].as_str().unwrap().to_string();
+
+    // A picked region is followed on the tall canvas.
+    let framed = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "reframe", "clip": wide, "region": { "x": 0.1875, "y": 0.5, "width": 0.125, "height": 0.222 }, "shots": false }),
+    )
+    .await;
+    assert!(framed["committed"].as_bool().unwrap(), "{framed}");
+    assert_eq!(framed["framing"]["clip"], wide.as_str());
+    assert!(
+        framed["framing"]["frames"].as_u64().unwrap() >= 80,
+        "{framed}"
+    );
+    for (args, code) in [
+        (json!({ "action": "vertical" }), "fosscut.analysis.missing"),
+        (
+            json!({ "action": "reframe", "clip": wide, "subject": "cat" }),
+            "fosscut.request.invalid_arguments",
+        ),
+        (
+            json!({ "action": "camera_track", "clip": wide, "zoom": 5, "shots": false }),
+            "fosscut.request.invalid_arguments",
+        ),
+        (
+            json!({ "action": "beat_cuts", "music": music }),
+            "fosscut.request.invalid_arguments",
+        ),
+        (
+            json!({ "action": "short_candidates", "clip": wide }),
+            "fosscut.analysis.missing",
+        ),
+        (
+            json!({ "action": "make_short", "clip": wide, "from": "0s" }),
+            "fosscut.request.invalid_arguments",
+        ),
+    ] {
+        let error = fails(&client, "auto_edit", args.clone()).await;
+        assert_eq!(error["code"], code, "{args}: {error}");
+    }
+
+    // Beats: a dry run marks nothing; then a marker a bar.
+    let planned = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "beat_markers", "music": music, "every": 4, "dry_run": true }),
+    )
+    .await;
+    assert_eq!(planned["dry_run"], true, "{planned}");
+    let marked = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "beat_markers", "music": music, "every": 4, "bpm": 120 }),
+    )
+    .await;
+    assert_eq!(
+        marked["beats"]["at"].as_array().unwrap().len(),
+        4,
+        "{marked}"
+    );
+    let read = ok(&client, "timeline_read", json!({})).await;
+    assert_eq!(read["markers"].as_array().unwrap().len(), 4, "{read}");
+
+    // A short of a range is a new vertical timeline, made at the revision it was planned
+    // at, so the id it reports is the one created.
+    let short = ok(
+        &client,
+        "auto_edit",
+        json!({ "action": "make_short", "clip": wide, "from": "0.5s", "to": "2s", "subject": "centre", "captions": false, "name": "Teaser" }),
+    )
+    .await;
+    assert!(short["committed"].as_bool().unwrap(), "{short}");
+    let made = short["short"]["timeline"].as_str().unwrap();
+    let read = ok(&client, "timeline_read", json!({ "timeline": made })).await;
+    assert_eq!(read["format"]["width"], 1080, "{read}");
+    assert_eq!(read["format"]["height"], 1920);
+    assert_eq!(read["name"], "Teaser");
+    let clip = &read["tracks"][0]["clips"][0];
+    assert_eq!(clip["duration"]["seconds"], "1.5", "{clip}");
+
+    // Voice presets go through edit.
+    let voiced = ok(
+        &client,
+        "edit",
+        json!({ "commands": [{ "command": "voice.apply", "args": { "clip": music, "preset": "phone_call" } }] }),
+    )
+    .await;
+    let types: Vec<&str> = voiced["results"][0]["effects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["type"].as_str().unwrap())
+        .collect();
+    assert!(types.iter().all(|t| t.starts_with("voice.")), "{voiced}");
+    assert!(!types.is_empty());
+}

@@ -371,7 +371,6 @@ struct Opened {
 
 /// Decoders for the media the preview shows, each opened on first use and kept, with the
 /// LUTs and fonts the frames use.
-#[derive(Default)]
 struct PreviewMedia {
     decoders: DecoderFrames,
     opened: HashMap<Id, Opened>,
@@ -381,6 +380,22 @@ struct PreviewMedia {
     subjects: Subjects,
     /// Assets of the last planned frame whose subject effects lack their analysis.
     unanalyzed: HashSet<Id>,
+}
+
+impl Default for PreviewMedia {
+    fn default() -> PreviewMedia {
+        // The previewer keeps the frames it decodes in its own [`FrameCache`], neighbouring
+        // frames of temporal effects included (ADR-0035), so the decoders keep none.
+        let mut decoders = DecoderFrames::new();
+        decoders.set_window_bytes(0);
+        PreviewMedia {
+            decoders,
+            opened: HashMap::new(),
+            identities: HashMap::new(),
+            subjects: Subjects::default(),
+            unanalyzed: HashSet::new(),
+        }
+    }
 }
 
 impl PreviewMedia {
@@ -577,8 +592,11 @@ impl PreviewMedia {
                 }
                 let (ow, oh) = fitted(canvas, original, layer.rotation);
                 let (pw, ph) = fitted(canvas, size, layer.rotation);
-                layer.transform.stretch[0] *= ow / pw;
-                layer.transform.stretch[1] *= oh / ph;
+                // A motion blur's placements while the shutter is open stretch alike.
+                for transform in std::iter::once(&mut layer.transform).chain(&mut layer.shutter) {
+                    transform.stretch[0] *= ow / pw;
+                    transform.stretch[1] *= oh / ph;
+                }
             }
             LayerSource::Transition(transition) => {
                 self.reframe_layer(project, canvas, &mut transition.outgoing);

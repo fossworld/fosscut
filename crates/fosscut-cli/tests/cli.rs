@@ -920,6 +920,8 @@ fn skills_install_into_agent_folders() {
         names,
         [
             "fosscut-basics",
+            "beat-sync",
+            "long-to-shorts",
             "talking-head-cleanup",
             "vertical-reframe",
             "viral-captions"
@@ -4055,4 +4057,355 @@ fn voices_translations_and_subjects_from_the_command_line() {
     );
     run(&["frame", "5.5s", "--out", "keyed.png"]);
     assert_eq!(png_size(&dir.join("keyed.png")), (320, 180));
+}
+
+#[test]
+fn reframes_beats_shorts_and_voices_from_the_command_line() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("measured-edits");
+    // A wide shot of a white square moving right across a dark room.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x202020:s=320x180:r=30:d=4[bg];color=c=white:s=40x40:r=30:d=4[sq];[bg][sq]overlay=x='40+50*t':y=70,format=yuv420p",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "2",
+            "wide.mp4",
+        ],
+    );
+    // Clicks at 120 bpm from 0.2 s, every fourth one louder.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "aevalsrc='gte(t,0.2)*(0.4+0.4*eq(mod(floor((t-0.2)/0.5),4),0))*sin(2*PI*2000*t)*exp(-mod(t-0.2,0.5)/0.0015)':s=48000:d=8",
+            "-c:a",
+            "pcm_s16le",
+            "clicks.wav",
+        ],
+    );
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Tall.fosscut",
+            "--width",
+            "180",
+            "--height",
+            "320",
+        ],
+    );
+    let p = ["-p", "Tall.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    let refused = |args: &[&str]| fails(&dir, &[&p[..], args].concat());
+    run(&["media", "import", "wide.mp4"]);
+    run(&["media", "import", "clicks.wav"]);
+    let clip_of = |value: &Value| value["results"][0]["clip"].as_str().unwrap().to_string();
+
+    // The vertical canvas follows the square, which a region picks.
+    let wide = clip_of(&run(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0001",
+        "--duration",
+        "2s",
+    ]));
+    let framed = run(&[
+        "clip",
+        "reframe",
+        "--clip",
+        &wide,
+        "--region",
+        "0.1875,0.5,0.125,0.222",
+        "--one-shot",
+    ]);
+    assert_eq!(framed["framing"]["clip"], wide.as_str(), "{framed}");
+    assert!(framed["framing"].get("commands").is_none());
+    assert!(framed["response"]["committed"].as_bool().unwrap());
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let keyed = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == wide.as_str())
+        .unwrap();
+    let xs: Vec<f64> = keyed["keyframes"]["transform.position"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{keyed}"))
+        .iter()
+        .map(|k| k["value"][0].as_f64().unwrap())
+        .collect();
+    assert!(xs.len() >= 2, "{keyed}");
+    // The square moves right, so the picture moves left under the crop.
+    assert!(xs.last().unwrap() < xs.first().unwrap(), "{xs:?}");
+    let tracked = run(&[
+        "clip",
+        "camera-track",
+        "--clip",
+        &wide,
+        "--zoom",
+        "2",
+        "--region",
+        "0.1875,0.5,0.125,0.222",
+    ]);
+    assert!(
+        tracked["response"]["committed"].as_bool().unwrap(),
+        "{tracked}"
+    );
+    // Following a person needs the pose analysis, which is named.
+    let missing = refused(&["timeline", "vertical"]);
+    assert_eq!(missing["code"], "fosscut.analysis.missing", "{missing}");
+    assert!(
+        missing["message"].as_str().unwrap().contains("pose"),
+        "{missing}"
+    );
+    let wrong = refused(&["clip", "reframe", "--clip", &wide, "--follow", "cat"]);
+    assert_eq!(wrong["code"], "fosscut.request.invalid_arguments");
+
+    // Beats become markers, and cuts move onto them.
+    let music = clip_of(&run(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0002",
+        "--start",
+        "0s",
+    ]));
+    let marked = run(&["beats", "markers", "--music", &music, "--every", "4"]);
+    let tempo = marked["beats"]["tempo_bpm"].as_f64().unwrap();
+    assert!((tempo - 120.0).abs() < 1.0, "{marked}");
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let markers = read["markers"].as_array().unwrap();
+    assert_eq!(markers.len(), 4, "a marker a bar over 8 s: {read}");
+    // A second timeline keeps the cut test apart from the reframed clip.
+    let cuts = run(&[
+        "timeline", "add", "--name", "Cuts", "--width", "320", "--height", "180",
+    ]);
+    let cuts_timeline = cuts["results"][0]["timeline"].as_str().unwrap().to_string();
+    let on_cuts = |args: &[&str]| run(&[args, &["--timeline", &cuts_timeline]].concat());
+    let first = clip_of(&on_cuts(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0001",
+        "--start",
+        "0s",
+        "--duration",
+        "33f",
+    ]));
+    on_cuts(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0001",
+        "--start",
+        "33f",
+        "--source-in",
+        "1s",
+        "--duration",
+        "36f",
+    ]);
+    on_cuts(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0001",
+        "--start",
+        "69f",
+        "--source-in",
+        "1s",
+        "--duration",
+        "30f",
+    ]);
+    let beat_music = clip_of(&on_cuts(&[
+        "clip",
+        "add",
+        "--asset",
+        "asset_0002",
+        "--start",
+        "0s",
+    ]));
+    let read = run(&[
+        "timeline",
+        "read",
+        "--detail",
+        "full",
+        "--timeline",
+        &cuts_timeline,
+    ]);
+    let track = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == first.as_str())
+        .unwrap();
+    let video_track = read["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| {
+            t["clips"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["id"] == track["id"])
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let snapped = run(&[
+        "beats",
+        "cut",
+        "--track",
+        &video_track,
+        "--music",
+        &beat_music,
+    ]);
+    let frame = 705_600_000_i64 / 30;
+    let to: Vec<i64> = snapped["beats"]["snapped"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{snapped}"))
+        .iter()
+        .map(|c| c["to"].as_i64().unwrap() / frame)
+        .collect();
+    assert_eq!(
+        to,
+        [36, 66],
+        "cuts at 1.1 s and 2.3 s move to the beats at 1.2 and 2.2: {snapped}"
+    );
+
+    // Shorts need a transcript to find candidates; a range makes a vertical timeline.
+    let candidates = refused(&["shorts", "candidates", "--clip", &wide]);
+    assert_eq!(
+        candidates["code"], "fosscut.analysis.missing",
+        "{candidates}"
+    );
+    let short = run(&[
+        "shorts",
+        "make",
+        "--clip",
+        &wide,
+        "--from",
+        "0s",
+        "--to",
+        "1.5s",
+        "--follow",
+        "centre",
+        "--no-captions",
+        "--title",
+        "Watch this",
+        "--name",
+        "Teaser",
+    ]);
+    let made = short["short"]["timeline"].as_str().unwrap().to_string();
+    assert_eq!(short["short"]["name"], "Teaser", "{short}");
+    let read = run(&["timeline", "read", "--timeline", &made]);
+    assert_eq!(read["format"]["width"], 1080, "{read}");
+    assert_eq!(read["format"]["height"], 1920);
+    let texts: Vec<Value> = all_clips(&read)
+        .into_iter()
+        .filter_map(|c| c.get("text").cloned())
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.to_string().contains("Watch this")),
+        "{read}"
+    );
+
+    // A voice preset adds voice filters; slow motion can draw in-between frames.
+    let voiced = run(&["audio", "voice", "robot", "--clip", &music]);
+    let types: Vec<&str> = voiced["results"][0]["effects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["type"].as_str().unwrap())
+        .collect();
+    assert!(types.contains(&"voice.robot"), "{voiced}");
+    let unknown = refused(&["audio", "voice", "kazoo", "--clip", &music]);
+    assert_eq!(unknown["code"], "fosscut.voice.preset_unknown");
+    run(&[
+        "clip", "speed", "--clip", &wide, "--rate", "0.5", "--flow", "--ripple",
+    ]);
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let slow = all_clips(&read)
+        .into_iter()
+        .find(|c| c["id"] == wide.as_str())
+        .unwrap();
+    assert_eq!(slow["speed"]["interpolate"], "flow", "{slow}");
+}
+
+#[test]
+fn png_pictures_render_in_their_own_colours() {
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("pictures");
+    // An orange picture with and without alpha, decoded from R'G'B' by FFmpeg.
+    for (file, pix_fmt) in [("orange.png", "rgb24"), ("orange-alpha.png", "rgba")] {
+        ffmpeg_in(
+            &dir,
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=0xFF7A45:s=160x90",
+                "-frames:v",
+                "1",
+                "-pix_fmt",
+                pix_fmt,
+                file,
+            ],
+        );
+    }
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Stills.fosscut",
+            "--width",
+            "160",
+            "--height",
+            "90",
+        ],
+    );
+    let p = ["-p", "Stills.fosscut"];
+    let run = |args: &[&str]| ok(&dir, &[&p[..], args].concat());
+    run(&["media", "import", "orange.png"]);
+    run(&["media", "import", "orange-alpha.png"]);
+    run(&["clip", "add", "--asset", "asset_0001", "--duration", "1s"]);
+    run(&["clip", "add", "--asset", "asset_0002", "--duration", "1s"]);
+    for (at, out) in [("0.5s", "first.png"), ("1.5s", "second.png")] {
+        run(&["frame", at, "--out", out]);
+        let pixel = Command::new("ffmpeg")
+            .current_dir(&dir)
+            .args([
+                "-v",
+                "error",
+                "-i",
+                out,
+                "-vf",
+                "crop=1:1:80:45",
+                "-f",
+                "rawvideo",
+            ])
+            .args(["-pix_fmt", "rgb24", "-"])
+            .output()
+            .unwrap()
+            .stdout;
+        assert_eq!(pixel.len(), 3, "{out}");
+        for (channel, (got, want)) in pixel.iter().zip([255u8, 122, 69]).enumerate() {
+            assert!(
+                got.abs_diff(want) <= 3,
+                "{out} channel {channel}: {got} for {want}"
+            );
+        }
+    }
 }

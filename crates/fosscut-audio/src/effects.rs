@@ -1,5 +1,5 @@
-//! Audio effects on clips: noise reduction, voice enhancement, and isolating or removing
-//! the centre of a stereo mix.
+//! Audio effects on clips: noise reduction, voice enhancement, isolating or removing the
+//! centre of a stereo mix, a limiter, and the voice filters of [`crate::voice`].
 //!
 //! The effects are pure functions of their input: [`process`] runs a chain over an
 //! interleaved buffer from a fresh state and returns a buffer of the same length, aligned
@@ -82,11 +82,29 @@ pub enum AudioEffect {
         /// The highest sample peak let through, in dBFS.
         ceiling_db: f32,
     },
+    /// A voice filter (pitch, robot, telephone, megaphone, echo, reverb, chorus, broken
+    /// microphone, whisper): see [`crate::voice`].
+    Voice(crate::voice::VoiceEffect),
 }
 
 /// Seconds of audio before the wanted range that the caller feeds so the effects' state
-/// settles (noise estimates, envelopes, filters).
+/// settles (noise estimates, envelopes, filters), at most: see [`warm_up_frames`].
 pub const WARM_UP_SECONDS: f64 = 2.0;
+
+/// Frames of audio before the wanted range that `effects` need, at `sample_rate`: the sum of
+/// what each effect remembers, at most [`WARM_UP_SECONDS`]. The voice filters remember a
+/// bounded stretch and ask for just that; the other effects ask for the whole warm-up.
+pub fn warm_up_frames(effects: &[AudioEffect], sample_rate: u32) -> usize {
+    let most = (WARM_UP_SECONDS * f64::from(sample_rate)).ceil() as usize;
+    effects
+        .iter()
+        .map(|effect| match effect {
+            AudioEffect::Voice(voice) => voice.warm_up_frames(sample_rate),
+            _ => most,
+        })
+        .fold(0usize, usize::saturating_add)
+        .min(most)
+}
 
 /// Frames of audio after the wanted range the effects need (their latency), at
 /// `sample_rate`.
@@ -102,6 +120,7 @@ pub fn lookahead_frames(effects: &[AudioEffect], sample_rate: u32) -> usize {
                 geometry.len - 1 + geometry.init_frames * geometry.hop
             }
             AudioEffect::Limiter { .. } => limiter_window(sample_rate),
+            AudioEffect::Voice(ref voice) => voice.lookahead_frames(sample_rate),
             _ => 0,
         })
         .sum()
@@ -180,6 +199,7 @@ pub fn process_at(
                 let ceiling = finite(ceiling_db).clamp(-12.0, 0.0);
                 limit(body, channels, sample_rate, gain, ceiling);
             }
+            AudioEffect::Voice(ref voice) => voice.apply(body, channels, sample_rate, start),
         }
     }
     buffer

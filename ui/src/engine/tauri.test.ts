@@ -86,6 +86,20 @@ describe("the Tauri engine client", () => {
     await engine.cache.clear("proxies");
     await engine.media.sources();
     await engine.media.work();
+    await engine.media.thumbnails({ asset: "asset_0001", times: [0, 352_800_000.4], height: 96 });
+    await engine.media.thumbnails({ asset: "asset_0002", count: 6 });
+    await engine.media.waveform("asset_0003", 800);
+    await engine.media.import();
+    await engine.media.import(["/work/a.mp4", "/work/b.wav"]);
+    await engine.reframe.clip({ clip: "clip_0003", source: "person", expected_revision: 7 });
+    await engine.reframe.clip({ clip: "clip_0003", source: "region", region, at: 705_600_000.2, shots: true });
+    await engine.reframe.camera({ clip: "clip_0003", source: "subject", zoom: 2, shots: true, expected_revision: 7 });
+    await engine.reframe.vertical({ timeline: "timeline_0000", source: "person", expected_revision: 7 });
+    await engine.beats.markers("clip_0008", 2, 7);
+    await engine.beats.cut("track_0002", "clip_0008");
+    await engine.shorts.candidates("clip_0003", { min_seconds: 20, max_seconds: 60, count: 3 });
+    await engine.shorts.candidates("clip_0003");
+    await engine.shorts.make({ clip: "clip_0003", start: 0, end: 705_600_000, follow: "person", captions: true, expected_revision: 7 });
     await engine.models.list();
     await engine.models.install("birefnet-lite", true);
     await engine.models.installStatus("birefnet-lite");
@@ -171,6 +185,38 @@ describe("the Tauri engine client", () => {
       ["cache_clear", { kinds: ["proxies"] }],
       ["media_sources"],
       ["media_work"],
+      ["media_thumbnails", { asset: "asset_0001", times: [0, 352_800_000], count: null, height: 96 }],
+      ["media_thumbnails", { asset: "asset_0002", times: null, count: 6, height: null }],
+      ["media_waveform", { asset: "asset_0003", buckets: 800 }],
+      ["media_import", { paths: null }],
+      ["media_import", { paths: ["/work/a.mp4", "/work/b.wav"] }],
+      ["clip_reframe", { clip: "clip_0003", source: "person", region: null, at: null, shots: null, expectedRevision: 7 }],
+      ["clip_reframe", { clip: "clip_0003", source: "region", region, at: 705_600_000, shots: true, expectedRevision: null }],
+      ["clip_camera_track", { clip: "clip_0003", source: "subject", region: null, at: null, zoom: 2, expectedRevision: 7 }],
+      [
+        "timeline_vertical",
+        { timeline: "timeline_0000", source: "person", width: null, height: null, name: null, shots: null, expectedRevision: 7 },
+      ],
+      ["beats_markers", { clip: "clip_0008", every: 2, expectedRevision: 7 }],
+      ["beats_cut", { track: "track_0002", music: "clip_0008", every: null, expectedRevision: null }],
+      ["shorts_candidates", { clip: "clip_0003", minSeconds: 20, maxSeconds: 60, count: 3 }],
+      ["shorts_candidates", { clip: "clip_0003", minSeconds: null, maxSeconds: null, count: null }],
+      [
+        "shorts_make",
+        {
+          clip: "clip_0003",
+          start: 0,
+          end: 705_600_000,
+          name: null,
+          width: null,
+          height: null,
+          follow: "person",
+          captions: true,
+          captionPreset: null,
+          title: null,
+          expectedRevision: 7,
+        },
+      ],
       ["models_list"],
       ["models_install", { name: "birefnet-lite", confirmed: true }],
       ["models_install_status", { name: "birefnet-lite" }],

@@ -6,6 +6,8 @@
 //! the canvas is encoded with the output transfer function into the target
 //! (`encode.wgsl`). Textures are cached between frames by size and layer slot.
 
+mod flow;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -15,7 +17,7 @@ use wgpu::util::DeviceExt;
 use crate::caption::{CaptionLayer, CaptionRaster, PageLook, anchor, evaluate};
 use crate::color::{TransferFunction, yuv_to_rgb};
 use crate::effects::{
-    PIXEL_ENTRIES, Pass, PlannedEffect, SLOTS, blur_plan, curves_table, pack, pass_for,
+    PIXEL_ENTRIES, Pass, PlannedEffect, SLOTS, Temporal, blur_plan, curves_table, pack, pass_for,
 };
 use crate::geometry::{Vertex, layer_quad, placed_quad};
 use crate::lut::Lut3d;
@@ -122,6 +124,25 @@ enum Slot {
     },
     /// Two source frames of a layer mixed for smooth slow motion.
     Between(usize),
+    /// Optical flow textures (ADR-0035), per layer, pair (0 the in-between frame's two
+    /// frames, 1 the next neighbour, 2 the previous one), pyramid level and kind (0 and 1
+    /// the two frames prepared, 2 and 3 the flow being refined).
+    Flow {
+        layer: usize,
+        pair: u8,
+        level: u8,
+        kind: u8,
+    },
+    /// Where an in-between frame takes its two frames from (kind 0) and how much of each
+    /// (kind 1).
+    Correspond {
+        layer: usize,
+        kind: u8,
+    },
+    /// The fastest motion per tile, for motion blur.
+    Tiles(usize),
+    /// A temporal noise reduction's average before its spatial smoothing.
+    Denoised(usize),
     /// The field a subject effect samples (ADR-0033), per layer and effect.
     SubjectField {
         layer: usize,
@@ -172,6 +193,9 @@ pub struct Renderer {
     convert: wgpu::RenderPipeline,
     mip: wgpu::RenderPipeline,
     composite: wgpu::RenderPipeline,
+    /// The composite with additive blending scaled by the blend constant: averages a layer
+    /// drawn at each placement of a motion blur's shutter.
+    accumulate: wgpu::RenderPipeline,
     blend: wgpu::RenderPipeline,
     effect_layout: wgpu::BindGroupLayout,
     effects: HashMap<&'static str, wgpu::RenderPipeline>,
@@ -191,6 +215,8 @@ pub struct Renderer {
     /// uses scratch slots of its own.
     nesting: usize,
     mask_cache: HashMap<String, Arc<Coverage>>,
+    flow: flow::FlowPipelines,
+    flows: flow::FlowCache,
 }
 
 /// Rasterized text kept between frames; titles usually stay the same for many frames.
@@ -361,41 +387,89 @@ impl Renderer {
         });
 
         let attributes = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x2];
-        let composite = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("composite"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &composite_module,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Vertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &attributes,
-                })],
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: SAMPLES,
-                ..Default::default()
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &composite_module,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: CANVAS_FORMAT,
-                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
+        // One layout for both compositing pipelines, so a layer's bind group draws with either.
+        let sampler_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+            count: None,
+        };
+        let layer_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("layer"),
+            entries: &[
+                texture_entry(0, wgpu::TextureViewDimension::D2),
+                sampler_entry(1),
+                texture_entry(2, wgpu::TextureViewDimension::D3),
+                sampler_entry(3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                texture_entry(5, wgpu::TextureViewDimension::D2),
+            ],
         });
+        let layer_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("layer"),
+                bind_group_layouts: &[Some(&layer_layout)],
+                immediate_size: 0,
+            });
+        let compositor = |label: &str, blend: wgpu::BlendState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layer_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &composite_module,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Vertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &attributes,
+                    })],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState {
+                    count: SAMPLES,
+                    ..Default::default()
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &composite_module,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: CANVAS_FORMAT,
+                        blend: Some(blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let composite = compositor("composite", wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+        let sum = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Constant,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let accumulate = compositor(
+            "accumulate",
+            wgpu::BlendState {
+                color: sum,
+                alpha: sum,
+            },
+        );
 
         let linear = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("linear"),
@@ -405,6 +479,7 @@ impl Renderer {
             ..Default::default()
         });
         let no_lut = lut_texture(&device, &queue, &Lut3d::identity(2));
+        let flow = flow::FlowPipelines::new(&device, COMMON);
         Renderer {
             device,
             queue,
@@ -412,6 +487,7 @@ impl Renderer {
             convert,
             mip,
             composite,
+            accumulate,
             blend,
             effect_layout,
             effects,
@@ -428,6 +504,8 @@ impl Renderer {
             caption_cache: HashMap::new(),
             nesting: 0,
             mask_cache: HashMap::new(),
+            flow,
+            flows: flow::FlowCache::default(),
         }
     }
 
@@ -617,8 +695,7 @@ impl Renderer {
         let mut current: Option<wgpu::Texture> = None;
         let mut flip = 0u8;
         let mut index = 0;
-        let normal =
-            |step: &Step| matches!(step, Step::Layer(draw) if draw.blend == BlendMode::Normal);
+        let normal = |step: &Step| matches!(step, Step::Layer(draw) if draw.blend == BlendMode::Normal && draw.path.is_empty());
         loop {
             let run_end = steps[index..]
                 .iter()
@@ -752,8 +829,15 @@ impl Renderer {
                 Step::Adjust { layer, opacity } => {
                     // Effects on everything so far, mixed back in by the layer's opacity.
                     let effects = &plan.layers[*layer].effects;
-                    let adjusted =
-                        self.apply_effects(encoder, ns + *layer, &below, effects, frames, None)?;
+                    let adjusted = self.apply_effects(
+                        encoder,
+                        ns + *layer,
+                        &below,
+                        effects,
+                        frames,
+                        None,
+                        None,
+                    )?;
                     let masks = &plan.layers[*layer].masks;
                     let coverage = self.mask_view(ns + *layer, masks, size);
                     let mut p = [[0.0f32; 4]; SLOTS];
@@ -786,10 +870,43 @@ impl Renderer {
                             })],
                             ..Default::default()
                         });
-                        pass.set_pipeline(&self.composite);
-                        pass.set_bind_group(0, &draw.bind_group, &[]);
-                        pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
-                        pass.draw(0..4, 0..1);
+                        if draw.path.is_empty() {
+                            pass.set_pipeline(&self.composite);
+                            pass.set_bind_group(0, &draw.bind_group, &[]);
+                            pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
+                            pass.draw(0..4, 0..1);
+                        } else {
+                            // The average of the layer at every placement of the shutter.
+                            let share = 1.0 / draw.path.len() as f64;
+                            pass.set_pipeline(&self.accumulate);
+                            pass.set_blend_constant(wgpu::Color {
+                                r: share,
+                                g: share,
+                                b: share,
+                                a: share,
+                            });
+                            pass.set_bind_group(0, &draw.bind_group, &[]);
+                            for quad in &draw.path {
+                                pass.set_vertex_buffer(0, quad.slice(..));
+                                pass.draw(0..4, 0..1);
+                            }
+                        }
+                    }
+                    if draw.blend == BlendMode::Normal {
+                        let none = [[0.0f32; 4]; SLOTS];
+                        self.effect_pass(
+                            encoder,
+                            "fs_over",
+                            &placed,
+                            Some(&below_view),
+                            None,
+                            None,
+                            &none,
+                            &target_view,
+                        );
+                        current = Some(target);
+                        index += 1;
+                        continue;
                     }
                     let mode = self.uniform(&[blend_index(draw.blend), 0, 0, 0]);
                     let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -870,26 +987,19 @@ impl Renderer {
         frames: &mut dyn FrameProvider,
     ) -> Result<Option<Draw>, RenderError> {
         let mut opacity = layer.opacity;
-        let (texture, vertices) = match &layer.source {
+        let mut temporal = None;
+        let (texture, quad) = match &layer.source {
             LayerSource::Frame(source) => {
-                let frame = frames.frame(source)?;
-                let mut texture = self.convert_layer(encoder, index, &frame, source)?;
-                if let Some((next, amount)) = &layer.next_frame {
-                    let other = frames.frame(next)?;
-                    if (other.width, other.height) == (frame.width, frame.height) {
-                        let second =
-                            self.convert_layer(encoder, index + NEXT_FRAME_SLOTS, &other, next)?;
-                        texture = self.mix_frames(encoder, index, &texture, &second, *amount);
-                    }
-                }
-                let vertices = layer_quad(
-                    plan.canvas,
-                    (frame.width, frame.height),
-                    layer.rotation,
-                    &layer.transform,
-                    layer.crop,
-                );
-                (texture, vertices)
+                let (texture, frame, inputs) =
+                    self.frame_layer(encoder, index, layer, source, frames)?;
+                temporal = inputs;
+                (
+                    texture,
+                    Quad::Fitted {
+                        source: (frame.width, frame.height),
+                        rotation: layer.rotation,
+                    },
+                )
             }
             LayerSource::Text(text) => {
                 self.load_fonts(&text.content, frames)?;
@@ -916,10 +1026,7 @@ impl Renderer {
                     (x + w / 2.0 - f64::from(raster.width) / 2.0) / scale,
                     (y + h / 2.0 - f64::from(raster.height) / 2.0) / scale,
                 );
-                (
-                    texture,
-                    placed_quad(plan.canvas, natural, offset, &layer.transform, layer.crop),
-                )
+                (texture, Quad::natural(natural, offset))
             }
             LayerSource::Shape(shape) => {
                 if let Some(label) = &shape.label {
@@ -941,16 +1048,7 @@ impl Renderer {
                     f64::from(raster.width) / scale,
                     f64::from(raster.height) / scale,
                 );
-                (
-                    texture,
-                    placed_quad(
-                        plan.canvas,
-                        natural,
-                        (0.0, 0.0),
-                        &layer.transform,
-                        layer.crop,
-                    ),
-                )
+                (texture, Quad::natural(natural, (0.0, 0.0)))
             }
             LayerSource::Caption(caption) => {
                 let scale = size.1 as f32 / plan.canvas.1.max(1) as f32;
@@ -982,21 +1080,26 @@ impl Renderer {
                     f64::from(raster.lines_height),
                 );
                 let (w, h) = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
-                let mut placed = layer.transform.clone();
-                placed.position[0] += (x - w / 2.0) / w;
-                placed.position[1] += (y - h / 2.0) / h;
-                placed.scale *= f64::from(look.scale);
                 (
                     texture,
-                    placed_quad(plan.canvas, natural, (0.0, 0.0), &placed, layer.crop),
+                    Quad::Natural {
+                        size: natural,
+                        offset: (0.0, 0.0),
+                        shift: [(x - w / 2.0) / w, (y - h / 2.0) / h],
+                        scale: f64::from(look.scale),
+                    },
                 )
             }
             LayerSource::Nested(nested) => {
                 let texture =
                     self.render_nested(encoder, nested, size, plan.canvas, index, frames)?;
-                let vertices =
-                    layer_quad(plan.canvas, nested.canvas, 0, &layer.transform, layer.crop);
-                (texture, vertices)
+                (
+                    texture,
+                    Quad::Fitted {
+                        source: nested.canvas,
+                        rotation: 0,
+                    },
+                )
             }
             LayerSource::Adjustment | LayerSource::Transition(_) => return Ok(None),
         };
@@ -1008,7 +1111,15 @@ impl Renderer {
                 LayerSource::Frame(source) => Some(source),
                 _ => None,
             };
-            self.apply_effects(encoder, index, &texture, &layer.effects, frames, source)?
+            self.apply_effects(
+                encoder,
+                index,
+                &texture,
+                &layer.effects,
+                frames,
+                source,
+                temporal.as_ref(),
+            )?
         };
         // Masks follow the picture as displayed: a quarter-turned source swaps sides.
         let shown = if layer.rotation == 90 || layer.rotation == 270 {
@@ -1064,18 +1175,180 @@ impl Renderer {
                 ),
             ],
         });
-        let vertex_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("layer quad"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        let buffer = |vertices: [Vertex; 4]| {
+            self.device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("layer quad"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                })
+        };
+        let vertex_buffer = buffer(quad.vertices(plan.canvas, &layer.transform, layer.crop));
+        // A motion blur's shutter: the layer at each placement while it is open.
+        let path = layer
+            .shutter
+            .iter()
+            .map(|transform| buffer(quad.vertices(plan.canvas, transform, layer.crop)))
+            .collect();
         Ok(Some(Draw {
             bind_group,
             vertex_buffer,
+            path,
             blend: layer.blend,
         }))
+    }
+
+    /// Converts the frame `layer` shows, makes its in-between frame for smooth slow motion,
+    /// and gathers what its temporal effects read (ADR-0035): the flows to the neighbouring
+    /// source frames and their brightness. Frames are fetched in time order so decoders
+    /// read forward; a neighbour the media cannot supply is left out.
+    fn frame_layer(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        index: usize,
+        layer: &crate::plan::Layer,
+        source: &SourceRef,
+        frames: &mut dyn FrameProvider,
+    ) -> Result<(wgpu::Texture, VideoFrame, Option<flow::TemporalInputs>), RenderError> {
+        let wants_flow = crate::effects::needs_flow(&layer.effects);
+        let wants_levels = crate::effects::needs_levels(&layer.effects);
+        let neighbours = &layer.neighbours;
+        let mut wanted: Vec<(&SourceRef, bool)> = Vec::new();
+        if wants_levels {
+            wanted.extend(
+                neighbours
+                    .before
+                    .iter()
+                    .chain(&neighbours.after)
+                    .map(|s| (s, false)),
+            );
+        } else if wants_flow {
+            wanted.extend(
+                neighbours
+                    .before
+                    .first()
+                    .into_iter()
+                    .chain(neighbours.after.first())
+                    .map(|s| (s, false)),
+            );
+        }
+        wanted.push((source, true));
+        if let Some((next, _)) = &layer.next_frame {
+            wanted.push((next, true));
+        }
+        wanted.sort_by_key(|(s, _)| s.time);
+        let mut fetched: Vec<(SourceRef, VideoFrame)> = Vec::with_capacity(wanted.len());
+        for (wanted, required) in wanted {
+            if fetched.iter().any(|(s, _)| s == wanted) {
+                continue;
+            }
+            match frames.frame(wanted) {
+                Ok(frame) => fetched.push((wanted.clone(), frame)),
+                Err(error) if required => return Err(error),
+                // A neighbour past what the media holds.
+                Err(_) => {}
+            }
+        }
+        let get = |wanted: &SourceRef| {
+            fetched
+                .iter()
+                .find(|(s, _)| s == wanted)
+                .map(|(_, frame)| frame.clone())
+        };
+        let frame = get(source).ok_or_else(|| RenderError::MissingFrame {
+            asset: source.asset.to_string(),
+            message: "the frame was not decoded".to_string(),
+        })?;
+        let base = self.convert_layer(encoder, index, &frame, source)?;
+        // Flows are kept by the frames they join; plain layers need no key.
+        let shown = if wants_flow || (layer.flow && layer.next_frame.is_some()) {
+            flow::frame_key(&source.asset, &frame)
+        } else {
+            flow::FrameKey::default()
+        };
+        let same_size =
+            |other: &VideoFrame| (other.width, other.height) == (frame.width, frame.height);
+        let mut texture = base.clone();
+        if let Some((next, amount)) = &layer.next_frame
+            && let Some(other) = get(next).filter(|f| same_size(f))
+        {
+            let second = self.convert_layer(encoder, index + NEXT_FRAME_SLOTS, &other, next)?;
+            texture = if layer.flow {
+                let key = flow::frame_key(&next.asset, &other);
+                self.interpolate_frames(
+                    encoder,
+                    index,
+                    (&base, shown.clone()),
+                    (&second, key),
+                    *amount,
+                )
+            } else {
+                self.mix_frames(encoder, index, &base, &second, *amount)
+            };
+        }
+        if !wants_flow && !wants_levels {
+            return Ok((texture, frame, None));
+        }
+        let mut inputs = flow::TemporalInputs {
+            per_frame: neighbours.per_frame as f32,
+            ..Default::default()
+        };
+        if wants_flow {
+            let sides = [
+                (neighbours.before.first(), 2u8),
+                (neighbours.after.first(), 1u8),
+            ];
+            for (neighbour, pair) in sides {
+                let Some(neighbour) = neighbour else {
+                    continue;
+                };
+                let Some(other) = get(neighbour).filter(|f| same_size(f)) else {
+                    continue;
+                };
+                let key = flow::frame_key(&neighbour.asset, &other);
+                let slot = index + (1 + pair as usize) * NEXT_FRAME_SLOTS;
+                let (found, picture) = match self.kept_flow(&shown, &key) {
+                    Some(found) => (found, None),
+                    None => {
+                        let picture = self.convert_layer(encoder, slot, &other, neighbour)?;
+                        let found = self.flow_between(
+                            encoder,
+                            (index, pair),
+                            (&base, shown.clone()),
+                            (&picture, key),
+                        );
+                        (found, Some(picture))
+                    }
+                };
+                let side = flow::Side {
+                    flow: found,
+                    frame: other,
+                    source: neighbour.clone(),
+                    picture,
+                    slot,
+                };
+                if pair == 2 {
+                    inputs.before = Some(side);
+                } else {
+                    inputs.after = Some(side);
+                }
+            }
+        }
+        if wants_levels {
+            let levels = |side: &[SourceRef], renderer: &mut Renderer| -> Vec<f32> {
+                side.iter()
+                    .map_while(|s| get(s).map(|f| renderer.level(&s.asset, &f)))
+                    .collect()
+            };
+            let before = levels(&neighbours.before, self);
+            let after = levels(&neighbours.after, self);
+            inputs.levels = Some(flow::Levels {
+                shown: self.level(&source.asset, &frame),
+                before,
+                after,
+            });
+        }
+        Ok((texture, frame, Some(inputs)))
     }
 
     /// The coverage of `masks` over a picture `size` pixels large as a texture, or `None`
@@ -1234,6 +1507,7 @@ impl Renderer {
     /// adjustment layer) and returns the result, mipmapped for compositing. `source` is the
     /// frame a layer shows, whose cached matte and pose subject effects read; without it they
     /// leave the picture unchanged.
+    #[allow(clippy::too_many_arguments)]
     fn apply_effects(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1242,6 +1516,7 @@ impl Renderer {
         effects: &[PlannedEffect],
         frames: &mut dyn FrameProvider,
         source: Option<&SourceRef>,
+        temporal: Option<&flow::TemporalInputs>,
     ) -> Result<wgpu::TextureView, RenderError> {
         let size = (input.width(), input.height());
         let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
@@ -1374,6 +1649,116 @@ impl Renderer {
                         &current,
                         prepared.as_ref(),
                         slot,
+                        &target,
+                    );
+                }
+                Pass::Temporal(Temporal::MotionBlur) => {
+                    let shutter = effect.number("amount").clamp(0.0, 1.0);
+                    let samples = crate::effects::samples(effect);
+                    self.motion_blur(
+                        encoder, layer, &current, temporal, shutter, samples, &target,
+                    );
+                }
+                Pass::Temporal(Temporal::Deflicker) => {
+                    let gain = temporal.and_then(|t| t.levels.as_ref()).map_or(1.0, |l| {
+                        crate::effects::deflicker_gain(
+                            l.shown,
+                            &l.before,
+                            &l.after,
+                            effect.number("window"),
+                            effect.number("strength"),
+                        )
+                    });
+                    let mut params = [[0.0f32; 4]; SLOTS];
+                    params[0][0] = gain;
+                    self.effect_pass(
+                        encoder,
+                        "fs_gain",
+                        &input_view,
+                        None,
+                        None,
+                        None,
+                        &params,
+                        &target,
+                    );
+                }
+                Pass::Temporal(Temporal::Denoise) => {
+                    let strength = effect.number("strength").clamp(0.0, 1.0);
+                    let mut spatial_input = input_view.clone();
+                    if let Some(t) = temporal.filter(|t| {
+                        strength > 0.0
+                            && effect.flag("temporal", true)
+                            && (t.before.is_some() || t.after.is_some())
+                    }) {
+                        // The neighbours get the effects before this one, so like is compared
+                        // with like.
+                        let prefix: Vec<PlannedEffect> = effects[..effect_index]
+                            .iter()
+                            .filter(|e| {
+                                !matches!(pass_for(&e.effect_type), Some(Pass::Temporal(_)))
+                            })
+                            .cloned()
+                            .collect();
+                        let mut pictures = Vec::with_capacity(2);
+                        for side in [&t.before, &t.after] {
+                            let Some(side) = side else {
+                                pictures.push(None);
+                                continue;
+                            };
+                            let picture = match &side.picture {
+                                Some(picture) => picture.clone(),
+                                None => self.convert_layer(
+                                    encoder,
+                                    side.slot,
+                                    &side.frame,
+                                    &side.source,
+                                )?,
+                            };
+                            pictures.push(Some(if prefix.is_empty() {
+                                picture.create_view(&Default::default())
+                            } else {
+                                self.apply_effects(
+                                    encoder,
+                                    side.slot,
+                                    &picture,
+                                    &prefix,
+                                    frames,
+                                    Some(&side.source),
+                                    None,
+                                )?
+                            }));
+                        }
+                        let averaged = self.canvas(Slot::Denoised(layer), size);
+                        let pair =
+                            |side: &Option<flow::Side>, picture: &Option<wgpu::TextureView>| {
+                                side.as_ref()
+                                    .zip(picture.as_ref())
+                                    .map(|(side, picture)| (picture.clone(), side.flow.clone()))
+                            };
+                        let (before, after) =
+                            (pair(&t.before, &pictures[0]), pair(&t.after, &pictures[1]));
+                        self.denoise_temporal(
+                            encoder,
+                            &current,
+                            before.as_ref().map(|(v, f)| (v, f)),
+                            after.as_ref().map(|(v, f)| (v, f)),
+                            0.04 + 0.12 * strength,
+                            &averaged,
+                        );
+                        spatial_input = averaged;
+                    }
+                    let mut params = [[0.0f32; 4]; SLOTS];
+                    if strength > 0.0 {
+                        params[0] = [0.02 + 0.14 * strength, 1.0 + 1.5 * strength, 3.0, 0.0];
+                    }
+                    self.effect_pass(
+                        encoder,
+                        "fs_bilateral",
+                        &spatial_input,
+                        None,
+                        None,
+                        None,
+                        &params,
                         &target,
                     );
                 }
@@ -1519,6 +1904,17 @@ impl Renderer {
         );
     }
 
+    /// Copies `input` into `target` unchanged.
+    fn copy_into(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        input: &wgpu::TextureView,
+        target: &wgpu::TextureView,
+    ) {
+        let none = [[0.0f32; 4]; SLOTS];
+        self.effect_pass(encoder, "fs_copy", input, None, None, None, &none, target);
+    }
+
     /// A draw that copies `canvas` over the whole target, to continue compositing on it.
     fn copy_draw(&self, canvas: &wgpu::TextureView) -> Draw {
         let uniform = LayerUniform {
@@ -1561,6 +1957,7 @@ impl Renderer {
         Draw {
             bind_group,
             vertex_buffer,
+            path: Vec::new(),
             blend: BlendMode::Normal,
         }
     }
@@ -2111,7 +2508,61 @@ struct TransitionStep {
 struct Draw {
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
+    /// The layer's quads at each placement of a motion blur's shutter, averaged when
+    /// drawn; empty when it does not move.
+    path: Vec<wgpu::Buffer>,
     blend: BlendMode,
+}
+
+/// How a layer's picture is placed on the canvas for a given transform.
+enum Quad {
+    /// Fitted to the canvas: video, images and compound clips, `source` pixels large and
+    /// turned `rotation` degrees clockwise.
+    Fitted { source: (u32, u32), rotation: u16 },
+    /// At its natural `size` in canvas pixels with its `offset` point placed (text, shapes
+    /// and captions), moved by `shift` (fractions of the canvas) and scaled by `scale`.
+    Natural {
+        size: (f64, f64),
+        offset: (f64, f64),
+        shift: [f64; 2],
+        scale: f64,
+    },
+}
+
+impl Quad {
+    fn natural(size: (f64, f64), offset: (f64, f64)) -> Quad {
+        Quad::Natural {
+            size,
+            offset,
+            shift: [0.0, 0.0],
+            scale: 1.0,
+        }
+    }
+
+    fn vertices(
+        &self,
+        canvas: (u32, u32),
+        transform: &fosscut_model::Transform,
+        crop: [f64; 4],
+    ) -> [Vertex; 4] {
+        match self {
+            Quad::Fitted { source, rotation } => {
+                layer_quad(canvas, *source, *rotation, transform, crop)
+            }
+            Quad::Natural {
+                size,
+                offset,
+                shift,
+                scale,
+            } => {
+                let mut placed = transform.clone();
+                placed.position[0] += shift[0];
+                placed.position[1] += shift[1];
+                placed.scale *= scale;
+                placed_quad(canvas, *size, *offset, &placed, crop)
+            }
+        }
+    }
 }
 
 /// The mode number the blend shader expects.

@@ -10,10 +10,16 @@
 //! proxies ([`proxy`]) and remuxed copies ([`remux`]) that only the preview decodes, rendered
 //! preview frames ([`frame_cache`]), and the policy that keeps them bounded ([`cache`]).
 //! Hardware decoding and encoding are chosen for the process in [`hardware`].
+//!
+//! Planners measure media, or read cached analyses, and return the commands that apply what
+//! they found: [`scenes`] splits at shot cuts, [`motion`] stabilizes and tracks, [`beats`]
+//! marks beats and moves cuts onto them, [`reframe`] makes clips follow their subject on a
+//! canvas of another shape, and [`shorts`] finds and builds short clips of long footage.
 
 #![forbid(unsafe_code)]
 
 pub mod analysis;
+pub mod beats;
 pub mod cache;
 pub mod captions;
 pub mod color;
@@ -27,6 +33,7 @@ pub mod jobs;
 pub mod library;
 pub mod live;
 pub mod loudness;
+mod measured;
 pub mod motion;
 mod operations;
 pub mod preferences;
@@ -35,8 +42,10 @@ pub mod preview;
 pub mod project;
 pub mod proxy;
 pub mod record;
+pub mod reframe;
 pub mod remux;
 pub mod scenes;
+pub mod shorts;
 pub mod updates;
 pub mod voice;
 
