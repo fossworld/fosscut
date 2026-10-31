@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use common::{can_render, ffmpeg_required, has_ffmpeg, test_pattern, workspace};
@@ -361,7 +361,12 @@ fn human_output_is_stable() {
         ],
     );
     let info = ok(&dir, &["project", "info"]);
-    let text = text.replace(info["id"].as_str().unwrap(), "project_<random>");
+    let mut text = text.replace(info["id"].as_str().unwrap(), "project_<random>");
+    // The ONNX Runtime download differs by system, so its line is not part of the snapshot.
+    if let Some(runtime) = text.lines().find(|line| line.starts_with("  onnxruntime ")) {
+        let runtime = runtime.to_string();
+        text = text.replace(&runtime, "  onnxruntime            <size by system>");
+    }
     insta::assert_snapshot!(text);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -1128,7 +1133,7 @@ fn models_from_the_command_line() {
     let dir = workspace("models");
     let listed = ok(&dir, &["models", "list"]);
     let models = listed["models"].as_array().unwrap();
-    assert_eq!(models.len(), 4);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
     assert!(Path::new(listed["dir"].as_str().unwrap()).ends_with("cache/models"));
 
@@ -1181,7 +1186,7 @@ fn models_from_the_command_line() {
     let human = fosscut(&dir, &["models", "list"]);
     let text = String::from_utf8_lossy(&human.stdout);
     assert!(
-        text.contains("whisper-tiny.en               77.7 MB  MIT  en            installed"),
+        text.contains("whisper-tiny.en               77.7 MB  MIT        en            installed"),
         "{text}"
     );
     assert!(text.contains("whisper-small") && text.contains("not installed"));
@@ -3820,4 +3825,234 @@ fn proxies_remuxes_and_caches_from_the_command_line() {
         wrong["code"], "fosscut.request.invalid_arguments",
         "{wrong}"
     );
+}
+
+/// The folder of the installed local models, or `None` to skip when they are missing
+/// locally; CI sets `FOSSCUT_REQUIRE_MODELS=1`, which fails instead.
+fn local_models() -> Option<PathBuf> {
+    let required =
+        std::env::var_os("FOSSCUT_REQUIRE_MODELS").is_some_and(|v| !v.is_empty() && v != "0");
+    let dir = std::env::var_os("FOSSCUT_MODELS_DIR").map(PathBuf::from);
+    let installed = dir.as_ref().is_some_and(|dir| {
+        [
+            "onnxruntime",
+            "kokoro-82m",
+            "opus-mt-en-hu",
+            "mediapipe-pose-full",
+        ]
+        .iter()
+        .all(|model| dir.join(model).is_dir())
+    });
+    assert!(
+        installed || !required,
+        "FOSSCUT_REQUIRE_MODELS is set but the local models are not in FOSSCUT_MODELS_DIR"
+    );
+    installed.then(|| dir.unwrap())
+}
+
+/// Runs `fosscut <args> --json` in `dir` with the local models, expecting success.
+fn ok_with_models(dir: &Path, models: &Path, args: &[&str]) -> Value {
+    let output = command(dir)
+        .env("FOSSCUT_MODELS_DIR", models)
+        .args(args)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{args:?} failed:\n{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn voices_translations_and_subjects_from_the_command_line() {
+    let Some(models) = local_models() else {
+        return;
+    };
+    if !can_render() {
+        return;
+    }
+    let dir = workspace("local-models");
+    ok(
+        &dir,
+        &[
+            "project",
+            "new",
+            "Talk.fosscut",
+            "--width",
+            "320",
+            "--height",
+            "180",
+        ],
+    );
+    let p = ["-p", "Talk.fosscut"];
+    let run = |args: &[&str]| ok_with_models(&dir, &models, &[&p[..], args].concat());
+
+    // A voiceover from text: written once into the bundle, imported and placed.
+    let voices = run(&["speak", "--voices"]);
+    assert!(voices["voices"].as_array().unwrap().len() >= 20, "{voices}");
+    let spoken = run(&[
+        "speak",
+        "Hello from FossCut.",
+        "--voice",
+        "af_heart",
+        "--at",
+        "0s",
+    ]);
+    let file = spoken["speech"]["file"]["path"]
+        .as_str()
+        .or_else(|| spoken["speech"]["file"].as_str())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        spoken["response"]["committed"].as_bool().unwrap(),
+        "{spoken}"
+    );
+    let media = run(&["media", "list"]);
+    let speech = media["assets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| {
+            a["name"]
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("Speech: ")
+        })
+        .cloned()
+        .unwrap_or_else(|| panic!("{media}"));
+    assert_eq!(speech["kind"], "audio");
+    assert!(
+        speech["path"]["relative"]
+            .as_str()
+            .unwrap()
+            .starts_with("speech/"),
+        "{speech} {file}"
+    );
+    let again = run(&["speak", "Hello from FossCut.", "--voice", "af_heart"]);
+    let assets_after = run(&["media", "list"])["assets"].as_array().unwrap().len();
+    assert_eq!(
+        assets_after,
+        media["assets"].as_array().unwrap().len(),
+        "{again}"
+    );
+
+    // Captions of FossCut's own speech spell its words as written, whatever the
+    // recognizer heard ("FossCut" comes back as "faucet" or "phoscut").
+    let asset = speech["id"].as_str().unwrap().to_string();
+    run(&["media", "analyze", &asset, "transcript"]);
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let speech_track = read["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| {
+            t["clips"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["asset"] == asset.as_str())
+        })
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let captioned = run(&["captions", "generate", "--source-track", &speech_track]);
+    assert!(captioned["committed"].as_bool().unwrap(), "{captioned}");
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let spoken: Vec<String> = all_clips(&read)
+        .into_iter()
+        .filter(|c| c["kind"] == "caption")
+        .map(|c| c["text"].as_str().unwrap().to_string())
+        .collect();
+    // Spoken twice: placed at 0 s, then after it by the second call.
+    assert!(!spoken.is_empty());
+    assert!(
+        spoken.iter().all(|page| page == "Hello from FossCut."),
+        "{spoken:?}"
+    );
+
+    // Captions translated into Hungarian, then the English words dubbed.
+    std::fs::write(
+        dir.join("talk.srt"),
+        "1\n00:00:06,000 --> 00:00:08,000\nThank you very much.\n",
+    )
+    .unwrap();
+    run(&["captions", "import", "talk.srt"]);
+    let translated = run(&["captions", "translate", "--to", "hu"]);
+    assert!(
+        translated["response"]["committed"].as_bool().unwrap(),
+        "{translated}"
+    );
+    let read = run(&["timeline", "read", "--detail", "full"]);
+    let page = all_clips(&read)
+        .into_iter()
+        .find(|c| c["kind"] == "caption" && c["text"] == "Thank you very much.")
+        .unwrap();
+    let translation = page["translation"]
+        .as_str()
+        .or_else(|| page["caption"]["translation"].as_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    assert!(translation.contains("köszönöm"), "{page}");
+    // Every page of the track is spoken: the two of the voiceover and the imported one.
+    let dubbed = run(&["captions", "dub", "--voice", "bm_george"]);
+    assert_eq!(
+        dubbed["dub"]["pages"].as_array().unwrap().len(),
+        3,
+        "{dubbed}"
+    );
+    let not_english = fails(
+        &dir,
+        &[&p[..], &["captions", "translate", "--to", "de"]].concat(),
+    );
+    assert_eq!(not_english["code"], "fosscut.request.invalid_arguments");
+
+    // A subject key needs its matte: refused before the analysis, shown after it.
+    ffmpeg_in(
+        &dir,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=320x180:r=10:d=1",
+            "-c:v",
+            "mpeg4",
+            "shot.mp4",
+        ],
+    );
+    let shot = run(&["media", "import", "shot.mp4"])["results"][0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let clip = run(&["clip", "add", "--asset", &shot, "--start", "5s"])["results"][0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    run(&["effect", "add", "--clip", &clip, "--type", "key.subject"]);
+    let missing = command(&dir)
+        .env("FOSSCUT_MODELS_DIR", &models)
+        .args([&p[..], &["frame", "5.5s", "--out", "keyed.png", "--json"]].concat())
+        .output()
+        .unwrap();
+    assert!(!missing.status.success());
+    let error: Value = serde_json::from_slice(&missing.stdout).unwrap();
+    assert_eq!(
+        error["error"]["code"], "fosscut.analysis.missing",
+        "{error}"
+    );
+    let analyzed = run(&["media", "analyze", &shot, "matte"]);
+    assert!(
+        analyzed["computed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "matte"),
+        "{analyzed}"
+    );
+    run(&["frame", "5.5s", "--out", "keyed.png"]);
+    assert_eq!(png_size(&dir.join("keyed.png")), (320, 180));
 }

@@ -194,8 +194,11 @@ operations:
   media.proxy          Make a smaller ProRes Proxy copy of a video asset in FossCut's cache for the desktop preview; exports, frame grabs and contact sheets always read the original.
   media.remux          Copy a video asset in a hard-to-seek container (MPEG-TS, MPEG-PS, AVI, FLV) into QuickTime in FossCut's cache, without re-encoding, for the desktop preview.
   cache.clear          Report the size of FossCut's caches (analysis, proxies, remuxed copies, rendered frames), empty them, or clean them by the cache preferences; everything in them is made again when needed.
+  speech.speak         Say text with a local English voice (Kokoro) into the bundle's speech folder, import it and place it; the same text, voice and speed reuse the file.
+  captions.translate   Translate a caption track's pages between English and Hungarian with a local model, as a second line under each page or in place of its words; one undoable step.
+  captions.dub         Speak each caption page (its words or its translation) with a local English voice, one clip per page at its start on an audio track; one undoable step.
   update.check         Ask GitHub once for the latest FossCut release and say whether it is newer; nothing about the user is sent and nothing is installed.
-  models.install       Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.
+  models.install       Download a local model (speech for transcripts; matte, pose, voice and translate; and the ONNX Runtime they run on) after the user agrees to its size and license; every file is verified by SHA-256.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.
 analyzers:
@@ -203,11 +206,19 @@ analyzers:
   silences       Ranges whose level stays below a threshold for at least a minimum duration: pauses to cut or keep.
   scenes         Hard shot cuts with their frame, time and confidence.
   transcript     Speech as words with timings, filler candidates and pauses, recognised locally by whisper.cpp; needs an installed speech model and must be named.
+  pose           A person's 33 body landmarks and person mask in every frame, with MediaPipe Pose Landmarker, for the body effects (body.outline, body.glow, body.shadow, body.sparkle); needs the mediapipe-pose-full model and must be named.
+  matte          The subject's alpha in every frame, for key.subject: model person (the pose model's person mask, fast) or subject (BiRefNet, any subject, 9 to 14 s a frame, so analyze every few frames with every); needs mediapipe-pose-full or birefnet-lite and must be named.
 models (fosscut models install <name>):
   whisper-large-v3-turbo  1624.6 MB  multilingual not installed
   whisper-small            487.6 MB  multilingual not installed
   whisper-base.en          148.0 MB  en           not installed
   whisper-tiny.en           77.7 MB  en           not installed
+  onnxruntime            <size by system>
+  birefnet-lite            224.0 MB  none         not installed
+  mediapipe-pose-full       24.7 MB  none         not installed
+  kokoro-82m               110.6 MB  en           not installed
+  opus-mt-hu-en            120.0 MB  hu>en        not installed
+  opus-mt-en-hu            120.0 MB  en>hu        not installed
 export presets:
   mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
   mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)

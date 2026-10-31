@@ -8,6 +8,8 @@ import type {
   CacheUsage,
   CaptureDevice,
   Change,
+  DubCaptionsRequest,
+  DubCaptionsResult,
   Client,
   ColorSuggestion,
   EditRequest,
@@ -18,6 +20,8 @@ import type {
   LibraryAddRequest,
   LibraryItem,
   MediaWork,
+  ModelInstallState,
+  ModelListing,
   MotionResult,
   MulticamRequest,
   MulticamResult,
@@ -30,9 +34,16 @@ import type {
   RecordChoice,
   RecordState,
   SceneSplit,
+  SpeechPreview,
+  SpeechRequest,
+  SpeechResult,
+  SubjectRequest,
   TrackRequest,
+  TranslateCaptionsRequest,
+  TranslateCaptionsResult,
   TrashEntry,
   UpdateAnswer,
+  VoiceInfo,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -191,6 +202,40 @@ export interface EngineClient {
   playSound(name: string): Promise<void>;
   /** Asks the user for a folder, starting in `directory`; null when they cancel. */
   pickFolder(title?: string, directory?: string): Promise<string | null>;
+  /**
+   * Models that run on this computer (ADR-0033): nothing downloads unless the person
+   * agreed to the size and license shown, which `confirmed` says.
+   */
+  models: {
+    list(): Promise<ModelListing>;
+    /** Starts installing a model in the background; refused without `confirmed`. */
+    install(name: string, confirmed: boolean): Promise<ModelInstallState>;
+    /** The install started last of a model, with its progress. */
+    installStatus(name: string): Promise<ModelInstallState>;
+  };
+  /**
+   * Analyses of a video clip's subject, run as background jobs: a matte for removing the
+   * background, a pose for body effects. Effects read them from the cache.
+   */
+  subject: {
+    /** Starts analyzing; a missing model refuses at once with `fosscut.model.not_installed`. */
+    analyze(request: SubjectRequest): Promise<JobStatus>;
+    status(job: string): Promise<JobStatus>;
+    cancel(job: string): Promise<JobStatus>;
+  };
+  /** Text to speech, in English (ADR-0033 item 5). */
+  voice: {
+    list(): Promise<VoiceInfo[]>;
+    /** Synthesizes and plays speech without adding it. */
+    preview(text: string, voice: string, speed?: number): Promise<SpeechPreview>;
+    /** Synthesizes speech and places it on the timeline as the user's one step. */
+    add(request: SpeechRequest): Promise<SpeechResult>;
+  };
+  /** Caption tracks translated or dubbed with local models, each as the user's one step. */
+  captions: {
+    translate(request: TranslateCaptionsRequest): Promise<TranslateCaptionsResult>;
+    dub(request: DubCaptionsRequest): Promise<DubCaptionsResult>;
+  };
   /** The caches outside projects (ADR-0032): their sizes, and emptying them. */
   cache: {
     usage(): Promise<CacheUsage>;

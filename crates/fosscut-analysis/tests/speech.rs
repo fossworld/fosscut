@@ -216,7 +216,7 @@ fn the_speech_model_is_chosen_from_what_is_installed() {
     let base = models::manifest("whisper-base.en").unwrap();
     std::fs::File::create(models::path(&dir, base))
         .unwrap()
-        .set_len(base.size)
+        .set_len(base.size())
         .unwrap();
     options.transcript.model = Some("whisper-base.en".into());
     assert_eq!(speech_model(&options, &dir), Ok(base));

@@ -526,7 +526,7 @@ fn print_transcript(t: &Value) {
 fn print_models(v: &Value) {
     for model in v["models"].as_array().into_iter().flatten() {
         println!(
-            "{:<24} {:>9.1} MB  {:<4} {:<13} {}",
+            "{:<24} {:>9.1} MB  {:<10} {:<13} {}",
             s(&model["name"]),
             model["size_bytes"].as_f64().unwrap_or(0.0) / 1e6,
             s(&model["license"]),

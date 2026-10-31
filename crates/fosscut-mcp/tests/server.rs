@@ -577,9 +577,14 @@ async fn models_install_only_with_confirmation() {
     let client = connect_with_models(None, folder.clone()).await;
     let listed = ok(&client, "models", json!({})).await;
     let models = listed["models"].as_array().unwrap();
-    assert_eq!(models.len(), 4);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
-    assert!(models.iter().all(|m| m["license"] == json!("MIT")));
+    assert!(
+        models
+            .iter()
+            .filter(|m| m["task"] == json!("speech"))
+            .all(|m| m["license"] == json!("MIT"))
+    );
 
     // Installing asks the agent to confirm with the user first.
     let unconfirmed = fails(&client, "models", json!({ "install": "whisper-tiny.en" })).await;
@@ -1434,6 +1439,109 @@ async fn recordings_start_only_when_confirmed_and_stop_keeping_what_was_recorded
         &client,
         "record",
         json!({ "action": "start", "what": "radio", "confirm": true }),
+    )
+    .await;
+    assert_eq!(wrong["code"], "fosscut.request.invalid_arguments");
+    client.cancel().await.unwrap();
+}
+
+/// The folder of the installed local models, or `None` to skip when they are missing
+/// locally; CI sets `FOSSCUT_REQUIRE_MODELS=1`, which fails instead.
+fn local_models() -> Option<PathBuf> {
+    let required =
+        std::env::var_os("FOSSCUT_REQUIRE_MODELS").is_some_and(|v| !v.is_empty() && v != "0");
+    let dir = std::env::var_os("FOSSCUT_MODELS_DIR").map(PathBuf::from);
+    let installed = dir.as_ref().is_some_and(|dir| {
+        ["onnxruntime", "kokoro-82m", "opus-mt-en-hu"]
+            .iter()
+            .all(|model| dir.join(model).is_dir())
+    });
+    assert!(
+        installed || !required,
+        "FOSSCUT_REQUIRE_MODELS is set but the local models are not in FOSSCUT_MODELS_DIR"
+    );
+    installed.then(|| dir.unwrap())
+}
+
+#[tokio::test]
+async fn agents_speak_text_and_translate_captions_with_local_models() {
+    let Some(models) = local_models() else {
+        return;
+    };
+    if !has_ffmpeg() {
+        return;
+    }
+    let dir = workspace("voice");
+    let client = connect_with_models(None, models).await;
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Voice.fosscut") }),
+    )
+    .await;
+    let voices = ok(&client, "record", json!({ "action": "voices" })).await;
+    assert!(
+        voices["voices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v["name"] == "af_heart"),
+        "{voices}"
+    );
+    let spoken = ok(
+        &client,
+        "record",
+        json!({ "action": "speak", "text": "Welcome to the show.", "voice": "af_heart", "at": "0s" }),
+    )
+    .await;
+    assert!(spoken["committed"].as_bool().unwrap(), "{spoken}");
+    assert!(spoken["speech"]["asset"].is_string());
+    let unknown = fails(
+        &client,
+        "record",
+        json!({ "action": "speak", "text": "Hi.", "voice": "nobody" }),
+    )
+    .await;
+    assert_eq!(unknown["code"], "fosscut.voice.unknown_voice", "{unknown}");
+
+    std::fs::write(
+        dir.join("show.srt"),
+        "1\n00:00:01,000 --> 00:00:03,000\nThe dog is sleeping.\n",
+    )
+    .unwrap();
+    ok(
+        &client,
+        "captions",
+        json!({ "action": "import", "file": dir.join("show.srt") }),
+    )
+    .await;
+    let translated = ok(
+        &client,
+        "captions",
+        json!({ "action": "translate", "to": "hu", "mode": "replace" }),
+    )
+    .await;
+    assert!(translated["committed"].as_bool().unwrap(), "{translated}");
+    let read = ok(&client, "timeline_read", json!({ "detail": "full" })).await;
+    let page = read["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| t["clips"].as_array().unwrap().clone())
+        .find(|c| c["kind"] == "caption")
+        .unwrap();
+    assert!(
+        page["text"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("kutya"),
+        "{page}"
+    );
+    let wrong = fails(
+        &client,
+        "captions",
+        json!({ "action": "translate", "to": "fr" }),
     )
     .await;
     assert_eq!(wrong["code"], "fosscut.request.invalid_arguments");

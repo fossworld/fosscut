@@ -8,8 +8,14 @@
 //! of the original media when they exist, decode with or without hardware, and keep the
 //! frames it renders on disk ([`crate::frame_cache`]). Sound always reads the originals,
 //! as exports, frame grabs and contact sheets do.
+//!
+//! Clips with `key.subject` or a body effect read their cached matte or pose
+//! ([`crate::analysis::subject`]) from [`PreviewOptions::cache`] (or [`crate::cache_dir`]).
+//! Until it is cached they show without the effect, and such frames are not kept in the frame
+//! cache; the preview looks for the analysis again every two seconds, so it appears once
+//! `media_analyze` finishes.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use fosscut_media::ffmpeg::FfmpegVideoDecoder;
@@ -24,6 +30,7 @@ use fosscut_time::{Flicks, TimeReport};
 use serde::{Deserialize, Serialize};
 
 use crate::EngineError;
+use crate::analysis::subject::{PREVIEW_RETRY, Subjects, plan_requirements};
 use crate::cache::touch;
 use crate::export::{DecoderAudio, resolve};
 use crate::frame::{Still, load_font, load_lut};
@@ -370,6 +377,10 @@ struct PreviewMedia {
     opened: HashMap<Id, Opened>,
     /// Content identities by asset, recorded or measured once; `None` when unknown.
     identities: HashMap<Id, Option<ContentIdentity>>,
+    /// The cached mattes and poses subject effects read.
+    subjects: Subjects,
+    /// Assets of the last planned frame whose subject effects lack their analysis.
+    unanalyzed: HashSet<Id>,
 }
 
 impl PreviewMedia {
@@ -407,6 +418,21 @@ impl PreviewMedia {
             {
                 self.open(project, bundle, &source.asset, options)?;
             }
+        }
+        // Subject effects without their analysis show the clip unchanged for now.
+        let requirements = plan_requirements(project, plan);
+        self.unanalyzed.clear();
+        if !requirements.is_empty() {
+            let cache = options.cache.clone().unwrap_or_else(crate::cache_dir);
+            let missing = self.subjects.supply(
+                project,
+                bundle,
+                &cache,
+                &requirements,
+                &mut self.decoders,
+                Some(PREVIEW_RETRY),
+            );
+            self.unanalyzed = missing.into_iter().map(|r| r.asset).collect();
         }
         Ok(())
     }
@@ -499,15 +525,25 @@ impl PreviewMedia {
 
     /// What the frame cache needs to know about `asset`: what its file contains and which
     /// copy of it is decoded.
+    /// A frame whose subject effects still lack their analysis is not kept: it will look
+    /// different once the analysis arrives. Otherwise the analyses it reads are part of it.
     fn describe(&mut self, project: &Project, bundle: &Path, asset: &Id) -> Option<String> {
+        if self.unanalyzed.contains(asset) {
+            return None;
+        }
         let identity = self.identity(project, bundle, asset)?;
         let decoded = match self.opened.get(asset).map(|o| o.source) {
             Some(PreviewSource::Proxy(size)) => format!("proxy-{}", size.name()),
             Some(PreviewSource::Remux) => "remux".to_string(),
             Some(PreviewSource::Original) | None => "original".to_string(),
         };
+        let analyses = self
+            .subjects
+            .describe(asset)
+            .map(|s| format!(":{s}"))
+            .unwrap_or_default();
         Some(format!(
-            "{}:{}:{decoded}",
+            "{}:{}:{decoded}{analyses}",
             identity.sample_blake3, identity.size
         ))
     }
@@ -947,6 +983,21 @@ impl<P: FrameProvider> FrameProvider for Cached<'_, P> {
 
     fn lut(&mut self, asset: &Id) -> Result<std::sync::Arc<Lut3d>, RenderError> {
         self.inner.lut(asset)
+    }
+
+    fn matte(
+        &mut self,
+        source: &SourceRef,
+        kind: fosscut_render::subject::MatteKind,
+    ) -> Result<Option<std::sync::Arc<fosscut_render::subject::Matte>>, RenderError> {
+        self.inner.matte(source, kind)
+    }
+
+    fn pose(
+        &mut self,
+        source: &SourceRef,
+    ) -> Result<Option<std::sync::Arc<fosscut_render::subject::Pose>>, RenderError> {
+        self.inner.pose(source)
     }
 }
 

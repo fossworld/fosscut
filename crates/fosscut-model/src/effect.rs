@@ -235,6 +235,8 @@ pub enum EffectCategory {
     Key,
     /// Movement over time: shakes, flashes, pulses.
     Motion,
+    /// Looks that follow a person, drawn from the clip's cached pose (ADR-0033).
+    Body,
     /// Sound: applied by the mixer, never to pictures (ADR-0026).
     Audio,
 }
@@ -302,6 +304,41 @@ const fn strength(default: f64, meaning: &'static str) -> ParamSpec {
 /// An amount from -1 to 1 with 0 leaving the picture unchanged.
 const fn amount(name: &'static str, meaning: &'static str) -> ParamSpec {
     number(name, 0.0, -1.0, 1.0, "", meaning)
+}
+
+/// A colour `#RRGGBB` with a default; colours do not take keyframes.
+const fn color(name: &'static str, default: &'static str, meaning: &'static str) -> ParamSpec {
+    ParamSpec {
+        name,
+        kind: ParamKind::Color,
+        default: ParamDefault::Name(default),
+        min: None,
+        max: None,
+        unit: "",
+        choices: &[],
+        animatable: false,
+        meaning,
+    }
+}
+
+/// One of `choices`, `default` first among them or not.
+const fn choice(
+    name: &'static str,
+    default: &'static str,
+    choices: &'static [&'static str],
+    meaning: &'static str,
+) -> ParamSpec {
+    ParamSpec {
+        name,
+        kind: ParamKind::Choice,
+        default: ParamDefault::Name(default),
+        min: None,
+        max: None,
+        unit: "",
+        choices,
+        animatable: false,
+        meaning,
+    }
 }
 
 const fn wheel(name: &'static str, meaning: &'static str) -> ParamSpec {
@@ -737,6 +774,175 @@ pub fn effect_types() -> Vec<EffectSpec> {
                     1.0,
                     "",
                     "how much of the key's color is removed from what stays",
+                ),
+            ],
+        },
+        EffectSpec {
+            name: "key.subject",
+            version: 1,
+            title: "Remove background",
+            category: EffectCategory::Key,
+            summary: "Keeps the subject and removes the background (or, with invert, removes the subject), from the clip's cached matte: run media_analyze with analyzers [\"matte\"] first (options {\"matte\": {\"model\": \"subject\"}} for source subject). Exports and frame grabs fail with fosscut.analysis.missing until it is cached.",
+            params: vec![
+                choice(
+                    "source",
+                    "person",
+                    &["person", "subject"],
+                    "which cached matte: person (the pose model's person mask, fast to analyze) or subject (BiRefNet, any subject, finer edges, slow to analyze)",
+                ),
+                number(
+                    "threshold",
+                    0.5,
+                    0.0,
+                    1.0,
+                    "",
+                    "the matte value where the edge falls: higher keeps less of soft, uncertain edges",
+                ),
+                number(
+                    "feather",
+                    0.004,
+                    0.0,
+                    0.1,
+                    "of height",
+                    "how soft the edge is, as a fraction of the picture's height",
+                ),
+                ParamSpec {
+                    name: "invert",
+                    kind: ParamKind::Bool,
+                    default: ParamDefault::Bool(false),
+                    min: None,
+                    max: None,
+                    unit: "",
+                    choices: &[],
+                    animatable: false,
+                    meaning: "removes the subject and keeps the background instead",
+                },
+                choice(
+                    "background",
+                    "none",
+                    &["none", "color", "blur"],
+                    "what shows where the picture is removed: none (the tracks below), color, or the clip's own picture blurred",
+                ),
+                color(
+                    "color",
+                    "#000000",
+                    "the background's color when background is color",
+                ),
+                number(
+                    "blur",
+                    0.02,
+                    0.0,
+                    0.2,
+                    "of height",
+                    "the background's blur radius when background is blur, as a fraction of the picture's height",
+                ),
+            ],
+        },
+        EffectSpec {
+            name: "body.outline",
+            version: 1,
+            title: "Body outline",
+            category: EffectCategory::Body,
+            summary: "Draws a line around the person, behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+            params: vec![
+                color("color", "#FFFFFF", "the line's color"),
+                number(
+                    "width",
+                    0.01,
+                    0.0,
+                    0.1,
+                    "of height",
+                    "the line's width as a fraction of the picture's height",
+                ),
+                number(
+                    "softness",
+                    0.2,
+                    0.0,
+                    1.0,
+                    "",
+                    "how soft the line's outer edge is, as a share of its width",
+                ),
+            ],
+        },
+        EffectSpec {
+            name: "body.glow",
+            version: 1,
+            title: "Body glow",
+            category: EffectCategory::Body,
+            summary: "Surrounds the person with colored light that fades away from them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+            params: vec![
+                color("color", "#66CCFF", "the light's color"),
+                number(
+                    "size",
+                    0.03,
+                    0.0,
+                    0.2,
+                    "of height",
+                    "how far the light spreads (one standard deviation) as a fraction of the picture's height",
+                ),
+                number(
+                    "strength",
+                    1.0,
+                    0.0,
+                    2.0,
+                    "",
+                    "how bright the light is: 0 none, 1 full at the person's edge",
+                ),
+            ],
+        },
+        EffectSpec {
+            name: "body.shadow",
+            version: 1,
+            title: "Body shadow",
+            category: EffectCategory::Body,
+            summary: "Casts a soft drop shadow of the person onto what is behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+            params: vec![
+                color("color", "#000000", "the shadow's color"),
+                ParamSpec {
+                    name: "offset",
+                    kind: ParamKind::Pair,
+                    default: ParamDefault::Pair([0.02, 0.02]),
+                    min: Some(-0.3),
+                    max: Some(0.3),
+                    unit: "of height",
+                    choices: &[],
+                    animatable: true,
+                    meaning: "how far the shadow falls [right, down], as fractions of the picture's height",
+                },
+                number(
+                    "blur",
+                    0.01,
+                    0.0,
+                    0.1,
+                    "of height",
+                    "how soft the shadow is (one standard deviation) as a fraction of the picture's height",
+                ),
+                number("opacity", 0.6, 0.0, 1.0, "", "how dark the shadow is"),
+            ],
+        },
+        EffectSpec {
+            name: "body.sparkle",
+            version: 1,
+            title: "Body sparkle",
+            category: EffectCategory::Body,
+            summary: "Scatters twinkling sparkles along the person's arms, shoulders, torso and legs, placed the same way every time the frame renders, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+            params: vec![
+                color("color", "#FFE08A", "the sparkles' color"),
+                number(
+                    "amount",
+                    0.5,
+                    0.0,
+                    1.0,
+                    "",
+                    "how many sparkles: 1 is 80 at a time, 0 none",
+                ),
+                number(
+                    "size",
+                    0.02,
+                    0.0,
+                    0.1,
+                    "of height",
+                    "a sparkle's radius as a fraction of the picture's height",
                 ),
             ],
         },

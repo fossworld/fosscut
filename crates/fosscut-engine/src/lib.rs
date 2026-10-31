@@ -38,6 +38,7 @@ pub mod record;
 pub mod remux;
 pub mod scenes;
 pub mod updates;
+pub mod voice;
 
 pub use cache::{cache_dir, models_dir};
 pub use error::{EngineError, engine_error_catalogue};

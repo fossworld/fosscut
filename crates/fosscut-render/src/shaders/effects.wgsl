@@ -682,3 +682,101 @@ fn fs_sharpen(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let alpha = clamp(sharpened.a, 0.0, 1.0);
     return vec4f(clamp(sharpened.rgb, vec3f(0.0), vec3f(alpha * 64.0)), alpha);
 }
+
+// ---- Subject effects (ADR-0033): key.subject and the body effects ----
+//
+// mask_texture holds the field prepared on the CPU at the matte's size (subject.rs): red the
+// subject's or person's coverage, green the signed distance from the person's edge in picture
+// heights (negative inside), blue a blurred coverage. It covers the whole picture and is
+// sampled bilinearly, so a small matte gives smooth edges at any size. p[1].rgb is the
+// effect's colour in linear light.
+
+fn field_at(uv: vec2f) -> vec4f {
+    return textureSampleLevel(mask_texture, linear_sampler, uv, 0.0);
+}
+
+// How much of the subject is at a pixel whose matte is `m`, for threshold `t`: the edge falls
+// at the threshold; values around it keep the matte's own softness, and the band narrows
+// towards either end so 0 keeps everything and 1 only solid subject.
+fn subject_share(m: f32, threshold: f32) -> f32 {
+    let t = clamp(threshold, 0.0, 1.0);
+    let band = max(0.5 * min(t, 1.0 - t), 0.002);
+    return smoothstep(t - band, t + band, m);
+}
+
+// key.subject: keeps the subject where its matte (feathered on the CPU) passes the threshold,
+// or the background with invert, and puts nothing, a colour or the background blurred (aux)
+// where the picture goes. p[0]: threshold, invert, background (0 none, 1 colour, 2 blur).
+@fragment
+fn fs_subject_key(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let p = effect.p[0];
+    var keep = subject_share(field_at(position.xy / input_size()).r, p.x);
+    if p.y > 0.5 {
+        keep = 1.0 - keep;
+    }
+    var behind = vec4f(0.0);
+    if p.z > 1.5 {
+        // The blurred picture without its subject, divided by its blurred alpha: the
+        // background's own colours, fading out where no background is near.
+        let blurred = textureLoad(aux_texture, vec2i(position.xy), 0);
+        let colour = blurred.rgb / max(blurred.a, 1e-4);
+        behind = vec4f(colour, 1.0) * smoothstep(0.0, 0.05, blurred.a);
+    } else if p.z > 0.5 {
+        behind = vec4f(effect.p[1].rgb, 1.0);
+    }
+    return texel * keep + behind * (1.0 - keep);
+}
+
+// The picture with its subject cut out, premultiplied, for key.subject's blurred background.
+@fragment
+fn fs_subject_hole(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let subject = subject_share(field_at(position.xy / input_size()).r, effect.p[0].x);
+    return load(position) * (1.0 - subject);
+}
+
+// body.outline: a band of colour p[0].x picture heights wide around the person, softened
+// over p[0].y of its width (at least a pixel), drawn behind the person.
+@fragment
+fn fs_body_outline(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let size = input_size();
+    let field = field_at(position.xy / size);
+    let width = max(effect.p[0].x, 0.0);
+    let soft = max(clamp(effect.p[0].y, 0.0, 1.0) * width, 1.0 / size.y);
+    let band = (1.0 - smoothstep(width - soft, width + soft, field.g)) * step(1e-6, width);
+    let outline = vec4f(effect.p[1].rgb, 1.0) * band;
+    return mix(over(outline, texel), texel, field.r);
+}
+
+// body.glow: light of colour p[1] spreading from the person's blurred mask, p[0].x strong,
+// added around (not over) the person.
+@fragment
+fn fs_body_glow(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let field = field_at(position.xy / input_size());
+    let glow = clamp(2.0 * field.b * max(effect.p[0].x, 0.0), 0.0, 1.0) * (1.0 - field.r);
+    return vec4f(texel.rgb + effect.p[1].rgb * glow, texel.a + glow * (1.0 - texel.a));
+}
+
+// body.shadow: the person's blurred mask moved by p[0].xy (texture coordinates), p[0].z
+// opaque, in colour p[1], drawn behind the person.
+@fragment
+fn fs_body_shadow(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let uv = position.xy / input_size();
+    let person = field_at(uv).r;
+    let shadow_uv = uv - effect.p[0].xy;
+    let shadow_amount = select(0.0, field_at(shadow_uv).b, inside(shadow_uv));
+    let a = clamp(shadow_amount * effect.p[0].z, 0.0, 1.0);
+    let shade = vec4f(effect.p[1].rgb * a, a);
+    return mix(over(shade, texel), texel, person);
+}
+
+// body.sparkle: sparkles drawn on the CPU (aux, red) add light of colour p[1].
+@fragment
+fn fs_body_sparkle(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let c = clamp(textureSampleLevel(aux_texture, linear_sampler, position.xy / input_size(), 0.0).r, 0.0, 1.0);
+    return vec4f(texel.rgb + effect.p[1].rgb * c, texel.a + c * (1.0 - texel.a));
+}

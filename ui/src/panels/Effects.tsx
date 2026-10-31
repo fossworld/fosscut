@@ -9,7 +9,7 @@ import {
   type Targets,
   addPoint,
   animated,
-  isSoundEffect,
+  effectGroups,
   keyed,
   keyframeable,
   movePoint,
@@ -199,6 +199,15 @@ function Param({
         ))}
       </select>
     );
+  } else if (spec.kind === "color") {
+    control = (
+      <input
+        type="color"
+        value={typeof value === "string" ? value.toLowerCase() : "#000000"}
+        aria-label={words(spec.name)}
+        onChange={(event) => commit(event.target.value.toUpperCase())}
+      />
+    );
   } else if (spec.kind === "bool") {
     control = <input type="checkbox" checked={value === true} onChange={(event) => commit(event.target.checked)} />;
   } else if (spec.kind === "choice") {
@@ -300,20 +309,25 @@ function EffectCard({
   );
 }
 
-/** The effect types to add, as one list, or grouped when there are both kinds. */
+/**
+ * The effect types to add, as one list, or grouped when there is more than one kind:
+ * picture effects, body effects (which follow a person, analyzed first) and sound effects.
+ */
 function EffectOptions({ offered }: { offered: EffectSpec[] }) {
   const option = (e: EffectSpec) => (
     <option key={e.type} value={e.type} title={e.summary}>
       {e.title}
     </option>
   );
-  const sound = offered.filter(isSoundEffect);
-  const picture = offered.filter((e) => !isSoundEffect(e));
-  if (sound.length === 0 || picture.length === 0) return <>{offered.map(option)}</>;
+  const groups = effectGroups(offered);
+  if (groups.length <= 1) return <>{offered.map(option)}</>;
   return (
     <>
-      <optgroup label={t("effects.group.picture")}>{picture.map(option)}</optgroup>
-      <optgroup label={t("effects.group.sound")}>{sound.map(option)}</optgroup>
+      {groups.map((group) => (
+        <optgroup key={group.kind} label={t(`effects.group.${group.kind}`)}>
+          {group.effects.map(option)}
+        </optgroup>
+      ))}
     </>
   );
 }

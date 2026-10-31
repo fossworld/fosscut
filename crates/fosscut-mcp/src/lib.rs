@@ -548,7 +548,7 @@ impl FosscutServer {
 
     /// Analyzes media.
     #[tool(
-        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models.",
+        description = "Measure an asset's loudness (LUFS), silences (pauses to cut or keep) and shot cuts, or transcribe its speech (analyzers: [\"transcript\"]) into segments and words with start and end times, filler words such as um and uh, and pauses between words, all on this machine. Cached results come back at once; otherwise the measurement runs as a job and this waits up to wait_seconds (default 30) for it: if state is still running, follow it with job_status. Times are from the start of the asset's file, in flicks and seconds; map them to the timeline through the clip's source_in (and its speed, when timeline_read shows one). options tunes thresholds, for example {\"silences\": {\"threshold_dbfs\": -35}}. A transcript needs a speech model: if none is installed, ask the user before installing one with models. For video, analyzers [\"pose\"] finds a person's body landmarks and mask (for the body.* effects), and [\"matte\"] separates the subject for the key.subject effect: options {\"matte\": {\"model\": \"person\"}} is fast, \"subject\" (BiRefNet, any subject) takes seconds a frame, so use {\"every\": 5} on long clips; both need their models installed (mediapipe-pose-full, birefnet-lite, onnxruntime). Run them before adding those effects: exports and frame grabs refuse a clip whose analysis is missing.",
         annotations(read_only_hint = true)
     )]
     async fn media_analyze(
@@ -598,7 +598,7 @@ impl FosscutServer {
 
     /// Lists or installs models.
     #[tool(
-        description = "List the models analyzers can use (speech recognition for media_analyze transcript) with size, license, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256: tell the user the size and license first, and pass confirm: true only after they agree. Larger models are more accurate and slower; English-only models (.en) suit English speech.",
+        description = "List the models FossCut can install, with their task (speech for media_analyze transcript; matte, pose, voice and translate for local vision, voice and translation models; runtime for the ONNX Runtime library those run on), size, license, attribution, languages and whether each is installed, or install one. Installing downloads it and checks its SHA-256, and happens only after the user agrees: tell them the size and license first, then pass confirm: true. Larger speech models are more accurate and slower; English-only models (.en) suit English speech.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -658,7 +658,7 @@ impl FosscutServer {
 
     /// Captions from transcripts and SRT files.
     #[tool(
-        description = "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. generate and import are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+        description = "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn captions(
@@ -692,7 +692,79 @@ impl FosscutServer {
                         ApiError::new(codes::INVALID_ARGUMENTS, format!("{what} needs file"))
                     })
                 };
+                let options = |revision: u64| WriteOptions {
+                    expected_revision: args.expected_revision.or(Some(revision)),
+                    dry_run: args.dry_run,
+                    request_id: args.request_id.clone(),
+                    reason: args.reason.clone(),
+                    actor: actor.clone(),
+                };
                 let words = match args.action {
+                    CaptionsAction::Translate => {
+                        let pair = match args.to.as_deref() {
+                            Some("hu") => "en>hu",
+                            Some("en") => "hu>en",
+                            _ => {
+                                return Err(ApiError::new(
+                                    codes::INVALID_ARGUMENTS,
+                                    "translate needs to: hu or en",
+                                ));
+                            }
+                        };
+                        let mode = serde_json::from_value(json!(
+                            args.mode.as_deref().unwrap_or("bilingual")
+                        ))
+                        .map_err(|_| {
+                            ApiError::new(codes::INVALID_ARGUMENTS, "mode is bilingual or replace")
+                        })?;
+                        let found = fosscut_engine::captions::translate(
+                            &snapshot,
+                            &fosscut_engine::captions::TranslateRequest {
+                                models: state.models.clone(),
+                                timeline: timeline.clone(),
+                                track: track.clone(),
+                                pair: pair.into(),
+                                mode,
+                            },
+                        )?;
+                        let write = options(found.revision).request(found.calls.clone())?;
+                        let mut value = as_value(&state.projects.execute(&bundle, write)?);
+                        let mut report = json!(found);
+                        if let Some(object) = report.as_object_mut() {
+                            object.remove("calls");
+                        }
+                        value["translation"] = report;
+                        return Ok(value);
+                    }
+                    CaptionsAction::Dub => {
+                        use fosscut_engine::voice::{DubRequest, DubText, dub};
+                        let found = dub(
+                            &snapshot,
+                            &DubRequest {
+                                bundle: bundle.clone(),
+                                models: state.models.clone(),
+                                timeline: timeline.clone(),
+                                track: track.clone(),
+                                voice: args.voice.clone(),
+                                speed: args.speed,
+                                language: None,
+                                text: if args.translation {
+                                    DubText::Translation
+                                } else {
+                                    DubText::Words
+                                },
+                                audio_track: id(&args.audio_track, "audio_track")?,
+                            },
+                        )?;
+                        let write = options(found.revision).request(found.calls.clone())?;
+                        let mut value = as_value(&state.projects.execute(&bundle, write)?);
+                        let mut report = json!(found);
+                        if let Some(object) = report.as_object_mut() {
+                            object.remove("calls");
+                        }
+                        value["dub"] = report;
+                        return Ok(value);
+                    }
                     CaptionsAction::Export => {
                         let path = file("export")?;
                         let text = match args.subtitles.as_deref() {
@@ -1301,12 +1373,13 @@ impl FosscutServer {
                 .time
                 .resolve(project.timelines[&timeline].format.rate)?;
             let still = FosscutServer::with_renderer(&state, |renderer| {
-                fosscut_engine::frame::frame(
+                fosscut_engine::frame::frame_in(
                     project,
                     &bundle,
                     &timeline,
                     time,
                     Some(args.width.unwrap_or(640)),
+                    &state.cache,
                     renderer,
                 )
                 .map_err(ApiError::from)
@@ -1344,12 +1417,13 @@ impl FosscutServer {
             let project = &project;
             let timeline = project::timeline(project, args.timeline.as_deref())?;
             let sheet = FosscutServer::with_renderer(&state, |renderer| {
-                fosscut_engine::frame::contact_sheet(
+                fosscut_engine::frame::contact_sheet_in(
                     project,
                     &bundle,
                     &timeline,
                     args.count.unwrap_or(12),
                     args.width.unwrap_or(240),
+                    &state.cache,
                     renderer,
                 )
                 .map_err(ApiError::from)
@@ -1467,14 +1541,19 @@ impl FosscutServer {
 
     /// Records a voiceover, a camera or the screen.
     #[tool(
-        description = "Record a voiceover, a camera or the screen of this machine into the project's recordings folder. Only when the user asked you to record: start needs confirm true. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes."
+        description = "Record a voiceover, a camera or the screen of this machine into the project's recordings folder, or make a voiceover from text. Only when the user asked you to record: start needs confirm true. action speak says text with a local English voice (voice from action voices, speed; install kokoro-82m with models first) into the project's speech folder, imports it and places it at at (on track, or a free one; after the first audio track's last clip without at), as one undoable step; the same text and voice reuse the file. action devices lists the microphones, cameras and screens. action start (what: microphone, camera or screen; device and microphone by name, part of a name or number from devices; duration, size, fps) starts a background job and returns it: follow it with job_status, stop it with job_cancel (the recording is kept), and when it succeeded import recording.output with media_import, then place it with edit (clip.add). A microphone records 48 kHz stereo WAV; camera and screen the most compatible video this machine encodes."
     )]
-    async fn record(&self, params: Parameters<RecordArgs>) -> Result<CallToolResult, ErrorData> {
+    async fn record(
+        &self,
+        params: Parameters<RecordArgs>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
         let args = params.0;
         let state = Arc::clone(&self.state);
+        let actor = actor(&context);
         let bundle = match args.action {
-            RecordAction::Devices => None,
-            RecordAction::Start => match self.bundle(args.project.clone()) {
+            RecordAction::Devices | RecordAction::Voices => None,
+            RecordAction::Start | RecordAction::Speak => match self.bundle(args.project.clone()) {
                 Ok(bundle) => Some(bundle),
                 Err(error) => return Ok(failure(&error)),
             },
@@ -1482,9 +1561,44 @@ impl FosscutServer {
         reply(
             blocking(move || {
                 use fosscut_engine::record::{self, CaptureInput, RecordKind, RecordRequest};
+                if let RecordAction::Voices = args.action {
+                    return Ok(json!({ "voices": fosscut_engine::voice::voices(&state.models) }));
+                }
                 let Some(bundle) = bundle else {
                     return Ok(json!({ "devices": record::devices()? }));
                 };
+                if let RecordAction::Speak = args.action {
+                    let snapshot = state.projects.snapshot(&bundle)?;
+                    let spoken = fosscut_engine::voice::speak(
+                        &snapshot,
+                        &fosscut_engine::voice::SpeakRequest {
+                            bundle: bundle.clone(),
+                            models: state.models.clone(),
+                            text: args.text.clone().unwrap_or_default(),
+                            voice: args.voice.clone(),
+                            speed: args.speed,
+                            language: None,
+                            timeline: None,
+                            track: args.track.as_deref().map(|t| parse_id(t, "track")).transpose()?,
+                            start: args.at.as_ref().map(|t| json!(t)),
+                        },
+                    )?;
+                    let write = WriteOptions {
+                        expected_revision: args.expected_revision.or(Some(spoken.revision)),
+                        dry_run: false,
+                        request_id: None,
+                        reason: None,
+                        actor,
+                    }
+                    .request(spoken.calls.clone())?;
+                    let mut value = as_value(&state.projects.execute(&bundle, write)?);
+                    let mut report = json!(spoken);
+                    if let Some(object) = report.as_object_mut() {
+                        object.remove("calls");
+                    }
+                    value["speech"] = report;
+                    return Ok(value);
+                }
                 if !args.confirm {
                     return Err(ApiError::new(
                         "fosscut.record.confirmation_required",

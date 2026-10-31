@@ -54,6 +54,17 @@ fn main() {
         "cache_clear",
         "media_sources",
         "media_work",
+        "models_list",
+        "models_install",
+        "models_install_status",
+        "subject_analyze",
+        "subject_status",
+        "subject_cancel",
+        "voices_list",
+        "speech_preview",
+        "speech_add",
+        "captions_translate",
+        "captions_dub",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

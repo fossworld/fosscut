@@ -410,7 +410,7 @@
         }
       }
     ],
-    "translation": "Bilingual captions: captions.edit sets a page's translation (written by you; FossCut never translates), shown under its words in the track style's translation look; captions export writes original, translation or both."
+    "translation": "Bilingual captions: captions.edit sets a page's translation, written by you or by the captions translate operation with a local model (English and Hungarian), shown under its words in the track style's translation look; timeline.read shows it; captions export writes original, translation or both."
   },
   "commands": [
     {
@@ -19964,6 +19964,234 @@
       "summary": "Makes one color transparent, such as a green or blue screen, with soft edges and spill removal.",
       "title": "Chroma key",
       "type": "key.chroma",
+      "version": 1
+    },
+    {
+      "category": "key",
+      "params": [
+        {
+          "animatable": false,
+          "choices": [
+            "person",
+            "subject"
+          ],
+          "default": "person",
+          "kind": "choice",
+          "meaning": "which cached matte: person (the pose model's person mask, fast to analyze) or subject (BiRefNet, any subject, finer edges, slow to analyze)",
+          "name": "source"
+        },
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "the matte value where the edge falls: higher keeps less of soft, uncertain edges",
+          "min": 0.0,
+          "name": "threshold"
+        },
+        {
+          "animatable": true,
+          "default": 0.004,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "how soft the edge is, as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "feather",
+          "unit": "of height"
+        },
+        {
+          "animatable": false,
+          "default": false,
+          "kind": "bool",
+          "meaning": "removes the subject and keeps the background instead",
+          "name": "invert"
+        },
+        {
+          "animatable": false,
+          "choices": [
+            "none",
+            "color",
+            "blur"
+          ],
+          "default": "none",
+          "kind": "choice",
+          "meaning": "what shows where the picture is removed: none (the tracks below), color, or the clip's own picture blurred",
+          "name": "background"
+        },
+        {
+          "animatable": false,
+          "default": "#000000",
+          "kind": "color",
+          "meaning": "the background's color when background is color",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.02,
+          "kind": "number",
+          "max": 0.2,
+          "meaning": "the background's blur radius when background is blur, as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "blur",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Keeps the subject and removes the background (or, with invert, removes the subject), from the clip's cached matte: run media_analyze with analyzers [\"matte\"] first (options {\"matte\": {\"model\": \"subject\"}} for source subject). Exports and frame grabs fail with fosscut.analysis.missing until it is cached.",
+      "title": "Remove background",
+      "type": "key.subject",
+      "version": 1
+    },
+    {
+      "category": "body",
+      "params": [
+        {
+          "animatable": false,
+          "default": "#FFFFFF",
+          "kind": "color",
+          "meaning": "the line's color",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.01,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "the line's width as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "width",
+          "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 0.2,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how soft the line's outer edge is, as a share of its width",
+          "min": 0.0,
+          "name": "softness"
+        }
+      ],
+      "summary": "Draws a line around the person, behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+      "title": "Body outline",
+      "type": "body.outline",
+      "version": 1
+    },
+    {
+      "category": "body",
+      "params": [
+        {
+          "animatable": false,
+          "default": "#66CCFF",
+          "kind": "color",
+          "meaning": "the light's color",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.03,
+          "kind": "number",
+          "max": 0.2,
+          "meaning": "how far the light spreads (one standard deviation) as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "size",
+          "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 2.0,
+          "meaning": "how bright the light is: 0 none, 1 full at the person's edge",
+          "min": 0.0,
+          "name": "strength"
+        }
+      ],
+      "summary": "Surrounds the person with colored light that fades away from them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+      "title": "Body glow",
+      "type": "body.glow",
+      "version": 1
+    },
+    {
+      "category": "body",
+      "params": [
+        {
+          "animatable": false,
+          "default": "#000000",
+          "kind": "color",
+          "meaning": "the shadow's color",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": [
+            0.02,
+            0.02
+          ],
+          "kind": "pair",
+          "max": 0.3,
+          "meaning": "how far the shadow falls [right, down], as fractions of the picture's height",
+          "min": -0.3,
+          "name": "offset",
+          "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 0.01,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "how soft the shadow is (one standard deviation) as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "blur",
+          "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 0.6,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how dark the shadow is",
+          "min": 0.0,
+          "name": "opacity"
+        }
+      ],
+      "summary": "Casts a soft drop shadow of the person onto what is behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+      "title": "Body shadow",
+      "type": "body.shadow",
+      "version": 1
+    },
+    {
+      "category": "body",
+      "params": [
+        {
+          "animatable": false,
+          "default": "#FFE08A",
+          "kind": "color",
+          "meaning": "the sparkles' color",
+          "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.5,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how many sparkles: 1 is 80 at a time, 0 none",
+          "min": 0.0,
+          "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 0.02,
+          "kind": "number",
+          "max": 0.1,
+          "meaning": "a sparkle's radius as a fraction of the picture's height",
+          "min": 0.0,
+          "name": "size",
+          "unit": "of height"
+        }
+      ],
+      "summary": "Scatters twinkling sparkles along the person's arms, shoulders, torso and legs, placed the same way every time the frame renders, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
+      "title": "Body sparkle",
+      "type": "body.sparkle",
       "version": 1
     },
     {

@@ -116,13 +116,28 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut cache info | clear [KIND ...] | clean",
         ),
         (
+            "speech.speak",
+            "Say text with a local English voice (Kokoro) into the bundle's speech folder, import it and place it; the same text, voice and speed reuse the file.",
+            "fosscut speak \"TEXT\" [--voice NAME] [--speed N] [--at TIME] | --voices",
+        ),
+        (
+            "captions.translate",
+            "Translate a caption track's pages between English and Hungarian with a local model, as a second line under each page or in place of its words; one undoable step.",
+            "fosscut captions translate --to hu|en [--mode bilingual|replace] [--track ID]",
+        ),
+        (
+            "captions.dub",
+            "Speak each caption page (its words or its translation) with a local English voice, one clip per page at its start on an audio track; one undoable step.",
+            "fosscut captions dub [--voice NAME] [--speed N] [--translation] [--track ID]",
+        ),
+        (
             "update.check",
             "Ask GitHub once for the latest FossCut release and say whether it is newer; nothing about the user is sent and nothing is installed.",
             "fosscut update",
         ),
         (
             "models.install",
-            "Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.",
+            "Download a local model (speech for transcripts; matte, pose, voice and translate; and the ONNX Runtime they run on) after the user agrees to its size and license; every file is verified by SHA-256.",
             "fosscut models install <name> --yes [--from <file>]",
         ),
         (

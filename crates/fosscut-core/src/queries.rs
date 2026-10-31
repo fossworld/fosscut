@@ -201,7 +201,7 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         result["captions"] = json!({
             "presets": presets,
             "animators": crate::presets::caption_animators(brief),
-            "translation": "Bilingual captions: captions.edit sets a page's translation (written by you; FossCut never translates), shown under its words in the track style's translation look; captions export writes original, translation or both.",
+            "translation": "Bilingual captions: captions.edit sets a page's translation, written by you or by the captions translate operation with a local model (English and Hungarian), shown under its words in the track style's translation look; timeline.read shows it; captions export writes original, translation or both.",
         });
         // Text (ADR-0027): presets, title templates, reveals and the bundled font.
         let text_presets: Vec<Value> = crate::presets::text_style_presets()
@@ -505,6 +505,9 @@ fn clip_view(
         }
         ClipContent::Caption(caption) => {
             view["text"] = json!(caption.text());
+            if let Some(translation) = &caption.translation {
+                view["translation"] = json!(translation);
+            }
             if detail == Detail::Full {
                 // Word times on the timeline, so agents never add the clip's start.
                 view["lines"] = caption

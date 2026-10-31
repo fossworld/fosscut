@@ -8,6 +8,7 @@ import { type MessageKey, t } from "../i18n";
 import { hint } from "../shortcuts";
 import { findClip } from "../timeline/geometry";
 import { formatTime, parseRate } from "../transport/time";
+import { CaptionTools } from "./CaptionTools";
 import { Effects } from "./Effects";
 import { targetsOf } from "./effectFields";
 import { Masks } from "./Masks";
@@ -16,6 +17,7 @@ import { Motion } from "./Motion";
 import { Multicam } from "./Multicam";
 import { Shape } from "./Shape";
 import { Speed } from "./Speed";
+import { Subject } from "./Subject";
 import { Text } from "./Text";
 import {
   type Field,
@@ -409,6 +411,8 @@ export function Inspector({
           targets={targets}
         />
       )}
+      {clip.kind === "video" && clip.asset && <Subject key={`subject:${clip.id}`} editor={editor} clip={clip} />}
+      {clip.kind === "caption" && <CaptionTools key={`captions:${clip.id}`} editor={editor} clip={clip} />}
       {hasPicture(clip) && <Masks editor={editor} clip={clip} playhead={playhead} tool={editor.getState().maskTool} />}
       {(clip.kind === "video" || clip.kind === "audio") && <Speed editor={editor} clip={clip} catalog={catalog} />}
       {clip.kind === "video" && timeline && <Measured key={`measured:${clip.id}`} editor={editor} clip={clip} timeline={timeline} />}

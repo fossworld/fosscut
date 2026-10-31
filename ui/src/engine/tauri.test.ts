@@ -86,6 +86,18 @@ describe("the Tauri engine client", () => {
     await engine.cache.clear("proxies");
     await engine.media.sources();
     await engine.media.work();
+    await engine.models.list();
+    await engine.models.install("birefnet-lite", true);
+    await engine.models.installStatus("birefnet-lite");
+    await engine.subject.analyze({ clip: "clip_0003", kind: "matte", model: "subject" });
+    await engine.subject.status("job_0003");
+    await engine.subject.cancel("job_0003");
+    await engine.voice.list();
+    await engine.voice.preview("Hello", "af_heart", 1.2);
+    await engine.voice.preview("Hello", "af_heart");
+    await engine.voice.add({ text: "Hello", voice: "af_heart", speed: 1, at: 705_600_000, expected_revision: 7 });
+    await engine.captions.translate({ track: "track_0010", to: "hu", mode: "bilingual", expected_revision: 7 });
+    await engine.captions.dub({ track: "track_0010", voice: "bm_george", speed: 1.1, translation: true, expected_revision: 8 });
     invoke.mockResolvedValueOnce(null);
     expect(await engine.media.relink("asset_0001"), "a cancelled dialog").toBe(false);
     expect(invoke.mock.calls).toEqual([
@@ -159,6 +171,21 @@ describe("the Tauri engine client", () => {
       ["cache_clear", { kinds: ["proxies"] }],
       ["media_sources"],
       ["media_work"],
+      ["models_list"],
+      ["models_install", { name: "birefnet-lite", confirmed: true }],
+      ["models_install_status", { name: "birefnet-lite" }],
+      ["subject_analyze", { request: { clip: "clip_0003", kind: "matte", model: "subject" } }],
+      ["subject_status", { job: "job_0003" }],
+      ["subject_cancel", { job: "job_0003" }],
+      ["voices_list"],
+      ["speech_preview", { text: "Hello", voice: "af_heart", speed: 1.2 }],
+      ["speech_preview", { text: "Hello", voice: "af_heart", speed: null }],
+      ["speech_add", { request: { text: "Hello", voice: "af_heart", speed: 1, at: 705_600_000, expected_revision: 7 } }],
+      ["captions_translate", { request: { track: "track_0010", to: "hu", mode: "bilingual", expected_revision: 7 } }],
+      [
+        "captions_dub",
+        { request: { track: "track_0010", voice: "bm_george", speed: 1.1, translation: true, expected_revision: 8 } },
+      ],
       ["media_relink", { asset: "asset_0001" }],
     ]);
   });

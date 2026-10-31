@@ -3,6 +3,7 @@
 
 import { clip, entry, moment, track } from "../test/fixtures";
 import { FakeEngine } from "./fake";
+import { STAND_IN_VOICES, standInListing } from "./models";
 import type { LibraryItem, LibraryKind, TimelineView } from "./types";
 
 /** A sample of the built-in library, as `library_list` answers. */
@@ -260,6 +261,55 @@ export function demoEngine(): FakeEngine {
         params: [amount("amount", "edge darkness")],
       },
       {
+        type: "key.subject",
+        version: 1,
+        title: "Remove background",
+        category: "key",
+        summary: "Keeps the subject and removes the background, from the clip's cached matte.",
+        params: [
+          { name: "source", kind: "choice", default: "person", choices: ["person", "subject"], animatable: false, meaning: "which cached matte" },
+          { ...amount("threshold", "where the edge falls"), min: 0, max: 1, default: 0.5 },
+          { ...amount("feather", "how soft the edge is"), min: 0, max: 0.1, default: 0.004 },
+          { name: "invert", kind: "bool", default: false, animatable: false, meaning: "removes the subject instead" },
+          { name: "background", kind: "choice", default: "none", choices: ["none", "color", "blur"], animatable: false, meaning: "what shows behind" },
+          { name: "color", kind: "color", default: "#000000", animatable: false, meaning: "the background's color" },
+          { ...amount("blur", "the background's blur"), min: 0, max: 0.2, default: 0.02 },
+        ],
+      },
+      {
+        type: "body.outline",
+        version: 1,
+        title: "Body outline",
+        category: "body",
+        summary: "Draws a line around the person, from the clip's cached pose.",
+        params: [
+          { name: "color", kind: "color", default: "#FFFFFF", animatable: false, meaning: "the line's color" },
+          { ...amount("width", "the line's width"), min: 0, max: 0.1, default: 0.01 },
+        ],
+      },
+      {
+        type: "body.glow",
+        version: 1,
+        title: "Body glow",
+        category: "body",
+        summary: "Surrounds the person with colored light, from the clip's cached pose.",
+        params: [
+          { name: "color", kind: "color", default: "#66CCFF", animatable: false, meaning: "the light's color" },
+          { ...amount("strength", "how bright the light is"), min: 0, max: 2, default: 1 },
+        ],
+      },
+      {
+        type: "body.sparkle",
+        version: 1,
+        title: "Body sparkle",
+        category: "body",
+        summary: "Scatters twinkling sparkles along the person, from the clip's cached pose.",
+        params: [
+          { name: "color", kind: "color", default: "#FFE08A", animatable: false, meaning: "the sparkles' color" },
+          { ...amount("amount", "how many sparkles"), min: 0, max: 1, default: 0.5 },
+        ],
+      },
+      {
         type: "audio.denoise",
         version: 1,
         title: "Reduce noise",
@@ -348,5 +398,16 @@ export function demoEngine(): FakeEngine {
   engine.sources = { asset_0001: { proxy: "half" }, asset_0002: "remux" };
   engine.mediaWork = { proxies: { done: 1, total: 2 }, remux: { done: 0, total: 0 }, failed: 0 };
   engine.latestRelease = { version: "0.2.0", url: "https://github.com/fossworld/fosscut/releases" };
+  // Local models (ADR-0033): the runtime, the pose model and English to Hungarian are
+  // installed; any-subject mattes, voices and Hungarian to English ask to install first.
+  engine.modelListing = standInListing(["onnxruntime", "mediapipe-pose-full", "opus-mt-en-hu"]);
+  engine.installReads = 6;
+  engine.analysisReads = 8;
+  engine.voices = STAND_IN_VOICES;
+  engine.captionPages = [
+    { clip: "clip_0011", text: "Edit by talking" },
+    { clip: "clip_0012", text: "to your agent" },
+  ];
+  engine.translations = { "Edit by talking": "Szerkesszen beszéddel", "to your agent": "az ügynökével" };
   return engine;
 }

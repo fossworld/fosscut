@@ -122,6 +122,19 @@ enum Slot {
     },
     /// Two source frames of a layer mixed for smooth slow motion.
     Between(usize),
+    /// The field a subject effect samples (ADR-0033), per layer and effect.
+    SubjectField {
+        layer: usize,
+        effect: usize,
+    },
+    /// A subject effect's second texture: sparkle coverage.
+    SubjectAux {
+        layer: usize,
+        effect: usize,
+    },
+    /// A layer's picture with its subject cut out, which `key.subject` blurs into the
+    /// background.
+    SubjectHole(usize),
     /// The multisampled composite target, per nesting depth.
     CanvasSamples(usize),
     Readback,
@@ -740,7 +753,7 @@ impl Renderer {
                     // Effects on everything so far, mixed back in by the layer's opacity.
                     let effects = &plan.layers[*layer].effects;
                     let adjusted =
-                        self.apply_effects(encoder, ns + *layer, &below, effects, frames)?;
+                        self.apply_effects(encoder, ns + *layer, &below, effects, frames, None)?;
                     let masks = &plan.layers[*layer].masks;
                     let coverage = self.mask_view(ns + *layer, masks, size);
                     let mut p = [[0.0f32; 4]; SLOTS];
@@ -990,7 +1003,12 @@ impl Renderer {
         let layer_view = if layer.effects.is_empty() {
             texture.create_view(&Default::default())
         } else {
-            self.apply_effects(encoder, index, &texture, &layer.effects, frames)?
+            // Subject effects read the cached analyses of the frame the layer shows.
+            let source = match &layer.source {
+                LayerSource::Frame(source) => Some(source),
+                _ => None,
+            };
+            self.apply_effects(encoder, index, &texture, &layer.effects, frames, source)?
         };
         // Masks follow the picture as displayed: a quarter-turned source swaps sides.
         let shown = if layer.rotation == 90 || layer.rotation == 270 {
@@ -1213,7 +1231,9 @@ impl Renderer {
     }
 
     /// Applies `effects` in order to `input` (a layer's picture, or the canvas under an
-    /// adjustment layer) and returns the result, mipmapped for compositing.
+    /// adjustment layer) and returns the result, mipmapped for compositing. `source` is the
+    /// frame a layer shows, whose cached matte and pose subject effects read; without it they
+    /// leave the picture unchanged.
     fn apply_effects(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1221,6 +1241,7 @@ impl Renderer {
         input: &wgpu::Texture,
         effects: &[PlannedEffect],
         frames: &mut dyn FrameProvider,
+        source: Option<&SourceRef>,
     ) -> Result<wgpu::TextureView, RenderError> {
         let size = (input.width(), input.height());
         let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
@@ -1236,7 +1257,7 @@ impl Renderer {
         // Layer textures arrive mipmapped; effect outputs are not until mips are made.
         let mut mipped = input.mip_level_count() > 1;
         let mut turn = 0u8;
-        for effect in effects {
+        for (effect_index, effect) in effects.iter().enumerate() {
             let Some(pass) = pass_for(&effect.effect_type) else {
                 continue;
             };
@@ -1341,6 +1362,21 @@ impl Renderer {
                     let sigma = effect.number("radius") * height;
                     self.blur_into(encoder, layer, &current, sigma, &target);
                 }
+                Pass::Subject(entry_point) => {
+                    let prepared = match source {
+                        Some(source) => crate::subject::prepare(effect, source, frames, size)?,
+                        None => None,
+                    };
+                    let slot = (layer, effect_index);
+                    self.subject_pass(
+                        encoder,
+                        entry_point,
+                        &current,
+                        prepared.as_ref(),
+                        slot,
+                        &target,
+                    );
+                }
                 Pass::Sharpen => {
                     let blurred = self.canvas_texture(Slot::Blurred(layer), size);
                     let blurred_view = blurred.create_view(&Default::default());
@@ -1366,6 +1402,121 @@ impl Renderer {
             self.generate_mips(encoder, &current, current.mip_level_count());
         }
         Ok(current.create_view(&Default::default()))
+    }
+
+    /// Runs subject effect `entry_point` on `current` into `target` with what
+    /// [`crate::subject::prepare`] gathered, or copies it unchanged when that is nothing.
+    fn subject_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        entry_point: &str,
+        current: &wgpu::Texture,
+        prepared: Option<&crate::subject::Prepared>,
+        (layer, effect): (usize, usize),
+        target: &wgpu::TextureView,
+    ) {
+        let input = current.create_view(&Default::default());
+        let Some(prepared) = prepared else {
+            let none = [[0.0f32; 4]; SLOTS];
+            self.effect_pass(encoder, "fs_copy", &input, None, None, None, &none, target);
+            return;
+        };
+        let field = prepared.field.as_ref().map(|field| {
+            let texture = self.texture(
+                Slot::SubjectField { layer, effect },
+                (field.width, field.height),
+                CANVAS_FORMAT,
+                1,
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            );
+            let texels: Vec<u16> = field
+                .texels
+                .iter()
+                .flatten()
+                .map(|&v| half::f16::from_f32(v).to_bits())
+                .collect();
+            self.queue.write_texture(
+                texture.as_image_copy(),
+                bytemuck::cast_slice(&texels),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(field.width * 8),
+                    rows_per_image: Some(field.height),
+                },
+                texture.size(),
+            );
+            texture.create_view(&Default::default())
+        });
+        let aux = match &prepared.aux {
+            crate::subject::Aux::None => None,
+            crate::subject::Aux::Blur(sigma) => {
+                // The picture without its subject, blurred; the pass divides by the blurred
+                // alpha, so only the background's own colours spread (normalized
+                // convolution) and the subject leaves no halo.
+                let size = (current.width(), current.height());
+                let mips = (size.0.max(size.1) as f32).log2().floor() as u32 + 1;
+                let hole = self.texture(
+                    Slot::SubjectHole(layer),
+                    size,
+                    CANVAS_FORMAT,
+                    mips,
+                    wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                );
+                let base = hole.create_view(&wgpu::TextureViewDescriptor {
+                    base_mip_level: 0,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                });
+                self.effect_pass(
+                    encoder,
+                    "fs_subject_hole",
+                    &input,
+                    None,
+                    None,
+                    field.as_ref(),
+                    &prepared.params,
+                    &base,
+                );
+                self.generate_mips(encoder, &hole, mips);
+                let blurred = self.canvas(Slot::Blurred(layer), size);
+                self.blur_into(encoder, layer, &hole, *sigma, &blurred);
+                Some(blurred)
+            }
+            crate::subject::Aux::Coverage {
+                width,
+                height,
+                data,
+            } => {
+                let texture = self.texture(
+                    Slot::SubjectAux { layer, effect },
+                    (*width, *height),
+                    wgpu::TextureFormat::R8Unorm,
+                    1,
+                    wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                );
+                self.queue.write_texture(
+                    texture.as_image_copy(),
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(*width),
+                        rows_per_image: Some(*height),
+                    },
+                    texture.size(),
+                );
+                Some(texture.create_view(&Default::default()))
+            }
+        };
+        self.effect_pass(
+            encoder,
+            entry_point,
+            &input,
+            aux.as_ref(),
+            None,
+            field.as_ref(),
+            &prepared.params,
+            target,
+        );
     }
 
     /// A draw that copies `canvas` over the whole target, to continue compositing on it.

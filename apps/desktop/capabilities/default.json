@@ -55,6 +55,17 @@
     "allow-cache-info",
     "allow-cache-clear",
     "allow-media-sources",
-    "allow-media-work"
+    "allow-media-work",
+    "allow-models-list",
+    "allow-models-install",
+    "allow-models-install-status",
+    "allow-subject-analyze",
+    "allow-subject-status",
+    "allow-subject-cancel",
+    "allow-voices-list",
+    "allow-speech-preview",
+    "allow-speech-add",
+    "allow-captions-translate",
+    "allow-captions-dub"
   ]
 }

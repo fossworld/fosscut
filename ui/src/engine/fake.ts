@@ -3,6 +3,7 @@
 
 import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
 import { CacheStandIn } from "./cache";
+import { standInListing } from "./models";
 import { PreferenceStandIn } from "./preferences";
 import type {
   ApiError,
@@ -12,6 +13,8 @@ import type {
   CaptureDevice,
   Client,
   ColorSuggestion,
+  DubCaptionsRequest,
+  DubCaptionsResult,
   EditRequest,
   EditResponse,
   ExportChoice,
@@ -22,6 +25,8 @@ import type {
   LibraryItem,
   LostRange,
   MediaWork,
+  ModelInstallState,
+  ModelListing,
   MotionResult,
   MulticamRequest,
   MulticamResult,
@@ -33,9 +38,17 @@ import type {
   RecordChoice,
   RecordState,
   SceneSplit,
+  SpeechFile,
+  SpeechPreview,
+  SpeechRequest,
+  SpeechResult,
+  SubjectRequest,
   TrackRequest,
+  TranslateCaptionsRequest,
+  TranslateCaptionsResult,
   TrashEntry,
   UpdateAnswer,
+  VoiceInfo,
 } from "./types";
 
 export interface Call {
@@ -523,6 +536,255 @@ export class FakeEngine implements EngineClient {
     this.log("pickFolder", title, directory);
     return this.folderChosen;
   }
+
+  // ---- Local models ----
+
+  /** The models `models.list` lists; installs that finish mark theirs installed. */
+  modelListing: ModelListing = standInListing([]);
+  /** How many status reads an install takes to finish. */
+  installReads = 2;
+  /** What every install fails with, when set. */
+  installFailure: ApiError | null = null;
+  installs = new Map<string, { state: ModelInstallState; reads: number }>();
+
+  private listed(name: string) {
+    return this.modelListing.models.find((m) => m.name === name);
+  }
+
+  /** True when `name` can run: installed, and the runtime is there for any but itself. */
+  private ready(name: string): boolean {
+    return this.listed(name)?.installed === true;
+  }
+
+  /**
+   * Refuses as the engine does when a model is missing: `fosscut.model.not_installed`
+   * naming them, or `fosscut.model.runtime_missing` when only the runtime is.
+   */
+  private needs(names: string[]): void {
+    const missing = names.filter((name) => !this.ready(name));
+    if (missing.length > 0) {
+      const what = missing.join(" and ");
+      throw {
+        code: "fosscut.model.not_installed",
+        message: `${what} is not installed`,
+        hint: "Ask the user before installing, since it downloads: models install.",
+        details: { what },
+      } satisfies ApiError;
+    }
+    if (this.modelListing.runtime === null) {
+      throw {
+        code: "fosscut.model.runtime_missing",
+        message: "the ONNX Runtime library is missing",
+        hint: "Ask the user before installing, since it downloads: models install onnxruntime.",
+      } satisfies ApiError;
+    }
+  }
+
+  /** Installs as the desktop runs them: `installReads` status reads each, then installed. */
+  models = {
+    list: async (): Promise<ModelListing> => {
+      this.log("models.list");
+      return { ...this.modelListing, models: this.modelListing.models.map((m) => ({ ...m })) };
+    },
+    install: async (name: string, confirmed: boolean): Promise<ModelInstallState> => {
+      this.log("models.install", name, confirmed);
+      const model = this.listed(name);
+      if (!model) throw { code: "fosscut.model.unknown", message: `there is no model ${name}` } satisfies ApiError;
+      const total = model.size_bytes;
+      if (model.installed) {
+        return { name, state: "succeeded", done_bytes: total, total_bytes: total, elapsed_ms: 0, install: { path: `/models/${name}`, status: "unchanged" } };
+      }
+      if (!confirmed) {
+        throw {
+          code: "fosscut.model.confirmation_required",
+          message: `${name} needs confirmation`,
+          details: { name, size_bytes: total, license: model.license },
+        } satisfies ApiError;
+      }
+      const running = this.installs.get(name);
+      if (running?.state.state === "running") return running.state;
+      const state: ModelInstallState = { name, state: "running", done_bytes: 0, total_bytes: total, elapsed_ms: 0 };
+      this.installs.set(name, { state, reads: 0 });
+      return state;
+    },
+    installStatus: async (name: string): Promise<ModelInstallState> => {
+      this.log("models.installStatus", name);
+      const entry = this.installs.get(name);
+      if (!entry) throw { code: "fosscut.request.invalid_arguments", message: `no install of ${name} was started` } satisfies ApiError;
+      if (entry.state.state !== "running") return entry.state;
+      entry.reads += 1;
+      if (this.installFailure) {
+        entry.state = { ...entry.state, state: "failed", error: this.installFailure };
+        return entry.state;
+      }
+      const total = entry.state.total_bytes;
+      const done = Math.min(total, Math.round((total * entry.reads) / Math.max(1, this.installReads)));
+      entry.state = { ...entry.state, done_bytes: done, elapsed_ms: entry.reads * 500 };
+      if (entry.reads >= this.installReads) {
+        entry.state = { ...entry.state, state: "succeeded", done_bytes: total, install: { path: `/models/${name}`, status: "installed" } };
+        this.modelListing = {
+          ...this.modelListing,
+          models: this.modelListing.models.map((m) => (m.name === name ? { ...m, installed: true } : m)),
+          runtime: name === "onnxruntime" ? `/models/onnxruntime/libonnxruntime.dylib` : this.modelListing.runtime,
+        };
+      }
+      return entry.state;
+    },
+  };
+
+  /** Analyses cached already, by `clip:kind:model`. */
+  analyzed = new Set<string>();
+  /** How many status reads an analysis takes, and the frames it analyzes. */
+  analysisReads = 2;
+  analysisFrames = 120;
+  /** What every analysis fails with once it runs, when set. */
+  analysisFailure: ApiError | null = null;
+  analyses = new Map<string, { status: JobStatus; reads: number; key: string }>();
+
+  /**
+   * Analyses as the desktop runs them: refused at once without their models, answered at
+   * once when cached, otherwise `analysisReads` status reads, then cached.
+   */
+  subject = {
+    analyze: async (request: SubjectRequest): Promise<JobStatus> => {
+      this.log("subject.analyze", request);
+      this.needs([request.kind === "matte" && request.model === "subject" ? "birefnet-lite" : "mediapipe-pose-full"]);
+      const key = `${request.clip}:${request.kind}:${request.kind === "matte" ? (request.model ?? "person") : ""}`;
+      const job = `job_${String(100 + this.analyses.size).padStart(4, "0")}`;
+      const cached = this.analyzed.has(key);
+      const total = this.analysisFrames;
+      const status: JobStatus = {
+        job,
+        kind: "analysis",
+        state: cached ? "succeeded" : "running",
+        progress: { done: cached ? total : 0, total },
+        elapsed_ms: 0,
+        asset: "asset_0001",
+      };
+      this.analyses.set(job, { status, reads: 0, key });
+      return status;
+    },
+    status: async (job: string): Promise<JobStatus> => {
+      this.log("subject.status", job);
+      const entry = this.analyses.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state !== "running") return entry.status;
+      entry.reads += 1;
+      if (this.analysisFailure) {
+        entry.status = { ...entry.status, state: "failed", error: this.analysisFailure };
+        return entry.status;
+      }
+      const total = entry.status.progress.total;
+      const done = Math.min(total, Math.round((total * entry.reads) / Math.max(1, this.analysisReads)));
+      entry.status = { ...entry.status, progress: { done, total }, elapsed_ms: entry.reads * 500 };
+      if (entry.reads >= this.analysisReads) {
+        entry.status = { ...entry.status, state: "succeeded" };
+        this.analyzed.add(entry.key);
+      }
+      return entry.status;
+    },
+    cancel: async (job: string): Promise<JobStatus> => {
+      this.log("subject.cancel", job);
+      const entry = this.analyses.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state === "running") {
+        entry.status = { ...entry.status, state: "cancelled", error: { code: "fosscut.analysis.cancelled", message: "the analysis was cancelled" } };
+      }
+      return entry.status;
+    },
+  };
+
+  /** The voices `voice.list` lists. */
+  voices: VoiceInfo[] = [];
+
+  /** A speech file as the engine writes one: a second for every 15 characters. */
+  private speechFile(text: string, voice: string, speed: number): SpeechFile {
+    const seconds = Math.max(0.5, Math.round((text.trim().length / 15 / speed) * 100) / 100);
+    return { relative: `speech/${voice}-${text.trim().length}.wav`, reused: false, duration: Math.round(seconds * 705_600_000), seconds, voice, speed };
+  }
+
+  /** Text to speech as the desktop answers it, with the voice model required. */
+  voice = {
+    list: async (): Promise<VoiceInfo[]> => {
+      this.log("voice.list");
+      return this.voices;
+    },
+    preview: async (text: string, voice: string, speed?: number): Promise<SpeechPreview> => {
+      this.log("voice.preview", text, voice, speed);
+      if (!text.trim()) throw { code: "fosscut.request.invalid_arguments", message: "there is no text to speak" } satisfies ApiError;
+      this.needs(["kokoro-82m"]);
+      return { file: this.speechFile(text, voice, speed ?? 1), played: true };
+    },
+    add: async (request: SpeechRequest): Promise<SpeechResult> => {
+      this.log("voice.add", request);
+      if (!request.text.trim()) throw { code: "fosscut.request.invalid_arguments", message: "there is no text to speak" } satisfies ApiError;
+      this.needs(["kokoro-82m"]);
+      const n = 70 + this.revision * 2;
+      const asset = `asset_${String(n).padStart(4, "0")}`;
+      const clip = `clip_${String(n + 1).padStart(4, "0")}`;
+      const response = this.commit([{ asset }, { clip }], request.expected_revision);
+      const file = this.speechFile(request.text, request.voice ?? "af_heart", request.speed ?? 1);
+      return { speech: { revision: response.revision - 1, asset, file }, response };
+    },
+  };
+
+  /** The caption pages `captions` translates and dubs, and the translations it finds. */
+  captionPages: { clip: string; text: string; translation?: string }[] = [];
+  translations: Record<string, string> = {};
+
+  /** Caption translation and dubbing as the desktop answers them, with their models required. */
+  captions = {
+    translate: async (request: TranslateCaptionsRequest): Promise<TranslateCaptionsResult> => {
+      this.log("captions.translate", request);
+      const pair = request.to === "hu" ? "en>hu" : "hu>en";
+      const model = request.to === "hu" ? "opus-mt-en-hu" : "opus-mt-hu-en";
+      this.needs([model]);
+      if (this.captionPages.length === 0) throw { code: "fosscut.captions.none", message: "the timeline has no caption track" } satisfies ApiError;
+      const pages = this.captionPages.map((p) => ({ clip: p.clip, text: p.text, translation: this.translations[p.text] ?? "" }));
+      const done = pages.filter((p) => p.translation);
+      const skipped = pages.filter((p) => !p.translation).map((p) => p.clip);
+      const response = done.length > 0 ? this.commit(done.map(() => ({})), request.expected_revision) : null;
+      for (const page of this.captionPages) if (this.translations[page.text]) page.translation = this.translations[page.text];
+      return {
+        translation: {
+          revision: this.revision,
+          timeline: "timeline_0000",
+          track: request.track ?? "track_0010",
+          pair,
+          mode: request.mode,
+          model,
+          attribution: this.listed(model)?.attribution,
+          pages: done,
+          skipped,
+        },
+        response,
+      };
+    },
+    dub: async (request: DubCaptionsRequest): Promise<DubCaptionsResult> => {
+      this.log("captions.dub", request);
+      this.needs(["kokoro-82m"]);
+      const spoken = this.captionPages
+        .map((p, i) => ({ page: p, text: request.translation ? p.translation : p.text, start: i * 705_600_000 }))
+        .filter((p): p is { page: (typeof p)["page"]; text: string; start: number } => Boolean(p.text?.trim()));
+      const skipped = this.captionPages.filter((p) => !spoken.some((s) => s.page === p)).map((p) => p.clip);
+      const response = spoken.length > 0 ? this.commit(spoken.map(() => ({})), request.expected_revision) : null;
+      const voice = request.voice ?? "af_heart";
+      return {
+        dub: {
+          revision: this.revision,
+          timeline: "timeline_0000",
+          track: request.track ?? "track_0010",
+          voice,
+          pages: spoken.map((s, i) => {
+            const file = this.speechFile(s.text, voice, request.speed ?? 1);
+            return { clip: s.page.clip, start: s.start, text: s.text, speech: file.duration, speed: file.speed, asset: `asset_${String(80 + i).padStart(4, "0")}` };
+          }),
+          skipped,
+        },
+        response,
+      };
+    },
+  };
 
   /** The caches, with sizes so that clearing them shows. */
   caches = new CacheStandIn({ analysis: 120_000_000, proxies: 2_400_000_000, remux: 800_000_000, frames: 650_000_000 });

@@ -1,15 +1,26 @@
 //! FossCut's local media analysis (ADR-0012, ADR-0019): facts about footage that agents
-//! build edits on, measured on this machine and cached by content.
+//! build edits on, measured on this machine and cached by content, and the local models they
+//! run (ADR-0020, ADR-0033).
 //!
 //! - [`loudness`]: ITU-R BS.1770-4 integrated loudness and sample peak;
 //! - [`silence`]: ranges quieter than a threshold for at least a minimum duration;
 //! - [`scenes`]: hard shot cuts from luma-histogram differences;
 //! - [`speech`]: words with timings, filler candidates and pauses, recognised by whisper.cpp
 //!   with a model from [`models`] (ADR-0020);
+//! - [`models`]: the manifests of every model FossCut can install (speech, mattes, pose,
+//!   voices, translation and the ONNX Runtime library), and their verified installation;
+//! - [`onnx`]: sessions on ONNX Runtime, loaded at run time, for the vision, voice and
+//!   translation models (ADR-0033);
 //! - [`motion`]: camera motion between frames, the camera path, and corrections that steady
 //!   it;
 //! - [`track`]: where a region of the first frame is in each later frame;
-//! - [`sync`]: how far apart two recordings of the same scene are, from their sound.
+//! - [`sync`]: how far apart two recordings of the same scene are, from their sound;
+//! - [`pose`]: body landmarks and a person mask in every frame, with MediaPipe Pose
+//!   Landmarker (ADR-0033, item 4);
+//! - [`matte`]: the subject's alpha in every frame, from the person mask or BiRefNet
+//!   (ADR-0033, item 3);
+//! - [`vision`]: what those two share: RGB frames, resampling, packed mattes, smoothing in
+//!   time and their data files.
 //!
 //! The analyzers are pure and stream over samples or frames; [`decode`] feeds them from a
 //! media file and [`cache`] stores their results outside the project, keyed by the file's
@@ -21,13 +32,19 @@ pub mod cache;
 pub mod decode;
 mod gray;
 pub mod loudness;
+pub mod matte;
 pub mod models;
 pub mod motion;
+pub mod onnx;
+pub mod pose;
 pub mod scenes;
 pub mod silence;
 pub mod speech;
 pub mod sync;
 pub mod track;
+pub mod translate;
+pub mod vision;
+pub mod voice;
 
 use fosscut_time::Flicks;
 use schemars::JsonSchema;
@@ -35,9 +52,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use loudness::Loudness;
+pub use matte::{Matte, MatteModel, MatteOptions, MatteTrack};
 pub use motion::{
     CameraPath, Correction, FrameMotion, MotionEstimator, PathFrame, Stabilization, stabilize,
 };
+pub use pose::{Pose, PoseOptions, PoseTrack};
 pub use scenes::{Cut, SceneOptions, Scenes};
 pub use silence::{SilenceOptions, Silences};
 pub use speech::{Transcript, TranscriptOptions};
@@ -96,6 +115,10 @@ pub enum Analyzer {
     Scenes,
     /// Speech as words with timings, filler candidates and pauses.
     Transcript,
+    /// Body landmarks and the person mask in every frame (ADR-0033).
+    Pose,
+    /// The subject's alpha in every frame (ADR-0033).
+    Matte,
 }
 
 /// What an analyzer reads.
@@ -109,11 +132,13 @@ pub enum Needs {
 
 impl Analyzer {
     /// Every analyzer.
-    pub const ALL: [Analyzer; 4] = [
+    pub const ALL: [Analyzer; 6] = [
         Analyzer::Loudness,
         Analyzer::Silences,
         Analyzer::Scenes,
         Analyzer::Transcript,
+        Analyzer::Pose,
+        Analyzer::Matte,
     ];
 
     /// Stable name, as agents pass it.
@@ -123,13 +148,34 @@ impl Analyzer {
             Analyzer::Silences => "silences",
             Analyzer::Scenes => "scenes",
             Analyzer::Transcript => "transcript",
+            Analyzer::Pose => "pose",
+            Analyzer::Matte => "matte",
         }
     }
 
-    /// Whether it runs when no analyzers are named: everything except speech, which needs an
-    /// installed model and takes longer.
+    /// Whether it runs when no analyzers are named: everything except speech, pose and
+    /// mattes, which need installed models and take longer.
     pub fn by_default(self) -> bool {
-        self != Analyzer::Transcript
+        !matches!(
+            self,
+            Analyzer::Transcript | Analyzer::Pose | Analyzer::Matte
+        )
+    }
+
+    /// Whether its results include a data file beside the cache entry, with what is too
+    /// large for the result itself (per-frame landmarks and masks).
+    pub fn has_data(self) -> bool {
+        matches!(self, Analyzer::Pose | Analyzer::Matte)
+    }
+
+    /// The installed models it runs with `options`, besides ONNX Runtime for the vision
+    /// models; speech models are chosen by [`decode::speech_model`].
+    pub fn vision_model(self, options: &Options) -> Option<&'static str> {
+        match self {
+            Analyzer::Pose => Some(pose::MODEL),
+            Analyzer::Matte => Some(options.matte.model.model()),
+            _ => None,
+        }
     }
 
     /// The analyzer called `name`.
@@ -160,6 +206,12 @@ impl Analyzer {
             Analyzer::Transcript => {
                 "Speech as words with timings, filler candidates and pauses, recognised locally by whisper.cpp; needs an installed speech model and must be named."
             }
+            Analyzer::Pose => {
+                "A person's 33 body landmarks and person mask in every frame, with MediaPipe Pose Landmarker, for the body effects (body.outline, body.glow, body.shadow, body.sparkle); needs the mediapipe-pose-full model and must be named."
+            }
+            Analyzer::Matte => {
+                "The subject's alpha in every frame, for key.subject: model person (the pose model's person mask, fast) or subject (BiRefNet, any subject, 9 to 14 s a frame, so analyze every few frames with every); needs mediapipe-pose-full or birefnet-lite and must be named."
+            }
         }
     }
 
@@ -167,7 +219,7 @@ impl Analyzer {
     pub fn needs(self) -> Needs {
         match self {
             Analyzer::Loudness | Analyzer::Silences | Analyzer::Transcript => Needs::Audio,
-            Analyzer::Scenes => Needs::Video,
+            Analyzer::Scenes | Analyzer::Pose | Analyzer::Matte => Needs::Video,
         }
     }
 }
@@ -211,6 +263,12 @@ pub fn analyzers() -> Vec<AnalyzerInfo> {
                     serde_json::to_value(schemars::schema_for!(TranscriptOptions))
                         .unwrap_or_default()
                 }
+                Analyzer::Pose => {
+                    serde_json::to_value(schemars::schema_for!(PoseOptions)).unwrap_or_default()
+                }
+                Analyzer::Matte => {
+                    serde_json::to_value(schemars::schema_for!(MatteOptions)).unwrap_or_default()
+                }
             },
         })
         .collect()
@@ -229,6 +287,12 @@ pub struct Options {
     /// Options of `transcript`.
     #[serde(default)]
     pub transcript: TranscriptOptions,
+    /// Options of `pose`.
+    #[serde(default)]
+    pub pose: PoseOptions,
+    /// Options of `matte`.
+    #[serde(default)]
+    pub matte: MatteOptions,
 }
 
 impl Options {
@@ -239,6 +303,8 @@ impl Options {
             Analyzer::Silences => serde_json::to_value(&self.silences).unwrap_or_default(),
             Analyzer::Scenes => serde_json::to_value(&self.scenes).unwrap_or_default(),
             Analyzer::Transcript => serde_json::to_value(&self.transcript).unwrap_or_default(),
+            Analyzer::Pose => serde_json::to_value(&self.pose).unwrap_or_default(),
+            Analyzer::Matte => serde_json::to_value(self.matte.clamped()).unwrap_or_default(),
         }
     }
 }
@@ -258,6 +324,17 @@ pub struct Results {
     /// Words, fillers and pauses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcript: Option<Transcript>,
+    /// Body landmarks and person masks (boxed: results travel in job reports).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pose: Option<Box<Pose>>,
+    /// Subject mattes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matte: Option<Box<Matte>>,
+    /// The data files of analyzers measured now ([`Analyzer::has_data`]), to be written
+    /// beside their cache entries; never part of the reply, which names them by hash.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub data: std::collections::BTreeMap<Analyzer, std::sync::Arc<[u8]>>,
 }
 
 impl Results {
@@ -268,6 +345,8 @@ impl Results {
             Analyzer::Silences => self.silences.as_ref().map(serde_json::to_value),
             Analyzer::Scenes => self.scenes.as_ref().map(serde_json::to_value),
             Analyzer::Transcript => self.transcript.as_ref().map(serde_json::to_value),
+            Analyzer::Pose => self.pose.as_ref().map(serde_json::to_value),
+            Analyzer::Matte => self.matte.as_ref().map(serde_json::to_value),
         };
         value.and_then(Result::ok)
     }
@@ -286,6 +365,12 @@ impl Results {
                 .is_ok(),
             Analyzer::Transcript => serde_json::from_value(value)
                 .map(|r| self.transcript = Some(r))
+                .is_ok(),
+            Analyzer::Pose => serde_json::from_value(value)
+                .map(|r| self.pose = Some(r))
+                .is_ok(),
+            Analyzer::Matte => serde_json::from_value(value)
+                .map(|r| self.matte = Some(r))
                 .is_ok(),
         }
     }
@@ -315,6 +400,15 @@ pub enum AnalysisError {
     /// This build has no speech recognition (the `speech` feature is off).
     #[error("this build of FossCut has no speech recognition")]
     SpeechUnavailable,
+    /// ONNX Runtime is missing, or a vision model could not be loaded into it.
+    #[error(transparent)]
+    Onnx(#[from] onnx::OnnxError),
+    /// A vision model failed while running.
+    #[error("the model failed: {0}")]
+    Inference(String),
+    /// This build has no ONNX Runtime support (the `onnx` feature is off).
+    #[error("this build of FossCut has no ONNX Runtime support")]
+    OnnxUnavailable,
 }
 
 /// How far an analysis has come: seconds of audio and frames of video done, of the total.
@@ -344,7 +438,28 @@ mod tests {
         assert!(listed[1].options["properties"]["threshold_dbfs"].is_object());
         assert_eq!(listed[2].reads, "video");
         assert!(listed[3].options["properties"]["model"].is_object());
+        assert!(listed[4].options["properties"]["max_fps"].is_object());
+        assert!(listed[5].options["properties"]["every"].is_object());
         assert!(!Analyzer::Transcript.by_default() && Analyzer::Scenes.by_default());
+        assert!(!Analyzer::Pose.by_default() && !Analyzer::Matte.by_default());
+        assert!(Analyzer::Pose.has_data() && !Analyzer::Scenes.has_data());
+        assert_eq!(Analyzer::Matte.needs(), Needs::Video);
+        let mut subject = Options::default();
+        subject.matte.model = MatteModel::Subject;
+        assert_eq!(
+            Analyzer::Matte.vision_model(&subject),
+            Some("birefnet-lite")
+        );
+        assert_eq!(
+            Analyzer::Pose.vision_model(&subject),
+            Some("mediapipe-pose-full")
+        );
+        assert_eq!(Analyzer::Loudness.vision_model(&subject), None);
+        assert_eq!(
+            Options::default().for_analyzer(Analyzer::Matte)["model"],
+            "person"
+        );
+        assert_eq!(subject.for_analyzer(Analyzer::Matte)["model"], "subject");
         assert_eq!(Analyzer::Scenes.needs(), Needs::Video);
         assert_eq!(
             serde_json::to_value(Analyzer::Silences).unwrap(),

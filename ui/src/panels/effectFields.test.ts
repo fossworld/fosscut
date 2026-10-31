@@ -6,6 +6,8 @@ import { FLICKS_PER_SECOND } from "../transport/time";
 import {
   addPoint,
   animated,
+  effectGroups,
+  groupOf,
   isSoundEffect,
   keyed,
   keyframeable,
@@ -179,5 +181,39 @@ describe("sound and picture effects", () => {
     });
     expect(paramChange(sound, vocals, mode, "isolate", 0), "unchanged").toBeNull();
     expect(paramChange(sound, vocals, mode, "louder", 0), "not a choice").toBeNull();
+  });
+});
+
+describe("the effects browser", () => {
+  const spec = (type: string, category: string): EffectSpec => ({ type, version: 1, title: type, category, summary: "", params: [] });
+  const color: ParamSpec = { name: "color", kind: "color", default: "#FFFFFF", animatable: false, meaning: "" };
+
+  it("lists picture effects, then body effects, then sound effects", () => {
+    const offered = [
+      spec("body.glow", "body"),
+      spec("color.adjust", "color"),
+      spec("audio.denoise", "audio"),
+      spec("key.subject", "key"),
+      spec("body.outline", "body"),
+    ];
+    expect(offered.map(groupOf)).toEqual(["body", "picture", "sound", "picture", "body"]);
+    expect(effectGroups(offered).map((g) => [g.kind, g.effects.map((e) => e.type)])).toEqual([
+      ["picture", ["color.adjust", "key.subject"]],
+      ["body", ["body.glow", "body.outline"]],
+      ["sound", ["audio.denoise"]],
+    ]);
+    expect(effectGroups([spec("color.adjust", "color")]).map((g) => g.kind), "one group needs no headings").toEqual(["picture"]);
+    expect(effectGroups([])).toEqual([]);
+  });
+
+  it("set colour parameters with effect.set", () => {
+    const glow: EffectView = { id: "effect_0020", type: "body.glow", params: {} };
+    const video = clip("clip_0003", "video", 0, 4);
+    expect(paramAt(video, glow, color, 0)).toBe("#FFFFFF");
+    expect(paramChange(video, glow, color, "#66CCFF", 0)).toEqual({
+      command: "effect.set",
+      args: { clip: "clip_0003", effect: "effect_0020", params: { color: "#66CCFF" } },
+    });
+    expect(paramChange(video, glow, color, "#FFFFFF", 0), "unchanged").toBeNull();
   });
 });

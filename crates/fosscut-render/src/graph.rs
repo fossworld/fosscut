@@ -14,6 +14,7 @@ use crate::color::TransferFunction;
 use crate::gpu::{Image, Renderer};
 use crate::lut::Lut3d;
 use crate::plan::{SourceRef, plan_frame};
+use crate::subject::{MatteKind, Pose, SubjectData};
 
 /// Supplies the decoded frame a layer needs.
 pub trait FrameProvider {
@@ -33,6 +34,25 @@ pub trait FrameProvider {
             message: format!("no LUT is available for {asset}"),
         })
     }
+
+    /// The cached matte of `kind` for the frame of `source.asset` shown at `source.time`,
+    /// for `key.subject` (ADR-0033); `None` when it was not analyzed, which leaves the
+    /// picture unchanged.
+    fn matte(
+        &mut self,
+        source: &SourceRef,
+        kind: MatteKind,
+    ) -> Result<Option<Arc<crate::subject::Matte>>, RenderError> {
+        let _ = (source, kind);
+        Ok(None)
+    }
+
+    /// The cached pose and person mask at `source`, for the body effects; `None` when it was
+    /// not analyzed.
+    fn pose(&mut self, source: &SourceRef) -> Result<Option<Arc<Pose>>, RenderError> {
+        let _ = source;
+        Ok(None)
+    }
 }
 
 /// Frames from one [`VideoDecoder`] per asset. Decoders must be `Send` so the provider can
@@ -42,6 +62,7 @@ pub struct DecoderFrames {
     decoders: HashMap<Id, Box<dyn VideoDecoder + Send>>,
     luts: HashMap<Id, Arc<Lut3d>>,
     fonts: HashMap<String, Arc<[u8]>>,
+    subjects: HashMap<Id, Arc<dyn SubjectData>>,
 }
 
 impl DecoderFrames {
@@ -76,6 +97,16 @@ impl DecoderFrames {
     pub fn has_font(&self, family: &str) -> bool {
         self.fonts.contains_key(family)
     }
+
+    /// Uses `data` for the mattes and poses of `asset`'s frames, replacing what it had.
+    pub fn insert_subject(&mut self, asset: Id, data: Arc<dyn SubjectData>) {
+        self.subjects.insert(asset, data);
+    }
+
+    /// The subject data of `asset`, if any.
+    pub fn subject(&self, asset: &Id) -> Option<&Arc<dyn SubjectData>> {
+        self.subjects.get(asset)
+    }
 }
 
 impl FrameProvider for DecoderFrames {
@@ -104,6 +135,24 @@ impl FrameProvider for DecoderFrames {
             .ok_or_else(|| RenderError::InvalidLut {
                 message: format!("the LUT of {asset} is not loaded"),
             })
+    }
+
+    fn matte(
+        &mut self,
+        source: &SourceRef,
+        kind: MatteKind,
+    ) -> Result<Option<Arc<crate::subject::Matte>>, RenderError> {
+        Ok(self
+            .subjects
+            .get(&source.asset)
+            .and_then(|data| data.matte(kind, source.time)))
+    }
+
+    fn pose(&mut self, source: &SourceRef) -> Result<Option<Arc<Pose>>, RenderError> {
+        Ok(self
+            .subjects
+            .get(&source.asset)
+            .and_then(|data| data.pose(source.time)))
     }
 }
 

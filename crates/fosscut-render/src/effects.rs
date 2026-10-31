@@ -67,6 +67,8 @@ pub enum Pass {
     Sharpen,
     /// One per-pixel pass that samples the input's mip levels.
     Mipped(&'static str),
+    /// One per-pixel pass that reads a clip's cached matte or pose ([`crate::subject`]).
+    Subject(&'static str),
 }
 
 /// The pass of an effect type, or `None` for a type this renderer does not draw.
@@ -94,12 +96,17 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "motion.zoom_pulse" => Pass::Pixel("fs_zoom_pulse"),
         "blur.gaussian" => Pass::Blur,
         "detail.sharpen" => Pass::Sharpen,
+        "key.subject" => Pass::Subject("fs_subject_key"),
+        "body.outline" => Pass::Subject("fs_body_outline"),
+        "body.glow" => Pass::Subject("fs_body_glow"),
+        "body.shadow" => Pass::Subject("fs_body_shadow"),
+        "body.sparkle" => Pass::Subject("fs_body_sparkle"),
         _ => return None,
     })
 }
 
 /// Every per-pixel entry point, for building pipelines.
-pub const PIXEL_ENTRIES: [&str; 26] = [
+pub const PIXEL_ENTRIES: [&str; 32] = [
     "fs_copy",
     "fs_mix",
     "fs_adjust",
@@ -126,6 +133,12 @@ pub const PIXEL_ENTRIES: [&str; 26] = [
     "fs_over",
     "fs_blur",
     "fs_sharpen",
+    "fs_subject_key",
+    "fs_subject_hole",
+    "fs_body_outline",
+    "fs_body_glow",
+    "fs_body_shadow",
+    "fs_body_sparkle",
 ];
 
 /// The uniform of a per-pixel pass for `effect` on a picture `size` pixels large.
@@ -401,6 +414,16 @@ mod tests {
         assert_eq!(pass_for("blur.gaussian"), Some(Pass::Blur));
         assert_eq!(pass_for("detail.sharpen"), Some(Pass::Sharpen));
         assert_eq!(pass_for("color.unknown"), None);
+        assert_eq!(
+            pass_for("key.subject"),
+            Some(Pass::Subject("fs_subject_key"))
+        );
+        for kind in ["body.outline", "body.glow", "body.shadow", "body.sparkle"] {
+            let Some(Pass::Subject(entry)) = pass_for(kind) else {
+                panic!("{kind} reads the subject");
+            };
+            assert!(PIXEL_ENTRIES.contains(&entry), "{entry} has a pipeline");
+        }
         // Every picture effect renders; sound effects belong to the mixer.
         for kind in fosscut_model::effect_types() {
             assert_eq!(

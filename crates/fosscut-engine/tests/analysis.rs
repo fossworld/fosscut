@@ -215,7 +215,7 @@ fn transcripts_need_an_installed_model() {
 fn models_install_only_when_confirmed_and_verified() {
     let dir = workspace().join("models-install");
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(models(&dir).len(), 4);
+    assert_eq!(models(&dir).len(), 10);
     assert!(models(&dir).iter().all(|m| !m.installed));
     let download = ModelSource::Download(None);
 

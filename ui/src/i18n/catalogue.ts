@@ -21,7 +21,11 @@
 //   adjustment layer korrekciós réteg, cache gyorsítótár, proxy proxy,
 //   notification értesítés, update frissítés, trash kuka, agent ügynök,
 //   history előzmények, revision változat, cancel mégse, save mentés,
-//   reset visszaállítás, apply alkalmazás, dismiss bezárás.
+//   reset visszaállítás, apply alkalmazás, dismiss bezárás,
+//   model modell, install telepítés, download letöltés, license licenc,
+//   remove background háttér eltávolítása, body effects testeffektek,
+//   text to speech szövegfelolvasás, voice hang, preview (listen) meghallgatás,
+//   translate fordítás, dub szinkron (szinkronizálás), analysis elemzés.
 
 import * as activity from "./messages/activity";
 import * as app from "./messages/app";
@@ -31,6 +35,7 @@ import * as exporting from "./messages/export";
 import * as inspector from "./messages/inspector";
 import * as masks from "./messages/masks";
 import * as media from "./messages/media";
+import * as models from "./messages/models";
 import * as motion from "./messages/motion";
 import * as preview from "./messages/preview";
 import * as record from "./messages/record";
@@ -39,6 +44,7 @@ import * as shape from "./messages/shape";
 import * as text from "./messages/text";
 import * as timeline from "./messages/timeline";
 import * as transport from "./messages/transport";
+import * as voice from "./messages/voice";
 import type { Messages, Translation } from "./types";
 
 /** Each area's catalogues, by the prefix of its keys. */
@@ -51,6 +57,7 @@ export const areas = {
   inspector,
   masks,
   media,
+  models,
   motion,
   preview,
   record,
@@ -59,6 +66,7 @@ export const areas = {
   text,
   timeline,
   transport,
+  voice,
 } satisfies Record<string, { en: Messages; hu: Messages }>;
 
 /** Every English message. */
@@ -71,6 +79,7 @@ export const english = {
   ...inspector.en,
   ...masks.en,
   ...media.en,
+  ...models.en,
   ...motion.en,
   ...preview.en,
   ...record.en,
@@ -79,6 +88,7 @@ export const english = {
   ...text.en,
   ...timeline.en,
   ...transport.en,
+  ...voice.en,
 };
 
 /** The key of a message. */
@@ -93,6 +103,7 @@ const hungarian: Translation<typeof english> = {
   ...inspector.hu,
   ...masks.hu,
   ...media.hu,
+  ...models.hu,
   ...motion.hu,
   ...preview.hu,
   ...record.hu,
@@ -101,6 +112,7 @@ const hungarian: Translation<typeof english> = {
   ...text.hu,
   ...timeline.hu,
   ...transport.hu,
+  ...voice.hu,
 };
 
 /** Every language's messages. */

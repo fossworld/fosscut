@@ -30,19 +30,19 @@ type Answer<T> = Result<T, ApiError>;
 /// How long `export_cancel` waits for the export to stop before answering.
 const CANCEL_WAIT: Duration = Duration::from_secs(2);
 
-fn invalid(message: impl Into<String>) -> ApiError {
+pub(crate) fn invalid(message: impl Into<String>) -> ApiError {
     ApiError::new(codes::INVALID_ARGUMENTS, message)
 }
 
 /// The open project's bundle, its state now and its primary timeline.
-fn open_project(workspace: &Workspace) -> Answer<(PathBuf, Project, Id)> {
+pub(crate) fn open_project(workspace: &Workspace) -> Answer<(PathBuf, Project, Id)> {
     workspace
         .snapshot()
         .ok_or_else(|| invalid("no project is open").with_hint("Open or create a project first."))
 }
 
 /// A text the window sent, or `None` when it sent nothing or only spaces.
-fn given(text: Option<&str>) -> Option<&str> {
+pub(crate) fn given(text: Option<&str>) -> Option<&str> {
     text.map(str::trim).filter(|t| !t.is_empty())
 }
 
@@ -372,13 +372,13 @@ fn normalize(workspace: &Workspace, clips: &[String], target_lufs: f64) -> Answe
 }
 
 /// An id the window sent, named `what` in the error when it is not one.
-fn parse_id(text: &str, what: &str) -> Answer<Id> {
+pub(crate) fn parse_id(text: &str, what: &str) -> Answer<Id> {
     Id::parse(text).map_err(|e| invalid(format!("{what}: {e}")))
 }
 
 /// Refuses before measuring when the project moved on from the revision the window shows,
 /// as the write that follows would.
-fn ensure_revision(project: &Project, expected: Option<u64>) -> Answer<()> {
+pub(crate) fn ensure_revision(project: &Project, expected: Option<u64>) -> Answer<()> {
     let current = project.manifest.revision;
     match expected {
         Some(expected) if expected != current => Err(ApiError::new(
@@ -392,7 +392,7 @@ fn ensure_revision(project: &Project, expected: Option<u64>) -> Answer<()> {
 
 /// Applies the calls a measurement proposed as the user's one undoable step, against the
 /// revision the window shows when it gives one; nothing when it proposed none.
-fn apply_measured(
+pub(crate) fn apply_measured(
     workspace: &Workspace,
     commands: Vec<Value>,
     expected_revision: Option<u64>,
@@ -1354,6 +1354,172 @@ fn media_sources_of(
 #[tauri::command]
 pub fn media_work(state: State<'_, AppState>) -> crate::performance::MediaWork {
     state.media_jobs.status()
+}
+
+// ---- Local models (ADR-0033) ----
+
+/// Every model with whether it is installed, the models folder, and the ONNX Runtime
+/// library the models will load (`runtime`, null when it must be installed first):
+/// `{dir, models: [{name, task, size_bytes, license, attribution, languages, url,
+/// installed, files, note}], runtime}`.
+#[tauri::command]
+pub async fn models_list() -> Answer<crate::models::ModelListing> {
+    blocking(|| Ok(crate::models::listing(&fosscut_engine::models_dir()))).await
+}
+
+/// Starts downloading and installing model `name` in the background and answers its
+/// install at once: `{name, state, done_bytes, total_bytes, elapsed_ms, install, error}`.
+/// The window passes `confirmed` only after the person agreed to the size and license it
+/// showed; without it nothing downloads and the answer is
+/// `fosscut.model.confirmation_required`. An installed model answers `succeeded` with
+/// `install.status` `unchanged`.
+#[tauri::command]
+pub async fn models_install(
+    state: State<'_, AppState>,
+    name: String,
+    confirmed: Option<bool>,
+) -> Answer<crate::models::InstallState> {
+    let installs = Arc::clone(&state.installs);
+    blocking(move || {
+        installs.start(
+            &fosscut_engine::models_dir(),
+            name.trim(),
+            fosscut_engine::analysis::ModelSource::Download(None),
+            confirmed.unwrap_or(false),
+        )
+    })
+    .await
+}
+
+/// The install of model `name` started last, as `models_install` answers it.
+#[tauri::command]
+pub fn models_install_status(
+    state: State<'_, AppState>,
+    name: String,
+) -> Answer<crate::models::InstallState> {
+    state.installs.status(name.trim())
+}
+
+/// Analyzes a video clip's media for the effects that follow a subject, as a background
+/// job: `kind` `matte` for background removal (`model` `person`, the default, or `subject`,
+/// any subject and slow), or `pose` for body effects. Answers the job (`{job, kind, state,
+/// progress, elapsed_ms, asset, analysis, error}`) once it finished when the result was
+/// cached, or while it runs; `subject_status` follows it. A model that is missing refuses
+/// at once with `fosscut.model.not_installed`, naming it in `details.what`.
+#[tauri::command]
+pub async fn subject_analyze(
+    state: State<'_, AppState>,
+    request: crate::models::SubjectRequest,
+) -> Answer<JobStatus> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    let cache = state.cache.clone();
+    blocking(move || {
+        crate::models::analyze_subject(
+            &workspace,
+            &jobs,
+            &cache,
+            &fosscut_engine::models_dir(),
+            &request,
+        )
+    })
+    .await
+}
+
+/// An analysis job's state, progress and, once it finished, its result or error.
+#[tauri::command]
+pub fn subject_status(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    crate::models::subject_status(&state.jobs, &job, false)
+}
+
+/// Stops an analysis job; nothing is cached.
+#[tauri::command]
+pub async fn subject_cancel(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    let jobs = Arc::clone(&state.jobs);
+    blocking(move || crate::models::subject_status(&jobs, &job, true)).await
+}
+
+/// The voices of the voice model: `[{name, accent, gender, installed}]`.
+#[tauri::command]
+pub fn voices_list() -> Vec<fosscut_engine::voice::VoiceInfo> {
+    crate::models::voices(&fosscut_engine::models_dir())
+}
+
+/// Speaks `text` with `voice` at `speed` into a temporary file and plays it through the
+/// app's sound output, adding nothing: `{file: {relative, reused, duration, seconds, voice,
+/// speed}, played}`. Inserting the same speech afterwards uses this file.
+#[tauri::command]
+pub async fn speech_preview(
+    state: State<'_, AppState>,
+    text: String,
+    voice: String,
+    speed: Option<f32>,
+) -> Answer<Value> {
+    let speaker = state.speaker.clone();
+    blocking(move || {
+        let preview = crate::models::preview_speech(
+            &fosscut_engine::models_dir(),
+            &crate::models::preview_folder(),
+            &text,
+            voice.trim(),
+            speed,
+        )?;
+        let played = speaker
+            .as_ref()
+            .is_some_and(|speaker| speaker.play_mono(&preview.samples, preview.rate));
+        Ok(json!({ "file": preview.file, "played": played }))
+    })
+    .await
+}
+
+/// Speaks `request.text` and places it on the primary timeline at `request.at` as the
+/// user's one undoable step: `{speech: {revision, asset, file}, response}`.
+#[tauri::command]
+pub async fn speech_add(
+    state: State<'_, AppState>,
+    request: crate::models::SpeechAdd,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        crate::models::add_speech(
+            &workspace,
+            &fosscut_engine::models_dir(),
+            &crate::models::preview_folder(),
+            &request,
+        )
+    })
+    .await
+}
+
+/// Translates a caption track into `request.to` (`hu` or `en`), into each page's
+/// translation (`bilingual`) or instead of its words (`replace`), as the user's one
+/// undoable step: `{translation: {pair, mode, model, attribution, pages, skipped, ...},
+/// response}`.
+#[tauri::command]
+pub async fn captions_translate(
+    state: State<'_, AppState>,
+    request: crate::models::CaptionsTranslate,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        crate::models::translate_captions(&workspace, &fosscut_engine::models_dir(), &request)
+    })
+    .await
+}
+
+/// Dubs a caption track with text to speech, one clip per page at its start, speaking its
+/// words or its translations, as the user's one undoable step: `{dub: {voice, pages,
+/// skipped, ...}, response}`.
+#[tauri::command]
+pub async fn captions_dub(
+    state: State<'_, AppState>,
+    request: crate::models::CaptionsDub,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || {
+        crate::models::dub_captions(&workspace, &fosscut_engine::models_dir(), &request)
+    })
+    .await
 }
 
 #[cfg(test)]

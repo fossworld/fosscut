@@ -173,6 +173,19 @@ impl Speaker {
         true
     }
 
+    /// Plays mono `samples` at `rate` once, over anything playing, as a preview of speech
+    /// plays; false when there is nothing to play.
+    pub fn play_mono(&self, samples: &[f32], rate: u32) -> bool {
+        if samples.is_empty() || rate == 0 {
+            return false;
+        }
+        let stereo = mono_to_stereo(samples, rate, self.rate);
+        guard(&self.shared)
+            .queue
+            .overlay(&to_channels(&stereo, self.channels));
+        true
+    }
+
     /// Plays `scene` from `from`, dropping whatever was queued.
     pub fn play(&self, scene: Arc<Scene>, from: Flicks) {
         let mut shared = guard(&self.shared);
@@ -228,6 +241,27 @@ pub fn fade_out(samples: &mut [f32], channels: usize) {
             frame.iter_mut().for_each(|sample| *sample *= gain);
         }
     }
+}
+
+/// Mono samples at `from` samples a second as interleaved stereo at `to`, resampled
+/// linearly (enough for a preview of speech).
+pub fn mono_to_stereo(mono: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if mono.is_empty() || from == 0 || to == 0 {
+        return Vec::new();
+    }
+    let frames = (mono.len() as u64 * u64::from(to)).div_ceil(u64::from(from)) as usize;
+    let step = f64::from(from) / f64::from(to);
+    let mut out = Vec::with_capacity(frames * 2);
+    for frame in 0..frames {
+        let at = frame as f64 * step;
+        let index = at.floor() as usize;
+        let next = (index + 1).min(mono.len() - 1);
+        let fraction = (at - index as f64) as f32;
+        let here = mono[index.min(mono.len() - 1)];
+        let sample = here + (mono[next] - here) * fraction;
+        out.extend_from_slice(&[sample, sample]);
+    }
+    out
 }
 
 /// Interleaved stereo as `channels` channels: one is the two mixed, more than two leave
@@ -437,6 +471,28 @@ mod tests {
             !ding.is_empty() && ding.iter().any(|s| s.abs() > 0.01),
             "the export sound is audible"
         );
+    }
+
+    #[test]
+    fn mono_speech_is_resampled_to_the_devices_rate_in_stereo() {
+        assert_eq!(mono_to_stereo(&[0.5, -0.5], 1, 1), [0.5, 0.5, -0.5, -0.5]);
+        assert_eq!(
+            mono_to_stereo(&[0.0, 1.0], 1, 2),
+            [0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+            "twice the rate, in between linearly"
+        );
+        assert_eq!(
+            mono_to_stereo(&[0.0, 0.5, 1.0, 0.5], 2, 1),
+            [0.0, 0.0, 1.0, 1.0]
+        );
+        let second = vec![0.25; 24_000];
+        assert_eq!(
+            mono_to_stereo(&second, 24_000, 48_000).len(),
+            96_000,
+            "a second"
+        );
+        assert!(mono_to_stereo(&[], 24_000, 48_000).is_empty());
+        assert!(mono_to_stereo(&[0.5], 0, 48_000).is_empty());
     }
 
     #[test]
