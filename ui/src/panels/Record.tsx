@@ -3,15 +3,12 @@ import { useEffect, useState } from "react";
 import type { Editor, EditorState } from "../app/editor";
 import { NO_MICROPHONE, type RecordForm, defaultForm, devicesOf, recordChoice, recordProblem, recordedTime } from "../app/recorder";
 import type { DeviceKind } from "../engine/types";
+import { t } from "../i18n";
 
 /** How often a running recording's time is read while the panel shows, in milliseconds. */
 const POLL = 250;
 
-const KINDS: [DeviceKind, string][] = [
-  ["microphone", "Microphone"],
-  ["camera", "Camera"],
-  ["screen", "Screen"],
-];
+const KINDS: DeviceKind[] = ["microphone", "camera", "screen"];
 
 /**
  * Recording a voiceover, a camera or the screen into the project: choose what and from
@@ -34,15 +31,15 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
   const listed = devicesOf(devices ?? [], form.what);
   const microphones = devicesOf(devices ?? [], "microphone");
   return (
-    <section className="record-panel" role="dialog" aria-label="Record">
+    <section className="record-panel" role="dialog" aria-label={t("record.title")}>
       <div className="record-head">
-        <h2>Record</h2>
-        <button className="link" onClick={() => editor.closeRecorder()} title={running ? "The recording goes on" : undefined}>
-          Close
+        <h2>{t("record.title")}</h2>
+        <button className="link" onClick={() => editor.closeRecorder()} title={running ? t("record.close.help") : undefined}>
+          {t("record.close")}
         </button>
       </div>
-      <div className="buttons kinds" role="radiogroup" aria-label="What to record">
-        {KINDS.map(([kind, label]) => (
+      <div className="buttons kinds" role="radiogroup" aria-label={t("record.what")}>
+        {KINDS.map((kind) => (
           <button
             key={kind}
             role="radio"
@@ -51,18 +48,20 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
             disabled={running}
             onClick={() => setChosen(defaultForm(kind, devices ?? []))}
           >
-            {label}
+            {t(`record.kind.${kind}`)}
           </button>
         ))}
       </div>
       <label className="choice">
-        <span>{form.what === "screen" ? "Screen" : form.what === "camera" ? "Camera" : "Microphone"}</span>
+        <span>{t(`record.kind.${form.what}`)}</span>
         <select
           value={form.device}
           disabled={running || listed.length === 0}
           onChange={(event) => setChosen({ ...form, device: event.target.value })}
         >
-          {listed.length === 0 && <option value="">{devices === null ? "Looking for devices" : "None found"}</option>}
+          {listed.length === 0 && (
+            <option value="">{devices === null ? t("record.devices.looking") : t("record.devices.none")}</option>
+          )}
           {listed.map((d) => (
             <option key={`${d.format}:${d.input}`} value={d.name}>
               {d.name}
@@ -72,9 +71,9 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
       </label>
       {form.what !== "microphone" && (
         <label className="choice">
-          <span>Sound</span>
+          <span>{t("record.sound")}</span>
           <select value={form.microphone} disabled={running} onChange={(event) => setChosen({ ...form, microphone: event.target.value })}>
-            <option value={NO_MICROPHONE}>No sound</option>
+            <option value={NO_MICROPHONE}>{t("record.sound.none")}</option>
             {microphones.map((d) => (
               <option key={`${d.format}:${d.input}`} value={d.name}>
                 {d.name}
@@ -90,16 +89,18 @@ export function Record({ editor, state }: { editor: Editor; state: EditorState }
           disabled={!running && listed.length === 0}
           onClick={() => void (running ? editor.stopRecording() : editor.startRecording(recordChoice(form)))}
         >
-          {running ? "Stop" : "Record"}
+          {running ? t("record.stop") : t("record.start")}
         </button>
         <span className="record-time" aria-live="polite">
           {recordedTime(job)}
         </span>
       </div>
       {finished?.state === "succeeded" && finished.clip && (
-        <p className="hint">Recorded {recordedTime(finished)}; the clip is on the timeline where the playhead was when recording started.</p>
+        <p className="hint">{t("record.placed", { time: recordedTime(finished) })}</p>
       )}
-      {finished?.state === "succeeded" && !finished.clip && finished.asset && <p className="hint">Recorded {recordedTime(finished)} into the media bin.</p>}
+      {finished?.state === "succeeded" && !finished.clip && finished.asset && (
+        <p className="hint">{t("record.binned", { time: recordedTime(finished) })}</p>
+      )}
       {error && (
         <p className="problem" role="alert">
           {recordProblem(error)}

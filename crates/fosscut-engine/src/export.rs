@@ -365,7 +365,12 @@ pub fn export(
             .get(asset)
             .is_some_and(|a| a.info.video.is_some());
         if has_video && request.settings.video.is_some() {
-            let decoder = FfmpegVideoDecoder::open(path, DecoderOptions::default())?;
+            // Hardware decoding as the host chose it (ADR-0032, item 6); exports always
+            // read the original media, never proxies or remuxed copies.
+            let options = DecoderOptions {
+                hardware: crate::hardware::hardware_decoding(),
+            };
+            let decoder = FfmpegVideoDecoder::open(path, options)?;
             frames.insert(asset.clone(), Box::new(decoder));
         }
         audio.paths.insert(asset.clone(), path.clone());

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
+import { t } from "../i18n";
 import { findClip } from "../timeline/geometry";
 import { type Frame, fitCanvas, pictureFrame } from "./placement";
 import { regionCorners, regionFromDrag } from "./region";
@@ -84,8 +85,8 @@ export function RegionOverlay({ editor, state }: { editor: Editor; state: Editor
       {drawing && (
         <foreignObject x={8} y={8} width={320} height={36}>
           <div className="overlay-buttons">
-            <span className="overlay-hint">Drag over what to follow</span>
-            <button onClick={() => editor.cancelRegion()}>Cancel</button>
+            <span className="overlay-hint">{t("preview.region.hint")}</span>
+            <button onClick={() => editor.cancelRegion()}>{t("preview.cancel")}</button>
           </div>
         </foreignObject>
       )}

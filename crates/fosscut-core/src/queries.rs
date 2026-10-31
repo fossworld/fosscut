@@ -468,10 +468,16 @@ fn clip_view(
                 view["speed"] = shown;
                 view["source_used"] = json!(TimeReport::new(clip.source_length(), rate));
             }
+            if let Some(fill) = &clip.canvas {
+                view["canvas"] = json!(fill);
+            }
         }
         ClipContent::Image { asset } => {
             view["asset"] = json!(asset);
             view["asset_name"] = json!(project.media.get(asset).map(|a| a.name.clone()));
+            if let Some(fill) = &clip.canvas {
+                view["canvas"] = json!(fill);
+            }
         }
         ClipContent::Text(text) => {
             view["text"] = json!(text.text);

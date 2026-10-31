@@ -2,13 +2,16 @@
 //! behind a transparent webview that leaves a hole where the video shows. One thread owns
 //! the GPU: it draws when the playhead, the project or the hole changes, and paces playback
 //! by the sound being heard ([`crate::audio`]), or by the wall clock without an audio device.
+//! While paused and idle it renders the frames around the playhead into the frame cache
+//! when the preferences allow (`performance.auto_render`).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use fosscut_engine::preview::Previewer;
+use fosscut_engine::preview::{PreviewOptions, PreviewSource, Previewer};
 use fosscut_model::{Id, Project};
 use fosscut_render::Renderer;
 use fosscut_time::{Flicks, TimeReport};
@@ -47,6 +50,9 @@ pub enum Job {
     Resized,
     /// Show the frame at this time, stopping playback.
     Show(Flicks),
+    /// Show the frame at this time, stopping playback, and play a moment of its sound, as
+    /// scrubbing and skimming do when the preferences say so.
+    Scrub(Flicks),
     /// Play from the playhead.
     Play,
     /// Shuttle at this rate from the playhead, without sound unless it is 1: 2 is twice as
@@ -54,6 +60,47 @@ pub enum Job {
     Shuttle(f64),
     /// Stop playing.
     Pause,
+    /// Decode and keep frames as these options say, rendering frames around the playhead
+    /// while idle when `auto_render` is set.
+    Options {
+        /// What the preview decodes and keeps.
+        options: PreviewOptions,
+        /// Render around the playhead while paused and idle.
+        auto_render: bool,
+    },
+    /// Open media again, after a proxy or remuxed copy was made.
+    ReopenMedia,
+    /// Open media again and read the frame cache's folder afresh, after caches were
+    /// cleared.
+    ResetCaches,
+}
+
+/// How long the preview waits, paused, before rendering around the playhead.
+const IDLE: Duration = Duration::from_millis(400);
+/// How many frames on each side of the playhead it renders then.
+const AROUND: i64 = 10;
+/// How many it renders before looking for new jobs again.
+const BATCH: usize = 2;
+
+/// Which file the preview decodes for each asset it has shown.
+pub type Sources = Arc<Mutex<BTreeMap<fosscut_model::Id, PreviewSource>>>;
+
+/// The times of the `around` frames before and after `time`, nearest first, within a
+/// timeline `end` long with frames `frame` long.
+pub fn prerender_times(time: Flicks, frame: Flicks, end: Flicks, around: i64) -> Vec<Flicks> {
+    if !frame.is_positive() {
+        return Vec::new();
+    }
+    let mut times = Vec::new();
+    for step in 1..=around {
+        for direction in [1, -1] {
+            let at = time + Flicks::new(frame.get() * step * direction);
+            if !at.is_negative() && at < end {
+                times.push(at);
+            }
+        }
+    }
+    times
 }
 
 /// Where the playhead is, sent to the window each time a frame is shown.
@@ -69,12 +116,25 @@ pub struct Playhead {
 #[derive(Clone)]
 pub struct Preview {
     jobs: Option<Sender<Job>>,
+    sources: Sources,
 }
 
 impl Preview {
     /// A preview that shows nothing, when the window has no GPU surface.
     pub fn off() -> Preview {
-        Preview { jobs: None }
+        Preview {
+            jobs: None,
+            sources: Sources::default(),
+        }
+    }
+
+    /// Which file the preview decodes for each asset it has shown: a proxy, a remuxed
+    /// copy or the original.
+    pub fn sources(&self) -> BTreeMap<fosscut_model::Id, PreviewSource> {
+        self.sources
+            .lock()
+            .map(|sources| sources.clone())
+            .unwrap_or_default()
     }
 
     /// Starts the preview thread drawing onto `surface`, playing sound through `speaker`
@@ -88,6 +148,7 @@ impl Preview {
         failed: impl Fn(String) + Send + 'static,
     ) -> std::io::Result<Preview> {
         let (jobs, receiver) = channel();
+        let sources = Sources::default();
         let engine = Engine {
             surface: Box::new(surface) as Box<dyn Screen>,
             renderer,
@@ -99,11 +160,19 @@ impl Preview {
             speaker,
             playhead: Box::new(playhead),
             failed: Box::new(failed),
+            auto_render: false,
+            shown_size: None,
+            prerendered: None,
+            idle_work: Vec::new(),
+            sources: Arc::clone(&sources),
         };
         std::thread::Builder::new()
             .name("fosscut-preview".into())
             .spawn(move || engine.run(&receiver))?;
-        Ok(Preview { jobs: Some(jobs) })
+        Ok(Preview {
+            jobs: Some(jobs),
+            sources,
+        })
     }
 
     /// Asks the preview thread to do `job`.
@@ -193,6 +262,15 @@ struct Engine {
     speaker: Option<Speaker>,
     playhead: Box<dyn Fn(Playhead) + Send>,
     failed: Box<dyn Fn(String) + Send>,
+    /// Render around the playhead while paused and idle.
+    auto_render: bool,
+    /// The size the last frame was drawn at.
+    shown_size: Option<(u32, u32)>,
+    /// What was last rendered around: the scene, the playhead and the size.
+    prerendered: Option<(usize, Flicks, (u32, u32))>,
+    /// The frames still to render around the playhead.
+    idle_work: Vec<Flicks>,
+    sources: Sources,
 }
 
 impl Engine {
@@ -212,9 +290,24 @@ impl Engine {
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
             } else {
-                match jobs.recv() {
-                    Ok(job) => Some(job),
-                    Err(_) => return,
+                let wait = if !self.idle_work.is_empty() {
+                    Some(Duration::from_millis(10))
+                } else if self.idle_due() {
+                    Some(IDLE)
+                } else {
+                    None
+                };
+                match wait.map(|wait| jobs.recv_timeout(wait)) {
+                    Some(Ok(job)) => Some(job),
+                    Some(Err(RecvTimeoutError::Timeout)) => {
+                        self.idle();
+                        continue;
+                    }
+                    Some(Err(RecvTimeoutError::Disconnected)) => return,
+                    None => match jobs.recv() {
+                        Ok(job) => Some(job),
+                        Err(_) => return,
+                    },
                 }
             };
             let mut changed = false;
@@ -251,6 +344,52 @@ impl Engine {
         }
     }
 
+    /// What rendering around the playhead would start from now, when it is due.
+    fn idle_key(&self) -> Option<(usize, Flicks, (u32, u32))> {
+        if !self.auto_render || self.pace.is_some() || self.previewer.render_cache().is_none() {
+            return None;
+        }
+        let scene = self.scene.as_ref()?;
+        Some((Arc::as_ptr(scene) as usize, self.time, self.shown_size?))
+    }
+
+    /// True when the frames around the playhead have not been rendered since it moved.
+    fn idle_due(&self) -> bool {
+        self.idle_key()
+            .is_some_and(|key| self.prerendered != Some(key))
+    }
+
+    /// Renders a few frames around the playhead into the frame cache, a batch at a time.
+    fn idle(&mut self) {
+        let Some(key) = self.idle_key() else {
+            self.idle_work.clear();
+            return;
+        };
+        let Some(scene) = self.scene.clone() else {
+            return;
+        };
+        if self.prerendered != Some(key) {
+            self.prerendered = Some(key);
+            self.idle_work = duration(&scene)
+                .map(|(end, frame)| prerender_times(self.time, frame, end, AROUND))
+                .unwrap_or_default();
+            self.idle_work.reverse();
+        }
+        let batch: Vec<Flicks> = (0..BATCH).filter_map(|_| self.idle_work.pop()).collect();
+        if batch.is_empty() {
+            return;
+        }
+        // A frame that fails here fails again, visibly, when it is shown.
+        let _ = self.previewer.prerender(
+            &mut self.renderer,
+            &scene.project,
+            &scene.bundle,
+            &scene.timeline,
+            &batch,
+            key.2,
+        );
+    }
+
     /// Stops playback, and the sound with it.
     fn stop(&mut self) {
         self.pace = None;
@@ -261,7 +400,27 @@ impl Engine {
 
     /// Applies one job; true when the picture may have changed.
     fn apply(&mut self, job: Job) -> bool {
+        self.idle_work.clear();
         match job {
+            Job::Options {
+                options,
+                auto_render,
+            } => {
+                self.auto_render = auto_render;
+                self.previewer.set_options(options);
+                self.prerendered = None;
+            }
+            Job::ReopenMedia => self.previewer.reopen_media(),
+            Job::ResetCaches => {
+                let options = self.previewer.options().clone();
+                self.previewer.set_options(PreviewOptions {
+                    render_cache_bytes: None,
+                    ..options.clone()
+                });
+                self.previewer.set_options(options);
+                self.previewer.reopen_media();
+                self.prerendered = None;
+            }
             Job::Scene(scene) => {
                 match (&scene, self.pace, &self.speaker) {
                     (None, _, _) => {
@@ -280,6 +439,13 @@ impl Engine {
             Job::Show(time) => {
                 self.stop();
                 self.time = time.max(Flicks::ZERO);
+            }
+            Job::Scrub(time) => {
+                self.stop();
+                self.time = time.max(Flicks::ZERO);
+                if let (Some(speaker), Some(scene)) = (&self.speaker, &self.scene) {
+                    speaker.scrub(Arc::clone(scene), self.time);
+                }
             }
             Job::Play => {
                 let at_end = self
@@ -328,6 +494,7 @@ impl Engine {
             return;
         }
         let max = (rect[2].round() as u32, rect[3].round() as u32);
+        self.shown_size = Some(max);
         let shown = Previewer::size(&scene.project, &scene.timeline, max).and_then(|size| {
             let view = self.surface.frame_view(&self.renderer, size);
             let at = self.previewer.render_to(
@@ -342,6 +509,14 @@ impl Engine {
             )?;
             Ok((at, view))
         });
+        if let Ok(mut sources) = self.sources.lock() {
+            sources.clear();
+            for asset in scene.project.media.assets.iter().map(|asset| &asset.id) {
+                if let Some(source) = self.previewer.source(asset) {
+                    sources.insert(asset.clone(), source);
+                }
+            }
+        }
         match shown {
             Ok((at, view)) => {
                 self.surface.present(&self.renderer, Some(&view), rect);
@@ -381,6 +556,21 @@ mod tests {
         );
         assert_eq!(fit([5.0, 5.0, 0.0, 900.0], 2.0), [5.0, 5.0, 0.0, 0.0]);
         assert_eq!(fit([5.0, 5.0, 100.0, 100.0], 0.0)[2], 0.0);
+    }
+
+    #[test]
+    fn frames_around_the_playhead_are_rendered_nearest_first_within_the_timeline() {
+        let frame = Flicks::from_millis(40);
+        let end = Flicks::from_millis(1000);
+        let times = prerender_times(Flicks::from_millis(80), frame, end, 3);
+        let millis: Vec<i64> = times
+            .iter()
+            .map(|t| t.get() * 1000 / Flicks::from_millis(1000).get())
+            .collect();
+        assert_eq!(millis, [120, 40, 160, 0, 200], "nothing before the start");
+        let late = prerender_times(Flicks::from_millis(920), frame, end, 3);
+        assert_eq!(late.len(), 4, "nothing at or after the end: {late:?}");
+        assert!(prerender_times(Flicks::ZERO, Flicks::ZERO, end, 3).is_empty());
     }
 
     #[test]

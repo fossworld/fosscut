@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.13.0
+Demo (project_<random>)  revision 0  format 0.14.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,12 +93,12 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.13.0
+Demo (project_<random>)  revision 8  format 0.14.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.13.0
+API 0.1.0  project format 0.14.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
   animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
@@ -107,6 +107,7 @@ commands:
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
   clip.add       Place a media asset (or, with compound, a compound timeline) on a track. Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   clip.align     Align a clip on the canvas: put the visible part of its picture against the left, right, top or bottom edge, or centre it, taking its scale, crop, flips and rotation into account. Text and captions can only be centred.
+  clip.canvas    Fill the canvas around video or image clips whose picture does not cover it (a 16:9 shot in a vertical video): with their own picture blurred to cover, or a colour; no fill removes it. Several clips at once.
   clip.compound  Make a compound clip: move chosen clips into a new compound timeline (keeping their tracks and timing) and put one clip showing it in their place, on the lowest of their video tracks. Trim, speed, effects and transitions then apply to it as a whole.
   clip.copy_attributes Paste attributes: copy one clip's placement, crop, opacity, blend mode, volume and sound settings, effects, masks or animations (with their keyframes) to other clips, keeping their media. Effects and masks skip audio clips.
   clip.decompose Break a compound clip apart: put the part of its timeline it shows back in its place, clip by clip, on tracks of the same kinds. The compound timeline goes when nothing else shows it. The compound clip must have no speed, effects, masks, keyframes or placement of its own.
@@ -189,6 +190,11 @@ operations:
   clip.track           Follow a region of a video clip's picture from a time on and key one of its masks, or another clip such as a title or sticker, to move with it; one undoable step.
   multicam.sync        Measure how far apart angles recorded at the same time started, from their sound, as the offsets of multicam.create (which multicam create measures itself unless given offsets).
   record.start         Record a voiceover (48 kHz WAV), a camera or the screen into the bundle's recordings folder through the same encoders and checks as exports, then import it; stops after a duration or when asked, keeping what was recorded.
+  preferences.edit     Read or change the user's preferences: editing and timeline defaults the CLI and the app fill requests with, performance and cache settings (ADR-0031); agents read them with the query preferences.read.
+  media.proxy          Make a smaller ProRes Proxy copy of a video asset in FossCut's cache for the desktop preview; exports, frame grabs and contact sheets always read the original.
+  media.remux          Copy a video asset in a hard-to-seek container (MPEG-TS, MPEG-PS, AVI, FLV) into QuickTime in FossCut's cache, without re-encoding, for the desktop preview.
+  cache.clear          Report the size of FossCut's caches (analysis, proxies, remuxed copies, rendered frames), empty them, or clean them by the cache preferences; everything in them is made again when needed.
+  update.check         Ask GitHub once for the latest FossCut release and say whether it is newer; nothing about the user is sent and nothing is installed.
   models.install       Download a model an analyzer needs (speech for transcript) after the user agrees to its size and license; it is verified by SHA-256.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.

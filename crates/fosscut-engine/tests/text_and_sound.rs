@@ -313,3 +313,53 @@ fn a_limiter_lifts_speech_past_its_peaks_to_the_target() {
     let quiet = normalize(&project, &bundle(), one, -30.0, -1.0, true).unwrap();
     assert_eq!(quiet.commands[1]["command"], "effect.remove");
 }
+
+#[test]
+fn a_very_quiet_clip_is_lifted_past_the_volume_range_by_the_limiter() {
+    if renderer().is_none() {
+        return;
+    }
+    // A mono 440 Hz tone at about -38 LUFS on both channels: reaching -16 needs 22 dB, more
+    // than the volume's 20, while its peaks leave plenty of room.
+    let quiet = workspace().join("quiet.wav");
+    if !quiet.exists() {
+        let status = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("aevalsrc=0.0137*sin(2*PI*440*t):s=48000:d=2")
+            .args(["-c:a", "pcm_s16le"])
+            .arg(&quiet)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+    let (mut project, timeline, clip) = speech_project();
+    {
+        let asset = &mut project.media.assets[1];
+        asset.path = PathHints {
+            relative: None,
+            absolute: Some(quiet.display().to_string()),
+        };
+        asset.info.duration = Some(Flicks::from_seconds(2).unwrap());
+        asset.info.audio = Some(fosscut_model::AudioInfo {
+            sample_rate: 48_000,
+            channels: 1,
+            codec: None,
+        });
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[0].clips[0].duration = Flicks::from_seconds(2).unwrap();
+    }
+    let one = std::slice::from_ref(&clip);
+    let found = normalize(&project, &bundle(), one, -16.0, -1.0, true).unwrap();
+    let leveled = &found.clips[0];
+    let lufs = leveled.measured_lufs.unwrap();
+    assert!((-40.0..-36.0).contains(&lufs), "{lufs}");
+    assert!(-16.0 - lufs > 20.0, "more than the volume's range");
+    assert!(!leveled.limited, "{leveled:?}");
+    assert!(leveled.limiter.is_some(), "{leveled:?}");
+    let reached = leveled.reached_lufs.unwrap();
+    assert!((reached - -16.0).abs() < 0.5, "{reached}");
+    // Without the limiter, the volume's range holds it back.
+    let held = normalize(&project, &bundle(), one, -16.0, -1.0, false).unwrap();
+    assert!(held.clips[0].limited, "{:?}", held.clips[0]);
+    assert!((held.clips[0].gain_db - 20.0).abs() < 0.01);
+}

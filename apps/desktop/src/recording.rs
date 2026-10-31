@@ -118,6 +118,36 @@ fn picture_size(text: &str) -> Result<(u32, u32), ApiError> {
         })
 }
 
+/// Where a recording goes: `default` (in the project's `recordings/` folder), or a file of
+/// the same name in `folder`, numbered when one is there already.
+fn recording_output(default: PathBuf, folder: Option<&Path>) -> Result<PathBuf, ApiError> {
+    let Some(folder) = folder else {
+        return Ok(default);
+    };
+    std::fs::create_dir_all(folder).map_err(|e| {
+        invalid(format!("cannot create {}: {e}", folder.display()))
+            .with_hint("Choose another recordings folder in Settings.")
+    })?;
+    let stem = default
+        .file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let extension = default
+        .extension()
+        .map_or_else(String::new, |e| e.to_string_lossy().into_owned());
+    let named = |n: u32| {
+        let name = if n == 1 {
+            stem.clone()
+        } else {
+            format!("{stem} {n}")
+        };
+        folder.join(format!("{name}.{extension}"))
+    };
+    Ok((1..=u32::MAX)
+        .map(named)
+        .find(|path| !path.exists())
+        .unwrap_or_else(|| folder.join(format!("{stem}.{extension}"))))
+}
+
 impl Recordings {
     /// Starts recording what `choice` says into the open project's `recordings/` folder,
     /// on `jobs`, after choosing the devices and settings (a bad choice fails here).
@@ -126,6 +156,18 @@ impl Recordings {
         workspace: &Workspace,
         jobs: &Jobs,
         choice: &RecordChoice,
+    ) -> Result<RecordState, ApiError> {
+        self.start_in(workspace, jobs, choice, None)
+    }
+
+    /// [`Recordings::start`], recording into `folder` (created when missing) instead of
+    /// the project's `recordings/` folder when given: the preferred recordings folder.
+    pub fn start_in(
+        &self,
+        workspace: &Workspace,
+        jobs: &Jobs,
+        choice: &RecordChoice,
+        folder: Option<&Path>,
     ) -> Result<RecordState, ApiError> {
         let what = RecordKind::parse(&choice.what).ok_or_else(|| {
             invalid(format!(
@@ -136,7 +178,10 @@ impl Recordings {
         let (bundle, _, _) = workspace.snapshot().ok_or_else(|| {
             invalid("no project is open").with_hint("Open or create a project to record into.")
         })?;
-        let output = record::default_output(&bundle, what, SystemTime::now());
+        let output = recording_output(
+            record::default_output(&bundle, what, SystemTime::now()),
+            folder,
+        )?;
         let mut request = RecordRequest::new(what, output);
         request.device = given(choice.device.as_deref()).map(str::to_string);
         request.microphone = given(choice.microphone.as_deref()).map(str::to_string);
@@ -368,6 +413,24 @@ mod tests {
             state = recordings.status(workspace, jobs, job).unwrap();
         }
         state
+    }
+
+    #[test]
+    fn recordings_go_to_the_preferred_folder_without_replacing_a_file() {
+        let (_, runtime, work) = opened("recfolder");
+        let default = work.join("Demo.fosscut/recordings/Voiceover 2026.m4a");
+        assert_eq!(recording_output(default.clone(), None).unwrap(), default);
+        let takes = work.join("Takes");
+        let first = recording_output(default.clone(), Some(&takes)).unwrap();
+        assert_eq!(first, takes.join("Voiceover 2026.m4a"));
+        assert!(takes.is_dir(), "the folder is made");
+        std::fs::write(&first, b"taken").unwrap();
+        assert_eq!(
+            recording_output(default, Some(&takes)).unwrap(),
+            takes.join("Voiceover 2026 2.m4a")
+        );
+        let _ = std::fs::remove_dir_all(&runtime);
+        let _ = std::fs::remove_dir_all(&work);
     }
 
     #[test]

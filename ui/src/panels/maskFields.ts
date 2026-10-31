@@ -4,6 +4,7 @@
 
 import { evaluate } from "../app/animation";
 import type { ClipView, CommandCall, KeyframeView, MaskView } from "../engine/types";
+import { t } from "../i18n";
 
 export type MaskFieldId = "x" | "y" | "width" | "height" | "rotation" | "feather" | "expansion" | "roundness";
 
@@ -44,30 +45,40 @@ export function maskFields(clip: ClipView, mask: MaskView, playhead: number): Ma
   const v = maskValues(clip, mask, playhead);
   const animated = (p: string) => (mask.keyframes?.[p]?.length ?? 0) > 0;
   const keyed = (p: string) => mask.keyframes?.[p]?.some((k) => k.at.flicks === playhead) ?? false;
+  // Labels are read in the interface's language each time the fields are shown.
   const field = (
     id: MaskFieldId,
-    label: string,
     property: MaskField["property"],
     value: number,
     unit: string,
     min: number,
     max: number,
-  ): MaskField => ({ id, label, property, value: round(value), unit, min, max, animated: animated(property), keyed: keyed(property) });
+  ): MaskField => ({
+    id,
+    label: t(`masks.field.${id}`),
+    property,
+    value: round(value),
+    unit,
+    min,
+    max,
+    animated: animated(property),
+    keyed: keyed(property),
+  });
   const fields: MaskField[] = [];
   if (mask.shape !== "brush") {
     fields.push(
-      field("x", "Center X", "center", v.center[0] * 100, "%", -100, 200),
-      field("y", "Center Y", "center", v.center[1] * 100, "%", -100, 200),
-      field("width", "Width", "size", v.size[0] * 100, "%", 0, 400),
-      field("height", "Height", "size", v.size[1] * 100, "%", 0, 400),
-      field("rotation", "Rotation", "rotation", v.rotation, "°", -36000, 36000),
+      field("x", "center", v.center[0] * 100, "%", -100, 200),
+      field("y", "center", v.center[1] * 100, "%", -100, 200),
+      field("width", "size", v.size[0] * 100, "%", 0, 400),
+      field("height", "size", v.size[1] * 100, "%", 0, 400),
+      field("rotation", "rotation", v.rotation, "°", -36000, 36000),
     );
   }
   fields.push(
-    field("feather", "Feather", "feather", v.feather * 100, "%", 0, 100),
-    field("expansion", "Expansion", "expansion", v.expansion * 100, "%", -100, 100),
+    field("feather", "feather", v.feather * 100, "%", 0, 100),
+    field("expansion", "expansion", v.expansion * 100, "%", -100, 100),
   );
-  if ((mask.shape ?? "rectangle") === "rectangle") fields.push(field("roundness", "Corners", "roundness", v.roundness * 100, "%", 0, 100));
+  if ((mask.shape ?? "rectangle") === "rectangle") fields.push(field("roundness", "roundness", v.roundness * 100, "%", 0, 100));
   return fields;
 }
 

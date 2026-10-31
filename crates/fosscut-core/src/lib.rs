@@ -53,12 +53,12 @@ pub use commands::{
     TimelineRemove, TimelineRemoved, TimelineRename, TimelineReport, TimelineSetPrimary,
 };
 pub use commands::{
-    CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, ClipAdd,
-    ClipMove, ClipPlacement, ClipProperties, ClipRemove, ClipRemoved, ClipSet, ClipSplit,
-    ClipSplitResult, ClipTrim, Easing, Fit, KeyInput, KeyframeRemove, KeyframeReport, KeyframeSet,
-    KeyframeSetAll, KeyframesChanged, MediaAdd, MediaAdded, Paging, RangeInput, RangeReport,
-    RangesRemoved, TimelineDuplicate, TimelineDuplicated, TimelineRemoveRanges, TrackAdd,
-    TrackAdded, WordInput,
+    CanvasChanged, CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle,
+    CaptionsStyled, ClipAdd, ClipCanvas, ClipMove, ClipPlacement, ClipProperties, ClipRemove,
+    ClipRemoved, ClipSet, ClipSplit, ClipSplitResult, ClipTrim, Easing, Fit, KeyInput,
+    KeyframeRemove, KeyframeReport, KeyframeSet, KeyframeSetAll, KeyframesChanged, MediaAdd,
+    MediaAdded, Paging, RangeInput, RangeReport, RangesRemoved, TimelineDuplicate,
+    TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
 };
 pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};

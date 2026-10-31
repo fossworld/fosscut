@@ -100,6 +100,9 @@ pub enum MediaError {
         /// What was missing.
         message: String,
     },
+    /// The caller asked the work to stop; nothing complete was written.
+    #[error("the work was cancelled")]
+    Cancelled,
     /// The requested time is after the last frame of the stream.
     #[error("no frame at {requested_flicks} flicks: the stream ends at {end_flicks} flicks")]
     EndOfStream {
@@ -129,6 +132,7 @@ impl MediaError {
             MediaError::InputFormatUnavailable { .. } => "fosscut.media.input_format_unavailable",
             MediaError::DeviceUnavailable { .. } => "fosscut.media.device_unavailable",
             MediaError::NothingRecorded { .. } => "fosscut.media.nothing_recorded",
+            MediaError::Cancelled => "fosscut.media.cancelled",
         }
     }
 }

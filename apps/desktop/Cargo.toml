@@ -26,6 +26,7 @@ tauri-build.workspace = true
 [dependencies]
 base64.workspace = true
 cpal.workspace = true
+fosscut-audio.workspace = true
 fosscut-core.workspace = true
 fosscut-engine.workspace = true
 fosscut-model.workspace = true
@@ -36,6 +37,9 @@ serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+# System notifications for finished exports and recordings (ADR-0031, item 6); MIT OR
+# Apache-2.0. Declared here rather than in the workspace, as only the app uses it.
+tauri-plugin-notification = "2.4.0"
 wgpu.workspace = true
 
 [lints]

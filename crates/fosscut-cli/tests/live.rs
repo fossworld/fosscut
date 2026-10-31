@@ -33,6 +33,8 @@ fn command(dir: &Path, runtime: &Path) -> Command {
         .env_remove("FOSSCUT_PROJECT")
         .env("FOSSCUT_ACTOR", "agent:test")
         .env("FOSSCUT_CACHE_DIR", dir.join("cache"))
+        // Preferences of this test only, never the user's.
+        .env("FOSSCUT_CONFIG_DIR", dir.join("config"))
         .env("FOSSCUT_RUNTIME_DIR", runtime);
     command
 }

@@ -2,37 +2,47 @@ import { useState } from "react";
 
 import type { Editor, EditorState } from "../app/editor";
 import { multicamAngles } from "../app/multicam";
-import type { AssetView } from "../engine/types";
+import type { AssetView, PreviewSource } from "../engine/types";
+import { type MessageKey, t } from "../i18n";
 import { ALL, type MediaFilter, type SortKey, shown } from "./mediaFilter";
 import { MulticamForm } from "./Multicam";
 
-const KINDS: [MediaFilter["kind"], string][] = [
-  ["", "All kinds"],
-  ["video", "Video"],
-  ["audio", "Audio"],
-  ["image", "Images"],
-  ["lut", "LUTs"],
-  ["font", "Fonts"],
+/** The kind filter's choices, with the keys of their names (looked up when shown). */
+const KINDS: [MediaFilter["kind"], MessageKey][] = [
+  ["", "media.filter.all"],
+  ["video", "media.filter.video"],
+  ["audio", "media.filter.audio"],
+  ["image", "media.filter.image"],
+  ["lut", "media.filter.lut"],
+  ["font", "media.filter.font"],
 ];
 
-const SORTS: [SortKey, string][] = [
-  ["imported", "Imported"],
-  ["name", "Name"],
-  ["duration", "Length"],
-  ["kind", "Kind"],
-];
+const SORTS: SortKey[] = ["imported", "name", "duration", "kind"];
+
+/** The mark of an asset the preview decodes from a copy: its label and its explanation. */
+export function sourceMark(source: PreviewSource | undefined): { label: string; help: string } | null {
+  if (!source || source === "original") return null;
+  if (source === "remux") return { label: t("media.mark.remux"), help: t("media.mark.remux.help") };
+  return {
+    label: t("media.mark.proxy"),
+    help: t(source.proxy === "quarter" ? "media.mark.proxy.quarter" : "media.mark.proxy.half"),
+  };
+}
 
 function Row({
   editor,
   asset,
   chosen,
   onChoose,
+  source,
 }: {
   editor: Editor;
   asset: AssetView;
   chosen: boolean;
   onChoose: (on: boolean) => void;
+  source?: PreviewSource;
 }) {
+  const mark = sourceMark(source);
   const [naming, setNaming] = useState<string | null>(null);
   const finish = () => {
     if (naming !== null && naming.trim() && naming !== asset.name) void editor.renameAsset(asset.id, naming);
@@ -40,9 +50,14 @@ function Row({
   };
   return (
     <li className={asset.missing ? "asset missing" : "asset"}>
-      <input type="checkbox" checked={chosen} onChange={(e) => onChoose(e.target.checked)} aria-label={`Choose ${asset.name}`} />
+      <input
+        type="checkbox"
+        checked={chosen}
+        onChange={(e) => onChoose(e.target.checked)}
+        aria-label={t("media.choose", { name: asset.name })}
+      />
       {naming === null ? (
-        <span className="name" title="Double-click to rename" onDoubleClick={() => setNaming(asset.name)}>
+        <span className="name" title={t("media.rename.help")} onDoubleClick={() => setNaming(asset.name)}>
           {asset.name}
         </span>
       ) : (
@@ -58,30 +73,37 @@ function Row({
           }}
         />
       )}
+      {mark && (
+        <span className="mark" title={mark.help}>
+          {mark.label}
+        </span>
+      )}
       <span className="muted">
-        {asset.missing ? "missing" : (asset.duration?.timecode ?? (asset.families?.join(", ") || asset.kind))}
+        {asset.missing
+          ? t("media.missing")
+          : (asset.duration?.timecode ?? (asset.families?.join(", ") || t(`media.kind.${asset.kind}`)))}
       </span>
       <span className="actions">
         {asset.missing ? (
-          <button title="Find where the file is now" onClick={() => void editor.relinkAsset(asset.id)}>
-            Relink
+          <button title={t("media.relink.help")} onClick={() => void editor.relinkAsset(asset.id)}>
+            {t("media.relink")}
           </button>
         ) : (
           asset.kind !== "lut" &&
           asset.kind !== "font" && (
-            <button title="Add at the playhead" onClick={() => void editor.addToTimeline(asset.id)}>
-              Add
+            <button title={t("media.add.help")} onClick={() => void editor.addToTimeline(asset.id)}>
+              {t("media.add")}
             </button>
           )
         )}
-        <button title="Show the file" disabled={asset.missing} onClick={() => void editor.revealAsset(asset.id)}>
-          Show
+        <button title={t("media.show.help")} disabled={asset.missing} onClick={() => void editor.revealAsset(asset.id)}>
+          {t("media.show")}
         </button>
         <button
-          title={asset.used_by.length > 0 ? "Remove from the bin, with the clips that show it" : "Remove from the bin"}
+          title={asset.used_by.length > 0 ? t("media.remove.withClips") : t("media.remove.help")}
           onClick={() => void editor.removeAsset(asset.id)}
         >
-          Remove
+          {t("media.remove")}
         </button>
       </span>
     </li>
@@ -98,13 +120,13 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
   const ids = new Set(state.media.map((a) => a.id));
   const picked = state.chosen.filter((id) => ids.has(id));
   const update = (change: Partial<MediaFilter>) => setFilter({ ...filter, ...change });
-  const compounds = (state.opened?.info.timelines ?? []).filter((t) => t.role === "compound");
+  const compounds = (state.opened?.info.timelines ?? []).filter((timeline) => timeline.role === "compound");
   const angles = multicamAngles(state.media, picked);
   return (
     <section className="media">
       <input
         type="search"
-        placeholder="Search media"
+        placeholder={t("media.search")}
         value={filter.search}
         onChange={(e) => update({ search: e.target.value })}
       />
@@ -112,7 +134,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
         <select value={filter.kind} onChange={(e) => update({ kind: e.target.value as MediaFilter["kind"] })}>
           {KINDS.map(([value, label]) => (
             <option key={value} value={value}>
-              {label}
+              {t(label)}
             </option>
           ))}
         </select>
@@ -120,8 +142,8 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
           value={filter.folder ?? "*"}
           onChange={(e) => update({ folder: e.target.value === "*" ? null : e.target.value })}
         >
-          <option value="*">Every folder</option>
-          <option value="">Top level</option>
+          <option value="*">{t("media.folder.every")}</option>
+          <option value="">{t("media.folder.top")}</option>
           {state.folders.map((f) => (
             <option key={f} value={f}>
               {f}
@@ -129,9 +151,9 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
           ))}
         </select>
         <select value={filter.sort} onChange={(e) => update({ sort: e.target.value as SortKey })}>
-          {SORTS.map(([value, label]) => (
+          {SORTS.map((value) => (
             <option key={value} value={value}>
-              {label}
+              {t(`media.sort.${value}`)}
             </option>
           ))}
         </select>
@@ -144,24 +166,27 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
             asset={asset}
             chosen={picked.includes(asset.id)}
             onChoose={(on) => editor.chooseMedia(asset.id, on)}
+            source={state.sources[asset.id]}
           />
         ))}
-        {assets.length === 0 && <li className="muted">{state.media.length === 0 ? "No media yet." : "Nothing matches."}</li>}
+        {assets.length === 0 && (
+          <li className="muted">{state.media.length === 0 ? t("media.empty") : t("media.nothing")}</li>
+        )}
       </ul>
       {compounds.length > 0 && (
         <>
-          <h3>Compound clips</h3>
+          <h3>{t("media.compounds")}</h3>
           <ul className="assets">
-            {compounds.map((t) => (
-              <li key={t.id} className="asset">
-                <span className="name">{t.name}</span>
-                <span className="muted">{t.duration.timecode}</span>
+            {compounds.map((compound) => (
+              <li key={compound.id} className="asset">
+                <span className="name">{compound.name}</span>
+                <span className="muted">{compound.duration.timecode}</span>
                 <span className="actions">
-                  <button title="Add at the playhead" onClick={() => void editor.addCompound(t.id)}>
-                    Add
+                  <button title={t("media.add.help")} onClick={() => void editor.addCompound(compound.id)}>
+                    {t("media.add")}
                   </button>
-                  <button title="Edit the timeline inside it" onClick={() => void editor.showTimeline(t.id)}>
-                    Open
+                  <button title={t("media.open.help")} onClick={() => void editor.showTimeline(compound.id)}>
+                    {t("media.open")}
                   </button>
                 </span>
               </li>
@@ -170,8 +195,8 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
         </>
       )}
       <div className="buttons">
-        <button disabled={picked.length === 0} onClick={() => void editor.addTimeline(picked)} title="A new timeline with the chosen media, one after another">
-          New timeline
+        <button disabled={picked.length === 0} onClick={() => void editor.addTimeline(picked)} title={t("media.newTimeline.help")}>
+          {t("media.newTimeline")}
         </button>
         <select
           value=""
@@ -180,10 +205,10 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
             const target = e.target.value;
             if (target !== "") void editor.moveAssets(picked, target === "/" ? "" : target);
           }}
-          aria-label="Move the chosen media"
+          aria-label={t("media.move.help")}
         >
-          <option value="">Move to</option>
-          <option value="/">Top level</option>
+          <option value="">{t("media.move")}</option>
+          <option value="/">{t("media.folder.top")}</option>
           {state.folders.map((f) => (
             <option key={f} value={f}>
               {f}
@@ -194,7 +219,7 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
       {angles.length >= 2 && <MulticamForm editor={editor} angles={angles} playhead={state.playhead} />}
       <div className="buttons">
         <input
-          placeholder="New folder, such as B-roll/Day 1"
+          placeholder={t("media.folder.new")}
           value={newFolder}
           onChange={(e) => setNewFolder(e.target.value)}
           onKeyDown={(e) => {
@@ -205,8 +230,8 @@ export function Media({ editor, state }: { editor: Editor; state: EditorState })
           }}
         />
         {filter.folder && (
-          <button title="Remove this folder; what is in it moves up" onClick={() => void editor.folder("remove", filter.folder ?? "")}>
-            Remove folder
+          <button title={t("media.folder.remove.help")} onClick={() => void editor.folder("remove", filter.folder ?? "")}>
+            {t("media.folder.remove")}
           </button>
         )}
       </div>

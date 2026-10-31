@@ -205,6 +205,11 @@ pub struct Clip {
     /// multicam editing (ADR-0029); every track shows when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<Id>,
+    /// What fills the canvas around a video or image clip where its picture does not cover
+    /// it: a colour, or the clip's own picture scaled to cover and blurred. Black (or the
+    /// tracks below) shows when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasFill>,
     /// How a video or audio clip plays its source: faster, slower, along a curve,
     /// backwards or frozen (ADR-0023). Absent, it plays one to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -238,6 +243,7 @@ impl Clip {
             speed: None,
             group: None,
             angle: None,
+            canvas: None,
             keyframes: BTreeMap::new(),
         }
     }
@@ -686,6 +692,27 @@ pub enum Align {
     Center,
     /// Right aligned.
     Right,
+}
+
+/// What fills the canvas around a clip's picture (CapCut parity CC-063).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum CanvasFill {
+    /// A solid colour.
+    Color {
+        /// The colour.
+        color: Color,
+    },
+    /// The clip's own picture, scaled to cover the canvas and blurred.
+    Blur {
+        /// The blur radius as a fraction of the covering picture's height, from 0 to 0.2.
+        #[serde(default = "default_canvas_blur")]
+        amount: f64,
+    },
+}
+
+fn default_canvas_blur() -> f64 {
+    0.05
 }
 
 /// An sRGB colour as `#RRGGBB` or `#RRGGBBAA`.

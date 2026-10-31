@@ -2,6 +2,7 @@
 // the request it makes, the time recorded and what to say when the system refuses.
 
 import type { ApiError, CaptureDevice, DeviceKind, JobStatus, RecordChoice } from "../engine/types";
+import { t } from "../i18n";
 
 /** No sound with a camera or screen recording, as the engine takes it. */
 export const NO_MICROPHONE = "none";
@@ -50,12 +51,13 @@ export function recordedTime(status: JobStatus | null): string {
 }
 
 /**
- * A recording's error with its hint; a device that cannot be opened is usually one the
- * system has not let FossCut use, so that says where to allow it.
+ * A recording's error with its hint, as the engine wrote them; a device that cannot be
+ * opened is usually one the system has not let FossCut use, so that says where to allow
+ * it, in the interface's language.
  */
 export function recordProblem(error: ApiError): string {
   const sentence = (part: string) => (/[.!?]$/.test(part.trim()) ? part.trim() : `${part.trim()}.`);
   const text = error.hint ? `${sentence(error.message)} ${sentence(error.hint)}` : sentence(error.message);
   if (error.code !== DEVICE_UNAVAILABLE) return text;
-  return `${text} The system may not have allowed FossCut to use the microphone, the camera or screen recording: allow it in System Settings, under Privacy and Security, then try again.`;
+  return `${text} ${t("record.privacy")}`;
 }

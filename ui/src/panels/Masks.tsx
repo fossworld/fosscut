@@ -2,10 +2,15 @@ import { useState } from "react";
 
 import type { Editor, MaskTool } from "../app/editor";
 import type { ClipView, MaskView } from "../engine/types";
+import { type MessageKey, t } from "../i18n";
 import { type MaskField, maskChange, maskFields, toggleMaskKey } from "./maskFields";
 
 const SHAPES = ["rectangle", "ellipse", "linear", "mirror", "star", "heart", "path", "text", "brush"];
 const MODES = ["add", "subtract", "intersect"];
+
+/** A mask shape's name, in the interface's language; one the engine adds later as written. */
+const shapeName = (shape: string) => (SHAPES.includes(shape) ? t(`masks.shape.${shape}` as MessageKey) : shape);
+const modeName = (mode: string) => (MODES.includes(mode) ? t(`masks.mode.${mode}` as MessageKey) : mode);
 
 function Field({
   field,
@@ -24,7 +29,7 @@ function Field({
   const state = field.keyed ? "on" : field.animated ? "animated" : "off";
   return (
     <label className={`field${field.animated ? " animated" : ""}`}>
-      <button className={`key ${state}`} title="Add or remove a keyframe at the playhead" onClick={onToggle}>
+      <button className={`key ${state}`} title={t("masks.key")} aria-label={t("masks.key")} onClick={onToggle}>
         <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
           <path d="M5 0.8 9.2 5 5 9.2 0.8 5z" />
         </svg>
@@ -70,29 +75,29 @@ function MaskCard({
         <input
           type="checkbox"
           checked={mask.enabled !== false}
-          title="Use this mask"
+          title={t("masks.use")}
           onChange={(event) => set({ enabled: event.target.checked })}
         />
-        <select value={shape} aria-label="Shape" onChange={(event) => set({ shape: event.target.value })}>
+        <select value={shape} aria-label={t("masks.shape")} onChange={(event) => set({ shape: event.target.value })}>
           {SHAPES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {shapeName(s)}
             </option>
           ))}
         </select>
-        <select value={mask.mode ?? "add"} aria-label="Combine" onChange={(event) => set({ mode: event.target.value })}>
+        <select value={mask.mode ?? "add"} aria-label={t("masks.combine")} onChange={(event) => set({ mode: event.target.value })}>
           {MODES.map((m) => (
             <option key={m} value={m}>
-              {m}
+              {modeName(m)}
             </option>
           ))}
         </select>
-        <label className="toggle" title="Keep the outside">
+        <label className="toggle" title={t("masks.invert.title")}>
           <input type="checkbox" checked={mask.invert === true} onChange={(event) => set({ invert: event.target.checked })} />
-          <span>Invert</span>
+          <span>{t("masks.invert")}</span>
         </label>
         <button
-          title="Remove the mask"
+          title={t("masks.remove")}
           onClick={() => void editor.edit([{ command: "mask.remove", args: { clip: clip.id, mask: mask.id } }])}
         >
           ×
@@ -100,7 +105,7 @@ function MaskCard({
       </div>
       {shape === "text" && (
         <label className="choice">
-          <span>Text</span>
+          <span>{t("masks.text")}</span>
           <input
             type="text"
             defaultValue={mask.text ?? ""}
@@ -120,7 +125,7 @@ function MaskCard({
               )
             }
           >
-            {drawing ? "Stop drawing" : shape === "path" ? "Redraw on the preview" : "Paint on the preview"}
+            {drawing ? t("masks.stop") : shape === "path" ? t("masks.redraw") : t("masks.paint")}
           </button>
         </div>
       )}
@@ -157,7 +162,7 @@ export function Masks({
   const brush = tool && tool.clip === clip.id && tool.mode === "brush" ? tool : null;
   return (
     <section className="effects masks">
-      <h2>Masks</h2>
+      <h2>{t("masks.title")}</h2>
       {masks.map((mask) => (
         <MaskCard key={mask.id} editor={editor} clip={clip} mask={mask} playhead={playhead} tool={tool} />
       ))}
@@ -165,32 +170,33 @@ export function Masks({
         <div className="params">
           <label className="param">
             <span />
-            <span>Brush size</span>
+            <span>{t("masks.brush.size")}</span>
             <input
               type="range"
               min={0.005}
               max={0.2}
               step={0.005}
               value={brush.radius}
+              aria-label={t("masks.brush.size")}
               onChange={(event) => editor.setMaskTool({ ...brush, radius: Number(event.target.value) })}
             />
           </label>
           <label className="toggle">
             <input type="checkbox" checked={brush.erase} onChange={(event) => editor.setMaskTool({ ...brush, erase: event.target.checked })} />
-            <span>Erase</span>
+            <span>{t("masks.erase")}</span>
           </label>
         </div>
       )}
       <div className="add">
         <select
           value=""
-          aria-label="Add a mask"
+          aria-label={t("masks.add")}
           onChange={(event) => event.target.value && void editor.addMask(clip.id, event.target.value)}
         >
-          <option value="">Add a mask</option>
+          <option value="">{t("masks.add")}</option>
           {SHAPES.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {shapeName(s)}
             </option>
           ))}
         </select>

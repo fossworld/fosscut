@@ -30,5 +30,6 @@ pub use frame::{
 };
 pub use output::{
     AudioBuffer, AudioCodec, AudioReport, AudioSettings, Container, EncoderCapabilities,
-    EncoderInfo, OutputReport, OutputSettings, RgbaFrame, VideoCodec, VideoReport, VideoSettings,
+    EncoderInfo, HardwareEncoding, OutputReport, OutputSettings, RgbaFrame, VideoCodec,
+    VideoReport, VideoSettings,
 };

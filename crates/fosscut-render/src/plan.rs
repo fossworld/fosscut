@@ -206,6 +206,275 @@ impl RenderPlan {
     }
 }
 
+/// The version of [`RenderPlan::cache_key_bytes`]: bump it whenever planning, the
+/// compositor, an effect or a shader changes the pixels a plan renders, or the encoding
+/// changes, so frames cached by an older renderer are never shown again (ADR-0032, item 4).
+pub const CACHE_KEY_VERSION: u32 = 1;
+
+impl RenderPlan {
+    /// A stable encoding of everything in this plan that affects its pixels when rendered at
+    /// `size`, for keying a cache of rendered frames (ADR-0032, item 4): the canvas, every
+    /// layer's source with its asset and time, placement, crop, opacity, blend mode, masks,
+    /// LUT, effects with their parameters, transitions, compound clips and next-frame mixes,
+    /// the skipped clips, the output size and [`CACHE_KEY_VERSION`]. Equal plans encode
+    /// equally on every run; any difference in those values encodes differently. Hash the
+    /// bytes for a fixed-size key.
+    ///
+    /// Asset ids belong to one project, so callers add what each asset's file contains, and
+    /// font data for project fonts, before hashing. The id of the clip a layer comes from is
+    /// left out: it does not change pixels, so the same picture from another clip reuses
+    /// the frame.
+    ///
+    /// Every struct is taken apart field by field without `..`, so a field added to a layer
+    /// or a plan fails to compile here until it is encoded.
+    pub fn cache_key_bytes(&self, size: (u32, u32)) -> Vec<u8> {
+        let mut key = KeyBytes(Vec::with_capacity(256));
+        key.text("fosscut.render.plan");
+        key.u32(CACHE_KEY_VERSION);
+        key.u32(size.0);
+        key.u32(size.1);
+        key.plan(self);
+        key.0
+    }
+}
+
+/// The encoding behind [`RenderPlan::cache_key_bytes`]: tags before variants, fixed-width
+/// little-endian numbers, floats by their bits, and texts with their lengths, so no two
+/// different sequences of values encode alike. Model types without a layout of their own
+/// here (text, shapes, captions, effect parameters, masks) are encoded by their derived
+/// `Debug` text, which shows every field and, through ordered maps, is the same on every run.
+struct KeyBytes(Vec<u8>);
+
+impl KeyBytes {
+    fn tag(&mut self, tag: u8) {
+        self.0.push(tag);
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn u64(&mut self, value: u64) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn len(&mut self, len: usize) {
+        self.u64(len as u64);
+    }
+
+    fn i64(&mut self, value: i64) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn f32(&mut self, value: f32) {
+        self.u32(value.to_bits());
+    }
+
+    fn f64(&mut self, value: f64) {
+        self.u64(value.to_bits());
+    }
+
+    fn bool(&mut self, value: bool) {
+        self.tag(u8::from(value));
+    }
+
+    fn text(&mut self, text: &str) {
+        self.len(text.len());
+        self.0.extend_from_slice(text.as_bytes());
+    }
+
+    fn debug(&mut self, value: &impl std::fmt::Debug) {
+        self.text(&format!("{value:?}"));
+    }
+
+    fn time(&mut self, time: Flicks) {
+        self.i64(time.get());
+    }
+
+    fn plan(&mut self, plan: &RenderPlan) {
+        let RenderPlan {
+            canvas,
+            layers,
+            skipped,
+        } = plan;
+        self.u32(canvas.0);
+        self.u32(canvas.1);
+        self.len(layers.len());
+        for layer in layers {
+            self.layer(layer);
+        }
+        self.len(skipped.len());
+        for Skipped { clip, reason } in skipped {
+            self.text(&clip.to_string());
+            self.text(reason);
+        }
+    }
+
+    fn source_ref(&mut self, source: &SourceRef) {
+        let SourceRef { asset, time } = source;
+        self.text(&asset.to_string());
+        self.time(*time);
+    }
+
+    fn layer(&mut self, layer: &Layer) {
+        let Layer {
+            clip: _,
+            source,
+            rotation,
+            transform,
+            crop,
+            opacity,
+            blend,
+            mask,
+            lut,
+            effects,
+            masks,
+            next_frame,
+        } = layer;
+        self.layer_source(source);
+        self.u32(u32::from(*rotation));
+        self.transform(transform);
+        for edge in crop {
+            self.f64(*edge);
+        }
+        self.f32(*opacity);
+        self.debug(blend);
+        match mask {
+            None => self.tag(0),
+            Some(Mask {
+                shape,
+                center,
+                size,
+                feather,
+                invert,
+            }) => {
+                self.tag(1);
+                self.tag(match shape {
+                    MaskShape::Rectangle => 0,
+                    MaskShape::Ellipse => 1,
+                });
+                for value in center.iter().chain(size) {
+                    self.f32(*value);
+                }
+                self.f32(*feather);
+                self.bool(*invert);
+            }
+        }
+        match lut {
+            None => self.tag(0),
+            Some(lut) => {
+                let Lut3d { size, data } = lut.as_ref();
+                self.tag(1);
+                self.u32(*size);
+                self.len(data.len());
+                for value in data.iter().flatten() {
+                    self.f32(*value);
+                }
+            }
+        }
+        self.len(effects.len());
+        for effect in effects {
+            let PlannedEffect {
+                effect_type,
+                values,
+                seed,
+                time,
+            } = effect;
+            self.text(effect_type);
+            self.debug(values);
+            self.u32(*seed);
+            self.f64(*time);
+        }
+        self.debug(masks);
+        match next_frame {
+            None => self.tag(0),
+            Some((source, amount)) => {
+                self.tag(1);
+                self.source_ref(source);
+                self.f32(*amount);
+            }
+        }
+    }
+
+    fn layer_source(&mut self, source: &LayerSource) {
+        match source {
+            LayerSource::Frame(source) => {
+                self.tag(1);
+                self.source_ref(source);
+            }
+            LayerSource::Text(text) => {
+                let TextLayer {
+                    content,
+                    time,
+                    duration,
+                } = text.as_ref();
+                self.tag(2);
+                self.debug(content);
+                self.time(*time);
+                self.time(*duration);
+            }
+            LayerSource::Shape(shape) => {
+                self.tag(3);
+                self.debug(shape);
+            }
+            LayerSource::Caption(caption) => {
+                let CaptionLayer {
+                    style,
+                    content,
+                    time,
+                    duration,
+                } = caption.as_ref();
+                self.tag(4);
+                self.debug(style);
+                self.debug(content);
+                self.time(*time);
+                self.time(*duration);
+            }
+            LayerSource::Adjustment => self.tag(5),
+            LayerSource::Transition(transition) => {
+                let TransitionLayer {
+                    outgoing,
+                    incoming,
+                    kind,
+                    params,
+                    progress,
+                } = transition.as_ref();
+                self.tag(6);
+                self.layer(outgoing);
+                self.layer(incoming);
+                self.text(kind);
+                self.debug(params);
+                self.f64(*progress);
+            }
+            LayerSource::Nested(plan) => {
+                self.tag(7);
+                self.plan(plan);
+            }
+        }
+    }
+
+    fn transform(&mut self, transform: &Transform) {
+        let Transform {
+            position,
+            scale,
+            stretch,
+            rotation,
+            flip_horizontal,
+            flip_vertical,
+        } = transform;
+        for value in position
+            .iter()
+            .chain([scale])
+            .chain(stretch)
+            .chain([rotation])
+        {
+            self.f64(*value);
+        }
+        self.bool(*flip_horizontal);
+        self.bool(*flip_vertical);
+    }
+}
+
 /// The size and display rotation of an asset's frames, from the project's media table.
 pub fn source_geometry(project: &Project, asset: &Id) -> Option<((u32, u32), u16)> {
     let video = project.media.get(asset)?.info.video.as_ref()?;
@@ -429,10 +698,21 @@ fn plan_tracks(
             ) else {
                 // One side is off or empty: show the other one alone.
                 let clip = if time < out.end() { out } else { into };
-                plan.layers
-                    .extend(layer_for(project, &doc.format, track, clip, time));
+                if let Some(layer) = layer_for(project, &doc.format, track, clip, time) {
+                    plan.layers
+                        .extend(canvas_layer(project, &doc.format, clip, &layer));
+                    plan.layers.push(layer);
+                }
                 continue;
             };
+            // The canvas fill of the side that shows more stays under the transition.
+            let (main, main_layer) = if progress < 0.5 {
+                (out, &outgoing)
+            } else {
+                (into, &incoming)
+            };
+            plan.layers
+                .extend(canvas_layer(project, &doc.format, main, main_layer));
             if let Some(t) = &out.transition {
                 plan.layers.push(Layer {
                     clip: into.id.clone().into(),
@@ -454,10 +734,75 @@ fn plan_tracks(
         else {
             continue;
         };
-        plan.layers
-            .extend(layer_for(project, &doc.format, track, clip, time));
+        if let Some(layer) = layer_for(project, &doc.format, track, clip, time) {
+            plan.layers
+                .extend(canvas_layer(project, &doc.format, clip, &layer));
+            plan.layers.push(layer);
+        }
     }
     Ok(plan)
+}
+
+/// What fills the canvas around `layer`, the picture of `clip`, when the clip has a canvas
+/// fill: a solid colour, or the same picture scaled to cover the canvas and blurred.
+fn canvas_layer(
+    project: &Project,
+    format: &fosscut_model::TimelineFormat,
+    clip: &Clip,
+    layer: &Layer,
+) -> Option<Layer> {
+    let fill = clip.canvas.as_ref()?;
+    let LayerSource::Frame(source) = &layer.source else {
+        return None;
+    };
+    match fill {
+        fosscut_model::CanvasFill::Color { color } => Some(Layer {
+            clip: Some(clip.id.clone()),
+            ..Layer::shape(fosscut_model::ShapeContent {
+                shape: fosscut_model::MaskShape::Rectangle,
+                size: [1.0, 1.0],
+                roundness: 0.0,
+                points: Vec::new(),
+                fill: fosscut_model::Paint {
+                    color: color.clone(),
+                    gradient: None,
+                },
+                outline: Default::default(),
+                label: None,
+                label_at: [0.5, 0.5],
+            })
+        }),
+        fosscut_model::CanvasFill::Blur { amount } => {
+            let ((w, h), _) = source_geometry(project, &source.asset)?;
+            let (mut w, mut h) = (f64::from(w.max(1)), f64::from(h.max(1)));
+            if layer.rotation % 180 == 90 {
+                std::mem::swap(&mut w, &mut h);
+            }
+            let (canvas_w, canvas_h) = (f64::from(format.width), f64::from(format.height));
+            // The fitted picture shows whole inside the canvas; scale it up to cover.
+            let fit = (canvas_w / w).min(canvas_h / h);
+            let cover = (canvas_w / (w * fit)).max(canvas_h / (h * fit));
+            Some(Layer {
+                clip: Some(clip.id.clone()),
+                rotation: layer.rotation,
+                transform: Transform {
+                    scale: cover,
+                    ..Transform::default()
+                },
+                effects: vec![PlannedEffect {
+                    effect_type: "blur.gaussian".into(),
+                    values: [(
+                        "radius".to_string(),
+                        fosscut_model::ParamValue::Number(*amount),
+                    )]
+                    .into(),
+                    seed: 0,
+                    time: 0.0,
+                }],
+                ..Layer::new(source.clone())
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -897,6 +1242,199 @@ mod tests {
             "frame 15 inside, 30 frames into its media"
         );
         assert_eq!(plan.layers[0].flattened().len(), 1, "the inner layer");
+    }
+
+    #[test]
+    fn cache_keys_change_with_what_a_frame_shows_and_only_then() {
+        let (project, timeline) = project();
+        let key = |project: &Project, n: i64| {
+            plan_frame(project, &timeline, frames(n))
+                .unwrap()
+                .cache_key_bytes((640, 360))
+        };
+        let base = key(&project, 60);
+        assert_eq!(base, key(&project, 60), "the same frame again");
+        assert_eq!(base, key(&project.clone(), 60), "a copy of the project");
+        assert_ne!(base, key(&project, 61), "another time");
+        let plan = plan_frame(&project, &timeline, frames(60)).unwrap();
+        assert_ne!(
+            plan.cache_key_bytes((640, 360)),
+            plan.cache_key_bytes((320, 180)),
+            "another output size"
+        );
+
+        // Each edit of the bottom clip changes the frame's key.
+        let edited = |edit: &dyn Fn(&mut Clip)| {
+            let mut copy = project.clone();
+            edit(&mut copy.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]);
+            copy
+        };
+        let effect = |exposure: f64| fosscut_model::Effect {
+            id: Id::new(fosscut_model::IdKind::Effect, 7),
+            effect_type: "color.adjust".into(),
+            version: 1,
+            enabled: true,
+            params: [(
+                "exposure".to_string(),
+                fosscut_model::ParamValue::Number(exposure),
+            )]
+            .into_iter()
+            .collect(),
+            keyframes: Default::default(),
+        };
+        let mask = |feather: f64| fosscut_model::Mask {
+            feather,
+            ..fosscut_model::Mask::new(
+                Id::new(fosscut_model::IdKind::Mask, 8),
+                fosscut_model::MaskShape::Ellipse,
+            )
+        };
+        let with_effect = edited(&|clip| clip.effects = vec![effect(0.5)]);
+        let with_mask = edited(&|clip| clip.masks = vec![mask(0.2)]);
+        let edits: Vec<(&str, Project)> = vec![
+            ("position", edited(&|clip| clip.transform.position[0] = 0.1)),
+            ("scale", edited(&|clip| clip.transform.scale = 0.5)),
+            ("stretch", edited(&|clip| clip.transform.stretch[1] = 1.1)),
+            ("rotation", edited(&|clip| clip.transform.rotation = 3.0)),
+            (
+                "flip",
+                edited(&|clip| clip.transform.flip_horizontal = true),
+            ),
+            ("opacity", edited(&|clip| clip.opacity = 0.5)),
+            ("crop", edited(&|clip| clip.crop.left = 0.1)),
+            ("blend", edited(&|clip| clip.blend = BlendMode::Screen)),
+            (
+                "source time",
+                edited(&|clip| {
+                    clip.content = ClipContent::Video {
+                        asset: Id::new(fosscut_model::IdKind::Asset, 1),
+                        source_in: frames(31),
+                    }
+                }),
+            ),
+            ("an effect", with_effect.clone()),
+            ("a mask", with_mask.clone()),
+        ];
+        let mut keys = vec![base.clone()];
+        for (what, edited) in &edits {
+            let changed = key(edited, 60);
+            assert!(!keys.contains(&changed), "{what} changes the key");
+            keys.push(changed);
+        }
+        let tweaked = |project: &Project, edit: &dyn Fn(&mut Clip)| {
+            let mut copy = project.clone();
+            edit(&mut copy.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]);
+            key(&copy, 60)
+        };
+        assert_ne!(
+            key(&with_effect, 60),
+            tweaked(&with_effect, &|clip| clip.effects = vec![effect(0.6)]),
+            "an effect parameter"
+        );
+        assert_ne!(
+            key(&with_effect, 60),
+            tweaked(&with_effect, &|clip| clip.effects[0].enabled = false),
+            "turning an effect off"
+        );
+        assert_ne!(
+            key(&with_mask, 60),
+            tweaked(&with_mask, &|clip| clip.masks = vec![mask(0.3)]),
+            "a mask's feather"
+        );
+        let mut retitled = project.clone();
+        if let ClipContent::Text(text) =
+            &mut retitled.timelines.get_mut(&timeline).unwrap().tracks[2].clips[0].content
+        {
+            text.text = "Hello".into();
+        }
+        assert_ne!(key(&project, 10), key(&retitled, 10), "the title's text");
+
+        // Frames the edited clip is not in keep their keys: only the overlay shows at 120.
+        for (what, edited) in &edits {
+            assert_eq!(key(edited, 120), key(&project, 120), "{what} elsewhere");
+        }
+        // The clip a layer comes from is not part of it: the same picture from another
+        // clip has the same key.
+        let renamed = edited(&|clip| clip.id = Id::new(fosscut_model::IdKind::Clip, 99));
+        assert_eq!(key(&renamed, 60), base);
+    }
+
+    #[test]
+    fn cache_keys_cover_transitions_compound_clips_and_luts() {
+        let (mut project, timeline) = project();
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks.truncate(1);
+        let first = doc.tracks[0].clips[0].clone();
+        let mut second = first.clone();
+        second.id = Id::new(fosscut_model::IdKind::Clip, 60);
+        second.start = first.end();
+        let mut first = first;
+        first.transition = Some(fosscut_model::Transition {
+            transition_type: "dissolve".into(),
+            duration: frames(10),
+            params: Default::default(),
+        });
+        doc.tracks[0].clips = vec![first, second];
+        let at = |project: &Project| plan_frame(project, &timeline, frames(98)).unwrap();
+        let plan = at(&project);
+        assert!(matches!(plan.layers[0].source, LayerSource::Transition(_)));
+        let key = plan.cache_key_bytes((640, 360));
+        let mut slower = project.clone();
+        slower.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]
+            .transition
+            .as_mut()
+            .unwrap()
+            .duration = frames(20);
+        assert_ne!(at(&slower).cache_key_bytes((640, 360)), key, "progress");
+        let mut wiped = project.clone();
+        wiped.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]
+            .transition
+            .as_mut()
+            .unwrap()
+            .transition_type = "wipe".into();
+        assert_ne!(at(&wiped).cache_key_bytes((640, 360)), key, "the kind");
+        let mut incoming = project.clone();
+        incoming.timelines.get_mut(&timeline).unwrap().tracks[0].clips[1].opacity = 0.5;
+        assert_ne!(
+            at(&incoming).cache_key_bytes((640, 360)),
+            key,
+            "the clip it enters"
+        );
+
+        let mut nested = RenderPlan::empty((1920, 1080));
+        nested.layers.push(plan.layers[0].clone());
+        let outer = |inner: RenderPlan| {
+            let mut outer = RenderPlan::empty((1920, 1080));
+            outer
+                .layers
+                .push(Layer::with_source(LayerSource::Nested(Box::new(inner))));
+            outer.cache_key_bytes((640, 360))
+        };
+        let mut moved = nested.clone();
+        moved.layers[0].transform.position[1] = 0.2;
+        assert_ne!(
+            outer(nested.clone()),
+            outer(moved),
+            "inside a compound clip"
+        );
+
+        let lut = |value: f32| {
+            let mut layer = plan.layers[0].clone();
+            layer.lut = Some(Arc::new(Lut3d {
+                size: 2,
+                data: vec![[value, 0.0, 0.0]; 8],
+            }));
+            let mut with = RenderPlan::empty((1920, 1080));
+            with.layers.push(layer);
+            with.cache_key_bytes((640, 360))
+        };
+        assert_ne!(lut(0.5), lut(0.25), "the LUT's table");
+        let mut skipping = plan.clone();
+        skipping.skipped.push(Skipped {
+            clip: Id::new(fosscut_model::IdKind::Clip, 70),
+            reason: "unsupported".into(),
+        });
+        assert_ne!(skipping.cache_key_bytes((640, 360)), key, "skipped clips");
     }
 
     #[test]

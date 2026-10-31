@@ -1135,7 +1135,7 @@ impl FosscutServer {
 
     /// Levels clips' loudness.
     #[tool(
-        description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
+        description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, or it needs more than the volume's +20 dB, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
     )]
     async fn audio_normalize(
         &self,
@@ -1256,11 +1256,21 @@ impl FosscutServer {
 
     /// Runs any query.
     #[tool(
-        description = "Run any read-only query from capabilities by name with its arguments, for queries no other tool covers.",
+        description = "Run any read-only query from capabilities by name with its arguments, for queries no other tool covers. preferences.read returns the user's preferences (editing and timeline defaults such as loudness_target, image_duration and frame_rate), so your requests can follow them; it needs no project, and only the user changes them.",
         annotations(read_only_hint = true)
     )]
     async fn query(&self, params: Parameters<QueryArgs>) -> Result<CallToolResult, ErrorData> {
         let args = params.0;
+        if args.name == "preferences.read" {
+            return reply(
+                blocking(|| {
+                    let file = fosscut_engine::preferences::path();
+                    let preferences = fosscut_engine::preferences::Preferences::load(&file)?;
+                    Ok(json!({ "path": file, "preferences": preferences }))
+                })
+                .await,
+            );
+        }
         let bundle = match self.bundle(args.project) {
             Ok(bundle) => bundle,
             Err(error) => return Ok(failure(&error)),

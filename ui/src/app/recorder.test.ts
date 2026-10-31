@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { FakeEngine } from "../engine/fake";
 import type { CaptureDevice, JobStatus } from "../engine/types";
+import { setLanguage, t } from "../i18n";
 import { entry, moment, timeline } from "../test/fixtures";
 import { Editor } from "./editor";
 import { DEVICE_UNAVAILABLE, defaultForm, devicesOf, recordChoice, recordProblem, recordedTime } from "./recorder";
@@ -37,6 +38,8 @@ async function started(fake = engine()) {
 }
 
 describe("recording", () => {
+  afterEach(() => setLanguage("en"));
+
   it("defaults to the first device, a camera to the first microphone and a screen to no sound", () => {
     expect(devicesOf(DEVICES, "microphone").map((d) => d.name)).toEqual(["Studio Mic", "Built-in"]);
     expect(defaultForm("microphone", DEVICES)).toEqual({ what: "microphone", device: "Studio Mic", microphone: "" });
@@ -75,8 +78,12 @@ describe("recording", () => {
   it("points to the privacy settings when a device cannot be opened", () => {
     expect(recordProblem({ code: "fosscut.job.not_found", message: "there is no job job_0009" })).toBe("there is no job job_0009.");
     const refused = recordProblem({ code: DEVICE_UNAVAILABLE, message: "cannot open the camera", hint: "Check that it is connected" });
-    expect(refused).toContain("cannot open the camera. Check that it is connected.");
+    expect(refused).toBe(`cannot open the camera. Check that it is connected. ${t("record.privacy")}`);
     expect(refused).toContain("System Settings, under Privacy and Security");
+    setLanguage("hu");
+    const translated = recordProblem({ code: DEVICE_UNAVAILABLE, message: "cannot open the camera" });
+    expect(translated, "the engine's words stay as written").toContain("cannot open the camera.");
+    expect(translated).toContain("Adatvédelem és biztonság");
     expect(recordProblem({ code: "x", message: "stopped.", hint: "Try again." }), "no doubled stops").toBe("stopped. Try again.");
   });
 

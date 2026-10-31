@@ -44,6 +44,17 @@
     "allow-record-devices",
     "allow-record-start",
     "allow-record-status",
-    "allow-record-stop"
+    "allow-record-stop",
+    "allow-preferences-get",
+    "allow-preferences-set",
+    "allow-preferences-reset",
+    "allow-update-check",
+    "allow-update-open",
+    "allow-sound-play",
+    "allow-folder-pick",
+    "allow-cache-info",
+    "allow-cache-clear",
+    "allow-media-sources",
+    "allow-media-work"
   ]
 }

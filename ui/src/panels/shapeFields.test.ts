@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ShapeContentView } from "../engine/types";
+import { setLanguage, t } from "../i18n";
 import { clip } from "../test/fixtures";
-import { SHAPE_DEFAULTS, SHAPES, shapeKinds, shapeOf, shapePatch, shownNumber } from "./shapeFields";
+import { SHAPE_DEFAULTS, SHAPES, SHAPE_NUMBERS, shapeKinds, shapeOf, shapePatch, shownNumber } from "./shapeFields";
 
 const shape = (content: ShapeContentView) => clip("clip_0041", "shape", 0, 3, { shape: content.shape, content });
 
@@ -112,5 +113,16 @@ describe("shape fields", () => {
     expect(shapePatch(badge, "label_y", 0), "the middle").toEqual({ label_at: null });
     expect(shapePatch(badge, "label_y", -150)).toBeNull();
     expect(shapePatch(plain, "label_x", 10)).toBeNull();
+  });
+
+  describe("in Hungarian", () => {
+    afterEach(() => setLanguage("en"));
+
+    it("name the number fields in the interface's language", () => {
+      expect(t(SHAPE_NUMBERS.label_x!.label)).toBe("Across");
+      setLanguage("hu");
+      expect(t(SHAPE_NUMBERS.label_x!.label)).toBe("Vízszintesen");
+      expect(t(SHAPE_NUMBERS.roundness!.label)).toBe("Kerekítés");
+    });
   });
 });

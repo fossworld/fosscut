@@ -862,6 +862,27 @@ fn check_content(
             );
         }
     }
+    if let Some(fill) = &clip.canvas {
+        if !matches!(
+            content,
+            ClipContent::Video { .. } | ClipContent::Image { .. }
+        ) {
+            issues.push(
+                path,
+                "fosscut.model.canvas",
+                "only video and image clips have a canvas fill",
+            );
+        }
+        if let crate::CanvasFill::Blur { amount } = fill
+            && !(amount.is_finite() && (0.0..=0.2).contains(amount))
+        {
+            issues.push(
+                path,
+                "fosscut.model.canvas",
+                "a canvas blur's amount is from 0 to 0.2 of the canvas height",
+            );
+        }
+    }
     let Some(asset_id) = content.asset() else {
         return;
     };

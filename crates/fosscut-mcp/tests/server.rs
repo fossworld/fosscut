@@ -1370,6 +1370,18 @@ async fn recordings_start_only_when_confirmed_and_stop_keeping_what_was_recorded
     let client = connect(None).await;
     let listed = ok(&client, "record", json!({ "action": "devices" })).await;
     assert!(listed["devices"].is_array(), "{listed}");
+    // Agents read the user's preferences, without a project.
+    let preferences = ok(&client, "query", json!({ "name": "preferences.read" })).await;
+    assert!(
+        preferences["preferences"]["editing"]["loudness_target"].is_number(),
+        "{preferences}"
+    );
+    assert!(
+        preferences["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("preferences.json")
+    );
     ok(
         &client,
         "project_new",

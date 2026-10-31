@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ExportPreset, ExportReport, JobStatus } from "../engine/types";
+import { setLanguage, t } from "../i18n";
 import { moment } from "../test/fixtures";
 import { FLICKS_PER_SECOND, frameAt, framesToFlicks, parseRate } from "../transport/time";
 import {
@@ -12,6 +13,7 @@ import {
   defaultPreset,
   fileName,
   folderOf,
+  fpsNumber,
   fpsText,
   lengthText,
   markerRanges,
@@ -22,6 +24,7 @@ import {
   sizeFor,
   withExtension,
 } from "./exportForm";
+import { readableSize } from "./Start";
 
 const S = FLICKS_PER_SECOND;
 const fps30 = parseRate("30");
@@ -55,6 +58,8 @@ const form: ExportForm = {
 };
 
 describe("export form", () => {
+  afterEach(() => setLanguage("en"));
+
   it("starts from H.264 where this machine has it, and names files after the project", () => {
     expect(defaultPreset(presets)?.name).toBe("mp4-h264");
     expect(defaultPreset([preset("mp4-h264", "mp4", false), preset("m4a-aac", "m4a"), preset("webm-vp9", "webm")])?.name).toBe(
@@ -100,12 +105,16 @@ describe("export form", () => {
       { id: "marker_2", at: moment(15) },
       { id: "marker_3", at: moment(30), name: "after the end" },
     ];
+    const range = (from: string, to: string) => t("export.range", { from, to });
     expect(markerRanges(markers, 24 * S)).toEqual([
-      { label: "Start to beat", from: 0, to: 4 * S },
-      { label: `beat to ${moment(15).timecode}`, from: 4 * S, to: 15 * S },
-      { label: `${moment(15).timecode} to End`, from: 15 * S, to: 24 * S },
+      { label: range(t("export.range.start"), "beat"), from: 0, to: 4 * S },
+      { label: range("beat", moment(15).timecode), from: 4 * S, to: 15 * S },
+      { label: range(moment(15).timecode, t("export.range.end")), from: 15 * S, to: 24 * S },
     ]);
+    expect(markerRanges(markers, 24 * S)[0]?.label).toBe("Start to beat");
     expect(markerRanges([], 24 * S)).toEqual([]);
+    setLanguage("hu");
+    expect(markerRanges(markers, 24 * S)[0]?.label).toBe("Eleje és beat között");
   });
 
   it("makes the request: preset, size, rate and bit rate, part, cover and subtitles", () => {
@@ -150,16 +159,18 @@ describe("export form", () => {
       const made = choiceOf({ ...form, ...change }, context);
       return "problem" in made ? made.problem : null;
     };
-    expect(problem({ output: " " })).toBe("Choose where to save the export.");
-    expect(problem({ preset: "gif" })).toBe("Choose a preset.");
-    expect(problem({ preset: "mp4-av1" })).toContain("cannot encode mp4-av1");
-    expect(problem({ bitrate: "fast" })).toContain("8M");
-    expect(problem({ part: true, from: "later" })).toContain("start and end");
-    expect(problem({ part: true, from: "30s", to: "40s" })).toContain("start before the timeline ends");
-    expect(problem({ part: true, from: "5s", to: "5s" })).toContain("end after it starts");
-    expect(problem({ cover: true, coverAt: "x" })).toContain("cover's time");
-    expect(problem({ part: true, from: "2s", to: "4s", cover: true, coverAt: "4s" })).toContain("frame of what you export");
-    expect(problem({ cover: true, coverAt: "24s" })).toContain("frame of what you export");
+    expect(problem({ output: " " })).toBe(t("export.problem.output"));
+    expect(problem({ preset: "gif" })).toBe(t("export.problem.preset"));
+    expect(problem({ preset: "mp4-av1" })).toBe(t("export.problem.unavailable", { name: "mp4-av1" }));
+    expect(problem({ bitrate: "fast" })).toBe(t("export.problem.bitrate"));
+    expect(problem({ part: true, from: "later" })).toBe(t("export.problem.part"));
+    expect(problem({ part: true, from: "30s", to: "40s" })).toBe(t("export.problem.partStart"));
+    expect(problem({ part: true, from: "5s", to: "5s" })).toBe(t("export.problem.partEnd"));
+    expect(problem({ cover: true, coverAt: "x" })).toBe(t("export.problem.coverTime"));
+    expect(problem({ part: true, from: "2s", to: "4s", cover: true, coverAt: "4s" })).toBe(t("export.problem.coverInside"));
+    expect(problem({ cover: true, coverAt: "24s" })).toBe(t("export.problem.coverInside"));
+    setLanguage("hu");
+    expect(problem({ output: " " })).toBe("Válassza ki, hová mentse az exportált fájlt.");
   });
 
   it("starts a cover inside the part exported", () => {
@@ -177,7 +188,16 @@ describe("export form", () => {
     expect(sizeFor({ width: 1000, height: 750 }, 480)).toEqual([640, 480]);
     expect(sizeFor({ width: 1920, height: 1080 }, null)).toEqual([1920, 1080]);
     expect([fpsText("30"), fpsText("30000/1001"), fpsText("24000/1001")]).toEqual(["30", "29.97", "23.976"]);
-    expect([lengthText(1.54), lengthText(42.4), lengthText(120), lengthText(125)]).toEqual(["1.5 s", "42 s", "2 min", "2 min 5 s"]);
+    expect(fpsNumber("30000/1001")).toBe(29.97);
+    expect([lengthText(1.54), lengthText(42.4), lengthText(120), lengthText(125)]).toEqual([
+      t("export.length.seconds", { seconds: 1.5 }),
+      t("export.length.seconds", { seconds: 42 }),
+      t("export.length.minutes", { minutes: 2 }),
+      t("export.length.minutesSeconds", { minutes: 2, seconds: 5 }),
+    ]);
+    expect(lengthText(125)).toBe("2 min 5 s");
+    setLanguage("hu");
+    expect([lengthText(1.54), lengthText(125)]).toEqual(["1,5 mp", "2 perc 5 mp"]);
   });
 
   it("describes a job's progress", () => {
@@ -188,12 +208,22 @@ describe("export form", () => {
       progress: { done, total },
       elapsed_ms: elapsed,
     });
-    expect(progressOf(job("running", 0, 0))).toEqual({ fraction: null, text: "Getting ready." });
-    expect(progressOf(job("running", 30, 90))).toEqual({ fraction: 1 / 3, text: "30 of 90 (33%), about 4 s left." });
-    expect(progressOf(job("running", 90, 90)).text).toBe("90 of 90 (100%), checking the file.");
-    expect(progressOf(job("succeeded", 90, 90, 61_000))).toEqual({ fraction: 1, text: "Done in 1 min 1 s." });
-    expect(progressOf(job("cancelled", 10, 90)).text).toContain("nothing was written");
-    expect(progressOf(job("failed", 10, 90)).fraction).toBeNull();
+    expect(progressOf(job("running", 0, 0))).toEqual({ fraction: null, text: t("export.progress.ready") });
+    const counted = t("export.progress.count", { done: 30, total: 90, percent: 33 });
+    const left = t("export.progress.left", { left: lengthText(4) });
+    expect(progressOf(job("running", 30, 90))).toEqual({ fraction: 1 / 3, text: `${counted}, ${left}.` });
+    expect(progressOf(job("running", 30, 90)).text).toBe("30 of 90 (33%), about 4 s left.");
+    expect(progressOf(job("running", 90, 90)).text).toBe(
+      `${t("export.progress.count", { done: 90, total: 90, percent: 100 })}, ${t("export.progress.checking")}.`,
+    );
+    expect(progressOf(job("succeeded", 90, 90, 61_000))).toEqual({
+      fraction: 1,
+      text: t("export.progress.done", { took: lengthText(61) }),
+    });
+    expect(progressOf(job("cancelled", 10, 90)).text).toBe(t("export.progress.cancelled"));
+    expect(progressOf(job("failed", 10, 90))).toEqual({ fraction: null, text: t("export.progress.failed") });
+    setLanguage("hu");
+    expect(progressOf(job("running", 30, 90)).text).toBe("30 / 90 (33%), még körülbelül 4 mp.");
   });
 
   it("lists a finished export's file, size, length, streams, cover and subtitles", () => {
@@ -215,22 +245,26 @@ describe("export form", () => {
       subtitles: "/work/Launch.srt",
     };
     expect(reportRows(report)).toEqual([
-      ["File", "/work/Launch.mp4"],
-      ["Size", "3.4 MB"],
-      ["Length", "3 s"],
-      ["Picture", "h264, 1920 x 1080 at 29.97 fps"],
-      ["Sound", "aac, 48 kHz stereo"],
-      ["Cover", "/work/Launch.cover.png"],
-      ["Subtitles", "/work/Launch.srt"],
-      ["Took", "1.5 s"],
+      [t("export.report.file"), "/work/Launch.mp4"],
+      [t("export.report.size"), readableSize(3_400_000)],
+      [t("export.report.length"), lengthText(3)],
+      [t("export.report.picture"), t("export.report.pictureAt", { codec: "h264", width: 1920, height: 1080, fps: 29.97 })],
+      [t("export.report.sound"), `aac, ${t("export.report.khz", { khz: 48 })} ${t("export.report.stereo")}`],
+      [t("export.report.cover"), "/work/Launch.cover.png"],
+      [t("export.report.subtitles"), "/work/Launch.srt"],
+      [t("export.report.took"), lengthText(1.5)],
     ]);
+    expect(reportRows(report)[3]).toEqual(["Picture", "h264, 1920 x 1080 at 29.97 fps"]);
+    expect(reportRows(report)[4]).toEqual(["Sound", "aac, 48 kHz stereo"]);
     const sound = { ...report, verified: { container: "mp4", size_bytes: 900, video: null, audio: { codec: "aac", channels: 1 } } };
     expect(reportRows({ ...sound, cover: undefined, subtitles: undefined })).toEqual([
-      ["File", "/work/Launch.mp4"],
-      ["Size", "900 bytes"],
-      ["Length", "3 s"],
-      ["Sound", "aac mono"],
-      ["Took", "1.5 s"],
+      [t("export.report.file"), "/work/Launch.mp4"],
+      [t("export.report.size"), readableSize(900)],
+      [t("export.report.length"), lengthText(3)],
+      [t("export.report.sound"), `aac ${t("export.report.mono")}`],
+      [t("export.report.took"), lengthText(1.5)],
     ]);
+    setLanguage("hu");
+    expect(reportRows(report)[3]).toEqual(["Kép", "h264, 1920 x 1080, 29,97 fps"]);
   });
 });

@@ -224,6 +224,18 @@ impl AudioCodec {
     }
 }
 
+/// Whether writers may use hardware encoders (ADR-0032, item 6). Turning them off never
+/// substitutes a codec: a codec without a software encoder becomes unavailable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HardwareEncoding {
+    /// Prefer hardware encoders where this machine has them, as before this choice existed.
+    #[default]
+    Auto,
+    /// Only software encoders.
+    Off,
+}
+
 /// Video stream settings for a new file.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VideoSettings {

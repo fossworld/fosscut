@@ -230,6 +230,23 @@ pub enum Command {
         #[arg(long, hide = true)]
         microphone_input: Option<String>,
     },
+    /// FossCut's caches (analysis, proxies, remuxed copies, rendered frames): their sizes,
+    /// clearing them, and cleaning them by the cache preferences.
+    #[command(subcommand)]
+    Cache(CacheCommand),
+    /// Your preferences (ADR-0031): defaults the CLI and the app fill requests with, and
+    /// performance and cache settings. Without a subcommand, every preference.
+    Preferences {
+        #[command(subcommand)]
+        command: Option<PreferencesCommand>,
+    },
+    /// Check whether a newer FossCut release exists (one request to GitHub; nothing about
+    /// you is sent). Installing stays yours to do.
+    Update {
+        /// Ask this address instead of GitHub's releases API.
+        #[arg(long, hide = true)]
+        from: Option<String>,
+    },
     /// Install FossCut's editing skills for AI agents, or list them.
     #[command(subcommand)]
     Skills(SkillsCommand),
@@ -364,9 +381,10 @@ pub enum ProjectCommand {
         /// Canvas height in pixels.
         #[arg(long, default_value_t = 1080)]
         height: u32,
-        /// Frame rate, for example 30 or 30000/1001.
-        #[arg(long, default_value = "30")]
-        rate: String,
+        /// Frame rate, for example 30, 29.97 or 30000/1001; the preferred rate of new
+        /// projects (`timeline.frame_rate`, 30 by default) when omitted.
+        #[arg(long)]
+        rate: Option<String>,
     },
     /// Show project name, revision, timelines and undo state.
     Info,
@@ -385,6 +403,21 @@ pub enum MediaCommand {
     },
     /// List imported media, marking files that cannot be found.
     List,
+    /// Make a proxy of a video asset: a smaller ProRes Proxy copy in FossCut's cache that
+    /// the desktop preview plays instead (exports always read the original).
+    Proxy {
+        /// The asset.
+        asset: String,
+        /// half or quarter; the preferred size (`performance.proxy_size`) when omitted.
+        #[arg(long)]
+        size: Option<String>,
+    },
+    /// Copy a video asset in a hard-to-seek container (MPEG-TS, MPEG-PS, AVI, FLV) into
+    /// QuickTime in FossCut's cache, without re-encoding, for the desktop preview.
+    Remux {
+        /// The asset.
+        asset: String,
+    },
     /// Rename an asset in the media bin (not the file).
     Rename {
         /// The asset.
@@ -516,6 +549,23 @@ pub enum ClipCommand {
         /// Timeline id; the primary timeline when omitted.
         #[arg(long)]
         timeline: Option<String>,
+    },
+    /// Fill the canvas around video or image clips whose picture does not cover it, such
+    /// as a 16:9 shot in a vertical video: with their own picture blurred, or a colour.
+    Canvas {
+        /// Clip ids (repeat the option).
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+        /// Their own picture, blurred to cover the canvas, by this much (0 to 0.2 of the
+        /// picture's height; 0.05 when given without a value).
+        #[arg(long, num_args = 0..=1, default_missing_value = "0.05", conflicts_with_all = ["color", "none"])]
+        blur: Option<f64>,
+        /// A colour as #RRGGBB.
+        #[arg(long, conflicts_with = "none")]
+        color: Option<String>,
+        /// Remove the fill.
+        #[arg(long)]
+        none: bool,
     },
     /// Split a video clip at its scene changes, so each shot becomes a clip of its own.
     /// The shot cuts are measured from the media once and cached.
@@ -1340,7 +1390,8 @@ pub enum LibraryCommand {
 pub enum AudioCommand {
     /// Measure clips' loudness as they play and set their volumes to reach a target
     /// (ITU-R BS.1770), keeping peaks under a ceiling; where the peaks leave too little
-    /// room, an audio.limiter makes up the rest.
+    /// room, or the clip needs more than the volume's +20 dB, an audio.limiter makes up the
+    /// rest.
     Normalize {
         /// Clip ids (repeat the option).
         #[arg(long = "clip", required = true)]
@@ -1356,6 +1407,46 @@ pub enum AudioCommand {
         #[arg(long)]
         no_limit: bool,
     },
+}
+
+/// `fosscut cache ...`
+#[derive(Debug, Subcommand)]
+pub enum CacheCommand {
+    /// Each cache's folder, size and number of entries.
+    Info,
+    /// Empty caches: analysis, proxies, remux or frames (repeat it); all when omitted.
+    /// Everything in them is made again when needed.
+    Clear {
+        /// The caches to empty.
+        kinds: Vec<String>,
+    },
+    /// Remove entries unused for longer than `cache.max_age_days`, then the oldest beyond
+    /// `cache.limit_gb`, as hosts do when they start.
+    Clean,
+}
+
+/// `fosscut preferences ...`
+#[derive(Debug, Subcommand)]
+pub enum PreferencesCommand {
+    /// One preference, or a group, by dotted name such as `editing.frame_step`.
+    Get {
+        /// The preference.
+        key: String,
+    },
+    /// Change a preference: `fosscut preferences set performance.proxies auto`.
+    Set {
+        /// The preference.
+        key: String,
+        /// The value: JSON, or a word taken as text.
+        value: String,
+    },
+    /// Return a preference to its default.
+    Reset {
+        /// The preference.
+        key: String,
+    },
+    /// Where the preferences file is.
+    Path,
 }
 
 /// `fosscut multicam ...`

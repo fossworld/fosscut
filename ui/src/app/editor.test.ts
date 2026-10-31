@@ -474,10 +474,12 @@ describe("editor", () => {
     await editor.skim(2 * FLICKS_PER_SECOND);
     await editor.skim(2 * FLICKS_PER_SECOND);
     await editor.skim(null);
-    expect(fake.callsOf("preview.show").slice(-2), "the frame under the pointer, then back").toEqual([
-      [2 * FLICKS_PER_SECOND],
+    expect(fake.callsOf("preview.show").slice(-2), "the frame under the pointer, with its sound, then back").toEqual([
+      [2 * FLICKS_PER_SECOND, true],
       [3 * FLICKS_PER_SECOND],
     ]);
+    await editor.scrub(FLICKS_PER_SECOND);
+    expect(fake.callsOf("preview.show").at(-1), "scrubbing on the ruler asks for sound").toEqual([FLICKS_PER_SECOND, true]);
     editor.setTool("blade");
     await editor.bladeAt("clip_0003", FLICKS_PER_SECOND);
     expect(editor.getState().tool).toBe("blade");
@@ -642,7 +644,7 @@ describe("editor", () => {
     expect(fake.callsOf("audioNormalize"), "nothing to measure").toHaveLength(0);
 
     await editor.normalizeLoudness(["clip_0003", "clip_0008"]);
-    expect(fake.callsOf("audioNormalize")).toEqual([[["clip_0003", "clip_0008"], undefined]]);
+    expect(fake.callsOf("audioNormalize"), "the preferred target").toEqual([[["clip_0003", "clip_0008"], -14]]);
     const requests = fake.callsOf("execute").map(([request]) => request as EditRequest);
     expect(requests, "one undoable step").toHaveLength(1);
     expect(requests[0]).toEqual({

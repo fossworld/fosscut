@@ -10,11 +10,11 @@ use std::io::Read;
 use std::process::ExitCode;
 
 use args::{
-    AdjustmentCommand, AnimationCommand, AudioCommand, CaptionsCommand, Cli, ClipCommand,
-    ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand, LibraryCommand,
-    LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand, MulticamCommand,
-    ProjectCommand, RevealArgs, SkillTarget, SkillsCommand, TextCommand, TimelineCommand,
-    TrackCommand, TransitionCommand,
+    AdjustmentCommand, AnimationCommand, AudioCommand, CacheCommand, CaptionsCommand, Cli,
+    ClipCommand, ClipsCommand, ColorCommand, Command, EffectCommand, KeyframeCommand,
+    LibraryCommand, LookCommand, MarkerCommand, MaskCommand, MediaCommand, ModelsCommand,
+    MulticamCommand, PreferencesCommand, ProjectCommand, RevealArgs, SkillTarget, SkillsCommand,
+    TextCommand, TimelineCommand, TrackCommand, TransitionCommand,
 };
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -56,6 +56,11 @@ fn main() -> ExitCode {
 
 fn cli_main() -> ExitCode {
     let cli = Cli::parse();
+    // Hardware decoding and encoding follow the preferences in every command; a broken
+    // preferences file is reported by the commands that read it.
+    if let Ok(preferences) = preferences() {
+        preferences.apply_performance();
+    }
     match run(&cli) {
         Ok(outcome) => {
             print(&cli, &outcome);
@@ -137,7 +142,10 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             height,
             rate,
         }) => {
-            let rate: Rate = rate.parse()?;
+            let rate = match rate {
+                Some(rate) => rate_of(rate)?,
+                None => rate_of(&preferences()?.timeline.frame_rate)?,
+            };
             let name = name.clone().unwrap_or_else(|| {
                 path.file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -271,19 +279,29 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             source_in,
             duration,
             timeline,
-        }) => write(
-            cli,
-            "clip.add",
-            object(vec![
-                ("asset", some(asset)),
-                ("compound", some(compound)),
-                ("track", some(track)),
-                ("start", some(start)),
-                ("source_in", some(source_in)),
-                ("duration", some(duration)),
-                ("timeline", some(timeline)),
-            ]),
-        ),
+        }) => {
+            // A still image is as long as the preferences say unless told otherwise.
+            let duration = match (duration, asset) {
+                (Some(duration), _) => Some(json!(duration)),
+                (None, Some(asset)) if is_image(cli, asset)? => Some(json!({
+                    "seconds": format!("{}", preferences()?.editing.image_duration)
+                })),
+                (None, _) => None,
+            };
+            write(
+                cli,
+                "clip.add",
+                object(vec![
+                    ("asset", some(asset)),
+                    ("compound", some(compound)),
+                    ("track", some(track)),
+                    ("start", some(start)),
+                    ("source_in", some(source_in)),
+                    ("duration", duration),
+                    ("timeline", some(timeline)),
+                ]),
+            )
+        }
         Command::Clip(ClipCommand::Split { clip, at, unlinked }) => write(
             cli,
             "clip.split",
@@ -586,6 +604,65 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         Command::Text(command) => text(cli, command),
         Command::Library(command) => library(cli, command),
         Command::Multicam(command) => multicam(cli, command),
+        Command::Clip(ClipCommand::Canvas {
+            clips,
+            blur,
+            color,
+            none,
+        }) => {
+            let fill = match (blur, color, none) {
+                (Some(amount), _, _) => json!({ "kind": "blur", "amount": amount }),
+                (None, Some(color), _) => json!({ "kind": "color", "color": color }),
+                (None, None, true) => Value::Null,
+                (None, None, false) => {
+                    return Err(ApiError::new(
+                        codes::INVALID_ARGUMENTS,
+                        "give --blur, --color or --none",
+                    ));
+                }
+            };
+            write(cli, "clip.canvas", json!({ "clips": clips, "fill": fill }))
+        }
+        Command::Preferences { command } => preferences_command(command.as_ref()),
+        Command::Cache(command) => cache_command(command),
+        Command::Media(MediaCommand::Proxy { asset, size }) => {
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let snapshot = bundle::snapshot(&path)?;
+            let size = match size {
+                Some(size) => {
+                    fosscut_engine::proxy::ProxySize::parse(size).map_err(|e| engine_error(&e))?
+                }
+                None => preferences()?.proxy_size(),
+            };
+            let report = fosscut_engine::proxy::make_proxy(
+                &snapshot,
+                &path,
+                &parse_id(asset, "asset")?,
+                size,
+                &fosscut_engine::cache_dir(),
+                &mut progress_printer("making a proxy"),
+            )
+            .map_err(|e| engine_error(&e))?;
+            Ok(Outcome::Query("media.proxy".into(), json!(report)))
+        }
+        Command::Media(MediaCommand::Remux { asset }) => {
+            let path = bundle::bundle_path(cli.project.as_deref())?;
+            let snapshot = bundle::snapshot(&path)?;
+            let report = fosscut_engine::remux::remux(
+                &snapshot,
+                &path,
+                &parse_id(asset, "asset")?,
+                &fosscut_engine::cache_dir(),
+                &mut progress_printer("remuxing"),
+            )
+            .map_err(|e| engine_error(&e))?;
+            Ok(Outcome::Query("media.remux".into(), json!(report)))
+        }
+        Command::Update { from } => {
+            let found = fosscut_engine::updates::check(env!("CARGO_PKG_VERSION"), from.as_deref())
+                .map_err(|e| engine_error(&e))?;
+            Ok(Outcome::Query("update.check".into(), json!(found)))
+        }
         Command::Record {
             what,
             list,
@@ -922,6 +999,7 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             install_model(cli, name, *yes, from.as_deref())
         }
         Command::Mcp => {
+            clean_caches();
             let project = bundle::bundle_path(cli.project.as_deref()).ok();
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -935,7 +1013,10 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
         Command::Host {
             events,
             exit_on_eof,
-        } => host(cli, *events, *exit_on_eof),
+        } => {
+            clean_caches();
+            host(cli, *events, *exit_on_eof)
+        }
         Command::Frame {
             time,
             out,
@@ -1721,7 +1802,10 @@ fn normalize(
         &snapshot,
         &path,
         &ids,
-        target.unwrap_or(loudness::DEFAULT_TARGET_LUFS),
+        match target {
+            Some(target) => target,
+            None => preferences()?.editing.loudness_target,
+        },
         ceiling.unwrap_or(loudness::DEFAULT_CEILING_DBFS),
         !no_limit,
     )
@@ -2003,6 +2087,89 @@ fn multicam(cli: &Cli, command: &MulticamCommand) -> Result<Outcome, ApiError> {
             Ok(Outcome::Query("multicam.sync".into(), json!(found)))
         }
     }
+}
+
+/// A frame rate as people write it: a whole number, a ratio such as 30000/1001, or the
+/// usual decimal shorthands 23.976, 29.97 and 59.94.
+fn rate_of(text: &str) -> Result<Rate, ApiError> {
+    let exact = match text.trim() {
+        "23.976" | "23.98" => "24000/1001",
+        "29.97" => "30000/1001",
+        "59.94" => "60000/1001",
+        other => other,
+    };
+    Ok(exact.parse::<Rate>()?)
+}
+
+/// Whether `asset` of the project is a still image.
+fn is_image(cli: &Cli, asset: &str) -> Result<bool, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    Ok(Id::parse(asset)
+        .ok()
+        .and_then(|id| snapshot.media.get(&id).map(|a| a.kind))
+        == Some(fosscut_model::AssetKind::Image))
+}
+
+/// The user's preferences, or the defaults when there is no file yet.
+fn preferences() -> Result<fosscut_engine::preferences::Preferences, ApiError> {
+    fosscut_engine::preferences::Preferences::load(&fosscut_engine::preferences::path())
+        .map_err(|e| engine_error(&e))
+}
+
+/// Cleans the caches by the preferences, as a host does when it starts (ADR-0032 item
+/// 5); cleaning only saves space, so a failure does not stop the host.
+fn clean_caches() {
+    if let Ok(preferences) = preferences() {
+        preferences
+            .cache_policy(fosscut_engine::cache_dir())
+            .enforce();
+    }
+}
+
+/// `fosscut cache ...`
+fn cache_command(command: &CacheCommand) -> Result<Outcome, ApiError> {
+    use fosscut_engine::cache::{self, CacheKind};
+    let dir = fosscut_engine::cache_dir();
+    let value = match command {
+        CacheCommand::Info => json!({ "dir": dir, "caches": cache::cache_info(&dir) }),
+        CacheCommand::Clear { kinds } => {
+            let kinds = kinds
+                .iter()
+                .map(|kind| CacheKind::parse(kind).map_err(|e| engine_error(&e)))
+                .collect::<Result<Vec<_>, _>>()?;
+            json!({ "freed_bytes": cache::clear(&dir, &kinds) })
+        }
+        CacheCommand::Clean => json!(preferences()?.cache_policy(dir).enforce()),
+    };
+    Ok(Outcome::Query("cache".into(), value))
+}
+
+/// `fosscut preferences ...`
+fn preferences_command(command: Option<&PreferencesCommand>) -> Result<Outcome, ApiError> {
+    let file = fosscut_engine::preferences::path();
+    let mut preferences = preferences()?;
+    let save = |preferences: &fosscut_engine::preferences::Preferences| {
+        preferences.save(&file).map_err(|e| engine_error(&e))
+    };
+    let value = match command {
+        None => preferences.get("").map_err(|e| engine_error(&e))?,
+        Some(PreferencesCommand::Get { key }) => {
+            preferences.get(key).map_err(|e| engine_error(&e))?
+        }
+        Some(PreferencesCommand::Set { key, value }) => {
+            preferences.set(key, value).map_err(|e| engine_error(&e))?;
+            save(&preferences)?;
+            json!({ key.as_str(): preferences.get(key).ok() })
+        }
+        Some(PreferencesCommand::Reset { key }) => {
+            preferences.set(key, "null").map_err(|e| engine_error(&e))?;
+            save(&preferences)?;
+            json!({ key.as_str(): preferences.get(key).ok() })
+        }
+        Some(PreferencesCommand::Path) => json!({ "path": file }),
+    };
+    Ok(Outcome::Query("preferences".into(), value))
 }
 
 /// What `fosscut record` was asked for.

@@ -1437,3 +1437,192 @@ header button.recording {
   color: #ff8a8a;
   border-color: #6b2c2c;
 }
+
+/* An update notice sits below any other notice. */
+.notice.update {
+  top: 96px;
+}
+
+/* The quiet line of proxies and remuxed copies being made. */
+header .media-work {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+header .settings-button,
+.start .settings-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Media made easier to preview: a proxy or a remuxed copy. */
+.media .asset .mark {
+  font-size: 10px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.canvas-fill h3 {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Settings: sections on the left, the chosen section's controls on the right. */
+.dialog.settings {
+  width: min(820px, 94vw);
+  height: min(640px, 90vh);
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog.settings h2 {
+  display: flex;
+  align-items: center;
+}
+
+.dialog.settings h2 .spacer {
+  flex: 1;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.settings-body nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 150px;
+}
+
+.settings-body nav button {
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+
+.settings-body nav button.active {
+  background: var(--panel-raised);
+  border-color: var(--line);
+}
+
+.settings-section {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.settings-section .setting {
+  margin-bottom: 4px;
+}
+
+.settings-section .setting .problem {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.settings-section .short {
+  width: 110px;
+}
+
+.settings-section .unit {
+  min-width: 34px;
+  color: var(--muted);
+}
+
+.settings-section .location .path {
+  flex: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  user-select: text;
+}
+
+.settings-section .location .buttons {
+  margin-top: 0;
+}
+
+.settings-section table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settings-section th,
+.settings-section td {
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: normal;
+  vertical-align: middle;
+}
+
+.settings-section td.keys {
+  white-space: nowrap;
+}
+
+.settings-section kbd {
+  font: 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.settings-section td.row-buttons {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.settings-section td.row-buttons button {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.settings-section tr.changed th {
+  color: var(--accent);
+}
+
+.settings-section tr.clash th .problem {
+  color: var(--error);
+}
+
+.settings-section .recording {
+  color: var(--accent);
+}
+
+.settings-section .buttons.sticky {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 0;
+  background: var(--panel);
+}
+
+.settings-section .buttons .spacer {
+  flex: 1;
+}
+
+.settings-section button:disabled {
+  opacity: 0.45;
+}
+
+/* A mark beside a name must not squeeze the name out of sight. */
+.media .asset .mark + .muted,
+.media .asset .mark {
+  flex-shrink: 0;
+}
+
+.media .asset .name {
+  min-width: 3.5em;
+}

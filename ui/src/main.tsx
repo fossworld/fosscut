@@ -5,6 +5,7 @@ import { App } from "./app/App";
 import { Editor } from "./app/editor";
 import type { EngineClient } from "./engine/client";
 import { TauriEngine, inDesktopApp } from "./engine/tauri";
+import { setLanguage, t } from "./i18n";
 import "./styles.css";
 
 const root = createRoot(document.getElementById("root") as HTMLElement);
@@ -25,11 +26,12 @@ if (inDesktopApp()) {
   document.body.classList.add("browser");
   void import("./engine/demo").then(({ demoEngine }) => start(demoEngine()));
 } else {
+  setLanguage(navigator.language.slice(0, 2));
   root.render(
     <div className="start">
       <div className="card">
         <h1>FossCut</h1>
-        <p className="muted">This interface runs inside the FossCut desktop app.</p>
+        <p className="muted">{t("app.desktopOnly")}</p>
       </div>
     </div>,
   );

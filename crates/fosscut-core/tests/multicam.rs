@@ -217,3 +217,65 @@ fn every_keyframe_of_a_property_is_replaced_at_once() {
         );
     }
 }
+
+#[test]
+fn canvas_fills_go_behind_video_and_image_clips() {
+    let mut session = new_session();
+    let asset = run(&mut session, "media.add", test_pattern_args()).results[0]["asset"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let clip = run(&mut session, "clip.add", json!({ "asset": asset })).results[0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let blurred = run(
+        &mut session,
+        "clip.canvas",
+        json!({ "clips": [clip], "fill": { "kind": "blur" } }),
+    );
+    assert_eq!(
+        blurred.results[0]["fill"],
+        json!({ "kind": "blur", "amount": 0.05 }),
+        "the default amount"
+    );
+    let full = session
+        .query("timeline.read", json!({ "detail": "full" }))
+        .unwrap();
+    let read = full["tracks"][0]["clips"][0].clone();
+    assert_eq!(
+        read["canvas"],
+        json!({ "kind": "blur", "amount": 0.05 }),
+        "{read}"
+    );
+    run(
+        &mut session,
+        "clip.canvas",
+        json!({ "clips": [clip], "fill": { "kind": "color", "color": "#203040" } }),
+    );
+    let removed = run(&mut session, "clip.canvas", json!({ "clips": [clip] }));
+    assert!(removed.results[0].get("fill").is_none());
+    let title = run(
+        &mut session,
+        "text.add",
+        json!({ "text": "Hi", "start": "0s", "duration": "1s" }),
+    )
+    .results[0]["clip"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for args in [
+        json!({ "clips": [title], "fill": { "kind": "blur" } }),
+        json!({ "clips": [clip], "fill": { "kind": "blur", "amount": 0.5 } }),
+        json!({ "clips": [] }),
+    ] {
+        let error = fails(&mut session, "clip.canvas", args);
+        assert_eq!(error.code, codes::CANVAS_INVALID, "{error:?}");
+    }
+    let bad = fails(
+        &mut session,
+        "clip.canvas",
+        json!({ "clips": [clip], "fill": { "kind": "stripes" } }),
+    );
+    assert_eq!(bad.code, codes::INVALID_ARGUMENTS);
+}

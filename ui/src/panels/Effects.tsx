@@ -3,6 +3,7 @@ import { useState } from "react";
 import { sampleCurve } from "../app/animation";
 import type { Editor } from "../app/editor";
 import type { Catalog, ClipView, EffectSpec, EffectView, ParamSpec } from "../engine/types";
+import { t } from "../i18n";
 import {
   type Point,
   type Targets,
@@ -23,7 +24,7 @@ import {
 const words = (name: string) => name.replaceAll("_", " ");
 
 function Diamond({ on, animated: moving, onToggle }: { on: boolean; animated: boolean; onToggle: () => void }) {
-  const title = on ? "Remove the keyframe at the playhead" : "Add a keyframe at the playhead";
+  const title = on ? t("effects.key.remove") : t("effects.key.add");
   return (
     <button className={`key ${on ? "on" : moving ? "animated" : "off"}`} title={title} aria-label={title} onClick={onToggle}>
       <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
@@ -99,7 +100,7 @@ function CurveEditor({
       <div className="buttons">
         {CHANNELS.map((c) => (
           <button key={c} className={c === channel ? "active" : ""} onClick={() => setChannel(c)}>
-            {c}
+            {t(`effects.channel.${c}`)}
           </button>
         ))}
       </div>
@@ -109,7 +110,7 @@ function CurveEditor({
         height={SIZE}
         className={`curve ${channel}`}
         role="img"
-        aria-label={`${channel} curve`}
+        aria-label={t("effects.curve", { channel: t(`effects.channel.${channel}`) })}
         onPointerDown={(event) => {
           if (event.target !== event.currentTarget) return;
           const added = addPoint(points, fromEvent(event));
@@ -190,7 +191,7 @@ function Param({
     const current = (value as { asset?: string } | undefined)?.asset ?? "";
     control = (
       <select value={current} onChange={(event) => commit({ asset: event.target.value })}>
-        {current === "" && <option value="">Choose a LUT</option>}
+        {current === "" && <option value="">{t("effects.lut.choose")}</option>}
         {luts.map((lut) => (
           <option key={lut.id} value={lut.id}>
             {lut.name}
@@ -252,24 +253,29 @@ function EffectCard({
         <button className="disclose" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? "▾" : "▸"}
         </button>
-        <input type="checkbox" checked={on} title={on ? "Bypass" : "Apply"} onChange={() => set({ enabled: !on })} />
+        <input
+          type="checkbox"
+          checked={on}
+          title={on ? t("effects.bypass") : t("effects.apply")}
+          onChange={() => set({ enabled: !on })}
+        />
         <span className="title">{spec?.title ?? effect.type}</span>
         <button
-          title="Apply earlier"
+          title={t("effects.earlier")}
           disabled={index === 0}
           onClick={() => void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: index - 1 } }])}
         >
           ↑
         </button>
         <button
-          title="Apply later"
+          title={t("effects.later")}
           disabled={index === count - 1}
           onClick={() => void editor.edit([{ command: "effect.move", args: { clip: clip.id, effect: effect.id, index: index + 1 } }])}
         >
           ↓
         </button>
         <button
-          title="Remove the effect"
+          title={t("effects.remove")}
           onClick={() => void editor.edit([{ command: "effect.remove", args: { clip: clip.id, effect: effect.id } }])}
         >
           ×
@@ -306,8 +312,8 @@ function EffectOptions({ offered }: { offered: EffectSpec[] }) {
   if (sound.length === 0 || picture.length === 0) return <>{offered.map(option)}</>;
   return (
     <>
-      <optgroup label="Picture">{picture.map(option)}</optgroup>
-      <optgroup label="Sound">{sound.map(option)}</optgroup>
+      <optgroup label={t("effects.group.picture")}>{picture.map(option)}</optgroup>
+      <optgroup label={t("effects.group.sound")}>{sound.map(option)}</optgroup>
     </>
   );
 }
@@ -341,7 +347,7 @@ export function Effects({
   const offered = catalog ? offeredEffects(catalog.effects, targets) : [];
   return (
     <section className="effects">
-      <h2>Effects</h2>
+      <h2>{t("effects.title")}</h2>
       {effects.map((effect, index) => (
         <EffectCard
           key={effect.id}
@@ -358,19 +364,19 @@ export function Effects({
       <div className="add">
         <select
           value=""
-          aria-label="Add an effect"
+          aria-label={targets.picture ? t("effects.add") : t("effects.add.sound")}
           onChange={(event) => event.target.value && void editor.addEffect(clip.id, event.target.value)}
         >
-          <option value="">{targets.picture ? "Add an effect" : "Add a sound effect"}</option>
+          <option value="">{targets.picture ? t("effects.add") : t("effects.add.sound")}</option>
           <EffectOptions offered={offered} />
         </select>
         {targets.picture && (
           <select
             value=""
-            aria-label="Apply a look"
+            aria-label={t("effects.look")}
             onChange={(event) => event.target.value && void editor.applyLook(clip.id, event.target.value)}
           >
-            <option value="">Apply a look</option>
+            <option value="">{t("effects.look")}</option>
             {catalog?.looks.map((l) => (
               <option key={l.name} value={l.name} title={l.description}>
                 {l.title}
@@ -381,19 +387,19 @@ export function Effects({
       </div>
       {pictures && (
         <div className="add">
-          <button title="Correct white balance, brightness and levels" onClick={() => void editor.autoColor(clip.id)}>
-            Auto color
+          <button title={t("effects.auto.title")} onClick={() => void editor.autoColor(clip.id)}>
+            {t("effects.auto")}
           </button>
           <select
             value=""
-            aria-label="Match the color of another clip"
+            aria-label={t("effects.match.title")}
             disabled={others.length === 0}
             onChange={(event) => event.target.value && void editor.autoColor(clip.id, event.target.value)}
           >
-            <option value="">Match color to</option>
+            <option value="">{t("effects.match")}</option>
             {others.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.asset_name ?? c.id} at {c.start.timecode}
+                {t("effects.match.clip", { name: c.asset_name ?? c.id, time: c.start.timecode })}
               </option>
             ))}
           </select>

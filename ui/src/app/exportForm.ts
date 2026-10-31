@@ -2,6 +2,7 @@
 // into, and the progress and report of the job it starts, in words.
 
 import type { ExportChoice, ExportPreset, ExportReport, Format, JobStatus, MarkerView } from "../engine/types";
+import { t } from "../i18n";
 import {
   FLICKS_PER_SECOND,
   type Rate,
@@ -128,16 +129,16 @@ export interface MarkedRange {
 /** The parts between consecutive markers, from the start to the first and from the last to the end. */
 export function markerRanges(markers: MarkerView[], duration: number): MarkedRange[] {
   const points = [
-    { at: 0, name: "Start" },
+    { at: 0, name: t("export.range.start") },
     ...markers
       .filter((m) => m.at.flicks > 0 && m.at.flicks < duration)
       .map((m) => ({ at: m.at.flicks, name: m.name || m.at.timecode })),
-    { at: duration, name: "End" },
+    { at: duration, name: t("export.range.end") },
   ];
   if (points.length < 3) return [];
   return points.slice(1).map((end, index) => {
     const start = points[index]!;
-    return { label: `${start.name} to ${end.name}`, from: start.at, to: end.at };
+    return { label: t("export.range", { from: start.name, to: end.name }), from: start.at, to: end.at };
   });
 }
 
@@ -155,17 +156,17 @@ const BIT_RATE = /^\d+(\.\d+)?\s*[km]?$/i;
 export function choiceOf(form: ExportForm, context: ExportContext): { choice: ExportChoice } | { problem: string } {
   const rate = parseRate(context.format.rate);
   const output = form.output.trim();
-  if (!output) return { problem: "Choose where to save the export." };
+  if (!output) return { problem: t("export.problem.output") };
   const preset = context.presets.find((p) => p.name === form.preset);
-  if (!preset) return { problem: "Choose a preset." };
-  if (!preset.available) return { problem: `This machine cannot encode ${preset.name}; choose another preset.` };
+  if (!preset) return { problem: t("export.problem.preset") };
+  if (!preset.available) return { problem: t("export.problem.unavailable", { name: preset.name }) };
   const choice: ExportChoice = { output, preset: preset.name };
   if (!audioOnly(preset)) {
     if (form.resolution) choice.resolution = form.resolution;
     if (form.fps) choice.fps = form.fps;
     const bitrate = form.bitrate.trim();
     if (bitrate) {
-      if (!BIT_RATE.test(bitrate)) return { problem: "Bit rates look like 8M or 2500k." };
+      if (!BIT_RATE.test(bitrate)) return { problem: t("export.problem.bitrate") };
       choice.bitrate = bitrate.replace(/\s+/g, "");
     }
   }
@@ -174,17 +175,17 @@ export function choiceOf(form: ExportForm, context: ExportContext): { choice: Ex
   if (form.part) {
     const from = parseTime(form.from, rate);
     const to = parseTime(form.to, rate);
-    if (from === null || to === null) return { problem: "Type the part's start and end as 00:00:05:00 or 5s." };
-    if (from >= context.duration) return { problem: "The part must start before the timeline ends." };
-    if (to <= from) return { problem: "The part must end after it starts." };
+    if (from === null || to === null) return { problem: t("export.problem.part") };
+    if (from >= context.duration) return { problem: t("export.problem.partStart") };
+    if (to <= from) return { problem: t("export.problem.partEnd") };
     start = from;
     end = Math.min(to, context.duration);
     choice.range_flicks = [start, end];
   }
   if (form.cover) {
     const at = parseTime(form.coverAt, rate);
-    if (at === null) return { problem: "Type the cover's time as 00:00:05:00 or 5s." };
-    if (at < start || at >= end) return { problem: "The cover must be a frame of what you export." };
+    if (at === null) return { problem: t("export.problem.coverTime") };
+    if (at < start || at >= end) return { problem: t("export.problem.coverInside") };
     choice.cover_flicks = at - start;
   }
   if (form.subtitles) choice.subtitles = form.subtitles;
@@ -210,18 +211,23 @@ export function sizeFor(format: { width: number; height: number }, pixels: numbe
   return [even(format.width), even(format.height)];
 }
 
-/** A frame rate as people read it: 30, 29.97. */
-export function fpsText(rate: string): string {
+/** Frames per second of a rate, to three decimals: 30, 29.97. */
+export function fpsNumber(rate: string): number {
   const { num, den } = parseRate(rate);
-  return String(Math.round((num / den) * 1000) / 1000);
+  return Math.round((num / den) * 1000) / 1000;
 }
 
-/** A length in seconds as people read it: 1.5 s, 42 s, 2 min 5 s. */
+/** A frame rate as people read it: 30, 29.97. */
+export function fpsText(rate: string): string {
+  return String(fpsNumber(rate));
+}
+
+/** A length in seconds as people read it: 1.5 s, 42 s, 2 min 5 s (in the interface's language). */
 export function lengthText(seconds: number): string {
-  if (seconds < 60) return `${seconds < 10 ? Math.round(seconds * 10) / 10 : Math.round(seconds)} s`;
+  if (seconds < 60) return t("export.length.seconds", { seconds: seconds < 10 ? Math.round(seconds * 10) / 10 : Math.round(seconds) });
   const minutes = Math.floor(seconds / 60);
   const rest = Math.round(seconds - minutes * 60);
-  return rest === 0 ? `${minutes} min` : `${minutes} min ${rest} s`;
+  return rest === 0 ? t("export.length.minutes", { minutes }) : t("export.length.minutesSeconds", { minutes, seconds: rest });
 }
 
 /** How far a job is, as a fraction (null before it counts) and in words. */
@@ -230,20 +236,20 @@ export function progressOf(status: JobStatus): { fraction: number | null; text: 
   const took = lengthText(status.elapsed_ms / 1000);
   switch (status.state) {
     case "succeeded":
-      return { fraction: 1, text: `Done in ${took}.` };
+      return { fraction: 1, text: t("export.progress.done", { took }) };
     case "cancelled":
-      return { fraction: null, text: "Cancelled: nothing was written." };
+      return { fraction: null, text: t("export.progress.cancelled") };
     case "failed":
-      return { fraction: null, text: "The export failed." };
+      return { fraction: null, text: t("export.progress.failed") };
     case "running": {
-      if (total === 0) return { fraction: null, text: "Getting ready." };
+      if (total === 0) return { fraction: null, text: t("export.progress.ready") };
       const fraction = Math.min(1, done / total);
-      const parts = [`${done} of ${total} (${Math.floor(fraction * 100)}%)`];
+      const parts = [t("export.progress.count", { done, total, percent: Math.floor(fraction * 100) })];
       if (done > 0 && done < total) {
         const left = ((status.elapsed_ms / done) * (total - done)) / 1000;
-        parts.push(`about ${lengthText(left)} left`);
+        parts.push(t("export.progress.left", { left: lengthText(left) }));
       }
-      if (done >= total) parts.push("checking the file");
+      if (done >= total) parts.push(t("export.progress.checking"));
       return { fraction, text: `${parts.join(", ")}.` };
     }
   }
@@ -252,23 +258,27 @@ export function progressOf(status: JobStatus): { fraction: number | null; text: 
 /** A finished export's report as label and value rows. */
 export function reportRows(report: ExportReport): [string, string][] {
   const rows: [string, string][] = [
-    ["File", report.output],
-    ["Size", readableSize(report.verified.size_bytes)],
-    ["Length", lengthText((report.verified.duration ?? report.duration) / FLICKS_PER_SECOND)],
+    [t("export.report.file"), report.output],
+    [t("export.report.size"), readableSize(report.verified.size_bytes)],
+    [t("export.report.length"), lengthText((report.verified.duration ?? report.duration) / FLICKS_PER_SECOND)],
   ];
   const video = report.verified.video;
   if (video) {
-    const rate = video.rate ? ` at ${fpsText(video.rate)} fps` : "";
-    rows.push(["Picture", `${video.codec}, ${video.width} x ${video.height}${rate}`]);
+    const { codec, width, height } = video;
+    rows.push([
+      t("export.report.picture"),
+      video.rate ? t("export.report.pictureAt", { codec, width, height, fps: fpsNumber(video.rate) }) : `${codec}, ${width} x ${height}`,
+    ]);
   }
   const audio = report.verified.audio;
   if (audio) {
-    const khz = audio.sample_rate ? `, ${audio.sample_rate / 1000} kHz` : "";
-    const channels = audio.channels === 1 ? " mono" : audio.channels === 2 ? " stereo" : "";
-    rows.push(["Sound", `${audio.codec}${khz}${channels}`]);
+    const khz = audio.sample_rate ? `, ${t("export.report.khz", { khz: audio.sample_rate / 1000 })}` : "";
+    const channels =
+      audio.channels === 1 ? ` ${t("export.report.mono")}` : audio.channels === 2 ? ` ${t("export.report.stereo")}` : "";
+    rows.push([t("export.report.sound"), `${audio.codec}${khz}${channels}`]);
   }
-  if (report.cover) rows.push(["Cover", report.cover]);
-  if (report.subtitles) rows.push(["Subtitles", report.subtitles]);
-  rows.push(["Took", lengthText(report.elapsed_ms / 1000)]);
+  if (report.cover) rows.push([t("export.report.cover"), report.cover]);
+  if (report.subtitles) rows.push([t("export.report.subtitles"), report.subtitles]);
+  rows.push([t("export.report.took"), lengthText(report.elapsed_ms / 1000)]);
   return rows;
 }

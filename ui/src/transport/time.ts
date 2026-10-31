@@ -1,6 +1,9 @@
 // Frame-exact time on the UI side, mirroring fosscut-time (ADR-0005): flicks, rational
 // rates, frame indices and SMPTE timecode. BigInt keeps the products exact.
 
+import type { TimeDisplay } from "../engine/types";
+import { language, t } from "../i18n";
+
 export const FLICKS_PER_SECOND = 705_600_000;
 
 export interface Rate {
@@ -68,4 +71,17 @@ export function timecode(frames: number, rate: Rate): string {
   const total = Math.floor(frame / fps);
   const separator = drop ? ";" : ":";
   return `${sign}${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}${separator}${pad(ff)}`;
+}
+
+/**
+ * A time as the `timeline.time_display` preference shows times: timecode, a frame number,
+ * or seconds with two decimals in the interface's language ("12.50 s", "12,50 mp").
+ */
+export function formatTime(flicks: number, rate: Rate, display: TimeDisplay = "timecode"): string {
+  if (display === "frames") return String(frameAt(flicks, rate));
+  if (display === "seconds") {
+    const seconds = new Intl.NumberFormat(language(), { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+    return t("transport.seconds", { seconds: seconds.format(flicks / FLICKS_PER_SECOND) });
+  }
+  return timecode(frameAt(flicks, rate), rate);
 }

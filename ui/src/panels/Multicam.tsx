@@ -3,25 +3,38 @@ import { useState } from "react";
 import type { Editor } from "../app/editor";
 import { type MulticamForm as Form, NEW_MULTICAM, angleNumber, angleTitle, canSync, multicamRequest } from "../app/multicam";
 import type { AssetView, ClipView } from "../engine/types";
+import { t } from "../i18n";
+import { type ActionId, hint, keysOf } from "../shortcuts";
 import { Outcome } from "./Measured";
 
+/** The shortcut that cuts to angle `number`, for the first nine. */
+function angleAction(number: number): ActionId | null {
+  return number >= 1 && number <= 9 ? (`multicam.angle_${number}` as ActionId) : null;
+}
+
 /**
- * A multicam clip's angles as numbered buttons: pressing one, or its number key while
- * the timeline has focus, cuts to that angle at the playhead.
+ * A multicam clip's angles as numbered buttons: pressing one, or its shortcut (1 to 9
+ * unless changed) while the timeline has focus, cuts to that angle at the playhead.
  */
 export function Multicam({ editor, clip }: { editor: Editor; clip: ClipView }) {
   const shown = angleNumber(clip);
   const angles = clip.angles ?? [];
+  const [first, last] = [keysOf("multicam.angle_1"), keysOf("multicam.angle_9")];
+  const cutTo = (number: number) => {
+    const label = t("motion.multicam.cutTo", { angle: angleTitle(clip, number) });
+    const action = angleAction(number);
+    return action ? hint(label, action) : label;
+  };
   return (
     <section className="effects multicam">
-      <h2>Multicam</h2>
-      <div className="buttons angles" role="group" aria-label="Cut to an angle at the playhead">
+      <h2>{t("motion.multicam.title")}</h2>
+      <div className="buttons angles" role="group" aria-label={t("motion.multicam.cut")}>
         {angles.map((angle, i) => (
           <button
             key={angle.id}
             className={shown === i + 1 ? "active" : ""}
             aria-pressed={shown === i + 1}
-            title={`${angleTitle(clip, i + 1)}: cut to it at the playhead${i < 9 ? ` (${i + 1})` : ""}`}
+            title={cutTo(i + 1)}
             onClick={() => void editor.switchAngle(i + 1)}
           >
             {i + 1}
@@ -29,8 +42,8 @@ export function Multicam({ editor, clip }: { editor: Editor; clip: ClipView }) {
         ))}
       </div>
       <p className="hint">
-        {shown ? `This part shows ${angleTitle(clip, shown)}.` : "This part shows every angle."} Press 1 to 9 on the
-        timeline to cut, even while it plays.
+        {shown ? t("motion.multicam.shows", { angle: angleTitle(clip, shown) }) : t("motion.multicam.showsAll")}
+        {first && last ? ` ${t("motion.multicam.keys", { first, last })}` : ""}
       </p>
     </section>
   );
@@ -48,22 +61,22 @@ export function MulticamForm({ editor, angles, playhead }: { editor: Editor; ang
   const sound = Math.min(form.sound, angles.length);
   return (
     <div className="multicam-form">
-      <h3>Multicam</h3>
-      <label className="toggle" title={syncable ? "Line the angles up by comparing their sound" : "Every angle needs sound to sync by it"}>
+      <h3>{t("motion.multicam.title")}</h3>
+      <label className="toggle" title={syncable ? t("motion.multicam.sync.help") : t("motion.multicam.sync.unable")}>
         <input
           type="checkbox"
           checked={form.sync && syncable}
           disabled={!syncable || busy}
           onChange={(event) => setForm({ ...form, sync: event.target.checked })}
         />
-        <span>Sync by sound</span>
+        <span>{t("motion.multicam.sync")}</span>
       </label>
       <label className="choice">
-        <span>Sound from</span>
+        <span>{t("motion.multicam.sound")}</span>
         <select value={sound} disabled={busy} onChange={(event) => setForm({ ...form, sound: Number(event.target.value) })}>
           {angles.map((angle, i) => (
             <option key={angle.id} value={i + 1}>
-              {`Angle ${i + 1}: ${angle.name}`}
+              {t("motion.multicam.named", { number: i + 1, name: angle.name })}
             </option>
           ))}
         </select>
@@ -71,24 +84,28 @@ export function MulticamForm({ editor, angles, playhead }: { editor: Editor; ang
       <div className="buttons">
         <input
           type="text"
-          placeholder="Name, such as Interview"
+          placeholder={t("motion.multicam.name")}
           value={form.name}
           disabled={busy}
-          aria-label="Multicam name"
+          aria-label={t("motion.multicam.name.label")}
           onChange={(event) => setForm({ ...form, name: event.target.value })}
         />
         <button
           className="primary"
           disabled={busy}
-          title="Make a multicam clip of the chosen video at the playhead, one angle per track"
+          title={t("motion.multicam.create.help")}
           onClick={() => {
             void editor.createMulticam(multicamRequest(form, angles, playhead)).then((made) => made && setForm(NEW_MULTICAM));
           }}
         >
-          {busy && measurement?.kind === "multicam" ? (form.sync && syncable ? "Syncing..." : "Making...") : "Create multicam"}
+          {busy && measurement?.kind === "multicam"
+            ? form.sync && syncable
+              ? t("motion.multicam.syncing")
+              : t("motion.multicam.making")
+            : t("motion.multicam.create")}
         </button>
       </div>
-      {!syncable && <p className="hint">Not every angle has sound, so they start together.</p>}
+      {!syncable && <p className="hint">{t("motion.multicam.silent")}</p>}
       <Outcome editor={editor} measurement={measurement} kind="multicam" clip={null} />
     </div>
   );

@@ -43,6 +43,17 @@ fn main() {
         "record_start",
         "record_status",
         "record_stop",
+        "preferences_get",
+        "preferences_set",
+        "preferences_reset",
+        "update_check",
+        "update_open",
+        "sound_play",
+        "folder_pick",
+        "cache_info",
+        "cache_clear",
+        "media_sources",
+        "media_work",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

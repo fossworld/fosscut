@@ -1,6 +1,7 @@
 //! Preview sound (ADR-0008, item 5): the timeline is mixed a little ahead into a queue
 //! that the audio device drains. How much the device has played is the playback clock, so
-//! the picture follows the sound.
+//! the picture follows the sound. Short sounds of the app's own, such as the one that says
+//! an export finished, play over it without moving the clock.
 
 use std::collections::VecDeque;
 use std::sync::mpsc::channel;
@@ -17,12 +18,19 @@ use crate::preview::Scene;
 const AHEAD: Duration = Duration::from_millis(250);
 /// How much the mixer mixes at a time.
 const BLOCK: Duration = Duration::from_millis(100);
+/// How much sound one step of scrubbing or skimming plays.
+const SCRUB: Duration = Duration::from_millis(80);
 
 /// Interleaved samples waiting for the device, and how many frames it has played since
 /// playback began. Only real samples count: when the queue runs dry the device plays
-/// silence and the clock waits, so the picture never runs ahead of the sound.
+/// silence and the clock waits, so the picture never runs ahead of the sound. A one-shot
+/// sound waits in an overlay of its own, mixed over whatever plays, which counts for
+/// nothing and survives a reset.
 pub struct Queue {
     samples: VecDeque<f32>,
+    overlay: VecDeque<f32>,
+    /// The sound of the frame scrubbed to last, replaced by the next scrub.
+    scrubbed: VecDeque<f32>,
     channels: usize,
     played: u64,
 }
@@ -32,9 +40,23 @@ impl Queue {
     pub fn new(channels: u16) -> Queue {
         Queue {
             samples: VecDeque::new(),
+            overlay: VecDeque::new(),
+            scrubbed: VecDeque::new(),
             channels: usize::from(channels.max(1)),
             played: 0,
         }
+    }
+
+    /// Adds interleaved samples to play once over the queue, after any still waiting.
+    pub fn overlay(&mut self, samples: &[f32]) {
+        self.overlay.extend(samples);
+    }
+
+    /// Plays the sound of a scrubbed frame over the queue, instead of what is left of the
+    /// last one, so fast scrubbing never falls behind.
+    pub fn scrub(&mut self, samples: &[f32]) {
+        self.scrubbed.clear();
+        self.scrubbed.extend(samples);
     }
 
     /// Adds mixed samples at the end.
@@ -51,6 +73,12 @@ impl Queue {
         }
         out[whole..].fill(0.0);
         self.played += (whole / self.channels) as u64;
+        for extra in [&mut self.overlay, &mut self.scrubbed] {
+            let over = extra.len().min(out.len());
+            for (slot, sample) in out.iter_mut().zip(extra.drain(..over)) {
+                *slot += sample;
+            }
+        }
     }
 
     /// Frames waiting.
@@ -89,6 +117,8 @@ struct Playing {
 struct Shared {
     queue: Queue,
     playing: Option<Playing>,
+    /// A frame to play the sound of, while scrubbing or skimming.
+    scrub: Option<(Arc<Scene>, Flicks)>,
     generation: u64,
 }
 
@@ -98,10 +128,13 @@ fn guard(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// The default audio output, playing the preview's sound.
+/// The default audio output, playing the preview's sound. Clones play through the same
+/// device.
+#[derive(Clone)]
 pub struct Speaker {
     shared: Arc<Mutex<Shared>>,
     rate: u32,
+    channels: u16,
 }
 
 impl Speaker {
@@ -116,13 +149,28 @@ impl Speaker {
                     let _ = ready.send(None);
                     return;
                 };
-                let _ = ready.send(Some((Arc::clone(&shared), rate)));
+                let _ = ready.send(Some((Arc::clone(&shared), rate, channels)));
                 mixer(&shared, rate, channels);
                 drop(stream);
             })
             .ok()?;
-        let (shared, rate) = answer.recv().ok().flatten()?;
-        Some(Speaker { shared, rate })
+        let (shared, rate, channels) = answer.recv().ok().flatten()?;
+        Some(Speaker {
+            shared,
+            rate,
+            channels,
+        })
+    }
+
+    /// Plays the library sound `name` once, over anything playing; false when the library
+    /// has no such sound.
+    pub fn play_sound(&self, name: &str) -> bool {
+        let Some(stereo) = fosscut_audio::synth::render(name, self.rate) else {
+            return false;
+        };
+        let samples = to_channels(&stereo, self.channels);
+        guard(&self.shared).queue.overlay(&samples);
+        true
     }
 
     /// Plays `scene` from `from`, dropping whatever was queued.
@@ -145,6 +193,14 @@ impl Speaker {
         }
     }
 
+    /// Plays a moment of `scene`'s sound at `at`, as scrubbing does; nothing while playing.
+    pub fn scrub(&self, scene: Arc<Scene>, at: Flicks) {
+        let mut shared = guard(&self.shared);
+        if shared.playing.is_none() {
+            shared.scrub = Some((scene, at));
+        }
+    }
+
     /// Stops the sound.
     pub fn stop(&self) {
         let mut shared = guard(&self.shared);
@@ -160,6 +216,36 @@ impl Speaker {
     }
 }
 
+/// Fades the last quarter of interleaved `samples` out, so a scrubbed moment ends without
+/// a click.
+pub fn fade_out(samples: &mut [f32], channels: usize) {
+    let frames = samples.len() / channels.max(1);
+    let fade = frames / 4;
+    for (index, frame) in samples.chunks_exact_mut(channels.max(1)).enumerate() {
+        let left = frames - index;
+        if left <= fade {
+            let gain = left as f32 / (fade + 1) as f32;
+            frame.iter_mut().for_each(|sample| *sample *= gain);
+        }
+    }
+}
+
+/// Interleaved stereo as `channels` channels: one is the two mixed, more than two leave
+/// the rest silent.
+pub fn to_channels(stereo: &[f32], channels: u16) -> Vec<f32> {
+    let channels = usize::from(channels.max(1));
+    let mut out = Vec::with_capacity(stereo.len() / 2 * channels);
+    for [left, right] in stereo.as_chunks::<2>().0 {
+        if channels == 1 {
+            out.push((left + right) / 2.0);
+        } else {
+            out.extend_from_slice(&[*left, *right]);
+            out.extend(std::iter::repeat_n(0.0, channels - 2));
+        }
+    }
+    out
+}
+
 type Output = (cpal::Stream, Arc<Mutex<Shared>>, u32, u16);
 
 /// The default device's output stream, draining the shared queue.
@@ -173,6 +259,7 @@ fn output() -> Option<Output> {
     let shared = Arc::new(Mutex::new(Shared {
         queue: Queue::new(channels),
         playing: None,
+        scrub: None,
         generation: 0,
     }));
     let device_side = Arc::clone(&shared);
@@ -195,6 +282,24 @@ fn mixer(shared: &Mutex<Shared>, rate: u32, channels: u16) {
     let block = Flicks::from_millis(BLOCK.as_millis() as i64);
     let mut sound = Sound::new();
     loop {
+        let scrub = guard(shared).scrub.take();
+        if let Some((scene, at)) = scrub {
+            let span = Flicks::from_millis(SCRUB.as_millis() as i64);
+            if let Ok(buffer) = sound.mix(
+                &scene.project,
+                &scene.bundle,
+                &scene.timeline,
+                at,
+                span,
+                rate,
+                channels,
+            ) {
+                let mut samples = buffer.samples;
+                fade_out(&mut samples, usize::from(channels.max(1)));
+                guard(shared).queue.scrub(&samples);
+            }
+            continue;
+        }
         let work = {
             let shared = guard(shared);
             match &shared.playing {
@@ -261,6 +366,77 @@ mod tests {
         queue.reset();
         assert_eq!((queue.played(), queue.buffered()), (0, 0));
         assert_eq!(Queue::new(0).channels, 1);
+    }
+
+    #[test]
+    fn a_one_shot_sound_plays_over_the_queue_without_moving_the_clock() {
+        let mut queue = Queue::new(2);
+        queue.push(&[0.25, 0.25]);
+        queue.overlay(&[0.5, 0.5, 0.25, 0.25, 0.125, 0.125]);
+        let mut out = [9.0; 4];
+        queue.pull(&mut out);
+        assert_eq!(
+            out,
+            [0.75, 0.75, 0.25, 0.25],
+            "mixed over the queue and over silence"
+        );
+        assert_eq!(queue.played(), 1, "only the queue's frame counts");
+        queue.reset();
+        let mut out = [9.0; 4];
+        queue.pull(&mut out);
+        assert_eq!(
+            out,
+            [0.125, 0.125, 0.0, 0.0],
+            "a reset leaves the sound playing"
+        );
+        assert_eq!(queue.played(), 0);
+    }
+
+    #[test]
+    fn a_scrubbed_moment_replaces_the_last_and_fades_out() {
+        let mut queue = Queue::new(1);
+        queue.scrub(&[0.5, 0.5, 0.5]);
+        let mut out = [9.0; 1];
+        queue.pull(&mut out);
+        assert_eq!(out, [0.5]);
+        queue.scrub(&[0.25, 0.25]);
+        let mut out = [9.0; 3];
+        queue.pull(&mut out);
+        assert_eq!(
+            out,
+            [0.25, 0.25, 0.0],
+            "the rest of the last moment is dropped"
+        );
+        assert_eq!(queue.played(), 0, "scrubbing does not move the clock");
+
+        let mut samples = vec![1.0; 16];
+        fade_out(&mut samples, 2);
+        assert_eq!(
+            &samples[..12],
+            &[1.0; 12],
+            "the first three quarters are untouched"
+        );
+        assert_eq!(
+            &samples[12..],
+            &[2.0 / 3.0, 2.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]
+        );
+    }
+
+    #[test]
+    fn stereo_becomes_the_devices_channels() {
+        let stereo = [0.25, 0.75, -0.5, 0.0];
+        assert_eq!(to_channels(&stereo, 2), stereo);
+        assert_eq!(to_channels(&stereo, 1), [0.5, -0.25]);
+        assert_eq!(to_channels(&stereo, 0), [0.5, -0.25], "no channels is one");
+        assert_eq!(
+            to_channels(&stereo, 4),
+            [0.25, 0.75, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0]
+        );
+        let ding = fosscut_audio::synth::render("ding", 8_000).unwrap();
+        assert!(
+            !ding.is_empty() && ding.iter().any(|s| s.abs() > 0.01),
+            "the export sound is audible"
+        );
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 import { keyAt, keysOf, numberAt, pairAt } from "../app/animation";
 import type { AssetView, ClipView, CommandCall } from "../engine/types";
+import { t } from "../i18n";
 import { FLICKS_PER_SECOND } from "../transport/time";
 
 export type FieldId =
@@ -110,18 +111,12 @@ function values(clip: ClipView, playhead: number) {
 export function fieldsFor(clip: ClipView, viewing: Viewing): Field[] {
   const { playhead } = viewing;
   const v = values(clip, playhead);
-  const field = (
-    id: FieldId,
-    label: string,
-    path: string,
-    value: number,
-    unit: string,
-    extra: Partial<Field> = {},
-  ): Field => {
+  // Labels are read in the interface's language each time the fields are shown.
+  const field = (id: FieldId, path: string, value: number, unit: string, extra: Partial<Field> = {}): Field => {
     const animatable = extra.animatable ?? true;
     return {
       id,
-      label,
+      label: t(`inspector.field.${id}`),
       path,
       value: round(value),
       unit,
@@ -134,46 +129,46 @@ export function fieldsFor(clip: ClipView, viewing: Viewing): Field[] {
   };
   const fields: Field[] = [];
   if (clip.kind === "adjustment") {
-    fields.push(field("opacity", "Opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }));
+    fields.push(field("opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }));
   }
   if (isPlaced(clip)) {
     const [x, y] = v.position;
     fields.push(
-      field("x", "Position X", "transform.position", x * 100, "%"),
-      field("y", "Position Y", "transform.position", y * 100, "%"),
+      field("x", "transform.position", x * 100, "%"),
+      field("y", "transform.position", y * 100, "%"),
     );
     if (viewing.separate || stretched(clip)) {
       fields.push(
-        field("scale_x", "Scale X", "transform.stretch", v.scale * v.stretch[0] * 100, "%", { min: 1 }),
-        field("scale_y", "Scale Y", "transform.stretch", v.scale * v.stretch[1] * 100, "%", { min: 1 }),
+        field("scale_x", "transform.stretch", v.scale * v.stretch[0] * 100, "%", { min: 1 }),
+        field("scale_y", "transform.stretch", v.scale * v.stretch[1] * 100, "%", { min: 1 }),
       );
     } else {
-      fields.push(field("scale", "Scale", "transform.scale", v.scale * 100, "%", { min: 1 }));
+      fields.push(field("scale", "transform.scale", v.scale * 100, "%", { min: 1 }));
     }
     fields.push(
-      field("rotation", "Rotation", "transform.rotation", v.rotation, "°"),
-      field("opacity", "Opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }),
+      field("rotation", "transform.rotation", v.rotation, "°"),
+      field("opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }),
     );
     if (clip.kind === "video" || clip.kind === "image") {
       fields.push(
-        field("crop_left", "Crop left", "crop.left", v.crop.left * 100, "%", { min: 0, max: 99 }),
-        field("crop_right", "Crop right", "crop.right", v.crop.right * 100, "%", { min: 0, max: 99 }),
-        field("crop_top", "Crop top", "crop.top", v.crop.top * 100, "%", { min: 0, max: 99 }),
-        field("crop_bottom", "Crop bottom", "crop.bottom", v.crop.bottom * 100, "%", { min: 0, max: 99 }),
+        field("crop_left", "crop.left", v.crop.left * 100, "%", { min: 0, max: 99 }),
+        field("crop_right", "crop.right", v.crop.right * 100, "%", { min: 0, max: 99 }),
+        field("crop_top", "crop.top", v.crop.top * 100, "%", { min: 0, max: 99 }),
+        field("crop_bottom", "crop.bottom", v.crop.bottom * 100, "%", { min: 0, max: 99 }),
       );
     }
   }
   if (hasSound(clip)) {
     const seconds = (flicks: number | undefined) => (flicks ?? 0) / FLICKS_PER_SECOND;
     fields.push(
-      field("volume", "Volume", "volume", v.volume * 100, "%", { min: 0, max: 400 }),
-      field("pan", "Pan", "audio.pan", v.pan * 100, "%", { min: -100, max: 100 }),
-      field("fade_in", "Fade in", "audio.fade_in", seconds(clip.audio?.fade_in), "s", {
+      field("volume", "volume", v.volume * 100, "%", { min: 0, max: 400 }),
+      field("pan", "audio.pan", v.pan * 100, "%", { min: -100, max: 100 }),
+      field("fade_in", "audio.fade_in", seconds(clip.audio?.fade_in), t("inspector.unit.seconds"), {
         min: 0,
         step: 0.1,
         animatable: false,
       }),
-      field("fade_out", "Fade out", "audio.fade_out", seconds(clip.audio?.fade_out), "s", {
+      field("fade_out", "audio.fade_out", seconds(clip.audio?.fade_out), t("inspector.unit.seconds"), {
         min: 0,
         step: 0.1,
         animatable: false,

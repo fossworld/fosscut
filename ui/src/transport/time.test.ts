@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { FLICKS_PER_SECOND, frameAt, frameStart, framesToFlicks, parseRate, timecode } from "./time";
+import { setLanguage, t } from "../i18n";
+import { FLICKS_PER_SECOND, formatTime, frameAt, frameStart, framesToFlicks, parseRate, timecode } from "./time";
 
 const fps30 = parseRate("30");
 const ntsc = parseRate("30000/1001");
 
 describe("time", () => {
+  afterEach(() => setLanguage("en"));
+
   it("parses the engine's rates and refuses others", () => {
     expect(parseRate("25")).toEqual({ num: 25, den: 1 });
     expect(ntsc).toEqual({ num: 30000, den: 1001 });
@@ -33,5 +36,17 @@ describe("time", () => {
     expect(timecode(-31, fps30)).toBe("-00:00:01:01");
     expect(timecode(1800, ntsc)).toBe("00:01:00;02");
     expect(timecode(17982, ntsc)).toBe("00:10:00;00");
+  });
+
+  it("shows times as the time display preference says, in the interface's language", () => {
+    const at = framesToFlicks(375, fps30);
+    expect(formatTime(at, fps30)).toBe("00:00:12:15");
+    expect(formatTime(at, fps30, "timecode")).toBe("00:00:12:15");
+    expect(formatTime(at, fps30, "frames")).toBe("375");
+    expect(formatTime(at, fps30, "seconds")).toBe(t("transport.seconds", { seconds: "12.50" }));
+    expect(formatTime(at, fps30, "seconds")).toBe("12.50 s");
+    setLanguage("hu");
+    expect(formatTime(at, fps30, "seconds")).toBe("12,50 mp");
+    expect(formatTime(at, ntsc, "frames")).toBe(String(frameAt(at, ntsc)));
   });
 });
