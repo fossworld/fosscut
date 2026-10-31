@@ -20,13 +20,19 @@
 //!   and dubbing captions.
 //! - [`performance`]: hardware acceleration, what the preview decodes and keeps, the cache
 //!   policy, and the proxies and remuxed copies made in the background (ADR-0032).
+//! - [`auto_edit`]: edits planned from the media's analyses (auto reframe, camera tracking,
+//!   vertical versions, beat markers and cuts, shorts), applied as the user's one step.
+//! - [`media`]: thumbnails and waveforms of the open project's media for the media bin and
+//!   the timeline, cached by content, and importing files as the user's edits.
 
 #![forbid(unsafe_code)]
 
 pub mod announce;
 pub mod audio;
+pub mod auto_edit;
 pub mod commands;
 pub mod library;
+pub mod media;
 pub mod models;
 pub mod performance;
 pub mod preferences;
@@ -43,6 +49,7 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent};
 
 use crate::audio::Speaker;
 use crate::library::Library;
+use crate::media::MediaViews;
 use crate::models::ModelInstalls;
 use crate::performance::MediaJobs;
 use crate::preferences::PreferenceStore;
@@ -75,6 +82,8 @@ pub struct AppState {
     pub media_jobs: Arc<MediaJobs>,
     /// The local models being installed (ADR-0033).
     pub installs: Arc<ModelInstalls>,
+    /// Thumbnails and waveforms of the open project's media, cached in the cache folder.
+    pub media_views: Arc<MediaViews>,
     /// The app menu's Settings item, renamed when the language changes (macOS).
     pub settings_item: Option<tauri::menu::MenuItem<tauri::Wry>>,
     /// The thread that forwards the open project's changes, while one is open.
@@ -263,6 +272,7 @@ pub fn run() {
                 .name("fosscut-cache-policy".into())
                 .spawn(move || policy.enforce());
             let settings_item = settings_menu(app, &preferences.current().language)?;
+            let media_views = Arc::new(MediaViews::new(&caches));
             app.manage(AppState {
                 workspace: Arc::clone(&workspace),
                 preview,
@@ -275,6 +285,7 @@ pub fn run() {
                 cache: caches,
                 media_jobs,
                 installs: Arc::new(ModelInstalls::default()),
+                media_views,
                 settings_item,
                 follower: Mutex::new(None),
             });
@@ -351,6 +362,16 @@ pub fn run() {
             commands::speech_add,
             commands::captions_translate,
             commands::captions_dub,
+            commands::media_thumbnails,
+            commands::media_waveform,
+            commands::media_import,
+            commands::clip_reframe,
+            commands::clip_camera_track,
+            commands::timeline_vertical,
+            commands::beats_markers,
+            commands::beats_cut,
+            commands::shorts_candidates,
+            commands::shorts_make,
         ])
         .build(tauri::generate_context!());
     match app {

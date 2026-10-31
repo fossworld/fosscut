@@ -357,6 +357,9 @@ pub fn export(
 
     let checked = check(project, request)?;
     let parent = output_dir(&request.output);
+    // The frames decoded last stay at hand (`fosscut_render::WINDOW_BYTES`), so the
+    // neighbouring frames that temporal effects and smooth slow motion read are decoded
+    // once while the export renders forward, never by seeking back (ADR-0035).
     let mut frames = DecoderFrames::new();
     let mut audio = DecoderAudio::default();
     for (asset, path) in &checked.media {

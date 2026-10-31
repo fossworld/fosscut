@@ -3,6 +3,8 @@
 //! run (ADR-0020, ADR-0033).
 //!
 //! - [`loudness`]: ITU-R BS.1770-4 integrated loudness and sample peak;
+//! - [`levels`]: K-weighted loudness of consecutive windows, for peaks and variation;
+//! - [`beats`]: the tempo, beats and downbeats of music, by dynamic programming;
 //! - [`silence`]: ranges quieter than a threshold for at least a minimum duration;
 //! - [`scenes`]: hard shot cuts from luma-histogram differences;
 //! - [`speech`]: words with timings, filler candidates and pauses, recognised by whisper.cpp
@@ -20,7 +22,11 @@
 //! - [`matte`]: the subject's alpha in every frame, from the person mask or BiRefNet
 //!   (ADR-0033, item 3);
 //! - [`vision`]: what those two share: RGB frames, resampling, packed mattes, smoothing in
-//!   time and their data files.
+//!   time and their data files;
+//! - [`framing`]: crops of another aspect that follow a subject (from pose, mattes or
+//!   tracking) through each shot, for reframing and camera tracking;
+//! - [`highlights`]: candidate shorts of whole sentences in long footage, scored from the
+//!   transcript, levels and scene cuts, with their reasons.
 //!
 //! The analyzers are pure and stream over samples or frames; [`decode`] feeds them from a
 //! media file and [`cache`] stores their results outside the project, keyed by the file's
@@ -28,9 +34,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod beats;
 pub mod cache;
 pub mod decode;
+pub mod framing;
 mod gray;
+pub mod highlights;
+pub mod levels;
 pub mod loudness;
 pub mod matte;
 pub mod models;
@@ -51,6 +61,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub use beats::{Beat, BeatOptions, Beats};
+pub use levels::{LevelOptions, Levels};
 pub use loudness::Loudness;
 pub use matte::{Matte, MatteModel, MatteOptions, MatteTrack};
 pub use motion::{
@@ -119,6 +131,10 @@ pub enum Analyzer {
     Pose,
     /// The subject's alpha in every frame (ADR-0033).
     Matte,
+    /// Tempo, beats and downbeats of music.
+    Beats,
+    /// Loudness of consecutive windows.
+    Levels,
 }
 
 /// What an analyzer reads.
@@ -132,13 +148,15 @@ pub enum Needs {
 
 impl Analyzer {
     /// Every analyzer.
-    pub const ALL: [Analyzer; 6] = [
+    pub const ALL: [Analyzer; 8] = [
         Analyzer::Loudness,
         Analyzer::Silences,
         Analyzer::Scenes,
         Analyzer::Transcript,
         Analyzer::Pose,
         Analyzer::Matte,
+        Analyzer::Beats,
+        Analyzer::Levels,
     ];
 
     /// Stable name, as agents pass it.
@@ -150,15 +168,18 @@ impl Analyzer {
             Analyzer::Transcript => "transcript",
             Analyzer::Pose => "pose",
             Analyzer::Matte => "matte",
+            Analyzer::Beats => "beats",
+            Analyzer::Levels => "levels",
         }
     }
 
-    /// Whether it runs when no analyzers are named: everything except speech, pose and
-    /// mattes, which need installed models and take longer.
+    /// Whether it runs when no analyzers are named: loudness, silences and scenes. Speech,
+    /// pose and mattes need installed models and take longer; beats and levels serve
+    /// particular edits (music, shorts) and are named when wanted.
     pub fn by_default(self) -> bool {
-        !matches!(
+        matches!(
             self,
-            Analyzer::Transcript | Analyzer::Pose | Analyzer::Matte
+            Analyzer::Loudness | Analyzer::Silences | Analyzer::Scenes
         )
     }
 
@@ -212,13 +233,23 @@ impl Analyzer {
             Analyzer::Matte => {
                 "The subject's alpha in every frame, for key.subject: model person (the pose model's person mask, fast) or subject (BiRefNet, any subject, 9 to 14 s a frame, so analyze every few frames with every); needs mediapipe-pose-full or birefnet-lite and must be named."
             }
+            Analyzer::Beats => {
+                "The tempo in bpm, every beat with its strength, and the downbeats when the accents show them, for cutting to music and beat markers; must be named."
+            }
+            Analyzer::Levels => {
+                "K-weighted loudness in LUFS of consecutive windows (1 s by default), for loudness peaks and variation, such as when looking for highlights; must be named."
+            }
         }
     }
 
     /// The stream it reads.
     pub fn needs(self) -> Needs {
         match self {
-            Analyzer::Loudness | Analyzer::Silences | Analyzer::Transcript => Needs::Audio,
+            Analyzer::Loudness
+            | Analyzer::Silences
+            | Analyzer::Transcript
+            | Analyzer::Beats
+            | Analyzer::Levels => Needs::Audio,
             Analyzer::Scenes | Analyzer::Pose | Analyzer::Matte => Needs::Video,
         }
     }
@@ -269,6 +300,12 @@ pub fn analyzers() -> Vec<AnalyzerInfo> {
                 Analyzer::Matte => {
                     serde_json::to_value(schemars::schema_for!(MatteOptions)).unwrap_or_default()
                 }
+                Analyzer::Beats => {
+                    serde_json::to_value(schemars::schema_for!(BeatOptions)).unwrap_or_default()
+                }
+                Analyzer::Levels => {
+                    serde_json::to_value(schemars::schema_for!(LevelOptions)).unwrap_or_default()
+                }
             },
         })
         .collect()
@@ -293,6 +330,12 @@ pub struct Options {
     /// Options of `matte`.
     #[serde(default)]
     pub matte: MatteOptions,
+    /// Options of `beats`.
+    #[serde(default)]
+    pub beats: BeatOptions,
+    /// Options of `levels`.
+    #[serde(default)]
+    pub levels: LevelOptions,
 }
 
 impl Options {
@@ -305,6 +348,8 @@ impl Options {
             Analyzer::Transcript => serde_json::to_value(&self.transcript).unwrap_or_default(),
             Analyzer::Pose => serde_json::to_value(&self.pose).unwrap_or_default(),
             Analyzer::Matte => serde_json::to_value(self.matte.clamped()).unwrap_or_default(),
+            Analyzer::Beats => serde_json::to_value(self.beats.clamped()).unwrap_or_default(),
+            Analyzer::Levels => serde_json::to_value(self.levels.clamped()).unwrap_or_default(),
         }
     }
 }
@@ -330,6 +375,12 @@ pub struct Results {
     /// Subject mattes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub matte: Option<Box<Matte>>,
+    /// Tempo, beats and downbeats.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beats: Option<Beats>,
+    /// Loudness of consecutive windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub levels: Option<Levels>,
     /// The data files of analyzers measured now ([`Analyzer::has_data`]), to be written
     /// beside their cache entries; never part of the reply, which names them by hash.
     #[serde(skip)]
@@ -347,6 +398,8 @@ impl Results {
             Analyzer::Transcript => self.transcript.as_ref().map(serde_json::to_value),
             Analyzer::Pose => self.pose.as_ref().map(serde_json::to_value),
             Analyzer::Matte => self.matte.as_ref().map(serde_json::to_value),
+            Analyzer::Beats => self.beats.as_ref().map(serde_json::to_value),
+            Analyzer::Levels => self.levels.as_ref().map(serde_json::to_value),
         };
         value.and_then(Result::ok)
     }
@@ -371,6 +424,12 @@ impl Results {
                 .is_ok(),
             Analyzer::Matte => serde_json::from_value(value)
                 .map(|r| self.matte = Some(r))
+                .is_ok(),
+            Analyzer::Beats => serde_json::from_value(value)
+                .map(|r| self.beats = Some(r))
+                .is_ok(),
+            Analyzer::Levels => serde_json::from_value(value)
+                .map(|r| self.levels = Some(r))
                 .is_ok(),
         }
     }
@@ -440,6 +499,15 @@ mod tests {
         assert!(listed[3].options["properties"]["model"].is_object());
         assert!(listed[4].options["properties"]["max_fps"].is_object());
         assert!(listed[5].options["properties"]["every"].is_object());
+        assert!(listed[6].options["properties"]["tightness"].is_object());
+        assert!(listed[7].options["properties"]["window_ms"].is_object());
+        assert!(!Analyzer::Beats.by_default() && !Analyzer::Levels.by_default());
+        assert_eq!(Analyzer::Beats.needs(), Needs::Audio);
+        assert_eq!(Analyzer::Levels.vision_model(&Options::default()), None);
+        let mut fixed = Options::default();
+        fixed.beats.bpm = Some(1e6);
+        assert_eq!(fixed.for_analyzer(Analyzer::Beats)["bpm"], 400.0);
+        assert_eq!(fixed.for_analyzer(Analyzer::Levels)["window_ms"], 1000);
         assert!(!Analyzer::Transcript.by_default() && Analyzer::Scenes.by_default());
         assert!(!Analyzer::Pose.by_default() && !Analyzer::Matte.by_default());
         assert!(Analyzer::Pose.has_data() && !Analyzer::Scenes.has_data());

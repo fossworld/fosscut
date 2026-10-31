@@ -31,6 +31,10 @@ pub enum Interpolate {
     /// The two nearest source frames mixed by the position between them: smooth slow
     /// motion.
     Blend,
+    /// The two nearest source frames warped along the optical flow between them toward
+    /// the position, then mixed, with what one of them hides taken from the other: smooth
+    /// slow motion in which moving things stay sharp instead of showing twice (ADR-0035).
+    Flow,
 }
 
 /// A point of a speed curve.
@@ -61,7 +65,8 @@ pub struct Speed {
     /// Keep the sound's pitch, or let it follow the speed.
     #[serde(default, skip_serializing_if = "is_default")]
     pub pitch: Pitch,
-    /// Show the nearest source frame, or blend the two around each time.
+    /// Show the nearest source frame, or make one between the two around each time by
+    /// blending them or by following their motion.
     #[serde(default, skip_serializing_if = "is_default")]
     pub interpolate: Interpolate,
 }

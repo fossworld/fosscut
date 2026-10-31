@@ -22,6 +22,20 @@ pub const SKILLS: &[Skill] = &[
         )],
     },
     Skill {
+        name: "beat-sync",
+        files: &[(
+            "SKILL.md",
+            include_str!("../../../skills/beat-sync/SKILL.md"),
+        )],
+    },
+    Skill {
+        name: "long-to-shorts",
+        files: &[(
+            "SKILL.md",
+            include_str!("../../../skills/long-to-shorts/SKILL.md"),
+        )],
+    },
+    Skill {
         name: "talking-head-cleanup",
         files: &[(
             "SKILL.md",

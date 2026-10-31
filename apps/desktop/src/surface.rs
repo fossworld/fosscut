@@ -205,11 +205,16 @@ impl Screen for Surface {
             });
             let (width, height) = (self.config.width as f32, self.config.height as f32);
             let [x, y, w, h] = rect;
-            let (x, y) = (x.clamp(0.0, width - 1.0), y.clamp(0.0, height - 1.0));
-            let (w, h) = (w.min(width - x), h.min(height - y));
+            // A zoomed preview may reach past the window's edges: the frame is drawn whole
+            // and clipped to the window, never squeezed into the part that shows.
+            let clip = visible([x, y, w, h], (width, height));
+            let limit = device.limits().max_texture_dimension_2d as f32;
             if let Some(frame) = frame
-                && w >= 1.0
-                && h >= 1.0
+                && let Some([left, top, shown_w, shown_h]) = clip
+                && w <= limit
+                && h <= limit
+                && x >= -limit
+                && y >= -limit
             {
                 let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("blit"),
@@ -226,6 +231,7 @@ impl Screen for Surface {
                     ],
                 });
                 pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                pass.set_scissor_rect(left, top, shown_w, shown_h);
                 pass.set_pipeline(&self.blit);
                 pass.set_bind_group(0, &bind_group, &[]);
                 pass.draw(0..3, 0..1);
@@ -233,5 +239,67 @@ impl Screen for Surface {
         }
         renderer.queue().submit([encoder.finish()]);
         renderer.queue().present(output);
+    }
+}
+
+/// The part of `rect` (x, y, width, height in physical pixels) inside a window of `size`,
+/// in whole pixels, as a scissor rectangle; `None` when less than a pixel of it shows.
+fn visible(rect: [f32; 4], size: (f32, f32)) -> Option<[u32; 4]> {
+    let [x, y, w, h] = rect;
+    if !(x.is_finite() && y.is_finite() && w.is_finite() && h.is_finite()) {
+        return None;
+    }
+    let left = x.max(0.0).floor();
+    let top = y.max(0.0).floor();
+    let right = (x + w).min(size.0).ceil().min(size.0);
+    let bottom = (y + h).min(size.1).ceil().min(size.1);
+    if right - left < 1.0 || bottom - top < 1.0 {
+        return None;
+    }
+    Some([
+        left as u32,
+        top as u32,
+        (right - left) as u32,
+        (bottom - top) as u32,
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::visible;
+
+    #[test]
+    fn a_frame_inside_the_window_shows_whole() {
+        assert_eq!(
+            visible([10.0, 20.0, 300.0, 200.0], (800.0, 600.0)),
+            Some([10, 20, 300, 200])
+        );
+    }
+
+    #[test]
+    fn a_zoomed_frame_past_the_edges_is_clipped_to_the_window_not_squeezed() {
+        // Twice the window's size, centred: everything shows, the frame keeps its size.
+        assert_eq!(
+            visible([-400.0, -300.0, 1600.0, 1200.0], (800.0, 600.0)),
+            Some([0, 0, 800, 600])
+        );
+        // Past the right and bottom edges only.
+        assert_eq!(
+            visible([700.0, 500.0, 300.0, 300.0], (800.0, 600.0)),
+            Some([700, 500, 100, 100])
+        );
+        // Fractions round outwards, within the window.
+        assert_eq!(
+            visible([0.5, 0.5, 99.2, 99.2], (800.0, 600.0)),
+            Some([0, 0, 100, 100])
+        );
+    }
+
+    #[test]
+    fn a_frame_outside_the_window_or_without_a_size_draws_nothing() {
+        assert_eq!(visible([900.0, 0.0, 100.0, 100.0], (800.0, 600.0)), None);
+        assert_eq!(visible([-200.0, 0.0, 150.0, 100.0], (800.0, 600.0)), None);
+        assert_eq!(visible([10.0, 10.0, 0.0, 0.0], (800.0, 600.0)), None);
+        assert_eq!(visible([f32::NAN, 0.0, 10.0, 10.0], (800.0, 600.0)), None);
     }
 }

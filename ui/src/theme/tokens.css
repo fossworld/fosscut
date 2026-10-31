@@ -1,0 +1,229 @@
+/* FossCut's design tokens: every colour, radius, space, type size, shadow and duration the
+   interface uses, in one place. The dark theme is the default; the light theme redefines
+   the same names. Components read only these names, never raw values, and the timeline
+   canvas reads them too (../timeline/palette.ts). */
+
+:root {
+  /* Brand: FossCut orange, from light to deep. 500 is the accent. */
+  --orange-50: #fff4ee;
+  --orange-100: #ffe3d3;
+  --orange-200: #ffc5a6;
+  --orange-300: #ffa679;
+  --orange-400: #ff8f5c;
+  --orange-500: #ff7a45;
+  --orange-600: #ea6230;
+  --orange-700: #c24c20;
+  --orange-800: #933a19;
+  --orange-900: #5a2410;
+
+  /* Spacing scale, in steps of 2 and 4 pixels. */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 48px;
+
+  /* Corner radii. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  /* Type. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.2;
+  --leading-normal: 1.45;
+
+  /* Sizes of recurring things. */
+  --topbar-height: 48px;
+  --control-height: 28px;
+  --control-height-sm: 24px;
+  --panel-header-height: 36px;
+  --gap: 6px;
+
+  /* Motion. Reduced motion turns these to zero below. */
+  --duration-fast: 90ms;
+  --duration-medium: 160ms;
+  --duration-slow: 240ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layers. */
+  --layer-raised: 5;
+  --layer-popover: 30;
+  --layer-notice: 40;
+  --layer-dialog: 50;
+}
+
+/* Dark: charcoal panels on a near-black background. The default. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --app-bg: #0b0b0d;
+  --panel: #17181b;
+  --panel-raised: #1f2024;
+  --panel-sunken: #111214;
+  --surface-hover: rgb(255 255 255 / 6%);
+  --surface-pressed: rgb(255 255 255 / 11%);
+  --surface-selected: rgb(255 122 69 / 14%);
+  --input-bg: #0f1012;
+  --line: #2a2b31;
+  --line-strong: #3a3b43;
+  --line-subtle: #222328;
+
+  --text: #ececef;
+  --text-muted: #a3a4ad;
+  --text-faint: #878891;
+  --text-on-accent: #1f0c03;
+
+  --accent: var(--orange-500);
+  --accent-hover: var(--orange-400);
+  --accent-pressed: var(--orange-600);
+  --accent-text: var(--orange-400);
+  --accent-soft: rgb(255 122 69 / 16%);
+  --accent-line: rgb(255 122 69 / 45%);
+  --focus-ring: 0 0 0 2px var(--app-bg), 0 0 0 4px var(--orange-400);
+
+  --agent: #6fb3ff;
+  --agent-soft: rgb(111 179 255 / 14%);
+  --agent-line: rgb(111 179 255 / 38%);
+  --danger: #ff6b6b;
+  --danger-soft: rgb(255 107 107 / 14%);
+  --danger-strong: #e5484d;
+  --success: #4fd18b;
+  --success-soft: rgb(79 209 139 / 14%);
+  --warning: #ffc24b;
+  --warning-soft: rgb(255 194 75 / 14%);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-md: 0 6px 18px rgb(0 0 0 / 42%);
+  --shadow-lg: 0 18px 48px rgb(0 0 0 / 55%);
+  --backdrop: rgb(4 4 6 / 62%);
+  --scrim: rgb(10 10 12 / 78%);
+
+  /* The stage the preview shows on. */
+  --stage: #070708;
+
+  /* The timeline canvas. */
+  --timeline-bg: #131417;
+  --timeline-row: #18191d;
+  --timeline-row-alt: #16171a;
+  --timeline-ruler: #1b1c20;
+  --timeline-tick: #3b3c44;
+  --timeline-label: #a3a4ad;
+  --timeline-selection: #ffffff;
+  --timeline-skim: rgb(255 255 255 / 55%);
+  --timeline-marker: #6fb3ff;
+  --timeline-drop: rgb(255 122 69 / 18%);
+
+  /* Clips by kind: fills that keep white labels readable (WCAG AA), and the lighter tone
+     of their waveforms and kind marks. */
+  --clip-video: #2c62c0;
+  --clip-video-tone: #9cc0ff;
+  --clip-image: #1f7891;
+  --clip-image-tone: #8fd8ec;
+  --clip-audio: #177a5a;
+  --clip-audio-tone: #6fe0b5;
+  --clip-text: #9c3f7c;
+  --clip-text-tone: #f4a8da;
+  --clip-caption: #8a5a0c;
+  --clip-caption-tone: #ffd07a;
+  --clip-shape: #ad3459;
+  --clip-shape-tone: #ffa3bd;
+  --clip-adjustment: #5c43be;
+  --clip-adjustment-tone: #c7b8ff;
+  --clip-timeline: #46529e;
+  --clip-timeline-tone: #b7c0ff;
+  --clip-other: #4c4e57;
+  --clip-other-tone: #c9cad1;
+  --clip-label: #ffffff;
+}
+
+/* Light: the same names on white panels; the preview stage stays dark. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --app-bg: #e4e4e8;
+  --panel: #ffffff;
+  --panel-raised: #f4f4f6;
+  --panel-sunken: #ededf1;
+  --surface-hover: rgb(20 20 30 / 6%);
+  --surface-pressed: rgb(20 20 30 / 11%);
+  --surface-selected: rgb(234 98 48 / 12%);
+  --input-bg: #f7f7f9;
+  --line: #dadae0;
+  --line-strong: #c4c4cc;
+  --line-subtle: #e8e8ec;
+
+  --text: #18181b;
+  --text-muted: #53545d;
+  --text-faint: #6a6b74;
+  --text-on-accent: #1f0c03;
+
+  --accent: var(--orange-500);
+  --accent-hover: var(--orange-400);
+  --accent-pressed: var(--orange-600);
+  --accent-text: #b4461b;
+  --accent-soft: rgb(255 122 69 / 16%);
+  --accent-line: rgb(234 98 48 / 50%);
+  --focus-ring: 0 0 0 2px var(--panel), 0 0 0 4px var(--orange-600);
+
+  --agent: #1f6fd1;
+  --agent-soft: rgb(31 111 209 / 10%);
+  --agent-line: rgb(31 111 209 / 35%);
+  --danger: #c9302c;
+  --danger-soft: rgb(201 48 44 / 10%);
+  --danger-strong: #d13a35;
+  --success: #17824e;
+  --success-soft: rgb(23 130 78 / 10%);
+  --warning: #9a6200;
+  --warning-soft: rgb(154 98 0 / 10%);
+
+  --shadow-sm: 0 1px 2px rgb(20 20 30 / 12%);
+  --shadow-md: 0 6px 18px rgb(20 20 30 / 14%);
+  --shadow-lg: 0 18px 48px rgb(20 20 30 / 22%);
+  --backdrop: rgb(20 20 30 / 38%);
+  --scrim: rgb(255 255 255 / 82%);
+
+  --stage: #0d0d10;
+
+  --timeline-bg: #f1f1f4;
+  --timeline-row: #ffffff;
+  --timeline-row-alt: #f8f8fa;
+  --timeline-ruler: #ebebef;
+  --timeline-tick: #b8b8c2;
+  --timeline-label: #53545d;
+  --timeline-selection: #18181b;
+  --timeline-skim: rgb(20 20 30 / 45%);
+  --timeline-marker: #1f6fd1;
+  --timeline-drop: rgb(234 98 48 / 16%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-medium: 0ms;
+    --duration-slow: 0ms;
+  }
+}

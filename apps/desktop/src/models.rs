@@ -255,18 +255,109 @@ impl ModelInstalls {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SubjectRequest {
-    /// The video clip whose media is analyzed.
+    /// The clip whose media is analyzed: a video clip for `matte`, `pose` and `scenes`, a
+    /// video or audio clip with sound for the analyzers of sound.
     pub clip: String,
-    /// `matte` (for background removal) or `pose` (for body effects).
+    /// `matte` (for background removal) or `pose` (for body effects), or another analyzer
+    /// as `fosscut.analysis.missing` names it: `scenes`, `transcript`, `beats`, `levels`,
+    /// `loudness` or `silences`.
     pub kind: String,
     /// For a matte: `person` (the default, fast) or `subject` (any subject, slow).
     pub model: Option<String>,
     /// For a matte, run the model on every `every`-th frame and follow the motion between:
     /// 1 for `person` and 5 for `subject` when omitted, since that takes seconds a frame.
     pub every: Option<u32>,
+    /// The analyzer's options, as `details.options` of `fosscut.analysis.missing` holds them
+    /// under its name (`{"model": "subject"}` for a matte); its defaults when omitted.
+    /// `model` and `every` win over the same options given here.
+    pub options: Option<Value>,
 }
 
-/// The analysis `request` asks for, of the project's video clip it names.
+/// The analyzers of moving pictures; the others read sound.
+fn reads_pictures(analyzer: Analyzer) -> bool {
+    match analyzer {
+        Analyzer::Scenes | Analyzer::Pose | Analyzer::Matte => true,
+        Analyzer::Loudness
+        | Analyzer::Silences
+        | Analyzer::Transcript
+        | Analyzer::Beats
+        | Analyzer::Levels => false,
+    }
+}
+
+/// `given` as the options of `analyzer`, keyed by its name as the engine keeps them.
+fn analyzer_options(analyzer: Analyzer, given: Option<&Value>) -> Answer<Options> {
+    let name = analyzer.name();
+    let Some(given) = given.filter(|options| !options.is_null()) else {
+        return Ok(Options::default());
+    };
+    let Some(fields) = given.as_object() else {
+        return Err(invalid(format!(
+            "options of {name}: give an object of its options"
+        )));
+    };
+    if analyzer == Analyzer::Loudness {
+        return if fields.is_empty() {
+            Ok(Options::default())
+        } else {
+            Err(invalid("loudness takes no options"))
+        };
+    }
+    serde_json::from_value(json!({ name: given }))
+        .map_err(|e| invalid(format!("options of {name}: {e}")))
+}
+
+/// The asset of `clip` an analysis reads: a video asset for one of moving pictures, any
+/// asset with sound (a video or audio clip's) for one of sound.
+fn analyzed_asset(
+    project: &Project,
+    clip: &fosscut_model::Clip,
+    analyzer: Analyzer,
+) -> Answer<fosscut_model::Id> {
+    let id = &clip.id;
+    if reads_pictures(analyzer) {
+        return match &clip.content {
+            ClipContent::Video { asset, .. }
+                if project
+                    .media
+                    .get(asset)
+                    .is_some_and(|a| a.kind == AssetKind::Video) =>
+            {
+                Ok(asset.clone())
+            }
+            _ => {
+                let what = if analyzer == Analyzer::Scenes {
+                    "shot cuts"
+                } else {
+                    "its subject"
+                };
+                Err(invalid(format!(
+                    "{id} is not a video clip; only video is analyzed for {what}"
+                ))
+                .with_hint("Select a video clip."))
+            }
+        };
+    }
+    match &clip.content {
+        ClipContent::Video { asset, .. } | ClipContent::Audio { asset, .. } => {
+            if project.media.get(asset).is_some_and(|a| a.has_audio()) {
+                Ok(asset.clone())
+            } else {
+                Err(ApiError::from(fosscut_engine::EngineError::NoAudio {
+                    asset: asset.to_string(),
+                }))
+            }
+        }
+        other => Err(invalid(format!(
+            "{id} is a {} clip; {} reads the sound of video and audio clips",
+            other.kind_name(),
+            analyzer.name()
+        ))
+        .with_hint("Select a video or audio clip.")),
+    }
+}
+
+/// The analysis `request` asks for, of the project's clip it names.
 fn subject_analysis(
     project: &Project,
     bundle: &Path,
@@ -282,49 +373,49 @@ fn subject_analysis(
         .flat_map(|track| track.clips.iter())
         .find(|candidate| candidate.id == clip)
         .ok_or_else(|| ApiError::new(codes::CLIP_NOT_FOUND, format!("there is no clip {clip}")))?;
-    let asset = match &found.content {
-        ClipContent::Video { asset, .. }
-            if project
-                .media
-                .get(asset)
-                .is_some_and(|a| a.kind == AssetKind::Video) =>
-        {
-            asset.clone()
-        }
-        _ => {
-            return Err(invalid(format!(
-                "{clip} is not a video clip; only video is analyzed for its subject"
-            ))
-            .with_hint("Select a video clip."));
-        }
-    };
-    let mut options = Options::default();
-    let analyzer = match request.kind.as_str() {
-        "matte" => {
-            let model = match given(request.model.as_deref()).unwrap_or("person") {
-                "person" => MatteModel::Person,
-                "subject" => MatteModel::Subject,
-                other => {
+    let analyzer = Analyzer::parse(request.kind.trim()).ok_or_else(|| {
+        invalid(format!(
+            "kind {:?}: analyze a matte or a pose, or scenes, transcript, beats, levels, loudness or silences",
+            request.kind
+        ))
+    })?;
+    let asset = analyzed_asset(project, found, analyzer)?;
+    let mut options = analyzer_options(analyzer, request.options.as_ref())?;
+    let model = given(request.model.as_deref());
+    match analyzer {
+        Analyzer::Matte => {
+            let model = match model {
+                None => options.matte.model,
+                Some("person") => MatteModel::Person,
+                Some("subject") => MatteModel::Subject,
+                Some(other) => {
                     return Err(invalid(format!(
                         "model {other:?}: a matte is of a person or any subject"
                     )));
                 }
             };
+            let every_given = request
+                .options
+                .as_ref()
+                .is_some_and(|options| options.get("every").is_some());
             options.matte.model = model;
-            options.matte.every = request.every.unwrap_or(match model {
-                MatteModel::Person => 1,
-                MatteModel::Subject => 5,
-            });
-            Analyzer::Matte
+            options.matte.every = match request.every {
+                Some(every) => every,
+                None if every_given => options.matte.every,
+                None => match model {
+                    MatteModel::Person => 1,
+                    MatteModel::Subject => 5,
+                },
+            };
         }
-        "pose" if given(request.model.as_deref()).is_none() => Analyzer::Pose,
-        "pose" => return Err(invalid("a pose analysis takes no model")),
-        other => {
+        other if model.is_some() => {
             return Err(invalid(format!(
-                "kind {other:?}: analyze a matte or a pose"
+                "a {} analysis takes no model",
+                other.name()
             )));
         }
-    };
+        _ => {}
+    }
     Ok(AnalysisRequest {
         bundle: bundle.to_path_buf(),
         asset,
@@ -919,6 +1010,7 @@ mod tests {
             kind: kind.into(),
             model: model.map(str::to_string),
             every: None,
+            options: None,
         };
         let clip = video_clip(&workspace);
         let title = workspace
@@ -1392,6 +1484,7 @@ mod tests {
             kind: "pose".into(),
             model: None,
             every: None,
+            options: None,
         };
         let started = analyze_subject(&workspace, &jobs, &cache, &models, &request).unwrap();
         assert_eq!(started.kind, "analysis");
@@ -1411,6 +1504,212 @@ mod tests {
         assert_eq!(again.state, JobState::Succeeded, "{again:?}");
         assert_eq!(again.analysis.unwrap().cached, vec![Analyzer::Pose]);
         done(workspace, runtime, work);
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    /// Imports a sound that is nowhere on disk, with its identity recorded, places it and
+    /// returns the clip.
+    fn audio_clip(workspace: &Workspace) -> String {
+        let added = workspace
+            .execute(Request::single(
+                "media.add",
+                json!({
+                    "name": "song.wav",
+                    "kind": "audio",
+                    "path": { "absolute": "/nowhere/song.wav" },
+                    "identity": { "size": 999, "sample_blake3": "ef".repeat(32) },
+                    "info": {
+                        "duration": 4 * SECOND,
+                        "audio": { "sample_rate": 48000, "channels": 2, "codec": "pcm_s16le" },
+                    }
+                }),
+            ))
+            .unwrap();
+        let asset = added.results[0]["asset"].as_str().unwrap().to_string();
+        workspace
+            .execute(Request::single("clip.add", json!({ "asset": asset })))
+            .unwrap()
+            .results[0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn every_analyzer_a_plan_names_can_be_asked_for_with_its_options() {
+        let (workspace, runtime, work) = opened("kinds");
+        let (models, cache) = (folder("kinds-models"), folder("kinds-cache"));
+        let jobs = Jobs::new();
+        let ask = |clip: &str, kind: &str, options: Option<Value>| SubjectRequest {
+            clip: clip.into(),
+            kind: kind.into(),
+            options,
+            ..SubjectRequest::default()
+        };
+        let analyze = |request: &SubjectRequest| {
+            analyze_subject(&workspace, &jobs, &cache, &models, request).unwrap_err()
+        };
+        let video = video_clip(&workspace);
+        let song = audio_clip(&workspace);
+
+        let scenes = analyze(&ask(&song, "scenes", None));
+        assert_eq!(scenes.code, codes::INVALID_ARGUMENTS);
+        assert!(
+            scenes
+                .message
+                .contains("only video is analyzed for shot cuts"),
+            "{scenes:?}"
+        );
+        let silent = analyze(&ask(&video, "beats", None));
+        assert_eq!(
+            silent.code, "fosscut.analysis.no_audio",
+            "a video without sound"
+        );
+        let modelled = analyze(&SubjectRequest {
+            model: Some("subject".into()),
+            ..ask(&song, "beats", None)
+        });
+        assert!(
+            modelled.message.contains("a beats analysis takes no model"),
+            "{modelled:?}"
+        );
+        let unknown = analyze(&ask(&song, "beats", Some(json!({ "tempo": 120 }))));
+        assert!(unknown.message.contains("options of beats"), "{unknown:?}");
+        let shapeless = analyze(&ask(&song, "levels", Some(json!(3))));
+        assert!(
+            shapeless.message.contains("give an object"),
+            "{shapeless:?}"
+        );
+        let loud = analyze(&ask(&song, "loudness", Some(json!({ "x": 1 }))));
+        assert!(loud.message.contains("takes no options"), "{loud:?}");
+        assert!(
+            jobs.list().is_empty(),
+            "nothing started before these checks"
+        );
+
+        // Accepted: they start as jobs, which fail at once here because the files are
+        // nowhere (or the models are not installed), naming what is missing.
+        for (clip, kind, options) in [
+            (&song, "beats", Some(json!({ "bpm": 120 }))),
+            (&song, "transcript", None),
+            (&song, "loudness", Some(json!({}))),
+            (&video, "scenes", None),
+        ] {
+            let started = analyze(&ask(clip, kind, options));
+            assert_ne!(
+                started.code,
+                codes::INVALID_ARGUMENTS,
+                "{kind}: {started:?}"
+            );
+        }
+        assert_eq!(jobs.list().len(), 4, "each ran as a job");
+        // A matte's options from a missing-analysis error pass through; `model` wins.
+        let subject = analyze(&ask(&video, "matte", Some(json!({ "model": "subject" }))));
+        assert_eq!(subject.code, "fosscut.model.not_installed", "{subject:?}");
+        assert!(
+            subject.details["what"]
+                .as_str()
+                .unwrap()
+                .contains("birefnet-lite")
+        );
+        let person = analyze(&SubjectRequest {
+            model: Some("person".into()),
+            ..ask(&video, "matte", Some(json!({ "model": "subject" })))
+        });
+        assert!(
+            person.details["what"]
+                .as_str()
+                .unwrap()
+                .contains("mediapipe-pose-full"),
+            "{person:?}"
+        );
+        // The matte's frame step: as given, else the model's.
+        let (bundle, project, _) = workspace.snapshot().unwrap();
+        let planned = |request: &SubjectRequest| {
+            subject_analysis(&project, &bundle, request, &cache, &models).unwrap()
+        };
+        let slow = planned(&ask(&video, "matte", Some(json!({ "model": "subject" }))));
+        assert_eq!(
+            (slow.options.matte.model, slow.options.matte.every),
+            (MatteModel::Subject, 5)
+        );
+        let stepped = planned(&ask(
+            &video,
+            "matte",
+            Some(json!({ "model": "subject", "every": 2 })),
+        ));
+        assert_eq!(stepped.options.matte.every, 2);
+        let beats = planned(&ask(&song, "beats", Some(json!({ "bpm": 100 }))));
+        assert_eq!(
+            (beats.analyzers, beats.options.beats.bpm),
+            (vec![Analyzer::Beats], Some(100.0))
+        );
+        done(workspace, runtime, work);
+        let _ = std::fs::remove_dir_all(&models);
+        let _ = std::fs::remove_dir_all(&cache);
+    }
+
+    #[test]
+    fn beats_of_a_generated_sound_are_analyzed_as_a_job() {
+        if !ffmpeg_programs() {
+            eprintln!("skipped: ffmpeg or ffprobe is missing");
+            return;
+        }
+        let (workspace, runtime, work) = opened("beatjob");
+        let (models, cache) = (folder("beatjob-models"), folder("beatjob-cache"));
+        // Clicks at 120 beats a minute for 6 seconds.
+        let status = std::process::Command::new("ffmpeg")
+            .current_dir(&work)
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg(
+                "aevalsrc='0.6*sin(2*PI*2000*t)*exp(-mod(t+0.13,0.5)/0.0015)*gte(t,0.37)'\
+                 :s=44100:d=6",
+            )
+            .args(["-c:a", "pcm_s16le", "click.wav"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let (bundle, _, _) = workspace.snapshot().unwrap();
+        let args =
+            fosscut_engine::import::media_add_args(&work.join("click.wav"), None, &bundle).unwrap();
+        let asset = workspace
+            .execute(Request::single("media.add", args))
+            .unwrap()
+            .results[0]["asset"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let clip = workspace
+            .execute(Request::single("clip.add", json!({ "asset": asset })))
+            .unwrap()
+            .results[0]["clip"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let jobs = Jobs::new();
+        let request = SubjectRequest {
+            clip,
+            kind: "beats".into(),
+            ..SubjectRequest::default()
+        };
+        let mut status = analyze_subject(&workspace, &jobs, &cache, &models, &request).unwrap();
+        let begun = Instant::now();
+        while status.state == JobState::Running && begun.elapsed() < Duration::from_secs(60) {
+            std::thread::sleep(Duration::from_millis(50));
+            status = subject_status(&jobs, &status.job, false).unwrap();
+        }
+        assert_eq!(status.state, JobState::Succeeded, "{status:?}");
+        let report = status.analysis.unwrap();
+        assert_eq!(report.computed, vec![Analyzer::Beats]);
+        let beats = report.results.beats.unwrap();
+        let tempo = beats.tempo_bpm.unwrap();
+        assert!((tempo - 120.0).abs() < 2.0, "tempo {tempo}");
+        assert!(beats.beats.len() >= 10, "{beats:?}");
+        let again = analyze_subject(&workspace, &jobs, &cache, &models, &request).unwrap();
+        assert_eq!(again.state, JobState::Succeeded);
+        assert_eq!(again.analysis.unwrap().cached, vec![Analyzer::Beats]);
+        done(workspace, runtime, work);
+        let _ = std::fs::remove_dir_all(&models);
         let _ = std::fs::remove_dir_all(&cache);
     }
 }

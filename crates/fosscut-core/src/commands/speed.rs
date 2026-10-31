@@ -56,8 +56,9 @@ pub struct ClipSpeed {
     /// `preserve` keeps the sound's pitch (the default); `shift` lets it follow the speed.
     #[serde(default)]
     pub pitch: Option<Pitch>,
-    /// `blend` mixes neighbouring source frames for smooth slow motion; `nearest` shows the
-    /// nearest frame (the default).
+    /// `blend` mixes neighbouring source frames for smooth slow motion; `flow` draws
+    /// in-between frames from the motion measured between them (optical flow), smoother
+    /// and slower to render; `nearest` shows the nearest frame (the default).
     #[serde(default)]
     pub interpolate: Option<Interpolate>,
     /// Move the later clips on the track when the clip gets longer or shorter. Without it,
@@ -148,7 +149,7 @@ impl ClipSpeed {
 
 impl Command for ClipSpeed {
     const NAME: &'static str = "clip.speed";
-    const SUMMARY: &'static str = "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.";
+    const SUMMARY: &'static str = "Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend, or flow for in-between frames drawn by optical flow). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.";
     type Output = SpeedChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<SpeedChanged, ApiError> {

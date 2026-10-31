@@ -13,7 +13,7 @@ FossCut already has a registry of effect types with parameter schemas (ADR-0011 
 
 ## Decision
 
-1. **One registry.** Sound effects are effect types like picture effects, named `audio.*`, with the category `audio`. `capabilities` lists them with their parameters, and `effect.add`, `effect.set`, `effect.remove`, `effect.move` and `effect.copy` handle them unchanged. Clips keep picture and sound effects in their one `effects` list; the planner skips sound effects and the mixer skips picture effects.
+1. **One registry.** Sound effects are effect types like picture effects, named `audio.*` (or `voice.*` for the voice filters of item 8), with the category `audio`. `capabilities` lists them with their parameters, and `effect.add`, `effect.set`, `effect.remove`, `effect.move` and `effect.copy` handle them unchanged. Clips keep picture and sound effects in their one `effects` list; the planner skips sound effects and the mixer skips picture effects.
 2. **The mixer applies them.** For each clip, the mixer runs its enabled sound effects in order on the clip's sound after speed (ADR-0023) and before volume, pan, channels, fades and transitions. Implementations live in `fosscut-audio` (`effects.rs`), are deterministic, and use no model.
 3. **Where they go.** Sound effects go on clips with sound: audio clips, video clips whose asset has audio, and compound clips. Picture effects go on clips with a picture. Commands refuse the other combinations with `fosscut.effect.wrong_target`, and validation reports `fosscut.model.effect_target`.
 4. **Constant parameters.** Sound effect parameters do not take keyframes (`animatable: false`) in this version, so a clip's sound is processed with one setting from start to end.
@@ -28,6 +28,9 @@ FossCut already has a registry of effect types with parameter schemas (ADR-0011 
    - **Too little room:** it adds or adjusts the clip's `audio.limiter`, with the gain measured again, up to four times, until the clip reaches the target within 0.1 LU or the gain range ends.
    - **Without a limiter:** with `limit` off, it only sets volumes and reports the clips the ceiling held back.
    - **Applying:** it returns `clip.set` and effect commands, which the front ends (`fosscut audio normalize`, the MCP `audio_normalize` tool, the desktop) apply as one undoable change.
+8. **Voice filters and presets.** The `voice.*` types change a voice's character: `voice.pitch` (semitones, formants kept or not), `voice.robot`, `voice.telephone`, `voice.megaphone`, `voice.echo`, `voice.reverb`, `voice.chorus`, `voice.broken` and `voice.whisper`. Their specs live in `fosscut_model::voice_filters` and their processing in `fosscut_audio::voice`, written from published methods (WSOLA, cepstral envelopes, RBJ filters, a feedback delay network).
+   - **Presets:** named sets of voice filters (deep, chipmunk, robot, phone call, radio, megaphone, cave and others) are data, listed by `capabilities` under `voice_presets`. The command `voice.apply` copies a preset's effects into a clip, which owns them; with `replace` it swaps only the clip's `voice.*` effects. An unknown name fails with `fosscut.voice.preset_unknown`.
+   - **Warm-up per chain:** item 5's warm-up is the sum of what each effect of a clip remembers, capped at 2 s, so a chain of short filters reads less before a range.
 
 ## Consequences
 
@@ -51,6 +54,7 @@ FossCut already has a registry of effect types with parameter schemas (ADR-0011 
   - **Streaming:** windows cut from a clip match the whole clip within 1e-5.
 - Mixer tests check that mixing in blocks equals mixing at once within 1e-3, and that disabled effects change nothing.
 - Engine tests check that normalized clips play within 0.3 LU of the target and that the ceiling holds peaks. On recorded speech, whose peaks leave no room at -14 LUFS, the limiter brings it to the target with peaks under -0.95 dBFS.
+- **Voice filters:** unit tests measure each one: pitch lands within 0.12% of its target, robot sidebands at -6.02 dB, the telephone band and echo repeats where set, a reverb's decay growing with its room, and every filter and preset equal in blocks of 512 to 4800 samples within 1e-3, with peaks no higher than the input's beyond 0.07 dB.
 - A real-agent check found the first version, which only set volumes, left dynamic speech at -22 LUFS when -16 was asked: the limiter came from that finding.
 - Before Accepted:
   - **Listening test:** on recorded speech with room noise, the denoised result sounds better than the original.

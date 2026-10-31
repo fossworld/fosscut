@@ -353,6 +353,13 @@ impl FfmpegVideoDecoder {
             other => {
                 format = PixelFormat::Nv12;
                 converted = self.convert_to_nv12(image, other)?;
+                if is_rgb(other) {
+                    // swscale writes R'G'B' pictures (PNG, for one) into Y'CbCr with its
+                    // default BT.601 matrix in limited range. Their primaries and transfer
+                    // stay as tagged, so an untagged picture keeps its code values.
+                    color.matrix = Matrix::Bt601;
+                    color.range = Range::Limited;
+                }
                 &converted
             }
         };
@@ -651,6 +658,15 @@ fn color_info(
             _ => Transfer::Unspecified,
         },
     }
+}
+
+/// Whether `format` stores R'G'B' rather than Y'CbCr.
+fn is_rgb(format: i32) -> bool {
+    // SAFETY: `av_pix_fmt_desc_get` returns null or a pointer to a static descriptor.
+    let descriptor = unsafe { ffi::av_pix_fmt_desc_get(format) };
+    // SAFETY: checked non-null; descriptors are static and immutable.
+    !descriptor.is_null()
+        && unsafe { (*descriptor).flags } & u64::from(ffi::AV_PIX_FMT_FLAG_RGB) != 0
 }
 
 fn pixel_format_name(format: i32) -> String {

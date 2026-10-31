@@ -37,7 +37,7 @@ pub use clipboard::{AttributesCopied, ClipCopyAttributes, ClipsPaste, CopiedClip
 pub use compound::{ClipCompound, ClipDecompose, Compounded, Decomposed};
 pub use effect::{
     AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
-    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply,
+    EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply, VoiceApply,
 };
 pub use group::{
     AudioExtracted, AudioRestored, ClipExtractAudio, ClipGroup, ClipRestoreAudio, ClipUngroup,
@@ -120,6 +120,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<EffectCopy>();
     registry.register::<AdjustmentAdd>();
     registry.register::<LookApply>();
+    registry.register::<VoiceApply>();
     registry.register::<MaskAdd>();
     registry.register::<MaskSet>();
     registry.register::<MaskRemove>();

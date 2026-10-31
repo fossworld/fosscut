@@ -1,3 +1,4 @@
+import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, type LucideIcon, Underline } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { Editor } from "../app/editor";
@@ -25,6 +26,10 @@ import {
   textChange,
   valueAt,
 } from "./textFields";
+import { Glyph } from "../ui/controls";
+
+const STYLE_ICONS: Record<"bold" | "italic" | "underline", LucideIcon> = { bold: Bold, italic: Italic, underline: Underline };
+const ALIGN_ICONS: Record<string, LucideIcon> = { left: AlignLeft, center: AlignCenter, right: AlignRight };
 
 const words = (name: string) => name.replaceAll("_", " ").replaceAll("-", " ");
 
@@ -287,7 +292,8 @@ function RevealSeconds({ seconds, onCommit }: { seconds: number; onCommit: (seco
  * The selected text clip's words and look: its text, presets, typography, spacing,
  * outline, box, shadow and glow, and how it is revealed. Every edit is one `text.set`.
  */
-export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
+/** The text's style as the clip has it, and how a change of one of its paths is sent. */
+function useStyle(editor: Editor, clip: ClipView, catalog: Catalog | null) {
   const style = styleOf(clip);
   const listed = editor.getState().opened?.info.fonts ?? catalog?.text.fonts ?? ["Inter"];
   const fonts = listed.includes(style.font) ? listed : [...listed, style.font];
@@ -295,9 +301,22 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
     const change = stylePatch(clip, path, shown, listed);
     if (change) void editor.setText(clip.id, { style: change });
   };
+  return { style, fonts, patch };
+}
+
+/** The words, the saved styles, and the typography: font, size, colour, emphasis, case and alignment. */
+export function TextContent({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
+  const { style, fonts, patch } = useStyle(editor, clip, catalog);
   const pressed = (path: "bold" | "italic" | "underline") => (
-    <button className={style[path] ? "active" : ""} aria-pressed={style[path]} onClick={() => patch(path, !style[path])}>
-      {t(`text.${path}`)}
+    <button
+      type="button"
+      className={style[path] ? "icon-button ghost active" : "icon-button ghost"}
+      aria-pressed={style[path]}
+      aria-label={t(`text.${path}`)}
+      title={t(`text.${path}`)}
+      onClick={() => patch(path, !style[path])}
+    >
+      <Glyph icon={STYLE_ICONS[path]} />
     </button>
   );
   return (
@@ -324,10 +343,27 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
         <Amount path="size" value={style.size} onCommit={(shown) => patch("size", shown)} />
       </div>
       <Swatch label={t("text.color")} value={style.color} onCommit={(rgb) => patch("color", picked(style.color, rgb))} />
-      <div className="buttons">
-        {pressed("bold")}
-        {pressed("italic")}
-        {pressed("underline")}
+      <div className="buttons tool-row">
+        <span className="segmented-icons" role="group" aria-label={t("text.typography")}>
+          {pressed("bold")}
+          {pressed("italic")}
+          {pressed("underline")}
+        </span>
+        <span className="segmented-icons" role="group" aria-label={t("text.alignment")}>
+          {ALIGNS.map((align) => (
+            <button
+              key={align}
+              type="button"
+              className={style.align === align ? "icon-button ghost active" : "icon-button ghost"}
+              aria-pressed={style.align === align}
+              aria-label={t(`text.align.${align}`)}
+              title={t(`text.align.${align}`)}
+              onClick={() => patch("align", align)}
+            >
+              <Glyph icon={ALIGN_ICONS[align] ?? AlignLeft} />
+            </button>
+          ))}
+        </span>
       </div>
       <label className="choice">
         <span>{t("text.case")}</span>
@@ -339,19 +375,16 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
           ))}
         </select>
       </label>
-      <div className="buttons" role="group" aria-label={t("text.alignment")}>
-        {ALIGNS.map((align) => (
-          <button
-            key={align}
-            className={style.align === align ? "active" : ""}
-            aria-pressed={style.align === align}
-            onClick={() => patch("align", align)}
-          >
-            {t(`text.align.${align}`)}
-          </button>
-        ))}
-      </div>
-      <h3>{t("text.spacing")}</h3>
+    </section>
+  );
+}
+
+/** Spacing and the looks around the letters: outline, box, shadow and glow. */
+export function TextStyleFields({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
+  const { style, patch } = useStyle(editor, clip, catalog);
+  return (
+    <section className="effects text-panel">
+      <h2>{t("text.spacing")}</h2>
       <div className="fields">
         <Amount path="letter_spacing" value={style.letter_spacing} onCommit={(shown) => patch("letter_spacing", shown)} />
         <Amount path="line_height" value={style.line_height} onCommit={(shown) => patch("line_height", shown)} />
@@ -360,8 +393,27 @@ export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView
       {(["stroke", "box", "shadow", "glow"] as const).map((look) => (
         <LookFields key={look} look={look} clip={clip} onPatch={patch} />
       ))}
-      <h3>{t("text.reveal")}</h3>
+    </section>
+  );
+}
+
+/** How the text appears: letter by letter, word by word or line by line. */
+export function TextReveal({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
+  return (
+    <section className="effects text-panel">
+      <h2>{t("text.reveal")}</h2>
       <Reveal editor={editor} clip={clip} catalog={catalog} />
     </section>
+  );
+}
+
+/** Every part of a text clip's panel, one after another. */
+export function Text({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
+  return (
+    <>
+      <TextContent editor={editor} clip={clip} catalog={catalog} />
+      <TextStyleFields editor={editor} clip={clip} catalog={catalog} />
+      <TextReveal editor={editor} clip={clip} catalog={catalog} />
+    </>
   );
 }

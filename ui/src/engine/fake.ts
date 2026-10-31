@@ -1,7 +1,7 @@
 // An engine client for tests: answers from tables the test fills, records every call, and
 // sends events when the test says so.
 
-import type { EngineClient, EngineEvents, NewProjectFormat, Rect, Unsubscribe } from "./client";
+import type { EngineClient, EngineEvents, NewProjectFormat, Rect, ThumbnailRequest, Unsubscribe } from "./client";
 import { CacheStandIn } from "./cache";
 import { standInListing } from "./models";
 import { PreferenceStandIn } from "./preferences";
@@ -19,7 +19,10 @@ import type {
   EditResponse,
   ExportChoice,
   ExportPresets,
+  BeatCutsResult,
+  BeatMarkersResult,
   ExportReport,
+  ImportResult,
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
@@ -37,7 +40,13 @@ import type {
   ProjectSummary,
   RecordChoice,
   RecordState,
+  ReframeRequest,
+  ReframeResult,
   SceneSplit,
+  ShortCandidate,
+  ShortCandidates,
+  ShortRequest,
+  ShortResult,
   SpeechFile,
   SpeechPreview,
   SpeechRequest,
@@ -46,10 +55,60 @@ import type {
   TrackRequest,
   TranslateCaptionsRequest,
   TranslateCaptionsResult,
+  ThumbnailStrip,
   TrashEntry,
   UpdateAnswer,
+  VerticalRequest,
+  VerticalResult,
   VoiceInfo,
+  Waveform,
 } from "./types";
+
+/** `count` times spread evenly over `length` flicks, at the centre of equal parts. */
+export function spread(count: number, length: number): number[] {
+  return Array.from({ length: Math.max(1, count) }, (_, i) => Math.round(((i + 0.5) * length) / Math.max(1, count)));
+}
+
+/** A number from 0 to 1 that a text always gives. */
+function hash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return (h >>> 0) / 4294967296;
+}
+
+/**
+ * A stand-in frame: a landscape in the asset's own colours that drifts with time, as an
+ * SVG data URL, so strips of them read like footage.
+ */
+export function standInFrame(asset: string, flicks: number, width: number, height: number): string {
+  const hue = Math.round(hash(asset) * 360);
+  const t = flicks / 705_600_000;
+  const sun = 20 + ((t * 9) % 60);
+  const hill = 58 + Math.sin(t * 0.9 + hash(asset) * 6) * 8;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 160 90" preserveAspectRatio="none">` +
+    `<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(${hue} 55% 62%)"/>` +
+    `<stop offset="1" stop-color="hsl(${(hue + 40) % 360} 60% 30%)"/></linearGradient></defs>` +
+    `<rect width="160" height="90" fill="url(#s)"/>` +
+    `<circle cx="${sun}%" cy="34" r="9" fill="hsl(${(hue + 190) % 360} 80% 82%)" opacity="0.85"/>` +
+    `<path d="M0 ${hill} Q 50 ${hill - 16} 90 ${hill - 2} T 160 ${hill - 6} V 90 H 0 Z" fill="hsl(${(hue + 160) % 360} 35% 22%)"/>` +
+    `<path d="M0 ${hill + 14} Q 70 ${hill + 2} 160 ${hill + 12} V 90 H 0 Z" fill="hsl(${(hue + 150) % 360} 30% 14%)"/>` +
+    `</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** Stand-in peaks: a sound that swells and falls, with quiet gaps, the same every time. */
+export function standInPeaks(asset: string, buckets: number): [number, number][] {
+  const seed = hash(asset) * 1000;
+  return Array.from({ length: buckets }, (_, i) => {
+    const x = i / Math.max(1, buckets);
+    const envelope = 0.35 + 0.45 * Math.abs(Math.sin(x * 9 + seed)) * (0.6 + 0.4 * Math.sin(x * 2.3 + seed));
+    const grain = 0.55 + 0.45 * Math.abs(Math.sin(i * 12.9898 + seed) * 43758.5453 % 1);
+    const gap = Math.sin(x * 31 + seed) > 0.93 ? 0.08 : 1;
+    const peak = Math.min(1, envelope * grain * gap);
+    return [-Math.round(peak * 0.94 * 1000) / 1000, Math.round(peak * 1000) / 1000];
+  });
+}
 
 export interface Call {
   method: string;
@@ -474,7 +533,41 @@ export class FakeEngine implements EngineClient {
     },
     sources: async (): Promise<Record<string, PreviewSource>> => this.sources,
     work: async (): Promise<MediaWork> => this.mediaWork,
+    thumbnails: async (request: ThumbnailRequest): Promise<ThumbnailStrip> => {
+      this.log("media.thumbnails", request);
+      if (this.pictureFailure) throw this.pictureFailure;
+      const height = request.height ?? 72;
+      const width = Math.round((height * 16) / 9);
+      const times = request.times ?? spread(request.count ?? 1, this.assetLength(request.asset));
+      return {
+        asset: request.asset,
+        width,
+        height,
+        frames: times.map((flicks) => ({ flicks, image: standInFrame(request.asset, flicks, width, height) })),
+      };
+    },
+    waveform: async (asset: string, buckets: number): Promise<Waveform> => {
+      this.log("media.waveform", asset, buckets);
+      if (this.pictureFailure) throw this.pictureFailure;
+      return { asset, duration: this.assetLength(asset), buckets, peaks: standInPeaks(asset, buckets) };
+    },
+    import: async (paths?: string[]): Promise<ImportResult | null> => {
+      this.log("media.import", paths);
+      return this.onImport(paths);
+    },
   };
+
+  /** Why thumbnails and waveforms fail, when a test says they do. */
+  pictureFailure: ApiError | null = null;
+  /** What importing answers; by default the picker is cancelled. */
+  onImport: (paths?: string[]) => ImportResult | null = () => null;
+
+  /** The length of an asset as `media.list` answers it, or ten seconds. */
+  private assetLength(asset: string): number {
+    const listing = this.answers["media.list"];
+    const assets = (typeof listing === "function" ? null : (listing as { assets?: { id: string; duration?: { flicks: number } | null }[] } | undefined))?.assets;
+    return assets?.find((a) => a.id === asset)?.duration?.flicks ?? 10 * 705_600_000;
+  }
 
   preview = {
     viewport: async (rect: Rect): Promise<void> => this.log("preview.viewport", rect),
@@ -648,7 +741,9 @@ export class FakeEngine implements EngineClient {
   subject = {
     analyze: async (request: SubjectRequest): Promise<JobStatus> => {
       this.log("subject.analyze", request);
-      this.needs([request.kind === "matte" && request.model === "subject" ? "birefnet-lite" : "mediapipe-pose-full"]);
+      if (request.kind === "matte" || request.kind === "pose") {
+        this.needs([request.kind === "matte" && request.model === "subject" ? "birefnet-lite" : "mediapipe-pose-full"]);
+      }
       const key = `${request.clip}:${request.kind}:${request.kind === "matte" ? (request.model ?? "person") : ""}`;
       const job = `job_${String(100 + this.analyses.size).padStart(4, "0")}`;
       const cached = this.analyzed.has(key);
@@ -696,6 +791,133 @@ export class FakeEngine implements EngineClient {
 
   /** The voices `voice.list` lists. */
   voices: VoiceInfo[] = [];
+
+  /** Refuses as the engine does when the clip's `analyzer` analysis is not cached. */
+  private analysisNeeded(clip: string, analyzer: string, model = ""): void {
+    if (this.analyzed.has(`${clip}:${analyzer}:${model}`)) return;
+    const asset = this.assetOf(clip);
+    throw {
+      code: "fosscut.analysis.missing",
+      message: `the ${analyzer} analysis of ${asset ?? clip} is not cached`,
+      hint: "Analyze it first.",
+      details: { asset, analyzer, options: model ? { [analyzer]: { model } } : {}, effect: "reframe" },
+    } satisfies ApiError;
+  }
+
+  /** The asset a clip of the timeline `timeline.read` answers shows, if it shows one. */
+  private assetOf(clip: string): string | null {
+    const answer = this.answers["timeline.read"];
+    const timeline = (typeof answer === "function" ? answer(undefined) : answer) as { tracks?: { clips: { id: string; asset?: string }[] }[] } | undefined;
+    for (const track of timeline?.tracks ?? []) {
+      const found = track.clips.find((c) => c.id === clip);
+      if (found) return found.asset ?? null;
+    }
+    return null;
+  }
+
+  /** A commit as `execute` makes one, for the planners below. */
+  private committed(): EditResponse {
+    this.revision += 1;
+    return { committed: true, dry_run: false, replayed: false, revision: this.revision, results: [] };
+  }
+
+  /** Reframing as the desktop answers it: the pose or matte analysis is needed first. */
+  reframe = {
+    clip: async (request: ReframeRequest): Promise<ReframeResult> => {
+      this.log("reframe.clip", request);
+      return this.reframed(request);
+    },
+    camera: async (request: ReframeRequest & { zoom: number }): Promise<ReframeResult> => {
+      this.log("reframe.camera", request);
+      if (request.zoom < 1 || request.zoom > 4) throw { code: "fosscut.request.invalid_arguments", message: "zoom must be from 1 to 4" } satisfies ApiError;
+      return this.reframed(request);
+    },
+    vertical: async (request: VerticalRequest): Promise<VerticalResult> => {
+      this.log("reframe.vertical", request);
+      return {
+        vertical: { source: request.timeline ?? "timeline_0000", timeline: "timeline_0090", clips: 2, centred: [{ clip: "clip_0012", reason: "no person in it" }] },
+        response: this.committed(),
+      };
+    },
+  };
+
+  private reframed(request: ReframeRequest): ReframeResult {
+    if (request.source === "person") this.analysisNeeded(request.clip, "pose");
+    if (request.source === "subject") this.analysisNeeded(request.clip, "matte", "subject");
+    const zoom = request.zoom ?? 1;
+    return {
+      reframe: {
+        clip: request.clip,
+        frames: 210,
+        subject_frames: 198,
+        shots: [
+          { start: 8 * 705_600_000, end: 12 * 705_600_000, zoom, subject_frames: 120, inside_frames: 116 },
+          { start: 12 * 705_600_000, end: 15 * 705_600_000, zoom: zoom * 1.1, subject_frames: 78, inside_frames: 70 },
+        ],
+      },
+      response: this.committed(),
+    };
+  }
+
+  /** Beats as the desktop answers them: the beats analysis is needed first. */
+  beats = {
+    markers: async (clip: string, every?: number, expectedRevision?: number): Promise<BeatMarkersResult> => {
+      this.log("beats.markers", clip, every, expectedRevision);
+      this.analysisNeeded(clip, "beats");
+      const step = every ?? 1;
+      return {
+        beats: { timeline: "timeline_0000", tempo_bpm: 120, beats_per_bar: 4, confidence: 0.86, markers: Math.round(48 / step), existing: 0 },
+        response: this.committed(),
+      };
+    },
+    cut: async (track: string, music: string, every?: number, expectedRevision?: number): Promise<BeatCutsResult> => {
+      this.log("beats.cut", track, music, every, expectedRevision);
+      this.analysisNeeded(music, "beats");
+      return {
+        cuts: {
+          track,
+          music,
+          tempo_bpm: 120,
+          beats: 48,
+          tolerance: 176_400_000,
+          snapped: [
+            { before: "clip_0003", after: "clip_0006", from: 8 * 705_600_000, to: 7.5 * 705_600_000 },
+            { before: "clip_0006", after: "clip_0007", from: 15 * 705_600_000, to: 15 * 705_600_000 },
+          ],
+          unsnapped: [{ before: null, after: "clip_0003", at: 0, reason: "the first clip starts the track" }],
+        },
+        response: this.committed(),
+      };
+    },
+  };
+
+  /** Moments of a long clip worth a short, best first, as `shorts.candidates` answers. */
+  shortCandidates: ShortCandidate[] = [];
+
+  /** Shorts as the desktop answers them: the transcript is needed first. */
+  shorts = {
+    candidates: async (clip: string, options?: { min_seconds?: number; max_seconds?: number; count?: number }): Promise<ShortCandidates> => {
+      this.log("shorts.candidates", clip, options);
+      this.analysisNeeded(clip, "transcript");
+      const candidates = this.shortCandidates.slice(0, options?.count ?? 5);
+      return { clip, asset: "asset_0001", measured: ["transcript", "loudness"], missing: ["scenes"], sentences: 42, considered: 18, candidates };
+    },
+    make: async (request: ShortRequest): Promise<ShortResult> => {
+      this.log("shorts.make", request);
+      return {
+        short: {
+          timeline: "timeline_0095",
+          clip: "clip_0096",
+          name: request.name ?? "Short 1",
+          start: 0,
+          duration: request.end - request.start,
+          centred: request.follow ? null : "no subject to follow",
+          caption_words: request.captions === false ? 0 : 37,
+        },
+        response: this.committed(),
+      };
+    },
+  };
 
   /** A speech file as the engine writes one: a second for every 15 characters. */
   private speechFile(text: string, voice: string, speed: number): SpeechFile {

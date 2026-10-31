@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { SUBJECT_KEY } from "../app/assist";
 import type { Assist, Editor } from "../app/editor";
-import { Problem } from "../app/Export";
+import { Problem } from "../app/Problem";
 import type { ClipView, EffectView, MatteSource } from "../engine/types";
 import { formatNumber, t } from "../i18n";
 

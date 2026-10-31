@@ -138,6 +138,8 @@ pub mod codes {
     pub const EFFECT_TARGET: &str = "fosscut.effect.wrong_target";
     /// No built-in look has this name.
     pub const LOOK_UNKNOWN: &str = "fosscut.look.unknown";
+    /// No voice preset has this name.
+    pub const VOICE_PRESET_UNKNOWN: &str = "fosscut.voice.preset_unknown";
     /// The clip has no mask with this id.
     pub const MASK_NOT_FOUND: &str = "fosscut.mask.not_found";
     /// Compound clips show the timeline.
@@ -375,6 +377,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             LOOK_UNKNOWN,
             "No built-in look has this name.",
             "List the looks with capabilities (under looks).",
+        ),
+        entry(
+            VOICE_PRESET_UNKNOWN,
+            "No voice preset has this name.",
+            "List the voice presets with capabilities (under voice_presets).",
         ),
         entry(
             ASSET_NOT_FOUND,

@@ -1,30 +1,29 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { CircleAlert, Info, X } from "lucide-react";
+import { Suspense, lazy, useEffect, useState, useSyncExternalStore } from "react";
 
 import { t, useLanguage } from "../i18n";
 import { MAC, keystroke } from "../keyboard";
-import { Activity } from "../panels/Activity";
-import { Inspector } from "../panels/Inspector";
-import { Library } from "../panels/Library";
-import { Media } from "../panels/Media";
-import { Record } from "../panels/Record";
+import { Browser } from "../panels/Browser";
+import { InspectorPanel } from "../panels/Inspector";
+import { SmartOutcome } from "../panels/Smart";
 import { Speech } from "../panels/Speech";
-import { who } from "../panels/runs";
-import { Guides } from "../preview/Guides";
-import { MaskOverlay } from "../preview/MaskOverlay";
-import { PreviewHole } from "../preview/PreviewHole";
-import { RegionOverlay } from "../preview/RegionOverlay";
-import { type ActionId, type ShortcutContext, actionFor, hint } from "../shortcuts";
+import { type ActionId, type ShortcutContext, actionFor } from "../shortcuts";
 import { findClip } from "../timeline/geometry";
 import { Timeline } from "../timeline/Timeline";
-import { TimelineTabs } from "../timeline/TimelineTabs";
-import { Transport } from "../transport/Transport";
-import { type Editor, mediaWorkLine } from "./editor";
-import { Export } from "./Export";
-import { ModelInstall } from "./ModelInstall";
+import { Glyph, IconButton, cx } from "../ui/controls";
+import { Splitter } from "../ui/Splitter";
+import type { Editor } from "./editor";
+import { LIMITS, setLayout, useLayout } from "./layout";
 import { isMulticam } from "./multicam";
-import { recordedTime } from "./recorder";
-import { Settings } from "./Settings";
+import { Player } from "./Player";
 import { Start } from "./Start";
+import { TopBar } from "./TopBar";
+
+// What is not on screen when the window opens loads when first wanted.
+const Export = lazy(() => import("./Export").then((m) => ({ default: m.Export })));
+const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Settings })));
+const ModelInstall = lazy(() => import("./ModelInstall").then((m) => ({ default: m.ModelInstall })));
+const Record = lazy(() => import("../panels/Record").then((m) => ({ default: m.Record })));
 
 /** How often the list of connected agents is read, in milliseconds. */
 const CLIENTS_POLL = 2000;
@@ -97,27 +96,24 @@ export function run(editor: Editor, action: ActionId): void {
   void actions[action]?.();
 }
 
-/** A gear: the Settings button's icon. */
-function Gear() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M6.9 1h2.2l.4 1.9 1.2.5 1.6-1.1 1.6 1.6-1.1 1.6.5 1.2 1.9.4v2.2l-1.9.4-.5 1.2 1.1 1.6-1.6 1.6-1.6-1.1-1.2.5-.4 1.9H6.9l-.4-1.9-1.2-.5-1.6 1.1-1.6-1.6 1.1-1.6-.5-1.2L1 9.1V6.9l1.9-.4.5-1.2-1.1-1.6 1.6-1.6 1.6 1.1 1.2-.5zM8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z"
-      />
-    </svg>
-  );
+/** The window's size, followed as it changes, for panel limits. */
+function useWindowSize(): { width: number; height: number } {
+  const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setSize({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
 }
-
-/** What the sidebar's bin shows: the project's media, or FossCut's own library. */
-type Bin = "media" | "library";
 
 export function App({ editor }: { editor: Editor }) {
   const state = useSyncExternalStore(editor.subscribe, editor.getState);
   // Every text below follows the language the preferences choose.
   useLanguage();
+  const layout = useLayout();
+  const windowSize = useWindowSize();
   const open = state.opened !== null;
-  const [bin, setBin] = useState<Bin>("media");
 
   useEffect(() => {
     void editor.start();
@@ -163,149 +159,112 @@ export function App({ editor }: { editor: Editor }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, open]);
 
-  const agents = state.clients.filter((c) => c.name.startsWith("agent:"));
-  const selected = state.timeline && state.selection ? findClip(state.timeline, state.selection) : null;
-  const working = mediaWorkLine(state.mediaWork);
-  const settingsButton = (
-    <button className="settings-button" onClick={() => editor.openSettings()} title={hint(t("app.settings"), "basic.settings")}>
-      <Gear />
-      <span>{t("app.settings")}</span>
-    </button>
-  );
+  // The panels as dragged, kept inside the window so the preview always has room.
+  const max = (limit: readonly [number, number], room: number) => Math.max(limit[0], Math.min(limit[1], room));
+  const browserMax = max(LIMITS.browser, windowSize.width / 3);
+  const inspectorMax = max(LIMITS.inspector, windowSize.width / 3);
+  const timelineMax = max(LIMITS.timeline, windowSize.height - 320);
+  const browser = Math.min(layout.browser, browserMax);
+  const inspector = Math.min(layout.inspector, inspectorMax);
+  const timeline = Math.min(layout.timeline, timelineMax);
+  const columns = [
+    layout.showBrowser ? `${browser}px var(--gap)` : "",
+    "minmax(0, 1fr)",
+    layout.showInspector ? `var(--gap) ${inspector}px` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className={open ? (state.fullscreen ? "app fullscreen" : "app") : "app empty"}>
-      {state.notice && (
-        <div className={`notice ${state.notice.kind}`} role="status">
-          <span>{state.notice.text}</span>
-          <button className="link" onClick={() => editor.dismissNotice()}>
-            {t("app.dismiss")}
-          </button>
-        </div>
-      )}
-      {state.update?.newer && (
-        <div className="notice info update" role="status">
-          <span>{t("app.update.available", { version: state.update.latest ?? "", current: state.update.current ?? "" })}</span>
-          {state.update.url && (
-            <button className="link" onClick={() => void editor.openRelease()}>
-              {t("app.update.open")}
-            </button>
+    <div className={cx("app", !open && "empty", state.fullscreen && "fullscreen")}>
+      {(state.notice || state.update?.newer) && (
+        <div className="notices">
+          {state.notice && (
+            <div className={`notice ${state.notice.kind}`} role="status">
+              <Glyph icon={state.notice.kind === "error" ? CircleAlert : Info} size="sm" />
+              <span>{state.notice.text}</span>
+              <IconButton icon={X} size="sm" label={t("app.dismiss")} onClick={() => editor.dismissNotice()} />
+            </div>
           )}
-          <button className="link" onClick={() => editor.dismissUpdate()}>
-            {t("app.dismiss")}
-          </button>
+          {state.update?.newer && (
+            <div className="notice info update" role="status">
+              <Glyph icon={Info} size="sm" />
+              <span>{t("app.update.available", { version: state.update.latest ?? "", current: state.update.current ?? "" })}</span>
+              {state.update.url && (
+                <button className="link" onClick={() => void editor.openRelease()}>
+                  {t("app.update.open")}
+                </button>
+              )}
+              <IconButton icon={X} size="sm" label={t("app.dismiss")} onClick={() => editor.dismissUpdate()} />
+            </div>
+          )}
         </div>
       )}
-      {!open && <Start editor={editor} state={state} settings={settingsButton} />}
+      {!open && <Start editor={editor} state={state} />}
       {open && state.opened && (
         <>
-          <header>
-            <strong>{state.opened.info.name}</strong>
-            <span className="muted">{t("app.revision", { revision: state.opened.info.revision })}</span>
-            {agents.length > 0 && (
-              <span className="live" title={agents.map((a) => who(a.name)).join(", ")}>
-                {agents.length === 1
-                  ? t("app.agents.one", { name: who(agents[0]?.name ?? "") })
-                  : t("app.agents.many", { count: agents.length })}
-              </span>
-            )}
-            {working && (
-              <span className="media-work muted" role="status" title={t("app.work.help")}>
-                {working}
-              </span>
-            )}
-            <span className="spacer" />
-            <button onClick={() => void editor.undo()} disabled={!state.opened.info.can_undo} title={hint(t("app.undo"), "basic.undo")}>
-              {t("app.undo")}
-            </button>
-            <button onClick={() => void editor.redo()} disabled={!state.opened.info.can_redo} title={hint(t("app.redo"), "basic.redo")}>
-              {t("app.redo")}
-            </button>
-            <button onClick={() => editor.toggleRulers()} aria-pressed={state.rulers} title={hint(t("app.rulers.help"), "player.rulers")}>
-              {t("app.rulers")}
-            </button>
-            <button onClick={() => void editor.toggleFullscreen()} title={hint(t("app.fullscreen.help"), "player.fullscreen")}>
-              {t("app.fullscreen")}
-            </button>
-            <button
-              className={state.recorder.job?.state === "running" ? "recording" : ""}
-              aria-pressed={state.recorder.open}
-              onClick={() => (state.recorder.open ? editor.closeRecorder() : void editor.openRecorder())}
-              title={t("app.record.help")}
-            >
-              {state.recorder.job?.state === "running"
-                ? t("app.recording", { time: recordedTime(state.recorder.job) })
-                : t("app.record")}
-            </button>
-            <button
-              aria-pressed={state.speech.open}
-              onClick={() => (state.speech.open ? editor.closeSpeech() : void editor.openSpeech())}
-              title={t("app.speech.help")}
-            >
-              {t("app.speech")}
-            </button>
-            {settingsButton}
-            <button
-              className="primary"
-              onClick={() => void editor.openExport()}
-              disabled={!state.timeline}
-              title={state.exporting.job?.state === "running" ? t("app.export.running.help") : t("app.export.help")}
-            >
-              {state.exporting.job?.state === "running" ? t("app.exporting") : t("app.export")}
-            </button>
-            <button onClick={() => void editor.close()}>{t("app.close")}</button>
-          </header>
-          <main>
-            {state.recorder.open && <Record editor={editor} state={state} />}
-            {state.speech.open && <Speech editor={editor} state={state} />}
-            <PreviewHole editor={editor}>
-              <MaskOverlay editor={editor} state={state} />
-              <Guides editor={editor} state={state} />
-              <RegionOverlay editor={editor} state={state} />
-            </PreviewHole>
-            <aside className="activity">
-              {selected && (
-                <Inspector
-                  editor={editor}
-                  clip={selected}
-                  playhead={state.playhead}
-                  catalog={state.catalog}
-                  luts={state.luts}
-                  media={state.media}
-                  others={(state.timeline?.tracks ?? [])
-                    .flatMap((track) => track.clips)
-                    .filter((c) => c.id !== selected.id && (c.kind === "video" || c.kind === "image"))}
+          <TopBar editor={editor} state={state} />
+          <div className="workspace" style={{ gridTemplateColumns: columns, gridTemplateRows: `minmax(0, 1fr) var(--gap) ${timeline}px` }}>
+            {layout.showBrowser && (
+              <>
+                <Browser editor={editor} state={state} />
+                <Splitter
+                  orientation="vertical"
+                  label={t("app.layout.resize.browser")}
+                  value={browser}
+                  min={LIMITS.browser[0]}
+                  max={browserMax}
+                  grows="right"
+                  onChange={(value) => setLayout({ browser: value })}
                 />
+              </>
+            )}
+            <Player editor={editor} state={state}>
+              {(state.measurement?.kind === "vertical" || (state.analysisFor === "vertical" && state.assist?.kind === "analysis")) && (
+                <section className="record-panel smart-card" aria-live="polite">
+                  <div className="record-head">
+                    <h2>{t("timeline.vertical.title")}</h2>
+                  </div>
+                  <SmartOutcome editor={editor} state={state} kind="vertical" clip={null} />
+                </section>
               )}
-              <section className="bin">
-                <div className="bin-tabs" role="tablist" aria-label={t("app.bin")}>
-                  {(["media", "library"] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      role="tab"
-                      aria-selected={bin === tab}
-                      className={bin === tab ? "active" : ""}
-                      onClick={() => setBin(tab)}
-                      title={tab === "media" ? t("app.bin.media.help") : t("app.bin.library.help")}
-                    >
-                      {tab === "media" ? t("app.bin.media") : t("app.bin.library")}
-                    </button>
-                  ))}
-                </div>
-                {bin === "media" ? <Media editor={editor} state={state} /> : <Library editor={editor} state={state} />}
-              </section>
-              <Activity editor={editor} state={state} />
-            </aside>
-          </main>
-          <Transport editor={editor} state={state} />
-          <div className="timeline-area">
-            <TimelineTabs editor={editor} state={state} />
+              <Suspense fallback={null}>
+                {state.recorder.open && <Record editor={editor} state={state} />}
+                {state.speech.open && <Speech editor={editor} state={state} />}
+              </Suspense>
+            </Player>
+            {layout.showInspector && (
+              <>
+                <Splitter
+                  orientation="vertical"
+                  label={t("app.layout.resize.inspector")}
+                  value={inspector}
+                  min={LIMITS.inspector[0]}
+                  max={inspectorMax}
+                  grows="left"
+                  onChange={(value) => setLayout({ inspector: value })}
+                />
+                <InspectorPanel editor={editor} state={state} />
+              </>
+            )}
+            <Splitter
+              orientation="horizontal"
+              label={t("app.layout.resize.timeline")}
+              value={timeline}
+              min={LIMITS.timeline[0]}
+              max={timelineMax}
+              grows="up"
+              onChange={(value) => setLayout({ timeline: value })}
+            />
             <Timeline editor={editor} state={state} />
           </div>
-          {state.exporting.open && <Export editor={editor} state={state} />}
-          {state.install && <ModelInstall editor={editor} prompt={state.install} />}
+          <Suspense fallback={null}>
+            {state.exporting.open && <Export editor={editor} state={state} />}
+            {state.install && <ModelInstall editor={editor} prompt={state.install} />}
+          </Suspense>
         </>
       )}
-      {state.settings.open && <Settings editor={editor} state={state} />}
+      <Suspense fallback={null}>{state.settings.open && <Settings editor={editor} state={state} />}</Suspense>
     </div>
   );
 }

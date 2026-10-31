@@ -551,6 +551,72 @@ describe("editor", () => {
     ]);
   });
 
+  it("places media dropped on the timeline where it was dropped", async () => {
+    const { editor, fake } = await started();
+    await editor.addToTimeline("asset_0001", { start: 2 * FLICKS_PER_SECOND, track: "track_0002" });
+    await editor.addToTimeline("asset_0001", { start: 3 * FLICKS_PER_SECOND });
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "clip.add", args: { asset: "asset_0001", start: { flicks: 2 * FLICKS_PER_SECOND }, track: "track_0002" } },
+      { command: "clip.add", args: { asset: "asset_0001", start: { flicks: 3 * FLICKS_PER_SECOND }, free_track: true } },
+    ]);
+  });
+
+  it("imports media the user picks or drops, and names the files it could not", async () => {
+    const fake = engine();
+    const { editor } = await started(fake);
+    await editor.importMedia();
+    expect(fake.callsOf("media.import"), "a cancelled picker imports nothing").toEqual([[undefined]]);
+    fake.onImport = (paths) => ({
+      assets: ["asset_0009"],
+      failed: (paths ?? []).filter((p) => p.endsWith(".txt")).map((path) => ({ path, error: "not media", code: "fosscut.media.unsupported" })),
+      revision: 5,
+    });
+    const reads = fake.callsOf("query").length;
+    await editor.importMedia(["/work/a.mp4", "/work/notes.txt"]);
+    expect(fake.callsOf("query").length, "the project is read again").toBeGreaterThan(reads);
+    expect(editor.getState().notice).toEqual({ kind: "error", text: "One file could not be imported: notes.txt." });
+    editor.dismissNotice();
+    await editor.importMedia(["/work/b.mp4"]);
+    expect(editor.getState().notice).toBeNull();
+  });
+
+  it("opens a dropped project folder and imports other dropped files", async () => {
+    const fake = engine();
+    fake.onImport = () => ({ assets: ["asset_0010"], failed: [], revision: 5 });
+    await started(fake);
+    fake.emit("files-dropped", ["/work/clip.mov"]);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(fake.callsOf("media.import")).toEqual([[["/work/clip.mov"]]]);
+    fake.emit("files-dropped", ["/work/Other.fosscut"]);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(fake.callsOf("openProject")).toEqual([["/work/Other.fosscut"]]);
+  });
+
+  it("makes a version of the timeline on another canvas and shows it", async () => {
+    const { editor, fake } = await started();
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.makeVersion(1080, 1920);
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "timeline.duplicate", args: { timeline: "timeline_0000", width: 1080, height: 1920, fit: "fill", primary: true } },
+    ]);
+    expect(editor.getState().playhead).toBe(0);
+  });
+
+  it("starts new projects on the canvas chosen", async () => {
+    const fake = engine();
+    fake.opened = null;
+    const { editor } = await started(fake);
+    fake.opened = opened();
+    await editor.create({ width: 1080, height: 1350 });
+    await editor.create();
+    expect(fake.callsOf("newProject")).toEqual([
+      [{ width: 1080, height: 1350, rate: "30" }],
+      [{ width: 1920, height: 1080, rate: "30" }],
+    ]);
+  });
+
   it("browses projects with thumbnails, and moves them to the trash and back", async () => {
     const fake = new FakeEngine();
     const summary = {

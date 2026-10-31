@@ -540,3 +540,79 @@ fn splits_cuts_and_copies_give_effects_new_ids() {
     assert_eq!(copies.len(), 3);
     assert!(copies.is_disjoint(&ids), "the copy's effects have new ids");
 }
+
+#[test]
+fn voice_presets_add_voice_filters_and_replace_only_those() {
+    let (mut session, _, clip) = session_with_clip();
+    let caps = session
+        .query("capabilities", json!({ "detail": "full" }))
+        .unwrap();
+    let presets = caps["voice_presets"].as_array().unwrap();
+    assert!(presets.len() >= 10);
+    run(
+        &mut session,
+        "effect.add",
+        json!({ "clip": clip, "type": "color.adjust" }),
+    );
+    let robot = run(
+        &mut session,
+        "voice.apply",
+        json!({ "clip": clip, "preset": "robot" }),
+    );
+    let types = |result: &Value| -> Vec<String> {
+        result["effects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["type"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let after_robot = types(&robot.results[0]);
+    assert_eq!(
+        after_robot[0], "color.adjust",
+        "the picture effect stays first"
+    );
+    assert!(after_robot[1..].iter().all(|t| t.starts_with("voice.")));
+    assert!(after_robot.contains(&"voice.robot".to_string()));
+    // Replacing swaps the voice filters and keeps the grade.
+    let deep = run(
+        &mut session,
+        "voice.apply",
+        json!({ "clip": clip, "preset": "deep", "replace": true }),
+    );
+    let after_deep = types(&deep.results[0]);
+    assert_eq!(after_deep, ["color.adjust", "voice.pitch"]);
+    assert_eq!(deep.results[0]["effects"][1]["params"]["semitones"], -4.0);
+    // Every preset applies to a clip with sound.
+    for preset in presets {
+        let (mut session, _, clip) = session_with_clip();
+        let applied = run(
+            &mut session,
+            "voice.apply",
+            json!({ "clip": clip, "preset": preset["name"] }),
+        );
+        assert_eq!(
+            applied.results[0]["effects"].as_array().unwrap().len(),
+            preset["effects"].as_array().unwrap().len(),
+            "{}",
+            preset["name"]
+        );
+    }
+    let unknown = session
+        .execute(request(
+            "voice.apply",
+            json!({ "clip": clip, "preset": "kazoo" }),
+        ))
+        .unwrap_err();
+    assert_eq!(unknown.code, codes::VOICE_PRESET_UNKNOWN);
+    assert!(unknown.hint.unwrap().contains("chipmunk"));
+    // A title has no sound.
+    let title = run(&mut session, "text.add", json!({ "text": "Silent" }));
+    let refused = session
+        .execute(request(
+            "voice.apply",
+            json!({ "clip": title.results[0]["clip"], "preset": "robot" }),
+        ))
+        .unwrap_err();
+    assert_eq!(refused.code, codes::EFFECT_TARGET);
+}

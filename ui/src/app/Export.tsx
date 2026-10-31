@@ -1,8 +1,10 @@
+import { Upload, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { ApiError, ExportPresets, JobStatus, Opened, TimelineView } from "../engine/types";
+import type { ExportPresets, JobStatus, Opened, TimelineView } from "../engine/types";
 import { t } from "../i18n";
 import { parseRate } from "../transport/time";
+import { Glyph, IconButton } from "../ui/controls";
 import type { Editor, EditorState } from "./editor";
 import {
   type ExportForm,
@@ -22,19 +24,11 @@ import {
   sizeFor,
   withExtension,
 } from "./exportForm";
+import { Problem } from "./Problem";
 
 /** How often a running export's progress is read while the dialog shows, in milliseconds. */
 const POLL = 500;
 
-/** A FossCut error with its hint, as panels show one. */
-export function Problem({ error }: { error: ApiError }) {
-  return (
-    <p className="problem" role="alert">
-      {error.message}
-      {error.hint ? `. ${error.hint}` : ""}
-    </p>
-  );
-}
 
 /** The form a new export starts from: the project's name beside it, the whole timeline. */
 function initial(presets: ExportPresets, opened: Opened, timeline: TimelineView, playhead: number): ExportForm {
@@ -349,9 +343,15 @@ export function Export({ editor, state }: { editor: Editor; state: EditorState }
         aria-modal="true"
         aria-labelledby="export-title"
       >
-        <h2 id="export-title">
-          {t("export.title")} {timeline ? <span className="muted">{timeline.name}</span> : null}
-        </h2>
+        <header className="dialog-head">
+          <span className="dialog-icon" aria-hidden="true">
+            <Glyph icon={Upload} />
+          </span>
+          <h2 id="export-title">
+            {t("export.title")} {timeline ? <span className="muted">{timeline.name}</span> : null}
+          </h2>
+          {!running && <IconButton icon={X} label={t("export.close")} onClick={() => editor.closeExport()} />}
+        </header>
         {job ? (
           <Progress editor={editor} job={job} />
         ) : presets && timeline && state.opened ? (

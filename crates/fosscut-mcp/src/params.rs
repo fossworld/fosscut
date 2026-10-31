@@ -520,6 +520,20 @@ pub enum AutoEditAction {
     Multicam,
     /// Only measure how far apart angles recorded at the same time started.
     MulticamSync,
+    /// Make a clip follow its subject on its timeline's canvas (another aspect).
+    Reframe,
+    /// Keep the camera on a moving subject, zoomed in on the clip's own canvas.
+    CameraTrack,
+    /// Copy a timeline onto a vertical canvas with every video clip following its subject.
+    Vertical,
+    /// Put markers on the beats of a music clip.
+    BeatMarkers,
+    /// Move the cuts between a track's clips onto the beats of a music clip.
+    BeatCuts,
+    /// Score segments of a long clip that could stand alone as shorts.
+    ShortCandidates,
+    /// Build a vertical short from a range of a clip's media.
+    MakeShort,
 }
 
 /// A region of a picture: its centre and size as fractions of the picture.
@@ -540,9 +554,12 @@ pub struct RegionArg {
 pub struct AutoEditArgs {
     /// Path of a `.fosscut` bundle; the open project when omitted.
     pub project: Option<String>,
-    /// `split_scenes`, `stabilize`, `track`, `multicam` or `multicam_sync`.
+    /// `split_scenes`, `stabilize`, `track`, `multicam`, `multicam_sync`, `reframe`,
+    /// `camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates` or
+    /// `make_short`.
     pub action: AutoEditAction,
-    /// split_scenes, stabilize, track: the video clip to measure.
+    /// split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short:
+    /// the video clip to measure.
     pub clip: Option<String>,
     /// stabilize: how much motion to remove, 0 (none) to 1 (very smooth), up to 3 for a
     /// locked-off look; 0.5 when omitted.
@@ -557,6 +574,47 @@ pub struct AutoEditArgs {
     /// track: another clip, such as a title or sticker, that moves as the region does from
     /// where it is (motion tracking).
     pub follow: Option<String>,
+    /// reframe, camera_track, vertical, make_short: what the picture follows: `person`
+    /// (the cached pose analysis, the default) or `any` (whatever the cached matte keeps);
+    /// make_short also takes `centre` (no analysis needed). reframe and camera_track
+    /// follow `region` from `at` instead when it is given.
+    pub subject: Option<String>,
+    /// reframe, vertical, make_short: frame each shot on its own at the cached scene cuts
+    /// (default true; run media_analyze with analyzers ["scenes"] first), or false for one
+    /// framing over the whole clip.
+    pub shots: Option<bool>,
+    /// reframe, camera_track, vertical, make_short: how the crop follows (dead zone, speed,
+    /// ease, headroom, padding, zoom limits); the defaults pan smoothly at zoom 1.
+    pub framing: Option<fosscut_engine::reframe::FramingOptions>,
+    /// camera_track: how far to zoom in, 1 to 4 (default 1.5).
+    pub zoom: Option<f64>,
+    /// beat_markers, beat_cuts: the music's tempo when known, in beats per minute, instead of
+    /// estimating it.
+    pub bpm: Option<f64>,
+    /// beat_cuts: how far a cut may move; half the spacing of the beats that count when
+    /// omitted.
+    pub tolerance: Option<TimeInput>,
+    /// beat_markers, beat_cuts: the music clip.
+    pub music: Option<String>,
+    /// beat_markers, beat_cuts: every how many beats (1 to 16; default 1).
+    pub every: Option<u32>,
+    /// short_candidates: shortest and longest candidate, in seconds (15 and 60), and how
+    /// many to return (10).
+    pub min_seconds: Option<f64>,
+    /// short_candidates: see min_seconds.
+    pub max_seconds: Option<f64>,
+    /// short_candidates: see min_seconds.
+    pub count: Option<u32>,
+    /// make_short: where the short starts and ends in the clip's media (a candidate's span).
+    pub from: Option<TimeInput>,
+    /// make_short: see from.
+    pub to: Option<TimeInput>,
+    /// make_short: caption the spoken words (default true).
+    pub captions: Option<bool>,
+    /// make_short: the caption preset, such as `bold-pop`.
+    pub caption_preset: Option<String>,
+    /// make_short: a title over the first seconds.
+    pub title: Option<String>,
     /// multicam, multicam_sync: the angles' video asset ids, at least two, in order; the
     /// first shows at the start.
     #[serde(default)]
@@ -572,14 +630,19 @@ pub struct AutoEditArgs {
     pub max_offset_seconds: Option<f64>,
     /// multicam: which angle's sound plays, by number from 1; the first when omitted.
     pub sound: Option<usize>,
-    /// multicam: the multicam timeline's name.
+    /// multicam, vertical, make_short: the new timeline's name.
     pub name: Option<String>,
     /// multicam: where the multicam clip starts; appended when omitted.
     pub start: Option<TimeInput>,
-    /// multicam: track for the multicam clip.
+    /// multicam: track for the multicam clip; beat_cuts: the video track whose cuts move.
     pub track: Option<String>,
-    /// multicam: timeline for the multicam clip; the primary timeline when omitted.
+    /// multicam: timeline for the multicam clip; vertical: the timeline to copy; the primary
+    /// timeline when omitted.
     pub timeline: Option<String>,
+    /// vertical, make_short: the canvas size in pixels; 1080 by 1920 when omitted.
+    pub width: Option<u32>,
+    /// vertical, make_short: see width.
+    pub height: Option<u32>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would change without committing it.

@@ -15,7 +15,10 @@ import type {
   EditRequest,
   EditResponse,
   ExportChoice,
+  BeatCutsResult,
+  BeatMarkersResult,
   ExportPresets,
+  ImportResult,
   JobStatus,
   LibraryAddRequest,
   LibraryItem,
@@ -33,7 +36,12 @@ import type {
   ProjectSummary,
   RecordChoice,
   RecordState,
+  ReframeRequest,
+  ReframeResult,
   SceneSplit,
+  ShortCandidates,
+  ShortRequest,
+  ShortResult,
   SpeechPreview,
   SpeechRequest,
   SpeechResult,
@@ -41,9 +49,13 @@ import type {
   TrackRequest,
   TranslateCaptionsRequest,
   TranslateCaptionsResult,
+  ThumbnailStrip,
   TrashEntry,
   UpdateAnswer,
+  VerticalRequest,
+  VerticalResult,
   VoiceInfo,
+  Waveform,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -62,6 +74,8 @@ export interface EngineEvents {
   "media-work": MediaWork;
   /** The app's menu asked for Settings. */
   "open-settings": null;
+  /** Files were dropped on the window from the system, by path. */
+  "files-dropped": string[];
 }
 
 /** Where the preview shows through the page, in CSS pixels. */
@@ -70,6 +84,17 @@ export interface Rect {
   y: number;
   width: number;
   height: number;
+}
+
+/** What `media.thumbnails` asks for. */
+export interface ThumbnailRequest {
+  asset: string;
+  /** Source times in flicks, at most 48. */
+  times?: number[];
+  /** Frames spread evenly over the asset, without `times`. */
+  count?: number;
+  /** Height in pixels; 72 when omitted. */
+  height?: number;
 }
 
 export interface NewProjectFormat {
@@ -167,6 +192,18 @@ export interface EngineClient {
     sources(): Promise<Record<string, PreviewSource>>;
     /** The proxies and remuxed copies being made. */
     work(): Promise<MediaWork>;
+    /**
+     * Frames of a video or image asset at `times` (source flicks), or `count` frames spread
+     * over it, `height` pixels high; cached by the engine outside the project.
+     */
+    thumbnails(request: ThumbnailRequest): Promise<ThumbnailStrip>;
+    /** The peaks of an asset's sound in `buckets` equal spans; cached likewise. */
+    waveform(asset: string, buckets: number): Promise<Waveform>;
+    /**
+     * Imports files into the open project as one of the user's edits: `paths`, or the files
+     * the user picks; null when they cancel the picker.
+     */
+    import(paths?: string[]): Promise<ImportResult | null>;
   };
   preview: {
     viewport(rect: Rect): Promise<void>;
@@ -235,6 +272,28 @@ export interface EngineClient {
   captions: {
     translate(request: TranslateCaptionsRequest): Promise<TranslateCaptionsResult>;
     dub(request: DubCaptionsRequest): Promise<DubCaptionsResult>;
+  };
+  /**
+   * Framing measured from analyses, each applied by the engine as the user's one step
+   * against `expected_revision`. A missing analysis refuses with `fosscut.analysis.missing`.
+   */
+  reframe: {
+    /** Keys a clip's placement so its crop follows a person, the subject or a region. */
+    clip(request: ReframeRequest): Promise<ReframeResult>;
+    /** Keys a clip like a camera following the subject, zoomed in by `request.zoom`. */
+    camera(request: ReframeRequest & { zoom: number }): Promise<ReframeResult>;
+    /** Makes a vertical version of a timeline whose clips follow the subject, as a new timeline. */
+    vertical(request: VerticalRequest): Promise<VerticalResult>;
+  };
+  /** The beats of music, measured, as markers or as where cuts land. */
+  beats: {
+    markers(clip: string, every?: number, expectedRevision?: number): Promise<BeatMarkersResult>;
+    cut(track: string, music: string, every?: number, expectedRevision?: number): Promise<BeatCutsResult>;
+  };
+  /** Shorts from a long clip: the moments worth one, and making the chosen one. */
+  shorts: {
+    candidates(clip: string, options?: { min_seconds?: number; max_seconds?: number; count?: number }): Promise<ShortCandidates>;
+    make(request: ShortRequest): Promise<ShortResult>;
   };
   /** The caches outside projects (ADR-0032): their sizes, and emptying them. */
   cache: {

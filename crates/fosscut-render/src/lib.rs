@@ -26,4 +26,4 @@ pub mod transitions;
 
 pub use error::RenderError;
 pub use gpu::{Image, Renderer};
-pub use graph::{DecoderFrames, ExportGraph, FrameProvider, PreviewGraph};
+pub use graph::{DecoderFrames, ExportGraph, FrameProvider, PreviewGraph, WINDOW_BYTES};

@@ -725,3 +725,63 @@ impl Command for LookApply {
         Ok(changed)
     }
 }
+
+/// Applies a voice preset: voice filters with settings chosen for a character.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct VoiceApply {
+    /// The clip with sound.
+    pub clip: Id,
+    /// The preset's name (capabilities lists them under voice_presets).
+    pub preset: String,
+    /// Replace the clip's voice filters (its `voice.*` effects) instead of adding after
+    /// them; its other effects stay.
+    #[serde(default)]
+    pub replace: bool,
+}
+
+impl Command for VoiceApply {
+    const NAME: &'static str = "voice.apply";
+    const SUMMARY: &'static str = "Apply a voice preset (deep, giant, chipmunk, robot, alien, phone_call, radio, megaphone, broken_mic, whisper, stadium, cave, ghost) as ordinary voice.* sound effects the clip owns, so each can be adjusted afterwards.";
+    type Output = EffectsChanged;
+
+    fn apply(self, ctx: &mut Context<'_>) -> Result<EffectsChanged, ApiError> {
+        let preset = fosscut_model::voice_filters::voice_preset(&self.preset).ok_or_else(|| {
+            let names: Vec<&str> = fosscut_model::voice_filters::voice_presets()
+                .iter()
+                .map(|p| p.name)
+                .collect();
+            ApiError::new(
+                codes::VOICE_PRESET_UNKNOWN,
+                format!("there is no voice preset {}", self.preset),
+            )
+            .with_hint(format!("Voice presets: {}.", names.join(", ")))
+        })?;
+        let inputs: Vec<EffectInput> = preset
+            .effects
+            .iter()
+            .map(|e| EffectInput {
+                effect_type: e.effect_type.to_string(),
+                params: e
+                    .params
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), serde_json::json!(value)))
+                    .collect(),
+            })
+            .collect();
+        let effects = build_effects(Self::NAME, ctx.project, &inputs)?;
+        let replace = self.replace;
+        let (_, changed) = with_effects(ctx, Self::NAME, &self.clip, |clip, _| {
+            if replace {
+                clip.effects
+                    .retain(|e| !e.effect_type.starts_with(VOICE_PREFIX));
+            }
+            clip.effects.extend(effects);
+            Ok(())
+        })?;
+        Ok(changed)
+    }
+}
+
+/// The prefix of voice filter types.
+const VOICE_PREFIX: &str = "voice.";

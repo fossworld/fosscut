@@ -232,6 +232,39 @@ fn full_range_and_converted_formats_are_handled() {
 }
 
 #[test]
+fn rgb_pictures_are_tagged_with_the_matrix_they_were_converted_with() {
+    if !have_ffmpeg() {
+        return;
+    }
+    // An orange picture as PNG, with and without alpha: decoded to NV12 by swscale, whose
+    // BT.601 limited-range codes for (255, 122, 69) are Y' 150, Cb 85, Cr 190.
+    for (name, pix_fmt) in [("orange.png", "rgb24"), ("orange-alpha.png", "rgba")] {
+        let path = fixtures_dir().join(name);
+        let status = Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("color=c=0xFF7A45:s=64x36")
+            .args(["-frames:v", "1", "-pix_fmt", pix_fmt])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(status.success(), "ffmpeg could not create {name}");
+        let mut decoder = FfmpegVideoDecoder::open(&path, software()).unwrap();
+        let frame = decoder.next_frame().unwrap().unwrap();
+        assert_eq!(frame.format, PixelFormat::Nv12, "{name}");
+        assert_eq!(
+            (frame.color.matrix, frame.color.range),
+            (Matrix::Bt601, Range::Limited),
+            "{name}"
+        );
+        let luma = frame.planes[0].data[frame.planes[0].stride * 18 + 32];
+        let chroma = &frame.planes[1].data[frame.planes[1].stride * 9 + 32..][..2];
+        assert!(luma.abs_diff(150) <= 1, "{name}: Y' {luma}");
+        assert!(chroma[0].abs_diff(85) <= 1, "{name}: Cb {}", chroma[0]);
+        assert!(chroma[1].abs_diff(190) <= 1, "{name}: Cr {}", chroma[1]);
+    }
+}
+
+#[test]
 fn rotation_comes_from_the_display_matrix() {
     if !have_ffmpeg() {
         return;

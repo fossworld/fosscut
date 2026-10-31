@@ -13,6 +13,7 @@
 pub mod effects;
 mod stretch;
 pub mod synth;
+pub mod voice;
 pub mod wav;
 
 use fosscut_media::AudioBuffer;
@@ -163,11 +164,12 @@ pub fn mix(
                     channels,
                 )?
             } else {
-                // Effects keep state: start them up to WARM_UP_SECONDS earlier (never
-                // before the clip's start, where their state is fresh) and give them their
-                // look-ahead, silence past the clip's end, so every part of the clip sounds
-                // the same however the mix is cut into blocks (ADR-0026, item 5).
-                let warm = (effects::WARM_UP_SECONDS * f64::from(sample_rate)).ceil() as i64;
+                // Effects keep state: start them up to WARM_UP_SECONDS earlier (as much as
+                // the chain remembers, never before the clip's start, where their state is
+                // fresh) and give them their look-ahead, silence past the clip's end, so
+                // every part of the clip sounds the same however the mix is cut into blocks
+                // (ADR-0026, item 5).
+                let warm = effects::warm_up_frames(&chain, sample_rate) as i64;
                 let from = if clip_first <= 0 {
                     clip_first
                 } else {
@@ -264,7 +266,9 @@ fn sound_effects(clip: &Clip) -> Vec<effects::AudioEffect> {
                         _ => effects::VocalMode::Isolate,
                     },
                 }),
-                _ => None,
+                other => {
+                    voice::VoiceEffect::from_values(other, &values).map(effects::AudioEffect::Voice)
+                }
             }
         })
         .collect()
@@ -1349,6 +1353,73 @@ mod tests {
             whole[..48_000 * 2],
             plain_mix(&plain, &timeline)[..48_000 * 2]
         );
+    }
+
+    #[test]
+    fn voice_filters_from_the_registry_play_the_same_in_any_blocks() {
+        // 14 700 flicks per sample at 48 kHz.
+        let at = |sample: i64| Flicks::new(sample * 14_700);
+        let mix_range = |project: &Project, timeline: &Id, from: i64, to: i64| {
+            mix(
+                project,
+                timeline,
+                at(from),
+                at(to) - at(from),
+                RATE,
+                2,
+                &mut Tone {
+                    hz: 220.0,
+                    seconds: 10.0,
+                },
+            )
+            .unwrap()
+            .samples
+        };
+        // The whole span at once, and its last 0.3 s in blocks of 512, 1000 and 4800
+        // samples, each fed its own warm-up the way playback asks for it.
+        let (span, first) = (72_000, 57_600);
+        let (plain, timeline) = effect_project(&[]);
+        let reference = mix_range(&plain, &timeline, 0, span);
+        let filters: [(&str, &[(&str, ParamValue)]); 10] = [
+            ("voice.pitch", &[("semitones", ParamValue::Number(5.0))]),
+            (
+                "voice.pitch",
+                &[
+                    ("semitones", ParamValue::Number(-7.0)),
+                    ("keep_formants", ParamValue::Flag(false)),
+                ],
+            ),
+            ("voice.robot", &[]),
+            ("voice.telephone", &[]),
+            ("voice.megaphone", &[]),
+            ("voice.echo", &[]),
+            ("voice.reverb", &[("mix", ParamValue::Number(0.5))]),
+            ("voice.chorus", &[]),
+            ("voice.broken", &[]),
+            ("voice.whisper", &[]),
+        ];
+        for (kind, params) in filters {
+            let (project, _) = effect_project(&[(kind, params)]);
+            let whole = mix_range(&project, &timeline, 0, span);
+            let mut blocks = Vec::new();
+            let mut from = first;
+            for size in [512, 1000, 4800].iter().cycle() {
+                if from >= span {
+                    break;
+                }
+                let to = (from + size).min(span);
+                blocks.extend(mix_range(&project, &timeline, from, to));
+                from = to;
+            }
+            let tail = &whole[2 * first as usize..];
+            let worst = tail
+                .iter()
+                .zip(&blocks)
+                .fold(0.0f32, |m, (a, b)| m.max((a - b).abs()));
+            assert_eq!(blocks.len(), tail.len());
+            assert!(worst <= 1e-6, "{kind} {params:?}: blocks differ by {worst}");
+            assert_ne!(whole, reference, "{kind} changes the sound");
+        }
     }
 
     fn plain_mix(project: &Project, timeline: &Id) -> Vec<f32> {

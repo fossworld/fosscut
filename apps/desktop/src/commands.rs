@@ -409,7 +409,7 @@ pub(crate) fn apply_measured(
 }
 
 /// The measurements take no progress reports from the window; they run to the end.
-fn no_progress(_: fosscut_engine::Progress) -> bool {
+pub(crate) fn no_progress(_: fosscut_engine::Progress) -> bool {
     true
 }
 
@@ -1274,8 +1274,9 @@ pub async fn cache_info(
 }
 
 /// Empties the caches in `kinds` (`analysis`, `proxies`, `remux`, `frames`; every cache
-/// when empty) and answers `{freed_bytes, caches}`. The preview opens its media again, and
-/// copies the preferences want are made again.
+/// when empty) and answers `{freed_bytes, caches}`. Media thumbnails count as frames and
+/// waveforms as analyses. The preview opens its media again, thumbnails and waveforms kept
+/// in memory are forgotten, and copies the preferences want are made again.
 #[tauri::command]
 pub async fn cache_clear(
     app: AppHandle,
@@ -1285,8 +1286,295 @@ pub async fn cache_clear(
     let cache = state.cache.clone();
     let cleared = blocking(move || crate::performance::clear_caches(&cache, &kinds)).await?;
     state.preview.send(Job::ResetCaches);
+    state.media_views.forget();
     crate::plan_media(&app);
     Ok(cleared)
+}
+
+/// Thumbnails of video or image asset `asset` of the open project, `height` pixels high
+/// (72 when omitted, kept from 16 to 360) and as wide as the asset's aspect ratio makes
+/// them: at source times `times` in flicks (at most 48), or else at `count` times spread
+/// evenly over its duration (the middle of each of `count` equal parts; 1 when omitted, at
+/// most 48). An image gives the same picture at every time. Answers `{asset, width,
+/// height, frames: [{flicks, image}]}` with each image a PNG data URL. Refuses sound,
+/// LUT and font assets with `fosscut.media.no_picture`, and missing files with
+/// `fosscut.export.missing_media` unless the thumbnails were made before.
+#[tauri::command]
+pub async fn media_thumbnails(
+    state: State<'_, AppState>,
+    asset: String,
+    times: Option<Vec<i64>>,
+    count: Option<u32>,
+    height: Option<u32>,
+) -> Answer<crate::media::ThumbnailStrip> {
+    let workspace = Arc::clone(&state.workspace);
+    let views = Arc::clone(&state.media_views);
+    blocking(move || views.thumbnails(&workspace, &asset, times.as_deref(), count, height)).await
+}
+
+/// The waveform of audio asset `asset`, or of video asset `asset`'s sound, of the open
+/// project: its duration split into `buckets` equal spans (kept from 1 to 65536), each the
+/// lowest and highest sample of any channel in it. Answers `{asset, duration, buckets,
+/// peaks: [[min, max]]}` with `duration` in flicks. Refuses images, LUTs, fonts and video
+/// without sound with `fosscut.media.no_sound`.
+#[tauri::command]
+pub async fn media_waveform(
+    state: State<'_, AppState>,
+    asset: String,
+    buckets: u32,
+) -> Answer<crate::media::Waveform> {
+    let workspace = Arc::clone(&state.workspace);
+    let views = Arc::clone(&state.media_views);
+    blocking(move || views.waveform(&workspace, &asset, buckets)).await
+}
+
+/// Imports files into the open project as the user's one undoable edit: `paths` when
+/// given (dropped files, say), else the files the user picks in a dialog; `None` when they
+/// cancel it. Answers `{assets, failed: [{path, error, code}], revision}`: files that
+/// cannot be imported are reported and skipped, and the rest are added together.
+#[tauri::command]
+pub async fn media_import(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    paths: Option<Vec<String>>,
+) -> Answer<Option<crate::media::ImportResult>> {
+    let workspace = Arc::clone(&state.workspace);
+    let language = state.preferences.current().language;
+    blocking(move || {
+        // Refused before the dialog asks for anything.
+        open_project(&workspace)?;
+        let files: Vec<PathBuf> = match paths {
+            Some(paths) => paths.into_iter().map(PathBuf::from).collect(),
+            None => {
+                let mut pick = app
+                    .dialog()
+                    .file()
+                    .set_title(word(&language, Word::ImportMedia));
+                for (name, extensions) in crate::media::IMPORT_FILTERS {
+                    pick = pick.add_filter(word(&language, name), extensions);
+                }
+                let Some(picked) = pick.blocking_pick_files() else {
+                    return Ok(None);
+                };
+                picked
+                    .into_iter()
+                    .map(|file| file.into_path().map_err(|e| invalid(e.to_string())))
+                    .collect::<Answer<_>>()?
+            }
+        };
+        crate::media::import(&workspace, &files).map(Some)
+    })
+    .await
+}
+
+// ---- Edits planned from analyses ----
+
+/// Where the planners read analyses (the cache folder) and models.
+fn places(state: &State<'_, AppState>) -> crate::auto_edit::Places {
+    crate::auto_edit::Places {
+        cache: state.cache.clone(),
+        models: fosscut_engine::models_dir(),
+    }
+}
+
+/// Makes video clip `clip` follow its subject on its timeline's canvas, as one undoable
+/// step: `source` `person` (its cached pose), `subject` (its cached matte) or `region`
+/// (tracked from `region`, centre and size as fractions of the picture, drawn at timeline
+/// time `at` in flicks, the clip's start when omitted), shot by shot from the cached scene
+/// cuts when `shots`. Answers `{reframe: {clip, frames, subject_frames, shots: [{start,
+/// end, zoom, subject_frames, inside_frames}]}, response}`. A missing analysis refuses
+/// with `fosscut.analysis.missing`, its details naming the analyzer and the model it runs.
+#[tauri::command]
+pub async fn clip_reframe(
+    state: State<'_, AppState>,
+    clip: String,
+    source: String,
+    region: Option<fosscut_engine::reframe::Region>,
+    at: Option<i64>,
+    shots: Option<bool>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    let follow = crate::auto_edit::Follow {
+        clip,
+        source,
+        region,
+        at,
+        shots: shots.unwrap_or(false),
+        expected_revision,
+    };
+    blocking(move || crate::auto_edit::reframe(&workspace, &places, &follow)).await
+}
+
+/// Zooms video clip `clip` by `zoom` (1 to 4) on its own canvas and makes the zoomed crop
+/// follow `source` (as `clip_reframe` takes it), as one undoable step; answered as
+/// `clip_reframe` answers.
+#[tauri::command]
+pub async fn clip_camera_track(
+    state: State<'_, AppState>,
+    clip: String,
+    source: String,
+    region: Option<fosscut_engine::reframe::Region>,
+    at: Option<i64>,
+    zoom: f64,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    let follow = crate::auto_edit::Follow {
+        clip,
+        source,
+        region,
+        at,
+        shots: false,
+        expected_revision,
+    };
+    blocking(move || crate::auto_edit::camera_track(&workspace, &places, &follow, zoom)).await
+}
+
+/// Copies `timeline` (the primary one when omitted) onto a `width` by `height` canvas
+/// (1080 by 1920 when omitted) named `name`, and makes every video clip of the copy follow
+/// `source` (`person` or `subject`), shot by shot when `shots`, as one undoable step.
+/// Answers `{vertical: {source, timeline, clips, centred: [{clip, reason}]}, response}`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn timeline_vertical(
+    state: State<'_, AppState>,
+    timeline: Option<String>,
+    source: String,
+    width: Option<u32>,
+    height: Option<u32>,
+    name: Option<String>,
+    shots: Option<bool>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    let request = crate::auto_edit::Vertical {
+        timeline,
+        source,
+        width,
+        height,
+        name,
+        shots: shots.unwrap_or(false),
+        expected_revision,
+    };
+    blocking(move || crate::auto_edit::vertical(&workspace, &places, &request)).await
+}
+
+/// Measures the beats of music clip `clip` (unless cached) and marks every `every`-th
+/// (1 to 16, 1 when omitted) as one undoable step. Answers `{beats: {timeline, tempo_bpm,
+/// beats_per_bar, confidence, markers, existing}, response}`, `response` null when every
+/// beat has a marker already.
+#[tauri::command]
+pub async fn beats_markers(
+    state: State<'_, AppState>,
+    clip: String,
+    every: Option<u32>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    blocking(move || {
+        crate::auto_edit::beat_markers(&workspace, &places, &clip, every, expected_revision)
+    })
+    .await
+}
+
+/// Measures the beats of music clip `music` (unless cached) and moves the cuts between the
+/// clips of video track `track` onto them (every `every`-th beat, 1 when omitted), as one
+/// undoable step. Answers `{cuts: {track, music, tempo_bpm, beats, tolerance, snapped:
+/// [{before, after, from, to}], unsnapped: [{before, after, at, reason}]}, response}`,
+/// `response` null when no cut moved.
+#[tauri::command]
+pub async fn beats_cut(
+    state: State<'_, AppState>,
+    track: String,
+    music: String,
+    every: Option<u32>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    blocking(move || {
+        crate::auto_edit::beat_cuts(
+            &workspace,
+            &places,
+            &track,
+            &music,
+            every,
+            expected_revision,
+        )
+    })
+    .await
+}
+
+/// The candidate shorts in the speech of clip `clip`, from its cached transcript, best
+/// first: from `min_seconds` to `max_seconds` long (15 to 60 when omitted), at most `count`
+/// (10 when omitted). Reads only. Answers `{clip, asset, measured, missing, sentences,
+/// considered, candidates: [{span, seconds, score, text, sentences, words, reasons,
+/// timeline_start, timeline_end}]}`.
+#[tauri::command]
+pub async fn shorts_candidates(
+    state: State<'_, AppState>,
+    clip: String,
+    min_seconds: Option<f64>,
+    max_seconds: Option<f64>,
+    count: Option<u32>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    let request = crate::auto_edit::Candidates {
+        clip,
+        min_seconds,
+        max_seconds,
+        count,
+    };
+    blocking(move || crate::auto_edit::short_candidates(&workspace, &places, &request)).await
+}
+
+/// Builds a short from `start` to `end` (flicks in the media's own time, a candidate's
+/// `span`) of clip `clip`'s media as a new timeline named `name`, `width` by `height`
+/// (1080 by 1920 when omitted), following `follow` (`person` or `subject`, shot by shot
+/// unless `shots` is false; centred when omitted), with captions of its words when
+/// `captions` (in `caption_preset`) and `title` over its first three seconds, as one
+/// undoable step. Answers `{short: {timeline, clip, name, start, duration, centred,
+/// caption_words}, response}`.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn shorts_make(
+    state: State<'_, AppState>,
+    clip: String,
+    start: i64,
+    end: i64,
+    name: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+    follow: Option<String>,
+    shots: Option<bool>,
+    captions: Option<bool>,
+    caption_preset: Option<String>,
+    title: Option<String>,
+    expected_revision: Option<u64>,
+) -> Answer<Value> {
+    let workspace = Arc::clone(&state.workspace);
+    let places = places(&state);
+    let request = crate::auto_edit::Short {
+        clip,
+        start,
+        end,
+        name,
+        width,
+        height,
+        follow,
+        shots,
+        captions: captions.unwrap_or(false),
+        caption_preset,
+        title,
+        expected_revision,
+    };
+    blocking(move || crate::auto_edit::make_short(&workspace, &places, &request)).await
 }
 
 /// The assets of the open project the preview decodes from a proxy (`{"proxy": "half"}`)
@@ -1400,12 +1688,15 @@ pub fn models_install_status(
     state.installs.status(name.trim())
 }
 
-/// Analyzes a video clip's media for the effects that follow a subject, as a background
-/// job: `kind` `matte` for background removal (`model` `person`, the default, or `subject`,
-/// any subject and slow), or `pose` for body effects. Answers the job (`{job, kind, state,
-/// progress, elapsed_ms, asset, analysis, error}`) once it finished when the result was
-/// cached, or while it runs; `subject_status` follows it. A model that is missing refuses
-/// at once with `fosscut.model.not_installed`, naming it in `details.what`.
+/// Analyzes a clip's media as a background job: `kind` `matte` for background removal
+/// (`model` `person`, the default, or `subject`, any subject and slow) or `pose` for body
+/// effects, or any other analyzer a plan may name in `fosscut.analysis.missing` (`scenes`
+/// of a video clip; `transcript`, `beats`, `levels`, `loudness` or `silences` of a video or
+/// audio clip), with `options` its options as that error's `details.options` holds them
+/// under its name. Answers the job (`{job, kind, state, progress, elapsed_ms, asset,
+/// analysis, error}`) once it finished when the result was cached, or while it runs;
+/// `subject_status` follows it. A model that is missing refuses at once with
+/// `fosscut.model.not_installed`, naming it in `details.what`.
 #[tauri::command]
 pub async fn subject_analyze(
     state: State<'_, AppState>,

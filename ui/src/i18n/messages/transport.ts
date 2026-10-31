@@ -42,6 +42,13 @@ export const en = {
   "transport.marker.help": "Add a marker at the playhead, or remove the one there",
   "transport.delete": "Delete",
   "transport.delete.help": "Delete the selected clip",
+  "transport.label": "Playback",
+  "transport.zoom": "Preview zoom",
+  "transport.zoom.fit": "Fit",
+  "transport.zoom.percent": "{percent}%",
+  "transport.safe": "Safe zones",
+  "transport.safe.help": "Show where action and titles stay clear of the edges",
+  "transport.canvas.help": "Canvas {width} × {height} at {rate} fps",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -83,4 +90,11 @@ export const hu: Translation<typeof en> = {
   "transport.marker.help": "Jelölő hozzáadása a lejátszófejnél, vagy az ott lévő eltávolítása",
   "transport.delete": "Törlés",
   "transport.delete.help": "A kijelölt klip törlése",
+  "transport.label": "Lejátszás",
+  "transport.zoom": "Az előnézet nagyítása",
+  "transport.zoom.fit": "Igazítás",
+  "transport.zoom.percent": "{percent}%",
+  "transport.safe": "Biztonsági zónák",
+  "transport.safe.help": "Megmutatja, hol maradnak a mozgás és a címek biztonságos távolságra a szélektől",
+  "transport.canvas.help": "Vászon: {width} × {height}, {rate} kép/mp",
 };

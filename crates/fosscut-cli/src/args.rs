@@ -122,6 +122,12 @@ pub enum Command {
     /// Multicam editing: angles recorded at the same time in one clip, cut between them.
     #[command(subcommand)]
     Multicam(MulticamCommand),
+    /// Mark the beats of music, and move cuts onto them.
+    #[command(subcommand)]
+    Beats(BeatsCommand),
+    /// Find the parts of a long video that stand alone as shorts, and make vertical shorts.
+    #[command(subcommand)]
+    Shorts(ShortsCommand),
     /// Timeline markers.
     #[command(subcommand)]
     Marker(MarkerCommand),
@@ -642,6 +648,34 @@ pub enum ClipCommand {
         #[arg(long)]
         follow: Option<String>,
     },
+    /// Make a video clip follow its subject on its timeline's canvas, for footage of
+    /// another aspect: a crop of the canvas's shape moves over the picture shot by shot.
+    /// Needs the clip's pose (or matte) analysis, and its scenes unless --one-shot.
+    /// Replaces the clip's position and scale keyframes.
+    Reframe {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        #[command(flatten)]
+        subject: SubjectArgs,
+        #[command(flatten)]
+        framing: FramingArgs,
+    },
+    /// Keep the camera on a moving subject: zoom a video clip in on its own canvas and move
+    /// the zoomed crop with the subject. Replaces the clip's position and scale keyframes.
+    CameraTrack {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// How far to zoom in, from 1 to 4.
+        #[arg(long, default_value_t = 1.5)]
+        zoom: f64,
+        #[command(flatten)]
+        subject: SubjectArgs,
+        /// Frame each shot on its own, at the cached scene cuts.
+        #[arg(long)]
+        shots: bool,
+    },
     /// Split a clip at a timeline position.
     Split {
         /// Clip id.
@@ -700,8 +734,12 @@ pub enum ClipCommand {
         #[arg(long)]
         pitch: Option<String>,
         /// Smooth slow motion: blend neighbouring frames.
-        #[arg(long, conflicts_with = "nearest")]
+        #[arg(long, conflicts_with_all = ["nearest", "flow"])]
         blend: bool,
+        /// Smoother slow motion: draw in-between frames from the motion measured between
+        /// neighbouring frames (optical flow).
+        #[arg(long, conflicts_with = "nearest")]
+        flow: bool,
         /// Show the nearest frame again.
         #[arg(long)]
         nearest: bool,
@@ -1480,6 +1518,20 @@ pub enum AudioCommand {
         #[arg(long)]
         no_limit: bool,
     },
+    /// Apply a voice preset, such as deep, chipmunk, robot, phone_call, megaphone or cave
+    /// (`fosscut capabilities` lists them under voice_presets), as voice filters the clip
+    /// owns.
+    Voice {
+        /// The preset.
+        preset: String,
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// Replace the clip's voice filters instead of adding after them; its other effects
+        /// stay.
+        #[arg(long)]
+        replace: bool,
+    },
 }
 
 /// `fosscut cache ...`
@@ -1520,6 +1572,130 @@ pub enum PreferencesCommand {
     },
     /// Where the preferences file is.
     Path,
+}
+
+/// What a crop follows.
+#[derive(Debug, Args)]
+pub struct SubjectArgs {
+    /// What the picture follows: person (from the pose analysis) or any (from the matte
+    /// analysis); ignored with --region.
+    #[arg(long, default_value = "person")]
+    pub follow: String,
+    /// Follow this region instead, as X,Y,WIDTH,HEIGHT at --at: its centre and size as
+    /// fractions of the picture.
+    #[arg(long, value_delimiter = ',', num_args = 1)]
+    pub region: Option<Vec<f64>>,
+    /// Where the region is given, on the timeline; the clip's start when omitted.
+    #[arg(long, value_parser = parse_time, requires = "region")]
+    pub at: Option<TimeInput>,
+}
+
+/// How a crop follows its subject.
+#[derive(Debug, Args)]
+pub struct FramingArgs {
+    /// Frame the whole clip as one shot, without the scenes analysis.
+    #[arg(long)]
+    pub one_shot: bool,
+    /// The most zoom chosen for a shot, from 1 (pan only) to 4.
+    #[arg(long)]
+    pub max_zoom: Option<f64>,
+    /// The fastest pan, in crop widths per second (default 1).
+    #[arg(long)]
+    pub max_speed: Option<f64>,
+}
+
+/// `fosscut beats ...`
+#[derive(Debug, Subcommand)]
+pub enum BeatsCommand {
+    /// Measure the beats of a music clip (once; cached) and add a marker on every --every
+    /// beat, counted from the first downbeat (4 marks bars).
+    Markers {
+        /// The music clip.
+        #[arg(long)]
+        music: String,
+        /// Mark every this many beats, from 1 to 16.
+        #[arg(long, default_value_t = 1)]
+        every: u32,
+        /// The tempo, in beats per minute, when it is known.
+        #[arg(long)]
+        bpm: Option<f64>,
+    },
+    /// Move each cut between the clips of a track onto the nearest beat of a music clip, as
+    /// roll edits that keep the edit's length; cuts that cannot move are listed with why.
+    Cut {
+        /// The track whose cuts move.
+        #[arg(long)]
+        track: String,
+        /// The music clip.
+        #[arg(long)]
+        music: String,
+        /// Only every this many beats count, from 1 to 16.
+        #[arg(long, default_value_t = 1)]
+        every: u32,
+        /// How far a cut may move; half the spacing of the beats that count when omitted.
+        #[arg(long, value_parser = parse_time)]
+        tolerance: Option<TimeInput>,
+        /// The tempo, in beats per minute, when it is known.
+        #[arg(long)]
+        bpm: Option<f64>,
+    },
+}
+
+/// `fosscut shorts ...`
+#[derive(Debug, Subcommand)]
+pub enum ShortsCommand {
+    /// Score stretches of whole sentences of a long clip that could stand alone as shorts,
+    /// from its cached transcript (and its loudness and scenes when cached).
+    Candidates {
+        /// The clip.
+        #[arg(long)]
+        clip: String,
+        /// Shortest candidate, in seconds.
+        #[arg(long, default_value_t = 15.0)]
+        min_seconds: f64,
+        /// Longest candidate, in seconds.
+        #[arg(long, default_value_t = 60.0)]
+        max_seconds: f64,
+        /// Most candidates.
+        #[arg(long, default_value_t = 10)]
+        count: u32,
+    },
+    /// Make a vertical short of a range of a clip's media as a new timeline: the picture
+    /// follows its subject shot by shot, with captions of the words spoken and a title.
+    Make {
+        /// The clip whose media the short is cut from.
+        #[arg(long)]
+        clip: String,
+        /// Where the short starts in the media (a candidate's start).
+        #[arg(long, value_parser = parse_time)]
+        from: TimeInput,
+        /// Where it ends in the media.
+        #[arg(long, value_parser = parse_time)]
+        to: TimeInput,
+        /// The new timeline's name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Canvas width.
+        #[arg(long, default_value_t = 1080)]
+        width: u32,
+        /// Canvas height.
+        #[arg(long, default_value_t = 1920)]
+        height: u32,
+        /// What the picture follows: person, any, or centre (no analysis needed).
+        #[arg(long, default_value = "person")]
+        follow: String,
+        #[command(flatten)]
+        framing: FramingArgs,
+        /// Do not caption the spoken words.
+        #[arg(long)]
+        no_captions: bool,
+        /// The caption preset, such as bold-pop.
+        #[arg(long)]
+        caption_preset: Option<String>,
+        /// A title over the first three seconds.
+        #[arg(long)]
+        title: Option<String>,
+    },
 }
 
 /// `fosscut multicam ...`
@@ -1649,6 +1825,29 @@ pub enum MarkerCommand {
 /// `fosscut timeline ...`
 #[derive(Debug, Subcommand)]
 pub enum TimelineCommand {
+    /// Copy a timeline onto a vertical canvas as a new timeline, every video clip following
+    /// its subject (needs their pose or matte analyses, and scenes unless --one-shot); clips
+    /// without a subject stay centred and are listed. The original is unchanged.
+    Vertical {
+        /// The timeline to copy; the primary timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+        /// The copy's name; the original's with ` vertical` when omitted.
+        #[arg(long)]
+        name: Option<String>,
+        /// Canvas width.
+        #[arg(long, default_value_t = 1080)]
+        width: u32,
+        /// Canvas height.
+        #[arg(long, default_value_t = 1920)]
+        height: u32,
+        /// What the picture follows: person (from the pose analysis) or any (from the
+        /// matte analysis).
+        #[arg(long, default_value = "person")]
+        follow: String,
+        #[command(flatten)]
+        framing: FramingArgs,
+    },
     /// Show tracks and clips.
     Read {
         /// Amount of detail.

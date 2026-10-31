@@ -58,6 +58,7 @@ export const en = {
   // Body effects
   "models.body.title": "Body effects",
   "models.body.done": "Added {effect}.",
+  "models.feature.analysis": "Analysis",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -110,4 +111,5 @@ export const hu: Translation<typeof en> = {
   "models.background.reason": "Háttér eltávolítása",
   "models.body.title": "Testeffektek",
   "models.body.done": "Hozzáadva: {effect}.",
+  "models.feature.analysis": "Elemzés",
 };

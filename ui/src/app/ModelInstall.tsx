@@ -1,10 +1,12 @@
+import { HardDriveDownload, X } from "lucide-react";
 import { useEffect } from "react";
 
 import type { ModelInfo } from "../engine/types";
 import { t } from "../i18n";
 import { downloadSize, megabytes } from "./assist";
 import type { Editor, InstallPrompt } from "./editor";
-import { Problem } from "./Export";
+import { Problem } from "./Problem";
+import { Glyph, IconButton } from "../ui/controls";
 
 /** How often a running install is read while the dialog shows, in milliseconds. */
 const POLL = 500;
@@ -68,7 +70,13 @@ export function ModelInstall({ editor, prompt }: { editor: Editor; prompt: Insta
   return (
     <div className="dialog-backdrop">
       <div className="dialog model-install" role="dialog" aria-modal="true" aria-labelledby="model-install-title">
-        <h2 id="model-install-title">{t("models.install.title", { feature })}</h2>
+        <header className="dialog-head">
+          <span className="dialog-icon" aria-hidden="true">
+            <Glyph icon={HardDriveDownload} />
+          </span>
+          <h2 id="model-install-title">{t("models.install.title", { feature })}</h2>
+          {!prompt.installing && <IconButton icon={X} label={t("models.install.cancel")} onClick={() => editor.cancelInstall()} />}
+        </header>
         <p className="hint">{t("models.install.intro")}</p>
         <ul className="models" aria-label={t("models.install.list")}>
           {prompt.models.map((model) => (

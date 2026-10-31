@@ -1,8 +1,12 @@
 import { useState } from "react";
 
 import type { Editor } from "../app/editor";
-import type { Catalog, ClipView } from "../engine/types";
+import type { Catalog, ClipView, FrameBlend } from "../engine/types";
 import { t } from "../i18n";
+import { Segmented } from "../ui/controls";
+
+/** The ways slowed footage fills the frames between its own, plainest first. */
+export const INTERPOLATIONS: FrameBlend[] = ["nearest", "blend", "flow"];
 
 const words = (name: string) => name.replaceAll("_", " ");
 
@@ -71,14 +75,15 @@ export function Speed({ editor, clip, catalog }: { editor: Editor; clip: ClipVie
             <span>{t("motion.speed.pitch")}</span>
           </label>
           {clip.kind === "video" && (
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={speed.interpolate === "blend"}
-                onChange={(e) => set({ interpolate: e.target.checked ? "blend" : "nearest" })}
-              />
+            <div className="choice" title={t("motion.speed.smooth.help")}>
               <span>{t("motion.speed.smooth")}</span>
-            </label>
+              <Segmented
+                label={t("motion.speed.smooth")}
+                value={speed.interpolate ?? "nearest"}
+                onChange={(interpolate: FrameBlend) => set({ interpolate })}
+                options={INTERPOLATIONS.map((id) => ({ id, label: t(`motion.speed.interpolate.${id}`), help: t(`motion.speed.interpolate.${id}.help`) }))}
+              />
+            </div>
           )}
         </>
       )}

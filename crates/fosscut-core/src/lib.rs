@@ -35,7 +35,7 @@ pub use command::{Command, CommandDescriptor, Context, QueryDescriptor, Registry
 pub use commands::{
     AdjustmentAdd, AdjustmentAdded, EffectAdd, EffectCopy, EffectInput, EffectMove, EffectRemove,
     EffectReport, EffectSet, EffectsChanged, EffectsCopied, LookApply, MaskAdd, MaskFields,
-    MaskRemove, MaskSet, MasksChanged,
+    MaskRemove, MaskSet, MasksChanged, VoiceApply,
 };
 pub use commands::{
     Aligned, AttributesCopied, AudioExtracted, AudioRestored, ClipAlign, ClipCopyAttributes,
