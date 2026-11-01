@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # Linux and Windows tests and coverage run nightly and on demand, not on every pull
+  # request, while desktop work focuses on macOS (ADR-0016, implementation notes).
+  schedule:
+    - cron: "17 2 * * *"
 
 permissions:
   contents: read
@@ -85,7 +89,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # macOS on every run; Linux and Windows nightly and on demand.
+        os: >-
+          ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+          && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -115,7 +122,10 @@ jobs:
   coverage:
     name: Test coverage
     needs: detect
-    if: needs.detect.outputs.rust == 'true'
+    # Nightly and on demand: the instrumented build and full test run take the longest.
+    if: >-
+      needs.detect.outputs.rust == 'true' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

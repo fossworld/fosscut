@@ -35,6 +35,10 @@ Most code will be written by AI agents, so tests are the main defence against re
 - **Manual QA before releases:** does not scale with agent-generated change volume.
 - **Bit-exact frame comparison:** fails across GPUs and drivers; perceptual thresholds are the practical standard.
 
+## Implementation notes
+
+- **CI focus on macOS** (2026-11-01, the maintainer's decision while desktop work targets macOS): pull requests run the Rust tests on macOS only, with the lints, docs, UI, dependency and WebAssembly checks. The Linux and Windows test jobs and coverage (item 12) run nightly on `main` and on demand (`workflow_dispatch`), still feeding `CI result` there, and releases build macOS packages only. Items 10 to 12 apply in full again when the other platforms return.
+
 ## Validation
 
 Every merged feature pull request adds or updates at least one test at the appropriate level. No pull request merges with a failing, cancelled or silently skipped test job, and coverage stays at or above the minimums in item 12.
