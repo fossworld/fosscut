@@ -52,6 +52,25 @@ pub enum AssetKind {
     Lut,
     /// A font file (`.ttf`, `.otf`, `.ttc`) whose families text can use (ADR-0027).
     Font,
+    /// A vector drawing (`.svg`, ADR-0036): shown as an image, drawn sharp at any size, and
+    /// split into editable shape clips by `vector.explode`.
+    Vector,
+    /// A web composition (ADR-0039): an HTML page, with the files it loads, copied into the
+    /// bundle's `web/` folder and rendered frame by frame in a headless browser. Video clips
+    /// show it like a video; its size and frame rate are in `video`, its length in
+    /// `duration`.
+    Web,
+    /// A 3D model (`.glb`, or `.gltf` with its buffers and textures, ADR-0040), copied
+    /// into the bundle's `models/` folder by content and shown by 3D object clips.
+    Model,
+}
+
+impl AssetKind {
+    /// True for the kinds video clips show from a source position: video files and web
+    /// compositions (ADR-0039).
+    pub fn is_video(self) -> bool {
+        matches!(self, AssetKind::Video | AssetKind::Web)
+    }
 }
 
 /// A source media file referenced by clips. Splitting a clip never copies an asset.
@@ -139,6 +158,42 @@ pub struct MediaInfo {
     /// The families and faces in a font asset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<FontInfo>,
+    /// What a vector drawing holds; its size in pixels is in `video`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vector: Option<VectorInfo>,
+    /// What a 3D model holds (ADR-0040).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<ModelInfo>,
+}
+
+/// What a 3D model file holds (ADR-0040), probed at import.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelInfo {
+    /// Meshes its default scene draws.
+    pub meshes: u32,
+    /// Triangles drawn.
+    pub triangles: u64,
+    /// Materials.
+    pub materials: u32,
+    /// Images its materials use.
+    pub textures: u32,
+    /// The size of its bounds `[x, y, z]` in its own units (metres in glTF), y up.
+    pub size: [f64; 3],
+    /// The file's own note of the tool that wrote it, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generator: Option<String>,
+    /// The file's own copyright line, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copyright: Option<String>,
+}
+
+/// What a vector drawing (`.svg`) holds (ADR-0036).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VectorInfo {
+    /// Its view box `[x, y, width, height]` in its own units.
+    pub view_box: [f64; 4],
+    /// How many path elements it draws, each a shape clip when exploded.
+    pub paths: u32,
 }
 
 /// What a font file holds.

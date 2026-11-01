@@ -26,6 +26,15 @@ pub struct Probed {
 /// The arguments of a `media.add` command that imports `file` into the project at
 /// `bundle`, named `name` or after the file.
 pub fn media_add_args(file: &Path, name: Option<&str>, bundle: &Path) -> Result<Value, ApiError> {
+    // A folder with an index.html, or an .html file, is a web composition (ADR-0039).
+    if crate::web::is_composition(file) {
+        let options = crate::web::CompositionOptions::default();
+        return crate::web::media_add_args(file, name, bundle, &options);
+    }
+    // A glTF model is copied into the bundle with its files (ADR-0040).
+    if crate::model::is_model(file) {
+        return crate::model::media_add_args(file, name, bundle);
+    }
     let probed = probe(file)?;
     let name = name.map(str::to_string).unwrap_or_else(|| {
         file.file_name()
@@ -129,7 +138,7 @@ fn ffprobe_from(
 }
 
 /// Probes `file`: `.cube` files are read as 3D LUTs, `.ttf`, `.otf` and `.ttc` files as
-/// fonts, everything else goes to ffprobe.
+/// fonts, `.svg` files as vector drawings, everything else goes to ffprobe.
 pub fn probe(file: &Path) -> Result<Probed, ApiError> {
     let extension = |names: &[&str]| {
         file.extension()
@@ -141,6 +150,14 @@ pub fn probe(file: &Path) -> Result<Probed, ApiError> {
     }
     if extension(&["ttf", "otf", "ttc", "otc"]) {
         return probe_font(file);
+    }
+    // Vector drawings import as drawings, not as images ffprobe rasterizes (ADR-0036).
+    if extension(&["svg"]) {
+        return crate::vector::probe(file);
+    }
+    // 3D models (ADR-0040).
+    if extension(&["glb", "gltf"]) {
+        return crate::model::probe(file);
     }
     probe_media(file)
 }

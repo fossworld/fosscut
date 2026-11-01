@@ -13,6 +13,11 @@ pub enum PixelFormat {
     Nv12,
     /// 8-bit 4:2:0: separate luma, Cb and Cr planes, chroma at half size.
     Yuv420p,
+    /// 8-bit R'G'B'A in one plane, four bytes per pixel, with straight (not premultiplied)
+    /// alpha: pictures with transparency, such as ProRes 4444, PNG with alpha and web
+    /// compositions (ADR-0039). The color tags' primaries and transfer apply; the matrix
+    /// and range do not.
+    Rgba,
 }
 
 impl PixelFormat {
@@ -21,6 +26,7 @@ impl PixelFormat {
         match self {
             PixelFormat::Nv12 => 2,
             PixelFormat::Yuv420p => 3,
+            PixelFormat::Rgba => 1,
         }
     }
 
@@ -29,6 +35,7 @@ impl PixelFormat {
         let (w, h) = (width as usize, height as usize);
         let (cw, ch) = (w.div_ceil(2), h.div_ceil(2));
         match (self, index) {
+            (PixelFormat::Rgba, _) => (w * 4, h),
             (_, 0) => (w, h),
             (PixelFormat::Nv12, _) => (cw * 2, ch),
             (PixelFormat::Yuv420p, _) => (cw, ch),
@@ -86,10 +93,20 @@ impl VideoFrame {
         self.pts <= time && time < self.end()
     }
 
-    /// Mean luma code value of the frame, used by tests and analysis.
+    /// Mean luma code value of the frame, used by tests and analysis. For
+    /// [`PixelFormat::Rgba`] frames, the BT.709 luma of the R'G'B' values, ignoring alpha.
     pub fn mean_luma(&self) -> f64 {
         let plane = &self.planes[0];
         let width = self.width as usize;
+        if self.format == PixelFormat::Rgba {
+            let total: f64 = (0..plane.rows)
+                .flat_map(|y| plane.row(y)[..width * 4].as_chunks::<4>().0)
+                .map(|p| {
+                    0.2126 * f64::from(p[0]) + 0.7152 * f64::from(p[1]) + 0.0722 * f64::from(p[2])
+                })
+                .sum();
+            return total / (width * plane.rows) as f64;
+        }
         let total: u64 = (0..plane.rows)
             .map(|y| {
                 plane.row(y)[..width]

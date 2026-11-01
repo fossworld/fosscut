@@ -6,7 +6,9 @@
 
 import type {
   ClipView,
+  RevealEasing,
   RevealMotion,
+  RevealOrder,
   RevealUnit,
   TextAlign,
   TextCase,
@@ -58,7 +60,12 @@ export const TEXT_DEFAULTS: TextStyle = {
 export const CASES: TextCase[] = ["as_written", "upper", "lower", "title"];
 export const ALIGNS: TextAlign[] = ["left", "center", "right"];
 export const REVEAL_UNITS: RevealUnit[] = ["letter", "word", "line"];
-export const REVEAL_MOTIONS: RevealMotion[] = ["appear", "fade", "rise"];
+export const REVEAL_MOTIONS: RevealMotion[] = ["appear", "fade", "rise", "blur", "pop", "zoom", "slide_left", "slide_right", "drop", "collapse"];
+/** The easings a reveal offers by name; empty is each motion's own. */
+export const REVEAL_EASINGS = ["linear", "ease_in", "ease_out", "ease_in_out", "back", "bounce", "elastic"] as const;
+export const REVEAL_ORDERS: RevealOrder[] = ["forward", "backward", "center", "edges", "random"];
+/** How much each part's motion overlaps the next one's when the reveal does not say. */
+export const REVEAL_OVERLAP = 0.5;
 
 /** How a number field is shown: `scale` times the engine value, within `min` and `max` shown. */
 export interface NumberSpec {
@@ -222,32 +229,50 @@ export interface RevealDraft {
   /** Time until the whole text shows. */
   seconds: number;
   exit: boolean;
+  /** How much each part's motion overlaps the next one's, 0 to 1. */
+  overlap: number;
+  /** The easing; empty for each motion's own. */
+  easing: RevealEasing | "";
+  order: RevealOrder;
+  /** How it leaves when it exits; empty for its entrance motion. */
+  exitMotion: RevealMotion | "";
 }
 
 /** The clip's reveal, or none with the values a new one starts from. */
 export function revealOf(clip: ClipView): RevealDraft {
   const reveal = clip.reveal;
+  const options = { overlap: REVEAL_OVERLAP, easing: "" as const, order: "forward" as const, exitMotion: "" as const };
   if (!reveal) {
     const clipSeconds = clip.duration.flicks / FLICKS_PER_SECOND;
-    return { unit: "", motion: "appear", seconds: Math.min(1, Math.round(clipSeconds * 500) / 1000), exit: false };
+    return { unit: "", motion: "appear", seconds: Math.min(1, Math.round(clipSeconds * 500) / 1000), exit: false, ...options };
   }
   return {
     unit: reveal.unit,
     motion: reveal.motion ?? "appear",
     seconds: Math.round((reveal.duration.flicks / FLICKS_PER_SECOND) * 1000) / 1000,
     exit: reveal.exit ?? false,
+    overlap: reveal.overlap ?? options.overlap,
+    easing: reveal.easing ?? options.easing,
+    order: reveal.order ?? options.order,
+    exitMotion: reveal.exit_motion ?? options.exitMotion,
   };
 }
 
 /** The `reveal` argument of `text.set` for a draft: null removes the reveal. */
 export function revealArg(draft: RevealDraft): Record<string, unknown> | null {
   if (!draft.unit) return null;
-  return {
+  const arg: Record<string, unknown> = {
     unit: draft.unit,
     motion: draft.motion,
     duration: { seconds: String(Math.round(draft.seconds * 1000) / 1000) },
     exit: draft.exit,
   };
+  // The motion options stay out at their defaults, so the stored reveal stays sparse.
+  if (draft.overlap !== REVEAL_OVERLAP) arg.overlap = Math.round(draft.overlap * 1000) / 1000;
+  if (draft.easing) arg.easing = draft.easing;
+  if (draft.order !== "forward") arg.order = draft.order;
+  if (draft.exit && draft.exitMotion) arg.exit_motion = draft.exitMotion;
+  return arg;
 }
 
 /**
@@ -258,6 +283,7 @@ export function revealChange(clip: ClipView, change: Partial<RevealDraft>): { re
   const current = revealOf(clip);
   const draft = { ...current, ...change };
   if (!(Number.isFinite(draft.seconds) && draft.seconds > 0)) return null;
+  if (!(Number.isFinite(draft.overlap) && draft.overlap >= 0 && draft.overlap <= 1)) return null;
   if (!clip.reveal && !draft.unit) return null;
   if (clip.reveal && same(draft, current)) return null;
   return { reveal: revealArg(draft) };

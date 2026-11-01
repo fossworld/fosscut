@@ -40,6 +40,11 @@ describe("inspector", () => {
       ["scale", 150],
       ["rotation", 0],
       ["opacity", 80],
+      ["depth", 0],
+      ["tilt", 0],
+      ["turn", 0],
+      ["anchor_x", 0],
+      ["anchor_y", 0],
       ["crop_left", 10],
       ["crop_right", 0],
       ["crop_top", 0],
@@ -120,5 +125,23 @@ describe("inspector", () => {
       command: "keyframe.set",
       args: { clip: "c1", property: "opacity", at: { flicks: FLICKS_PER_SECOND } },
     });
+  });
+
+  it("places pictures in depth and edits the anchor as a pair (ADR-0037)", () => {
+    const card = clip("c3", "image", 0, 3, {
+      transform: { three_d: true, position_z: 0.25, rotation_y: 30, anchor: [-0.5, 0] },
+      keyframes: { "transform.rotation_x": [key(0, 0), key(2, -40)] },
+    });
+    const fields = fieldsFor(card, at(1));
+    const value = (id: string) => fields.find((f) => f.id === id)?.value;
+    expect([value("depth"), value("tilt"), value("turn"), value("anchor_x"), value("anchor_y")]).toEqual([25, -20, 30, -50, 0]);
+    expect(change(card, "depth", 50, at(0))).toEqual({ command: "clip.set", args: { clip: "c3", set: { "transform.position_z": 0.5 } } });
+    expect(change(card, "anchor_y", 25, at(0))).toEqual({ command: "clip.set", args: { clip: "c3", set: { "transform.anchor": [-0.5, 0.25] } } });
+    expect(change(card, "tilt", 10, at(1)), "a tilt with keyframes is keyed").toEqual({
+      command: "keyframe.set",
+      args: { clip: "c3", property: "transform.rotation_x", at: { flicks: FLICKS_PER_SECOND }, value: 10 },
+    });
+    expect(change(card, "anchor_x", 150, at(0)), "past the picture's edge").toBeNull();
+    expect(fieldsFor(clip("cam", "camera", 0, 3), at(0)), "a camera is placed by its own fields").toEqual([]);
   });
 });

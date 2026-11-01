@@ -350,6 +350,7 @@ fn cached_analyses_reach_exports_frames_and_the_preview() {
     let chroma = |x: usize, y: usize| match frame.format {
         fosscut_media::PixelFormat::Nv12 => frame.planes[1].row(y / 2)[(x / 2) * 2 + 1],
         fosscut_media::PixelFormat::Yuv420p => frame.planes[2].row(y / 2)[x / 2],
+        fosscut_media::PixelFormat::Rgba => panic!("an opaque export decodes as Y'CbCr"),
     };
     assert!(
         chroma(260, 90) > 220,

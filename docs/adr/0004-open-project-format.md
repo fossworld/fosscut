@@ -85,6 +85,10 @@ Illustrative clip (not normative; the generated schema is):
 
 - **Canvas fills** (format 0.14.0): a video or image clip may carry `canvas`, what fills the canvas around its picture: `{"kind": "color", "color"}`, or `{"kind": "blur", "amount"}`, its own picture scaled to cover and blurred (`clip.canvas`). User preferences never enter a project; they live in a file of their own ([ADR-0031](0031-keep-user-preferences-outside-projects.md)).
 
+- **Web compositions** (format 0.16.0): an HTML page with the files it loads is a `web` asset, copied into the bundle's `web/` folder by content and shown by ordinary video clips, as decided in [ADR-0039](0039-render-web-compositions-in-a-headless-browser.md). Renders of the user's own Remotion projects are files in the bundle's `renders/` folder, imported as ordinary video.
+
+- **3D objects** (format 0.16.0): a `.glb` file, or a `.gltf` file with the buffers and images it names, is a `model` asset copied into the bundle's `models/` folder by content, and clips of kind `model` draw a model or a built-in solid, as decided in [ADR-0040](0040-render-3d-objects-through-the-camera.md).
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.

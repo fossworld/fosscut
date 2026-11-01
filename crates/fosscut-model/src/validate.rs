@@ -132,12 +132,38 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                 format!("asset is in folder {folder}, which the media bin does not list"),
             );
         }
-        let timed = matches!(asset.kind, AssetKind::Video | AssetKind::Audio);
+        let timed = matches!(
+            asset.kind,
+            AssetKind::Video | AssetKind::Audio | AssetKind::Web
+        );
+        if asset.kind == AssetKind::Web && asset.info.video.is_none() {
+            issues.push(
+                &path,
+                "fosscut.model.asset_web",
+                "web assets need their size and frame rate in info.video (ADR-0039)",
+            );
+        }
         if asset.kind == AssetKind::Lut && asset.info.lut.as_ref().is_none_or(|l| l.size < 2) {
             issues.push(
                 &path,
                 "fosscut.model.asset_lut",
                 "LUT assets need a table of at least 2 entries per axis",
+            );
+        }
+        if asset.kind == AssetKind::Vector
+            && (asset.info.vector.is_none() || asset.info.video.is_none())
+        {
+            issues.push(
+                &path,
+                "fosscut.model.asset_vector",
+                "vector assets need their size (video) and drawing (vector) information",
+            );
+        }
+        if asset.kind == AssetKind::Model && asset.info.model.is_none() {
+            issues.push(
+                &path,
+                "fosscut.model.asset_model",
+                "model assets need what their file holds in info.model (ADR-0040)",
             );
         }
         if timed && asset.info.duration.is_none_or(|d| !d.is_positive()) {
@@ -250,6 +276,9 @@ pub fn validate(project: &Project) -> Vec<Issue> {
                     check_effect_target(&mut issues, project, clip, effect, &effect_path);
                 }
                 check_content(&mut issues, project, track.kind, clip, &clip_path);
+                for (code, message) in crate::vector::clip_problems(timeline, clip) {
+                    issues.push(&clip_path, code, message);
+                }
             }
         }
     }
@@ -268,6 +297,18 @@ fn check_properties(issues: &mut Issues, clip: &Clip, path: &str) {
         bad(
             "fosscut.model.transform",
             "position and rotation must be finite".into(),
+        );
+    }
+    if !finite(&[
+        t.position_z,
+        t.rotation_x,
+        t.rotation_y,
+        t.anchor[0],
+        t.anchor[1],
+    ]) {
+        bad(
+            "fosscut.model.transform",
+            "position_z, rotation_x, rotation_y and anchor must be finite".into(),
         );
     }
     if !(finite(&[t.scale, t.stretch[0], t.stretch[1]])
@@ -380,7 +421,10 @@ fn check_effect_target(
         ClipContent::Video { asset, .. } => project.media.get(asset).is_some_and(|a| a.has_audio()),
         _ => false,
     };
-    let picture = !matches!(clip.content, ClipContent::Audio { .. });
+    let picture = !matches!(
+        clip.content,
+        ClipContent::Audio { .. } | ClipContent::Camera(_)
+    );
     if spec.is_audio() && !sound {
         issues.push(
             path,
@@ -563,6 +607,12 @@ fn check_motion(issues: &mut Issues, clip: &Clip, path: &str) {
                     "{} is not a positive-length {place} animation",
                     animation.preset
                 ),
+            );
+        }
+        if animation.delay.is_negative() {
+            bad(
+                "fosscut.model.animation",
+                format!("the {place} animation's delay cannot be negative"),
             );
         }
     }
@@ -802,6 +852,29 @@ fn check_mask(issues: &mut Issues, mask: &crate::Mask, path: &str) {
     }
 }
 
+/// A camera's values must be in range, and a camera clip has no picture or sound of its
+/// own for effects, masks, transitions, animations or speed (ADR-0037).
+fn check_camera(issues: &mut Issues, clip: &Clip, camera: &crate::CameraContent, path: &str) {
+    for message in crate::camera_issues(camera) {
+        issues.push(path, "fosscut.model.camera", message);
+    }
+    let a = &clip.animations;
+    let extras = !clip.effects.is_empty()
+        || !clip.masks.is_empty()
+        || clip.transition.is_some()
+        || a.entrance.is_some()
+        || a.exit.is_some()
+        || a.combo.is_some()
+        || clip.speed.is_some();
+    if extras {
+        issues.push(
+            path,
+            "fosscut.model.camera",
+            "camera clips have no effects, masks, transitions, animations or speed",
+        );
+    }
+}
+
 fn check_content(
     issues: &mut Issues,
     project: &Project,
@@ -815,7 +888,10 @@ fn check_content(
         | ClipContent::Image { .. }
         | ClipContent::Adjustment
         | ClipContent::Shape(_)
-        | ClipContent::Timeline { .. } => track_kind == TrackKind::Video,
+        | ClipContent::Timeline { .. }
+        | ClipContent::Camera(_)
+        | ClipContent::Particles { .. }
+        | ClipContent::Model { .. } => track_kind == TrackKind::Video,
         ClipContent::Audio { .. } => track_kind == TrackKind::Audio,
         ClipContent::Text(_) => track_kind == TrackKind::Text,
         ClipContent::Caption(_) => track_kind == TrackKind::Caption,
@@ -842,6 +918,19 @@ fn check_content(
     }
     if let ClipContent::Shape(shape) = content {
         check_shape(issues, project, shape, path);
+    }
+    if let ClipContent::Camera(camera) = content {
+        check_camera(issues, clip, camera, path);
+    }
+    if let ClipContent::Particles { particles } = content {
+        for issue in crate::particles::particle_issues(project, particles) {
+            issues.push(path, &issue.code, issue.message);
+        }
+    }
+    if let ClipContent::Model { model } = content {
+        for issue in crate::model3d::model_issues(project, model) {
+            issues.push(path, &issue.code, issue.message);
+        }
     }
     if let Some(angle) = &clip.angle {
         let shown = match content {
@@ -895,14 +984,17 @@ fn check_content(
         return;
     };
     let kind_ok = match content {
-        ClipContent::Video { .. } => asset.kind == AssetKind::Video,
+        ClipContent::Video { .. } => asset.kind.is_video(),
         ClipContent::Audio { .. } => asset.has_audio(),
-        ClipContent::Image { .. } => asset.kind == AssetKind::Image,
+        ClipContent::Image { .. } => matches!(asset.kind, AssetKind::Image | AssetKind::Vector),
         ClipContent::Text(_)
         | ClipContent::Caption(_)
         | ClipContent::Adjustment
         | ClipContent::Shape(_)
-        | ClipContent::Timeline { .. } => true,
+        | ClipContent::Timeline { .. }
+        | ClipContent::Camera(_)
+        | ClipContent::Particles { .. } => true,
+        ClipContent::Model { .. } => asset.kind == AssetKind::Model,
     };
     if !kind_ok {
         issues.push(
@@ -954,13 +1046,12 @@ fn check_shape(issues: &mut Issues, project: &Project, shape: &ShapeContent, pat
     if !shape.label_at.iter().all(|&v| within(v, -1.0, 1.0)) {
         bad("label_at must be from -1 to 1 on each axis");
     }
-    if shape.shape == crate::MaskShape::Path && shape.points.len() < 3 {
+    if shape.shape == crate::MaskShape::Path && shape.closed && shape.points.len() < 3 {
         bad("a path shape needs at least three points");
     }
-    if let Some(gradient) = &shape.fill.gradient
-        && !gradient.angle.is_finite()
-    {
-        bad("a gradient's angle must be a number of degrees");
+    // Strokes, open paths, contours and trims (ADR-0036).
+    for problem in crate::vector::shape_problems(shape) {
+        bad(&problem);
     }
     if let Some(label) = &shape.label {
         if label.text.trim().is_empty() {
@@ -1021,6 +1112,11 @@ fn check_text(issues: &mut Issues, project: &Project, text: &TextContent, path: 
             "fosscut.model.text_reveal",
             "a reveal needs a positive duration",
         );
+    }
+    if let Some(reveal) = &text.reveal {
+        for problem in crate::text::reveal_problems(reveal) {
+            issues.push(path, "fosscut.model.text_reveal", problem);
+        }
     }
 }
 

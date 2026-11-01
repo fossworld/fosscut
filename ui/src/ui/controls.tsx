@@ -257,6 +257,7 @@ export function Menu({
   className,
   buttonClassName,
   disabled,
+  floating = false,
 }: {
   label: string;
   icon?: LucideIcon;
@@ -267,8 +268,14 @@ export function Menu({
   className?: string;
   buttonClassName?: string;
   disabled?: boolean;
+  /**
+   * Places the list over the window rather than under its button's box, for menus in a
+   * panel that scrolls or is narrower than the list.
+   */
+  floating?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<React.CSSProperties | undefined>(undefined);
   const box = useRef<HTMLDivElement>(null);
   const id = useId();
   useEffect(() => {
@@ -306,13 +313,21 @@ export function Menu({
         aria-label={children ? undefined : label}
         title={label}
         disabled={disabled}
-        onClick={() => setOpen(!open)}
+        onClick={(event) => {
+          if (!open && floating) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const width = 240;
+            const left = align === "end" ? rect.right - width : rect.left;
+            setPlace({ position: "fixed", top: rect.bottom + 6, left: Math.max(8, Math.min(left, window.innerWidth - width - 8)), right: "auto" });
+          }
+          setOpen(!open);
+        }}
       >
         {icon && <Glyph icon={icon} />}
         {children}
       </button>
       {open && (
-        <div className={cx("menu-list", `align-${align}`)} role="menu" id={id} aria-label={label}>
+        <div className={cx("menu-list", `align-${align}`)} role="menu" id={id} aria-label={label} style={floating ? place : undefined}>
           {items.map((item) => (
             <button
               key={item.id}

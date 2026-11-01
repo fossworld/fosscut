@@ -3,8 +3,9 @@
 //! current style, and every style is checked (ranges, spans, known fonts) before it lands.
 
 use fosscut_model::{
-    Clip, ClipContent, Id, IdKind, Project, RevealMotion, RevealUnit, TextContent, TextPreset,
-    TextReveal, TextSpan, TextStyle, TrackKind, Transform, text_issues, text_style_issues,
+    Clip, ClipContent, DEFAULT_REVEAL_OVERLAP, Id, IdKind, Project, RevealEasing, RevealMotion,
+    RevealOrder, RevealUnit, TextContent, TextPreset, TextReveal, TextSpan, TextStyle, TrackKind,
+    Transform, text_issues, text_style_issues,
 };
 use fosscut_time::{Flicks, Rate, TimeInput};
 use schemars::JsonSchema;
@@ -28,15 +29,34 @@ const STYLE_FIELDS: &str = "Style fields: font, size, color, bold, italic, under
 pub struct RevealInput {
     /// What appears at a time: `letter` (a typewriter with `appear`), `word` or `line`.
     pub unit: RevealUnit,
-    /// How each one appears: `appear` (at once), `fade` or `rise`; `appear` when omitted.
+    /// How each one appears: `appear` (at once), `fade`, `rise`, `blur` (into focus),
+    /// `pop` (grows and settles), `zoom` (shrinks from large), `slide_left`, `slide_right`,
+    /// `drop` (falls with a bounce) or `collapse` (letters close up from wide spacing);
+    /// `appear` when omitted.
     #[serde(default)]
     pub motion: RevealMotion,
     /// Time from the clip's start until the whole text shows, with units, such as
     /// `{"seconds": 1}`.
     pub duration: TimeInput,
-    /// Also leave the same way before the clip ends.
+    /// Also leave before the clip ends, the last unit first.
     #[serde(default)]
     pub exit: bool,
+    /// How much each unit's motion overlaps the next one's, 0 (one after another) to 1 (all
+    /// together); 0.5 when omitted.
+    #[serde(default)]
+    pub overlap: Option<f64>,
+    /// How each unit moves: `linear`, `ease_in`, `ease_out`, `ease_in_out`, `back`
+    /// (overshoots), `bounce`, `elastic` or `{"bezier": [x1, y1, x2, y2]}`; the motion's own
+    /// when omitted (`back` for pop, `bounce` for drop, `ease_out` otherwise).
+    #[serde(default)]
+    pub easing: Option<RevealEasing>,
+    /// The order units arrive in: `forward` (the default), `backward`, `center`, `edges` or
+    /// `random` (shuffled, the same every time).
+    #[serde(default)]
+    pub order: RevealOrder,
+    /// How units leave when exit is on, any motion; the arriving one when omitted.
+    #[serde(default)]
+    pub exit_motion: Option<RevealMotion>,
 }
 
 impl RevealInput {
@@ -45,12 +65,20 @@ impl RevealInput {
         if !duration.is_positive() {
             return Err(invalid("a reveal needs a positive duration"));
         }
-        Ok(TextReveal {
+        let reveal = TextReveal {
             unit: self.unit,
             motion: self.motion,
             duration,
             exit: self.exit,
-        })
+            overlap: self.overlap.unwrap_or(DEFAULT_REVEAL_OVERLAP),
+            easing: self.easing,
+            order: self.order,
+            exit_motion: self.exit_motion,
+        };
+        if !(reveal.overlap.is_finite() && (0.0..=1.0).contains(&reveal.overlap)) {
+            return Err(invalid("a reveal's overlap must be from 0 to 1"));
+        }
+        Ok(reveal)
     }
 }
 
@@ -539,6 +567,7 @@ impl Command for TextTemplate {
             motion: r.motion,
             duration: Flicks::from_millis(r.duration_ms).min(Flicks::new(duration.get() / 2)),
             exit: r.exit,
+            ..TextReveal::default()
         });
         let content = TextContent {
             text,

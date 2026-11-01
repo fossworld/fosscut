@@ -36,6 +36,14 @@ FossCut's text layer had one style for the whole text, with the bundled Inter fo
    - **`text.set`:** changes the text, preset, style patch, spans or reveal of an existing clip.
    - **`text.template`:** adds a template as one text clip whose lines are spans, placed and revealed as the template says.
 
+## Implementation notes
+
+- **Reveal motions and timing** (format 0.16.0, item 3): besides `appear`, `fade` and `rise`, a reveal's `motion` may be `blur` (into focus), `pop` (from nothing past full size and back), `zoom` (from 180% down), `slide_left` and `slide_right`, `drop` (from above with a bounce) or `collapse` (letters closing up from spacing 60% wider around their line's middle). Units scale around their own centre.
+  - **Timing:** `overlap` (0 one after another, 1 all together; 0.5, the earlier timing, when omitted) sets how far each unit's motion overlaps the next; the last unit always ends with the reveal. `easing` is `linear`, cubic `ease_in`, `ease_out` or `ease_in_out`, `back`, `bounce`, `elastic` (Robert Penner's easing equations) or a CSS cubic `bezier`; omitted, each motion uses its own (`back` for pop, `bounce` for drop, cubic ease-out otherwise). Motions that move become opaque by halfway whatever their easing. `order` is `forward`, `backward`, `center`, `edges` or `random` (a fixed SplitMix64 shuffle).
+  - **Exits:** with `exit`, units leave in reverse order over the same time, with `exit_motion` when given or the arriving motion played backwards.
+  - **Format and rendering:** all new fields are optional with sparse defaults, so earlier projects read unchanged and keep their look. `TextReveal::look_at` gives each unit's opacity, offsets, scale, blur and spread at a moment; the CPU composition groups glyphs by look, draws them scaled and moved with `cosmic-text`, blurs blurred groups, and leaves room around the text for where each motion takes units, so the layout box still keeps the text in place. Validation refuses an overlap outside 0 to 1 and a Bezier whose x control points leave 0 to 1 (`fosscut.model.text_reveal`, `fosscut.text.invalid`).
+  - **Tests:** model tests of overlap, order, easing, motions and exits; raster tests that each motion rests in place and moves, scales, blurs or spreads its units part way; the golden `text-reveal-motions.png`; a CLI test from `text add --reveal-*` flags.
+
 ## Consequences
 
 - Rich titles stay one clip and one document entry that agents can read and patch, and render identically wherever the project and its font files go.

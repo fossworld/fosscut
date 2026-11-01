@@ -31,7 +31,13 @@ fn users(project: &fosscut_model::Project, asset: &Id) -> Vec<Id> {
         .timelines
         .values()
         .flat_map(|t| t.tracks.iter().flat_map(|tr| &tr.clips))
-        .filter(|c| c.content.asset() == Some(asset))
+        .filter(|c| {
+            c.content.asset() == Some(asset)
+                // A particle clip's sprite image (ADR-0038).
+                || matches!(&c.content, ClipContent::Particles { particles: p } if p.sprite_asset() == Some(asset))
+                // A 3D object's textures (ADR-0040).
+                || matches!(&c.content, ClipContent::Model { model } if model.uses(asset))
+        })
         .map(|c| c.id.clone())
         .collect()
 }
@@ -424,9 +430,14 @@ impl Command for MediaReplace {
             .cloned()
             .ok_or_else(|| not_found(&self.with))?;
         let fits = match old.kind {
-            AssetKind::Video | AssetKind::Image | AssetKind::Lut | AssetKind::Font => {
-                new.kind == old.kind
-            }
+            AssetKind::Video
+            | AssetKind::Image
+            | AssetKind::Lut
+            | AssetKind::Font
+            | AssetKind::Web
+            | AssetKind::Model => new.kind == old.kind,
+            // A drawing can be replaced by another drawing or a still image (ADR-0036).
+            AssetKind::Vector => matches!(new.kind, AssetKind::Vector | AssetKind::Image),
             AssetKind::Audio => new.has_audio(),
         };
         if !fits || self.asset == self.with {
@@ -440,6 +451,34 @@ impl Command for MediaReplace {
             let rate = timeline.format.rate;
             for track in &mut timeline.tracks {
                 for clip in &mut track.clips {
+                    // A particle clip's sprite image (ADR-0038).
+                    if let ClipContent::Particles { particles } = &mut clip.content
+                        && particles.sprite_asset() == Some(&self.asset)
+                    {
+                        if track.locked {
+                            return Err(ApiError::new(
+                                codes::TRACK_LOCKED,
+                                format!("track {} is locked", track.id),
+                            ));
+                        }
+                        particles.sprite.asset = Some(new.id.clone());
+                        clips.push(clip.id.clone());
+                        continue;
+                    }
+                    // A 3D object's model or textures (ADR-0040).
+                    if let ClipContent::Model { model } = &mut clip.content
+                        && model.uses(&self.asset)
+                    {
+                        if track.locked {
+                            return Err(ApiError::new(
+                                codes::TRACK_LOCKED,
+                                format!("track {} is locked", track.id),
+                            ));
+                        }
+                        model.replace_asset(&self.asset, &new.id);
+                        clips.push(clip.id.clone());
+                        continue;
+                    }
                     if clip.content.asset() != Some(&self.asset) {
                         continue;
                     }

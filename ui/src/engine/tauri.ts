@@ -38,6 +38,7 @@ import type {
   RecordState,
   ReframeRequest,
   ReframeResult,
+  RemotionChoice,
   SceneSplit,
   ShortCandidates,
   ShortRequest,
@@ -56,6 +57,9 @@ import type {
   VerticalResult,
   VoiceInfo,
   Waveform,
+  WebImported,
+  WebImportRequest,
+  WebPage,
 } from "./types";
 
 /** A reframe request as the desktop's commands take it: flat, with nulls for what is left out. */
@@ -310,6 +314,17 @@ export class TauriEngine implements EngineClient {
         title: request.title ?? null,
         expectedRevision: request.expected_revision ?? null,
       }),
+  };
+
+  web = {
+    pick: (folder: boolean): Promise<WebPage | null> => invoke("web_pick", { folder }),
+    import: (request: WebImportRequest): Promise<WebImported> => invoke("web_import", { request }),
+  };
+
+  remotion = {
+    start: (choice: RemotionChoice): Promise<JobStatus> => invoke("remotion_start", { choice }),
+    status: (job: string): Promise<JobStatus> => invoke("remotion_status", { job }),
+    cancel: (job: string): Promise<JobStatus> => invoke("remotion_cancel", { job }),
   };
 
   cache = {

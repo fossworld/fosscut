@@ -43,6 +43,12 @@ pub enum LayerSource {
     Transition(Box<TransitionLayer>),
     /// A compound clip (ADR-0025): another timeline's frame, planned at its own canvas.
     Nested(Box<RenderPlan>),
+    /// A particle emitter at one moment (ADR-0038), drawn over the canvas at the output
+    /// resolution.
+    Particles(Box<crate::particles::ParticleLayer>),
+    /// A 3D object at one moment (ADR-0040), drawn through its camera over the canvas at
+    /// the output resolution; the layer's transform places it in the scene.
+    Model(Box<crate::objects::ObjectLayer>),
 }
 
 impl Layer {
@@ -57,6 +63,16 @@ impl Layer {
             }
             LayerSource::Nested(plan) => plan.layers.iter().flat_map(Layer::flattened).collect(),
             _ => vec![self],
+        }
+    }
+
+    /// The source frame this layer reads: a video or image frame, or the image of a
+    /// particle sprite (ADR-0038). Front ends open the media these name.
+    pub fn frame_source(&self) -> Option<&SourceRef> {
+        match &self.source {
+            LayerSource::Frame(source) => Some(source),
+            LayerSource::Particles(particles) => particles.sprite.as_ref(),
+            _ => None,
         }
     }
 }
@@ -144,6 +160,9 @@ pub struct Layer {
     /// has no motion blur. The layer is drawn at each placement and the draws averaged, so
     /// it streaks along its path.
     pub shutter: Vec<Transform>,
+    /// Where the layer sits in 3D and the camera it is seen through (ADR-0037); `None` for
+    /// a plain 2D placement. The planner sets it for every spatial transform.
+    pub space: Option<crate::space::LayerSpace>,
 }
 
 /// The source frames around the one a layer shows, nearest first on each side, within the
@@ -207,6 +226,7 @@ impl Layer {
             flow: false,
             neighbours: Neighbours::default(),
             shutter: Vec::new(),
+            space: None,
         }
     }
 }
@@ -246,7 +266,7 @@ impl RenderPlan {
 /// The version of [`RenderPlan::cache_key_bytes`]: bump it whenever planning, the
 /// compositor, an effect or a shader changes the pixels a plan renders, or the encoding
 /// changes, so frames cached by an older renderer are never shown again (ADR-0032, item 4).
-pub const CACHE_KEY_VERSION: u32 = 2;
+pub const CACHE_KEY_VERSION: u32 = 3;
 
 impl RenderPlan {
     /// A stable encoding of everything in this plan that affects its pixels when rendered at
@@ -370,6 +390,7 @@ impl KeyBytes {
             flow,
             neighbours,
             shutter,
+            space,
         } = layer;
         self.layer_source(source);
         self.u32(u32::from(*rotation));
@@ -451,6 +472,51 @@ impl KeyBytes {
         for transform in shutter {
             self.transform(transform);
         }
+        match space {
+            None => self.tag(0),
+            Some(space) => {
+                self.tag(1);
+                self.space(space);
+            }
+        }
+    }
+
+    fn space(&mut self, space: &crate::space::LayerSpace) {
+        let crate::space::LayerSpace {
+            camera,
+            scene,
+            depth,
+            defocus,
+        } = space;
+        let crate::space::Camera {
+            canvas,
+            eye,
+            target,
+            roll,
+            field_of_view,
+            focus,
+        } = camera;
+        self.u32(canvas.0);
+        self.u32(canvas.1);
+        for value in eye.iter().chain(target).chain([roll, field_of_view]) {
+            self.f64(*value);
+        }
+        match focus {
+            None => self.tag(0),
+            Some(crate::space::Focus {
+                distance,
+                aperture,
+                max_blur,
+            }) => {
+                self.tag(1);
+                for value in [distance, aperture, max_blur] {
+                    self.f64(*value);
+                }
+            }
+        }
+        self.bool(*scene);
+        self.f64(*depth);
+        self.f64(*defocus);
     }
 
     fn layer_source(&mut self, source: &LayerSource) {
@@ -507,6 +573,36 @@ impl KeyBytes {
                 self.tag(7);
                 self.plan(plan);
             }
+            LayerSource::Particles(particles) => {
+                let crate::particles::ParticleLayer {
+                    content,
+                    keyframes,
+                    time,
+                    frame,
+                    sprite,
+                } = particles.as_ref();
+                self.tag(8);
+                self.debug(content);
+                self.debug(keyframes);
+                self.time(*time);
+                self.time(*frame);
+                match sprite {
+                    None => self.tag(0),
+                    Some(source) => {
+                        self.tag(1);
+                        self.source_ref(source);
+                    }
+                }
+            }
+            LayerSource::Model(object) => {
+                let crate::objects::ObjectLayer { content, textures } = object.as_ref();
+                self.tag(9);
+                self.debug(content);
+                self.len(textures.len());
+                for source in textures {
+                    self.source_ref(source);
+                }
+            }
         }
     }
 
@@ -518,6 +614,11 @@ impl KeyBytes {
             rotation,
             flip_horizontal,
             flip_vertical,
+            three_d,
+            position_z,
+            rotation_x,
+            rotation_y,
+            anchor,
         } = transform;
         for value in position
             .iter()
@@ -529,6 +630,13 @@ impl KeyBytes {
         }
         self.bool(*flip_horizontal);
         self.bool(*flip_vertical);
+        self.bool(*three_d);
+        for value in [position_z, rotation_x, rotation_y]
+            .into_iter()
+            .chain(anchor)
+        {
+            self.f64(*value);
+        }
     }
 }
 
@@ -582,13 +690,25 @@ fn layer_for(
     let placement = |at: Flicks| {
         let motion = animate(&clip.animations, at, clip.duration);
         let mut transform = clip.transform_at(at);
+        // A clip following a shape's path sits on it (ADR-0036).
+        crate::vector::follow(project, clip, at, &mut transform);
         transform.position[0] += motion.offset[0];
         transform.position[1] += motion.offset[1];
         transform.scale *= motion.scale;
         transform.rotation += motion.rotation;
+        transform.position_z += motion.depth;
+        transform.rotation_x += motion.rotation_x;
+        transform.rotation_y += motion.rotation_y;
         (transform, motion.opacity)
     };
     let (transform, motion_opacity) = placement(offset);
+    // Animations that blur or glow the clip add effects after its own (crate::light).
+    let mut effects = effects;
+    effects.extend(crate::light::animation_effects(
+        &animate(&clip.animations, offset, clip.duration),
+        frame,
+        offset.as_seconds_f64(),
+    ));
     let shutter = crate::effects::motion_blur(&effects)
         .map(|(amount, samples)| {
             let open = format.rate.frame_duration().get() as f64 * amount;
@@ -611,6 +731,7 @@ fn layer_for(
         flow: false,
         neighbours: Neighbours::default(),
         shutter: shutter.clone(),
+        space: None,
     };
     let mut next_frame = None;
     let mut flow = false;
@@ -670,8 +791,24 @@ fn layer_for(
             };
             return Some(placed(LayerSource::Text(Box::new(layer)), 0));
         }
+        (ClipContent::Particles { particles }, TrackKind::Video) => {
+            let frame = format.rate.frame_duration();
+            let layer = crate::particles::ParticleLayer::of(clip, particles, offset, frame);
+            return Some(placed(LayerSource::Particles(Box::new(layer)), 0));
+        }
+        (ClipContent::Model { model }, TrackKind::Video) => {
+            // Objects are always in the timeline's 3D scene; a moving shutter is not
+            // sampled for them yet (ADR-0040).
+            let layer = crate::objects::ObjectLayer::of(clip, model, offset);
+            let mut placed = placed(LayerSource::Model(Box::new(layer)), 0);
+            placed.transform.three_d = true;
+            placed.shutter = Vec::new();
+            return Some(placed);
+        }
         (ClipContent::Shape(shape), TrackKind::Video) => {
-            return Some(placed(LayerSource::Shape(shape.clone()), 0));
+            // Trims and stroke width at this moment, with draw animations (ADR-0036).
+            let now = clip.shape_at(offset).unwrap_or_else(|| (**shape).clone());
+            return Some(placed(LayerSource::Shape(Box::new(now)), 0));
         }
         (ClipContent::Adjustment, TrackKind::Video) => {
             return (!effects.is_empty()).then(|| placed(LayerSource::Adjustment, 0));
@@ -700,12 +837,15 @@ fn layer_for(
         _ => return None,
     };
     let rotation = source_geometry(project, &source.asset).map_or(0, |(_, r)| r);
-    Some(Layer {
+    let mut layer = Layer {
         next_frame,
         flow,
         neighbours,
         ..placed(LayerSource::Frame(source), rotation)
-    })
+    };
+    // Light runs on the stored picture: turn its directions to match the displayed one.
+    crate::light::orient(&mut layer.effects, rotation);
+    Some(layer)
 }
 
 /// The placements `placement` gives at `samples` moments spread evenly over a shutter open
@@ -897,6 +1037,8 @@ fn plan_tracks(
             plan.layers.push(layer);
         }
     }
+    // Spatial layers see the timeline's camera, and 3D runs draw farthest first (ADR-0037).
+    crate::space::place_layers(&mut plan, &crate::space::camera_at(doc, time));
     Ok(plan)
 }
 
@@ -916,17 +1058,12 @@ fn canvas_layer(
         fosscut_model::CanvasFill::Color { color } => Some(Layer {
             clip: Some(clip.id.clone()),
             ..Layer::shape(fosscut_model::ShapeContent {
-                shape: fosscut_model::MaskShape::Rectangle,
-                size: [1.0, 1.0],
-                roundness: 0.0,
-                points: Vec::new(),
-                fill: fosscut_model::Paint {
-                    color: color.clone(),
-                    gradient: None,
-                },
-                outline: Default::default(),
-                label: None,
                 label_at: [0.5, 0.5],
+                ..fosscut_model::ShapeContent::new(
+                    fosscut_model::MaskShape::Rectangle,
+                    [1.0, 1.0],
+                    color.clone(),
+                )
             })
         }),
         fosscut_model::CanvasFill::Blur { amount } => {

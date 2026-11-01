@@ -94,6 +94,9 @@ pub(crate) fn track_kind_for(content: &ClipContent) -> TrackKind {
         | ClipContent::Image { .. }
         | ClipContent::Adjustment
         | ClipContent::Shape(_)
+        | ClipContent::Particles { .. }
+        | ClipContent::Model { .. }
+        | ClipContent::Camera(_)
         | ClipContent::Timeline { .. } => TrackKind::Video,
         ClipContent::Audio { .. } => TrackKind::Audio,
         ClipContent::Text(_) => TrackKind::Text,

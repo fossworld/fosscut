@@ -115,8 +115,9 @@ describe("text reveals", () => {
   });
 
   it("read the reveal, or a second-long one to start from", () => {
-    expect(revealOf(revealed)).toEqual({ unit: "word", motion: "fade", seconds: 1.5, exit: true });
-    expect(revealOf(plain)).toEqual({ unit: "", motion: "appear", seconds: 1, exit: false });
+    const defaults = { overlap: 0.5, easing: "", order: "forward", exitMotion: "" };
+    expect(revealOf(revealed)).toEqual({ unit: "word", motion: "fade", seconds: 1.5, exit: true, ...defaults });
+    expect(revealOf(plain)).toEqual({ unit: "", motion: "appear", seconds: 1, exit: false, ...defaults });
     expect(revealOf(clip("clip_0006", "text", 0, 0.5)).seconds, "half of a short clip").toBe(0.25);
   });
 
@@ -134,7 +135,22 @@ describe("text reveals", () => {
     expect(revealChange(plain, { motion: "fade" }), "a motion needs a unit").toBeNull();
     expect(revealChange(revealed, { seconds: 0 })).toBeNull();
     expect(revealChange(revealed, { seconds: Number.NaN })).toBeNull();
-    expect(revealArg({ unit: "line", motion: "rise", seconds: 1 / 3, exit: false })?.duration).toEqual({ seconds: "0.333" });
+    const options = { overlap: 0.5, easing: "", order: "forward", exitMotion: "" } as const;
+    expect(revealArg({ unit: "line", motion: "rise", seconds: 1 / 3, exit: false, ...options })?.duration).toEqual({ seconds: "0.333" });
+  });
+
+  it("send the motion options only when they differ from their defaults", () => {
+    const styled = clip("clip_0007", "text", 0, 4, {
+      text: "Pop in",
+      reveal: { unit: "letter", motion: "pop", duration: moment(1), exit: true, overlap: 0.8, easing: "bounce", order: "center", exit_motion: "blur" },
+    });
+    expect(revealOf(styled)).toMatchObject({ motion: "pop", overlap: 0.8, easing: "bounce", order: "center", exitMotion: "blur" });
+    expect(revealChange(styled, { overlap: 0.5, easing: "", order: "forward" })).toEqual({
+      reveal: { unit: "letter", motion: "pop", duration: { seconds: "1" }, exit: true, exit_motion: "blur" },
+    });
+    expect(revealChange(styled, { exit: false })?.reveal, "an exit motion needs an exit").not.toHaveProperty("exit_motion");
+    expect(revealChange(styled, { easing: { bezier: [0.2, 0, 0.2, 1] } })?.reveal).toMatchObject({ easing: { bezier: [0.2, 0, 0.2, 1] } });
+    expect(revealChange(styled, { overlap: 1.2 }), "out of range").toBeNull();
   });
 });
 

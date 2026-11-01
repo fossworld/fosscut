@@ -35,6 +35,20 @@ pub fn test_pattern_args() -> Value {
     })
 }
 
+/// Media arguments for an SVG drawing 200 x 100 pixels with two paths (ADR-0036).
+pub fn vector_args() -> Value {
+    json!({
+        "name": "logo.svg",
+        "kind": "vector",
+        "path": { "absolute": "/fixtures/logo.svg" },
+        "identity": { "size": 2_048, "sample_blake3": "cd".repeat(32) },
+        "info": {
+            "video": { "width": 200, "height": 100, "codec": "svg" },
+            "vector": { "view_box": [0.0, 0.0, 200.0, 100.0], "paths": 2 }
+        }
+    })
+}
+
 pub fn request(command: &str, args: Value) -> Request {
     let mut request = Request::single(command, args);
     request.actor = "test".into();

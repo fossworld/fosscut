@@ -1,0 +1,78 @@
+[
+  {
+    "name": "shipping-box",
+    "title": "Shipping box",
+    "description": "An orange cardboard box with softly rounded edges, standing on a floor that only shows its soft shadow, so it sits on a photo or video below. Print a logo on its front with faces.front.texture.",
+    "tags": ["box", "package", "parcel", "delivery", "cardboard", "product", "ad"],
+    "content": {
+      "object": { "kind": "box", "size": [0.3, 0.21, 0.24], "bevel": 0.006 },
+      "material": { "color": "#C9792F", "roughness": 0.9 },
+      "light": { "ambient": 0.45, "ground": "#7A6A58", "azimuth": -40, "elevation": 55, "intensity": 1.1, "softness": 0.55 },
+      "floor": { "shadow": 0.55 }
+    },
+    "transform": { "position": [0, 0.08], "rotation_y": -28 }
+  },
+  {
+    "name": "city-blocks",
+    "title": "City blocks",
+    "description": "A dark city of blocks of varied heights on a dark ground, under a cool moonlight; grow it with model.growth and look down on it through a camera tilted with orbit (camera.add, orbit [0, 35]).",
+    "tags": ["city", "map", "buildings", "blocks", "delivery", "route", "night", "grid"],
+    "content": {
+      "object": { "kind": "blocks", "columns": 16, "rows": 16, "block": 0.045, "gap": 0.018, "heights": [0.01, 0.18], "fill": 0.85, "seed": 3 },
+      "material": { "color": "#3A435E", "roughness": 0.7 },
+      "faces": { "top": { "color": "#5C688C", "roughness": 0.55 } },
+      "light": { "ambient": 0.55, "sky": "#8EA2D6", "ground": "#20242F", "azimuth": 35, "elevation": 40, "color": "#C9D6FF", "intensity": 1.0, "softness": 0.3 },
+      "floor": { "catcher": false, "color": "#1E2230", "size": 3 }
+    },
+    "transform": { "position": [0, 0.1], "position_z": 0.3 }
+  },
+  {
+    "name": "podium",
+    "title": "Podium",
+    "description": "A low white round stage for a product, lit from above with a soft shadow on a catching floor.",
+    "tags": ["podium", "stage", "pedestal", "product", "showcase", "display"],
+    "content": {
+      "object": { "kind": "cylinder", "size": [0.45, 0.06] },
+      "material": { "color": "#EDEDED", "roughness": 0.4 },
+      "light": { "ambient": 0.45, "azimuth": -30, "elevation": 65, "intensity": 0.9, "softness": 0.6 },
+      "floor": { "shadow": 0.45 }
+    },
+    "transform": { "position": [0, 0.3] }
+  },
+  {
+    "name": "extruded-title",
+    "title": "Extruded title",
+    "description": "Bold white letters with depth and bevelled edges, lit from the upper left; change the words with text and turn them with rotation_y.",
+    "tags": ["title", "text", "3d", "logo", "heading", "extruded"],
+    "content": {
+      "object": { "kind": "text", "text": "TITLE", "bold": true, "size": 0.12, "depth": 0.04, "bevel": 0.005 },
+      "material": { "color": "#F2F2F2", "roughness": 0.3 },
+      "light": { "ambient": 0.4, "azimuth": -30, "elevation": 40, "intensity": 1.1, "softness": 0.3 }
+    },
+    "transform": { "rotation_y": -15 }
+  },
+  {
+    "name": "neon-ring",
+    "title": "Neon ring",
+    "description": "A thin ring that glows magenta by itself; add a light.glow effect to bloom it and animate model.emissive_strength to switch it on.",
+    "tags": ["neon", "ring", "glow", "light", "loop", "circle"],
+    "content": {
+      "object": { "kind": "torus", "size": 0.3, "thickness": 0.025 },
+      "material": { "color": "#2A0A20", "roughness": 0.3, "emissive": "#FF3CAC", "emissive_strength": 3 },
+      "light": { "ambient": 0.2, "intensity": 0.4, "shadows": false }
+    }
+  },
+  {
+    "name": "chrome-sphere",
+    "title": "Chrome sphere",
+    "description": "A polished metal ball that reflects the sky and ground light, with a soft shadow on a catching floor.",
+    "tags": ["sphere", "ball", "chrome", "metal", "shiny", "orb"],
+    "content": {
+      "object": { "kind": "sphere", "size": 0.25 },
+      "material": { "color": "#E8E8E8", "metallic": 1, "roughness": 0.15 },
+      "light": { "ambient": 0.6, "sky": "#DDE6F5", "ground": "#4A4038", "azimuth": -35, "elevation": 50, "intensity": 1.2, "softness": 0.45 },
+      "floor": { "shadow": 0.5 }
+    },
+    "transform": { "position": [0, 0.08] }
+  }
+]

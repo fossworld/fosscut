@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "Aim": {
+      "description": "What a particle's direction is measured from.",
+      "oneOf": [
+        {
+          "const": "direction",
+          "description": "`direction`, the same for every particle.",
+          "type": "string"
+        },
+        {
+          "const": "outward",
+          "description": "Away from the emitter's centre, so a circle or burst sprays outwards.",
+          "type": "string"
+        },
+        {
+          "const": "inward",
+          "description": "Towards the emitter's centre.",
+          "type": "string"
+        },
+        {
+          "const": "converge",
+          "description": "Each particle travels from where it is born to the emitter's centre over its life,\neasing in and out, so sparks gather into one point; speed, direction, gravity, wind\nand drag do not apply.",
+          "type": "string"
+        }
+      ]
+    },
     "Align": {
       "description": "Horizontal text alignment.",
       "oneOf": [
@@ -23,6 +48,10 @@
     "Animation": {
       "description": "One of a clip's animations: a preset and how long it takes.",
       "properties": {
+        "delay": {
+          "$ref": "#/$defs/Flicks",
+          "description": "How long it waits (0 when omitted): an entrance starts this long after the clip's\nstart and holds its first state until then, an exit ends this long before the\nclip's end and holds its last state after, and a combo starts its cycles this late.\nStaggered animations give each clip a growing delay."
+        },
         "duration": {
           "$ref": "#/$defs/Flicks",
           "description": "How long it takes; combo animations repeat with this period."
@@ -373,6 +402,27 @@
       ],
       "type": "object"
     },
+    "Burst": {
+      "additionalProperties": false,
+      "description": "Many particles born at one moment.",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/Flicks",
+          "description": "When, in emission time."
+        },
+        "count": {
+          "description": "How many, 1 to 5000.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "at",
+        "count"
+      ],
+      "type": "object"
+    },
     "CanvasFill": {
       "description": "What fills the canvas around a clip's picture (CapCut parity CC-063).",
       "oneOf": [
@@ -705,12 +755,34 @@
         {
           "description": "A drawn shape, background or sticker (ADR-0028).",
           "properties": {
+            "closed": {
+              "description": "False leaves a `path` shape open: a line from its first point to its last, not\njoined back (ADR-0036). Closed when omitted.",
+              "type": "boolean"
+            },
+            "contours": {
+              "description": "More contours of a `path` shape after `points`, in the same box: holes, and parts\ndrawn and trimmed with it, as the subpaths of SVG path data.",
+              "items": {
+                "$ref": "#/$defs/Contour"
+              },
+              "type": "array"
+            },
             "fill": {
-              "$ref": "#/$defs/Paint",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Paint"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "default": {
                 "color": "#FFFFFF"
               },
-              "description": "What fills it."
+              "description": "What fills it: `null` for no fill, as lines have (white when omitted). An open\npath's fill closes it with a straight edge."
+            },
+            "fill_rule": {
+              "$ref": "#/$defs/FillRule",
+              "description": "Which areas of overlapping contours are filled: `even_odd` (the default) or\n`nonzero`, as in SVG."
             },
             "kind": {
               "const": "shape",
@@ -766,6 +838,32 @@
               "maxItems": 2,
               "minItems": 2,
               "type": "array"
+            },
+            "stroke": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ShapeStroke"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A stroke centred on its edge, or along an open path (ADR-0036)."
+            },
+            "trim_end": {
+              "description": "Where the visible part ends, 0 to 1 of the length (1 when omitted); animating it\nfrom 0 to 1 draws the outline on. Animate `shape.trim_end`.",
+              "format": "double",
+              "type": "number"
+            },
+            "trim_offset": {
+              "description": "Moves the visible part along the outline by this fraction of its length, wrapping\naround: 0.5 starts it halfway. Animate `shape.trim_offset`.",
+              "format": "double",
+              "type": "number"
+            },
+            "trim_start": {
+              "description": "Where the visible part of the outline starts, 0 to 1 of its length (ADR-0036):\ntrims cut the stroke, and the fill of an open path. Animate `shape.trim_start`.",
+              "format": "double",
+              "type": "number"
             }
           },
           "required": [
@@ -794,6 +892,124 @@
           "required": [
             "kind",
             "timeline"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A camera (ADR-0037): while it covers a time on a video track, the timeline's 3D\nclips are seen through it. It draws and sounds nothing itself.",
+          "properties": {
+            "aperture": {
+              "description": "The lens opening of the depth of field, as a fraction of the canvas width, from 0\nto 1 (0.1 when omitted): larger blurs layers away from the focus more.",
+              "format": "double",
+              "type": "number"
+            },
+            "depth_of_field": {
+              "description": "Blurs 3D layers by their distance from the plane in focus.",
+              "type": "boolean"
+            },
+            "field_of_view": {
+              "description": "The angle of view across the canvas width, in degrees from 1 to 170 (40 when\nomitted). The camera keeps its framing distance (see `position_z`), so a wider\nangle strengthens the perspective without changing what the z = 0 plane shows.",
+              "format": "double",
+              "type": "number"
+            },
+            "focus_offset": {
+              "description": "How far the plane in focus lies beyond the point of interest along the view, as a\nfraction of the canvas width; 0 focuses on the point of interest, negative nearer\nthe camera.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "camera",
+              "type": "string"
+            },
+            "max_blur": {
+              "description": "The largest blur radius of the depth of field, as a fraction of the canvas width,\nfrom 0 to 0.2 (0.02 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "orbit": {
+              "description": "Turns the camera around its point of interest, in degrees: `[yaw, pitch]`, where a\npositive yaw moves the camera to the right and a positive pitch moves it up. It\nkeeps looking at the point of interest.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "point_of_interest": {
+              "description": "The point the camera looks at, as fractions of the canvas width and height from its\ncentre.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "point_of_interest_z": {
+              "description": "The depth of the point of interest, as a fraction of the canvas width; positive is\naway from the viewer.",
+              "format": "double",
+              "type": "number"
+            },
+            "position": {
+              "description": "Where the camera is across the canvas, as fractions of its width and height from\nits centre; y grows downwards.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "position_z": {
+              "description": "How far the camera has moved forward from its framing distance (where the z = 0\nplane exactly fills the frame), as a fraction of the canvas width: positive pushes\nin (a dolly in), negative pulls back.",
+              "format": "double",
+              "type": "number"
+            },
+            "roll": {
+              "description": "Turns the view around its axis, in degrees; positive turns the picture clockwise.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A particle emitter (ADR-0038): sparks, embers, dust, snow, confetti and the like,\ndrawn over the whole canvas.",
+          "properties": {
+            "kind": {
+              "const": "particles",
+              "type": "string"
+            },
+            "particles": {
+              "$ref": "#/$defs/ParticleContent",
+              "description": "The emitter, under a key of its own so its settings never meet the clip's\nfields (`speed`, `opacity`, `blend`)."
+            }
+          },
+          "required": [
+            "kind",
+            "particles"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A 3D object (ADR-0040): a glTF model or a built-in solid, lit and shaded, seen\nthrough the timeline's camera and ordered among its 3D layers by depth.",
+          "properties": {
+            "kind": {
+              "const": "model",
+              "type": "string"
+            },
+            "model": {
+              "$ref": "#/$defs/ModelContent",
+              "description": "The object, under a key of its own so its settings never meet the clip's\nfields (`opacity`)."
+            }
+          },
+          "required": [
+            "kind",
+            "model"
           ],
           "type": "object"
         }
@@ -851,6 +1067,17 @@
         "enabled": {
           "description": "False deactivates the clip: it keeps its place but is neither drawn nor heard.",
           "type": "boolean"
+        },
+        "follow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Follow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The shape clip whose path this clip moves along, with how far along it is\n(ADR-0036); it stays where its transform puts it when omitted."
         },
         "group": {
           "anyOf": [
@@ -1003,6 +1230,42 @@
       "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
       "type": "string"
     },
+    "ColorBy": {
+      "description": "How a particle's colour is chosen.",
+      "oneOf": [
+        {
+          "const": "life",
+          "description": "Through the colours from birth to death.",
+          "type": "string"
+        },
+        {
+          "const": "random",
+          "description": "One of the colours at random, kept for life.",
+          "type": "string"
+        }
+      ]
+    },
+    "Contour": {
+      "additionalProperties": false,
+      "description": "One more contour of a path shape.",
+      "properties": {
+        "closed": {
+          "description": "False leaves it open (closed when omitted).",
+          "type": "boolean"
+        },
+        "points": {
+          "description": "Its points, -1 to 1 across the shape's box.",
+          "items": {
+            "$ref": "#/$defs/PathPoint"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "type": "object"
+    },
     "Crop": {
       "description": "Edges removed from a clip's picture, as fractions of its width and height before any\nflip. What remains keeps its size and place on the canvas.",
       "properties": {
@@ -1075,9 +1338,225 @@
       ],
       "type": "object"
     },
+    "Emitter": {
+      "additionalProperties": false,
+      "description": "Where particles are born.",
+      "properties": {
+        "angle": {
+          "description": "Clockwise rotation of the shape in degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "edge": {
+          "description": "Born along the outline of a circle or rectangle instead of inside it.",
+          "type": "boolean"
+        },
+        "position": {
+          "description": "Its centre, as an offset from the canvas centre in fractions of the canvas width and\nheight like `transform.position`; y grows downwards (animatable as\n`particles.emitter.position`, which moves where new particles are born).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "shape": {
+          "$ref": "#/$defs/EmitterShape",
+          "description": "Its shape (a point when omitted)."
+        },
+        "size": {
+          "description": "Width and height as fractions of the canvas's, 0 to 4; a line runs along its width.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "EmitterShape": {
+      "description": "The shape particles are born in. Emitting along a shape clip's path is left for later.",
+      "oneOf": [
+        {
+          "const": "point",
+          "description": "One point.",
+          "type": "string"
+        },
+        {
+          "const": "line",
+          "description": "A line as long as the emitter's width.",
+          "type": "string"
+        },
+        {
+          "const": "circle",
+          "description": "An ellipse of the emitter's size.",
+          "type": "string"
+        },
+        {
+          "const": "rectangle",
+          "description": "A rectangle of the emitter's size.",
+          "type": "string"
+        }
+      ]
+    },
+    "Faces": {
+      "additionalProperties": false,
+      "description": "Materials of single faces: of a box, of each block of a grid, or the front and back of\nextruded text and paths. Faces are named as the viewer sees them at rest: `front` faces\nthe viewer, `top` faces up.",
+      "properties": {
+        "back": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face away from the viewer."
+        },
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face underneath."
+        },
+        "front": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face towards the viewer."
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face on the left."
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face on the right."
+        },
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The face on top."
+        }
+      },
+      "type": "object"
+    },
+    "FillRule": {
+      "description": "Which areas of overlapping contours a fill covers.",
+      "oneOf": [
+        {
+          "const": "even_odd",
+          "description": "Inside an odd number of contours: a contour inside another cuts a hole.",
+          "type": "string"
+        },
+        {
+          "const": "nonzero",
+          "description": "Where the contours wind around a point at all, counted by direction: a contour\ninside another cuts a hole only when it runs the other way.",
+          "type": "string"
+        }
+      ]
+    },
     "Flicks": {
       "description": "Time in flicks: 1/705,600,000 of a second (ADR-0005). 30 fps frames are 23,520,000 flicks long.",
       "type": "integer"
+    },
+    "Floor": {
+      "additionalProperties": false,
+      "description": "A level floor under an object.",
+      "properties": {
+        "catcher": {
+          "description": "True (the default) shows only the shadow it catches, so the object can stand on a\nphoto or video below it; false draws the floor in `color`.",
+          "type": "boolean"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "The colour of a drawn floor (`#9A9A9A` when omitted)."
+        },
+        "gap": {
+          "description": "How far below the object's lowest point at rest the floor lies, -1 to 1; negative\nsinks the object into it.",
+          "format": "double",
+          "type": "number"
+        },
+        "shadow": {
+          "description": "How dark the shadow on a catcher is, 0 to 1 (0.6 when omitted; animate\n`model.shadow`).",
+          "format": "double",
+          "type": "number"
+        },
+        "size": {
+          "description": "The floor's width and depth, 0.01 to 20 (4 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "Follow": {
+      "additionalProperties": false,
+      "description": "A clip that moves along the path of a shape clip (ADR-0036).",
+      "properties": {
+        "clip": {
+          "$ref": "#/$defs/Id",
+          "description": "The shape clip whose outline it follows (`clip_…`), on the same timeline."
+        },
+        "offset": {
+          "description": "Added to the point on the path, as fractions of the canvas width and height.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "orient": {
+          "description": "Turns the clip with the path's direction, added to its own rotation: 0 degrees\nruns left to right.",
+          "type": "boolean"
+        },
+        "progress": {
+          "description": "How far along the path, as a fraction of its whole length: 0 at its start, 1 at its\nend. On a closed path values past 1 go round again; on an open path they hold at\nthe ends. Animate `follow.progress`.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip"
+      ],
+      "type": "object"
     },
     "FontWeight": {
       "description": "Font weights of the bundled fonts.",
@@ -1250,6 +1729,94 @@
         "value"
       ],
       "type": "object"
+    },
+    "Light": {
+      "additionalProperties": false,
+      "description": "The light on an object: a sky light from every direction, coloured from above and\nbelow, and a key light from one direction that casts a soft shadow.",
+      "properties": {
+        "ambient": {
+          "description": "How strong the sky light is, 0 to 4 (0.35 when omitted; animate\n`model.light.ambient`).",
+          "format": "double",
+          "type": "number"
+        },
+        "azimuth": {
+          "description": "Where the key light comes from around the vertical axis: 0 from the viewer's side,\n90 from the right, -90 from the left, 180 from behind (-35 when omitted; animate\n`model.light.azimuth`).",
+          "format": "double",
+          "type": "number"
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "The key light's colour (white when omitted)."
+        },
+        "elevation": {
+          "description": "How high the key light is above the horizon, -90 to 90 (50 when omitted; animate\n`model.light.elevation`).",
+          "format": "double",
+          "type": "number"
+        },
+        "ground": {
+          "$ref": "#/$defs/Color",
+          "description": "The sky light's colour from below, as light bounced off the ground (`#6B645C` when\nomitted)."
+        },
+        "intensity": {
+          "description": "How strong the key light is, 0 to 10: a white matte surface facing it shows this\nmuch of its colour (1 when omitted; animate `model.light.intensity`).",
+          "format": "double",
+          "type": "number"
+        },
+        "shadows": {
+          "description": "Whether the key light casts a shadow, on the object itself and on the floor (true\nwhen omitted).",
+          "type": "boolean"
+        },
+        "sky": {
+          "$ref": "#/$defs/Color",
+          "description": "The sky light's colour from above (white when omitted)."
+        },
+        "softness": {
+          "description": "How soft the shadow's edge is, 0 (sharp) to 1 (very soft); 0.35 when omitted.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "LineCap": {
+      "description": "How a stroke ends at the ends of an open path and of dashes.",
+      "oneOf": [
+        {
+          "const": "butt",
+          "description": "Square, exactly at the end.",
+          "type": "string"
+        },
+        {
+          "const": "round",
+          "description": "A half circle past the end.",
+          "type": "string"
+        },
+        {
+          "const": "square",
+          "description": "Square, half the width past the end.",
+          "type": "string"
+        }
+      ]
+    },
+    "LineJoin": {
+      "description": "How a stroke turns at corners.",
+      "oneOf": [
+        {
+          "const": "miter",
+          "description": "A sharp point, cut off as a bevel past `miter_limit`.",
+          "type": "string"
+        },
+        {
+          "const": "round",
+          "description": "Rounded.",
+          "type": "string"
+        },
+        {
+          "const": "bevel",
+          "description": "Cut off flat.",
+          "type": "string"
+        }
+      ]
     },
     "Marker": {
       "additionalProperties": false,
@@ -1459,6 +2026,404 @@
         }
       ]
     },
+    "Material": {
+      "additionalProperties": false,
+      "description": "A simple physically based material (after the metallic-roughness model of glTF 2.0).",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "description": "Its colour as `#RRGGBB` (`#D0D0D0` when omitted)."
+        },
+        "emissive": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Color"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The colour of light it gives off by itself, as `#RRGGBB`; none when omitted."
+        },
+        "emissive_strength": {
+          "description": "How strongly it gives off that light, 0 to 100 (1 when omitted); above 1 it\noutshines its surroundings and a `light.glow` effect blooms it.",
+          "format": "double",
+          "type": "number"
+        },
+        "metallic": {
+          "description": "0 for paint, plastic, paper or wood, 1 for metal.",
+          "format": "double",
+          "type": "number"
+        },
+        "opacity": {
+          "description": "0 (clear) to 1 (solid).",
+          "format": "double",
+          "type": "number"
+        },
+        "roughness": {
+          "description": "0 for a mirror finish, 1 for a fully matte one (0.5 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "texture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An image asset (`asset_…`) printed over the colour by its own transparency, so a\nlogo with a transparent background sits on the colour. On a box face it covers the\nface; on other solids it wraps around them."
+        },
+        "texture_size": {
+          "description": "How much of a face the texture covers, centred, 0.05 to 1 (1 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "ModelContent": {
+      "additionalProperties": false,
+      "description": "A 3D object.",
+      "properties": {
+        "emissive_strength": {
+          "description": "Multiplies the light every material gives off by itself, 0 to 100 (1 when omitted;\nanimate `model.emissive_strength`).",
+          "format": "double",
+          "type": "number"
+        },
+        "faces": {
+          "$ref": "#/$defs/Faces",
+          "description": "Materials of single faces of a box or of every block of a grid, or of the front and\nback of extruded text and paths (their sides and bevels keep `material`)."
+        },
+        "floor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Floor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A level floor under the object that catches its shadow, or shows as a surface."
+        },
+        "light": {
+          "$ref": "#/$defs/Light",
+          "description": "The light on the object: a sky light and a key light with a shadow."
+        },
+        "material": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Material"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its material. A model asset keeps the materials of its file unless this is given;\nbuilt-in solids are light grey and half rough without it."
+        },
+        "object": {
+          "$ref": "#/$defs/ModelObject",
+          "description": "What the object is: a model asset or a built-in solid (a box when omitted)."
+        }
+      },
+      "type": "object"
+    },
+    "ModelObject": {
+      "description": "What an object is.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A glTF model asset (`.glb`, or `.gltf` with its files).",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/Id",
+              "description": "The model asset (`asset_…`)."
+            },
+            "kind": {
+              "const": "asset",
+              "type": "string"
+            },
+            "size": {
+              "description": "The length of the model's longest side, 0.4 when omitted; the model is centred on\nthe middle of its bounds.",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "asset"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A box, with rounded edges when bevelled; its faces take materials of their own.",
+          "properties": {
+            "bevel": {
+              "description": "The radius of its rounded edges, at most half its smallest side.",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "box",
+              "type": "string"
+            },
+            "size": {
+              "description": "Width, height and depth (`[0.25, 0.25, 0.25]` when omitted).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 3,
+              "minItems": 3,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A sphere.",
+          "properties": {
+            "kind": {
+              "const": "sphere",
+              "type": "string"
+            },
+            "size": {
+              "description": "Its diameter (0.25 when omitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "An upright cylinder with flat caps.",
+          "properties": {
+            "kind": {
+              "const": "cylinder",
+              "type": "string"
+            },
+            "size": {
+              "description": "Its diameter and height (`[0.2, 0.3]` when omitted).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A flat rectangle facing the viewer, like a picture; lay it down with `rotation_x`.",
+          "properties": {
+            "kind": {
+              "const": "plane",
+              "type": "string"
+            },
+            "size": {
+              "description": "Its width and height (`[0.4, 0.4]` when omitted).",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A ring facing the viewer.",
+          "properties": {
+            "kind": {
+              "const": "torus",
+              "type": "string"
+            },
+            "size": {
+              "description": "Its outer diameter (0.25 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "thickness": {
+              "description": "The diameter of its tube, less than half the outer diameter (0.08 when omitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Text extruded into depth, with a bevel.",
+          "properties": {
+            "bevel": {
+              "description": "How far the letters' front and back edges are chamfered, at most half the depth.",
+              "format": "double",
+              "type": "number"
+            },
+            "bold": {
+              "description": "Bold letters.",
+              "type": "boolean"
+            },
+            "depth": {
+              "description": "How deep the letters are, 0 to 1 (0.04 when omitted; animate `model.depth`).",
+              "format": "double",
+              "type": "number"
+            },
+            "font": {
+              "description": "The font family: the bundled Inter or a project font asset's family (Inter when\nomitted).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "italic": {
+              "description": "Italic letters.",
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
+            "size": {
+              "description": "The font size (0.12 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "text": {
+              "description": "The text, 1 to 200 characters; `\\n` starts a new line. Lines are centred.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "An outline from SVG path data (or a shape clip's path) extruded into depth.",
+          "properties": {
+            "bevel": {
+              "description": "How far its front and back edges are chamfered, at most half the depth.",
+              "format": "double",
+              "type": "number"
+            },
+            "depth": {
+              "description": "How deep it is, 0 to 1 (0.04 when omitted; animate `model.depth`).",
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "const": "path",
+              "type": "string"
+            },
+            "path": {
+              "description": "SVG path data (`M 0 0 L 10 0 ...`, y down); nested contours are holes, as with the\neven-odd rule.",
+              "type": "string"
+            },
+            "size": {
+              "description": "The width of the outline's bounds; its height follows the outline (0.3 when\nomitted).",
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A grid of blocks of varied heights, standing on the ground like a city.",
+          "properties": {
+            "block": {
+              "description": "The width and depth of each block (0.05 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "columns": {
+              "description": "Blocks across, 1 to 64 (8 when omitted).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "fill": {
+              "description": "The share of lots that hold a block, 0 to 1 (1 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "gap": {
+              "description": "The street between blocks (0.015 when omitted).",
+              "format": "double",
+              "type": "number"
+            },
+            "growth": {
+              "description": "How far the blocks have grown, 0 (flat) to 1 (full height); 1 when omitted\n(animate `model.growth`).",
+              "format": "double",
+              "type": "number"
+            },
+            "heights": {
+              "description": "The lowest and highest block, `[0.02, 0.2]` when omitted; heights are spread by the\nsquare of a random number, so tall blocks are fewer.",
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "kind": {
+              "const": "blocks",
+              "type": "string"
+            },
+            "rows": {
+              "description": "Blocks in depth, 1 to 64 (8 when omitted).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seed": {
+              "description": "Chooses the heights and empty lots; another seed gives another city.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "PageFade": {
       "additionalProperties": false,
       "description": "Parameters of `page.fade`.",
@@ -1568,6 +2533,187 @@
       ],
       "description": "A parameter value."
     },
+    "ParticleBlend": {
+      "description": "How overlapping particles combine with each other (the clip's own blend mode decides\nhow the whole picture combines with what is below).",
+      "oneOf": [
+        {
+          "const": "add",
+          "description": "Their light adds up, so crowds glow.",
+          "type": "string"
+        },
+        {
+          "const": "normal",
+          "description": "Later particles cover earlier ones.",
+          "type": "string"
+        }
+      ]
+    },
+    "ParticleContent": {
+      "additionalProperties": false,
+      "description": "A particle emitter.",
+      "properties": {
+        "aim": {
+          "$ref": "#/$defs/Aim",
+          "description": "What the direction is measured from."
+        },
+        "blend": {
+          "$ref": "#/$defs/ParticleBlend",
+          "description": "How overlapping particles combine with each other."
+        },
+        "bursts": {
+          "description": "Moments when many particles are born at once, in emission time (from the clip's\nstart while `offset` is 0).",
+          "items": {
+            "$ref": "#/$defs/Burst"
+          },
+          "type": "array"
+        },
+        "color_by": {
+          "$ref": "#/$defs/ColorBy",
+          "description": "How `colors` are used."
+        },
+        "colors": {
+          "description": "Colours: from birth to death, or to pick one from per particle (`color_by`); 1 to 8\n(white when omitted).",
+          "items": {
+            "$ref": "#/$defs/Color"
+          },
+          "type": "array"
+        },
+        "direction": {
+          "description": "Direction of travel at birth in degrees clockwise from rightwards: 90 is down, -90\nup (animatable as `particles.direction`).",
+          "format": "double",
+          "type": "number"
+        },
+        "drag": {
+          "description": "How quickly particles slow down, per second, 0 to 20: speed falls by e^(-drag) each\nsecond, so with gravity they reach a steady speed.",
+          "format": "double",
+          "type": "number"
+        },
+        "emitter": {
+          "$ref": "#/$defs/Emitter",
+          "description": "Where particles are born."
+        },
+        "gravity": {
+          "description": "Downward acceleration in canvas heights per second squared; negative rises\n(animatable as `particles.gravity`).",
+          "format": "double",
+          "type": "number"
+        },
+        "life": {
+          "description": "Seconds a particle lives, from 0.05 to 30 (2 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "life_variance": {
+          "description": "How much a particle's life varies either way, in seconds.",
+          "format": "double",
+          "type": "number"
+        },
+        "offset": {
+          "$ref": "#/$defs/Flicks",
+          "description": "Where in its emission the clip starts. 0 for a new clip; splits and trims move it so\nboth parts continue the same particles."
+        },
+        "opacity": {
+          "description": "Opacity at birth, 0 to 1 (animatable as `particles.opacity`).",
+          "format": "double",
+          "type": "number"
+        },
+        "opacity_over_life": {
+          "description": "Opacity multipliers from birth to death, spread evenly over the life, 1 to 8 values\nfrom 0 to 1 (`[1, 0]`, fading out, when omitted).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "prewarm": {
+          "$ref": "#/$defs/Flicks",
+          "description": "How long particles were already being born before emission time 0, so the clip\nopens full instead of empty (at most 30 seconds)."
+        },
+        "rate": {
+          "description": "Particles born per second, 0 to 2000 (animatable as `particles.rate`).",
+          "format": "double",
+          "type": "number"
+        },
+        "rotation": {
+          "description": "Rotation at birth in degrees clockwise.",
+          "format": "double",
+          "type": "number"
+        },
+        "rotation_variance": {
+          "description": "How much the rotation varies either way, in degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "seed": {
+          "description": "Chooses the random choices: another seed gives other particles that look alike.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "size": {
+          "description": "Diameter at birth in canvas heights, 0 to 2 (animatable as `particles.size`).",
+          "format": "double",
+          "type": "number"
+        },
+        "size_over_life": {
+          "description": "Size multipliers from birth to death, spread evenly over the life, 1 to 8 values\nfrom 0 to 10 (`[1]` keeps the size).",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "size_variance": {
+          "description": "How much the diameter varies either way.",
+          "format": "double",
+          "type": "number"
+        },
+        "speed": {
+          "description": "Speed at birth in canvas heights per second (animatable as `particles.speed`).",
+          "format": "double",
+          "type": "number"
+        },
+        "speed_variance": {
+          "description": "How much the speed varies either way.",
+          "format": "double",
+          "type": "number"
+        },
+        "spin": {
+          "description": "Turning speed in degrees per second, clockwise.",
+          "format": "double",
+          "type": "number"
+        },
+        "spin_variance": {
+          "description": "How much the turning speed varies either way.",
+          "format": "double",
+          "type": "number"
+        },
+        "spread": {
+          "description": "Width of the cone of directions around `direction`, 0 to 360 degrees (animatable\nas `particles.spread`).",
+          "format": "double",
+          "type": "number"
+        },
+        "sprite": {
+          "$ref": "#/$defs/Sprite",
+          "description": "What each particle looks like."
+        },
+        "turbulence": {
+          "description": "How far turbulence pushes particles off their path, in canvas heights, 0 to 2\n(animatable as `particles.turbulence`).",
+          "format": "double",
+          "type": "number"
+        },
+        "turbulence_scale": {
+          "description": "The size of turbulence's swirls in canvas heights, 0.01 to 10 (0.2 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "wind": {
+          "description": "Rightward acceleration in canvas heights per second squared; negative blows left\n(animatable as `particles.wind`).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "PathPoint": {
       "description": "A point of a path mask, with optional Bezier handles relative to it.",
       "properties": {
@@ -1661,6 +2807,65 @@
         }
       ]
     },
+    "RevealEasing": {
+      "description": "How a reveal unit's motion runs from 0 to 1 (Robert Penner's easing equations and CSS\ncubic Bezier curves).",
+      "oneOf": [
+        {
+          "const": "linear",
+          "description": "Constant speed.",
+          "type": "string"
+        },
+        {
+          "const": "ease_in",
+          "description": "Starts slowly (cubic).",
+          "type": "string"
+        },
+        {
+          "const": "ease_out",
+          "description": "Slows to a stop (cubic): the default for most motions.",
+          "type": "string"
+        },
+        {
+          "const": "ease_in_out",
+          "description": "Starts and ends slowly (cubic).",
+          "type": "string"
+        },
+        {
+          "const": "back",
+          "description": "Overshoots by about 10% and settles back.",
+          "type": "string"
+        },
+        {
+          "const": "bounce",
+          "description": "Bounces against its end a few times.",
+          "type": "string"
+        },
+        {
+          "const": "elastic",
+          "description": "Springs past its end and rings out.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A cubic Bezier `[x1, y1, x2, y2]` as in CSS; x1 and x2 from 0 to 1, y may overshoot.",
+          "properties": {
+            "bezier": {
+              "items": {
+                "format": "double",
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            }
+          },
+          "required": [
+            "bezier"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "RevealMotion": {
       "description": "How each unit of a reveal appears.",
       "oneOf": [
@@ -1677,6 +2882,71 @@
         {
           "const": "rise",
           "description": "Fading in while rising into place.",
+          "type": "string"
+        },
+        {
+          "const": "blur",
+          "description": "Fading in from a soft blur into focus.",
+          "type": "string"
+        },
+        {
+          "const": "pop",
+          "description": "Growing from nothing past full size and settling (`back` easing).",
+          "type": "string"
+        },
+        {
+          "const": "zoom",
+          "description": "Shrinking from large into place while fading in.",
+          "type": "string"
+        },
+        {
+          "const": "slide_left",
+          "description": "Sliding in from the right towards the left while fading in.",
+          "type": "string"
+        },
+        {
+          "const": "slide_right",
+          "description": "Sliding in from the left towards the right while fading in.",
+          "type": "string"
+        },
+        {
+          "const": "drop",
+          "description": "Falling into place from above with a bounce (`bounce` easing).",
+          "type": "string"
+        },
+        {
+          "const": "collapse",
+          "description": "Letters spread apart closing up to their spacing while fading in (tracking in).",
+          "type": "string"
+        }
+      ]
+    },
+    "RevealOrder": {
+      "description": "The order units of a reveal arrive in.",
+      "oneOf": [
+        {
+          "const": "forward",
+          "description": "First to last, as read.",
+          "type": "string"
+        },
+        {
+          "const": "backward",
+          "description": "Last to first.",
+          "type": "string"
+        },
+        {
+          "const": "center",
+          "description": "From the middle outwards; units as far from the middle arrive together.",
+          "type": "string"
+        },
+        {
+          "const": "edges",
+          "description": "From both ends inwards.",
+          "type": "string"
+        },
+        {
+          "const": "random",
+          "description": "A shuffled order, the same on every render.",
           "type": "string"
         }
       ]
@@ -1757,6 +3027,60 @@
       ],
       "type": "object"
     },
+    "ShapeStroke": {
+      "additionalProperties": false,
+      "description": "A stroke centred on a shape's edge or along an open path (ADR-0036).",
+      "properties": {
+        "cap": {
+          "$ref": "#/$defs/LineCap",
+          "description": "The ends of an open path and of dashes: `butt` (the default), `round` or `square`."
+        },
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFFFFF",
+          "description": "Its colour, where a gradient starts (white when omitted)."
+        },
+        "dash_offset": {
+          "description": "Where the dash pattern starts, as a fraction of the canvas height.",
+          "format": "double",
+          "type": "number"
+        },
+        "dashes": {
+          "description": "Dash pattern: lengths of dashes and gaps in turn, as fractions of the canvas height;\nsolid when empty.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "gradient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A gradient to a second colour across the shape's box, as a fill's."
+        },
+        "join": {
+          "$ref": "#/$defs/LineJoin",
+          "description": "Corners: `miter` (the default), `round` or `bevel`."
+        },
+        "miter_limit": {
+          "description": "How far a miter may reach, in stroke widths, before it is cut off as a bevel; at\nleast 1 (4 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "description": "Its width as a fraction of the canvas height, from 0 to 0.5 (0.01 when omitted);\nanimate `shape.stroke_width`. The clip's scale scales it too.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "Speed": {
       "additionalProperties": false,
       "description": "How a clip plays its source: faster, slower, along a curve, backwards or frozen.",
@@ -1808,6 +3132,89 @@
         "rate"
       ],
       "type": "object"
+    },
+    "Sprite": {
+      "additionalProperties": false,
+      "description": "What a particle looks like.",
+      "properties": {
+        "aspect": {
+          "description": "A square's width over its height, 0.1 to 10 (1 when omitted).",
+          "format": "double",
+          "type": "number"
+        },
+        "asset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Id"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An `image` sprite's image asset (`asset_…`): its brightness is how much it covers,\ntinted by the particle's colour, so light on black works best."
+        },
+        "flip": {
+          "description": "Flips per second around the particle's own axis, so confetti tumbles, 0 to 10.",
+          "format": "double",
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/$defs/SpriteKind",
+          "description": "The kind (a soft dot when omitted)."
+        },
+        "points": {
+          "description": "A star's points, 3 to 12 (4 when omitted).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "softness": {
+          "description": "Edge softness from 0 (crisp) to 1 (a soft glow); 0.5 when omitted.",
+          "format": "double",
+          "type": "number"
+        },
+        "stretch": {
+          "description": "A spark's streak, as seconds of travel at its speed, 0 to 1 (0.05 when omitted).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "SpriteKind": {
+      "description": "The kinds of sprite.",
+      "oneOf": [
+        {
+          "const": "dot",
+          "description": "A round dot, crisp or soft.",
+          "type": "string"
+        },
+        {
+          "const": "spark",
+          "description": "A streak stretched along the direction of travel, bright at its head.",
+          "type": "string"
+        },
+        {
+          "const": "star",
+          "description": "A star with thin points.",
+          "type": "string"
+        },
+        {
+          "const": "ring",
+          "description": "A ring.",
+          "type": "string"
+        },
+        {
+          "const": "square",
+          "description": "A rectangle, such as a piece of confetti.",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "An image asset (`asset`).",
+          "type": "string"
+        }
+      ]
     },
     "Stroke": {
       "additionalProperties": false,
@@ -1929,13 +3336,44 @@
           "$ref": "#/$defs/Flicks",
           "description": "Time from the clip's start until the whole text is shown."
         },
+        "easing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevealEasing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How each unit's motion runs; the motion's own easing when omitted (a cubic ease-out,\n`back` for `pop` and `bounce` for `drop`)."
+        },
         "exit": {
           "description": "Also leave the same way, in reverse order, over the same time before the clip ends.",
           "type": "boolean"
         },
+        "exit_motion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevealMotion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How units leave when `exit` is on; the arriving motion, reversed, when omitted."
+        },
         "motion": {
           "$ref": "#/$defs/RevealMotion",
           "description": "How each one appears."
+        },
+        "order": {
+          "$ref": "#/$defs/RevealOrder",
+          "description": "The order units arrive in; leaving reverses it."
+        },
+        "overlap": {
+          "description": "How much each unit's motion overlaps the next one's, from 0 (one after another) to 1\n(all together); 0.5 when omitted. `appear` ignores it.",
+          "format": "double",
+          "type": "number"
         },
         "unit": {
           "$ref": "#/$defs/RevealUnit",
@@ -2205,6 +3643,16 @@
     "Transform": {
       "description": "Placement of a clip on the canvas.\n\nAt identity the picture is fitted inside the canvas and centred.",
       "properties": {
+        "anchor": {
+          "description": "The pivot that rotation and scale turn around, as fractions of the picture's width\nand height from its centre (`[-0.5, 0]` is the middle of its left edge). Moving it\ndoes not move the picture.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
         "flip_horizontal": {
           "description": "Mirrors the picture left to right.",
           "type": "boolean"
@@ -2223,8 +3671,23 @@
           "minItems": 2,
           "type": "array"
         },
+        "position_z": {
+          "description": "Depth as a fraction of the canvas width; positive is away from the viewer.",
+          "format": "double",
+          "type": "number"
+        },
         "rotation": {
           "description": "Clockwise rotation in degrees.",
+          "format": "double",
+          "type": "number"
+        },
+        "rotation_x": {
+          "description": "Degrees the picture tilts around its horizontal axis; positive tips its top edge\naway from the viewer.",
+          "format": "double",
+          "type": "number"
+        },
+        "rotation_y": {
+          "description": "Degrees the picture turns around its vertical axis; positive turns its right edge\naway from the viewer.",
           "format": "double",
           "type": "number"
         },
@@ -2242,6 +3705,10 @@
           "maxItems": 2,
           "minItems": 2,
           "type": "array"
+        },
+        "three_d": {
+          "description": "Places the clip in the timeline's 3D scene (ADR-0037): it is seen through the\ntimeline's camera, sorted by depth with the 3D clips on the tracks next to it, and\nblurred by the camera's depth of field. A 2D clip that turns in depth or moves in z\nis seen through the default camera on its own.",
+          "type": "boolean"
         }
       },
       "type": "object"

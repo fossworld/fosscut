@@ -24,6 +24,9 @@
 //!   vertical versions, beat markers and cuts, shorts), applied as the user's one step.
 //! - [`media`]: thumbnails and waveforms of the open project's media for the media bin and
 //!   the timeline, cached by content, and importing files as the user's edits.
+//! - [`web`]: web compositions imported with their size and length (ADR-0039), and renders
+//!   of the user's own Remotion project, run in the background after the user agreed to
+//!   its licence note.
 
 #![forbid(unsafe_code)]
 
@@ -39,6 +42,7 @@ pub mod preferences;
 pub mod preview;
 pub mod recording;
 pub mod surface;
+pub mod web;
 pub mod words;
 pub mod workspace;
 
@@ -372,6 +376,11 @@ pub fn run() {
             commands::beats_cut,
             commands::shorts_candidates,
             commands::shorts_make,
+            commands::web_pick,
+            commands::web_import,
+            commands::remotion_start,
+            commands::remotion_status,
+            commands::remotion_cancel,
         ])
         .build(tauri::generate_context!());
     match app {

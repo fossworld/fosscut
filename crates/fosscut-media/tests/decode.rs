@@ -236,8 +236,9 @@ fn rgb_pictures_are_tagged_with_the_matrix_they_were_converted_with() {
     if !have_ffmpeg() {
         return;
     }
-    // An orange picture as PNG, with and without alpha: decoded to NV12 by swscale, whose
-    // BT.601 limited-range codes for (255, 122, 69) are Y' 150, Cb 85, Cr 190.
+    // An orange picture as PNG, with and without alpha. Without alpha, swscale decodes it
+    // to NV12 with BT.601 limited-range codes for (255, 122, 69): Y' 150, Cb 85, Cr 190.
+    // With an alpha channel it stays R'G'B'A with its own code values (ADR-0039).
     for (name, pix_fmt) in [("orange.png", "rgb24"), ("orange-alpha.png", "rgba")] {
         let path = fixtures_dir().join(name);
         let status = Command::new("ffmpeg")
@@ -250,6 +251,15 @@ fn rgb_pictures_are_tagged_with_the_matrix_they_were_converted_with() {
         assert!(status.success(), "ffmpeg could not create {name}");
         let mut decoder = FfmpegVideoDecoder::open(&path, software()).unwrap();
         let frame = decoder.next_frame().unwrap().unwrap();
+        if pix_fmt == "rgba" {
+            assert_eq!(frame.format, PixelFormat::Rgba, "{name}");
+            let at = frame.planes[0].stride * 18 + 32 * 4;
+            let pixel = &frame.planes[0].data[at..at + 4];
+            for (got, want) in pixel.iter().zip([255u8, 122, 69, 255]) {
+                assert!(got.abs_diff(want) <= 3, "{name}: {pixel:?}");
+            }
+            continue;
+        }
         assert_eq!(frame.format, PixelFormat::Nv12, "{name}");
         assert_eq!(
             (frame.color.matrix, frame.color.range),

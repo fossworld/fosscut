@@ -25,7 +25,10 @@
 //   model modell, install telepítés, download letöltés, license licenc,
 //   remove background háttér eltávolítása, body effects testeffektek,
 //   text to speech szövegfelolvasás, voice hang, preview (listen) meghallgatás,
-//   translate fordítás, dub szinkron (szinkronizálás), analysis elemzés.
+//   translate fordítás, dub szinkron (szinkronizálás), analysis elemzés,
+//   stroke körvonal, path útvonal, trim (of a path) látható rész, camera kamera,
+//   field of view látószög, depth of field mélységélesség, particles részecskék,
+//   emitter kibocsátó, web composition webes kompozíció, render renderelés.
 
 import * as activity from "./messages/activity";
 import * as app from "./messages/app";
@@ -37,14 +40,19 @@ import * as masks from "./messages/masks";
 import * as media from "./messages/media";
 import * as models from "./messages/models";
 import * as motion from "./messages/motion";
+import * as objects from "./messages/objects";
+import * as particles from "./messages/particles";
 import * as preview from "./messages/preview";
 import * as record from "./messages/record";
 import * as settings from "./messages/settings";
 import * as shape from "./messages/shape";
+import * as space from "./messages/space";
 import * as text from "./messages/text";
 import * as timeline from "./messages/timeline";
 import * as transport from "./messages/transport";
+import * as vector from "./messages/vector";
 import * as voice from "./messages/voice";
+import * as web from "./messages/web";
 import type { Messages, Translation } from "./types";
 
 /** Each area's catalogues, by the prefix of its keys. */
@@ -59,14 +67,19 @@ export const areas = {
   media,
   models,
   motion,
+  objects,
+  particles,
   preview,
   record,
   settings,
   shape,
+  space,
   text,
   timeline,
   transport,
+  vector,
   voice,
+  web,
 } satisfies Record<string, { en: Messages; hu: Messages }>;
 
 /** Every English message. */
@@ -81,14 +94,19 @@ export const english = {
   ...media.en,
   ...models.en,
   ...motion.en,
+  ...objects.en,
+  ...particles.en,
   ...preview.en,
   ...record.en,
   ...settings.en,
   ...shape.en,
+  ...space.en,
   ...text.en,
   ...timeline.en,
   ...transport.en,
+  ...vector.en,
   ...voice.en,
+  ...web.en,
 };
 
 /** The key of a message. */
@@ -105,14 +123,19 @@ const hungarian: Translation<typeof english> = {
   ...media.hu,
   ...models.hu,
   ...motion.hu,
+  ...objects.hu,
+  ...particles.hu,
   ...preview.hu,
   ...record.hu,
   ...settings.hu,
   ...shape.hu,
+  ...space.hu,
   ...text.hu,
   ...timeline.hu,
   ...transport.hu,
+  ...vector.hu,
   ...voice.hu,
+  ...web.hu,
 };
 
 /** Every language's messages. */

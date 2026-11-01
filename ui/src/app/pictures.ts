@@ -112,7 +112,7 @@ export class Pictures {
 
   /** True when the asset has a picture to show. */
   static pictured(asset: PictureAsset | undefined): asset is PictureAsset {
-    return !!asset && !asset.missing && (asset.kind === "video" || asset.kind === "image");
+    return !!asset && !asset.missing && ["video", "image", "vector", "web"].includes(asset.kind);
   }
 
   /** True when the asset may have sound to draw. */
@@ -127,7 +127,9 @@ export class Pictures {
   frame(asset: PictureAsset, flicks: number): string | null {
     if (!Pictures.pictured(asset)) return null;
     const key = assetKey(asset);
-    const at = asset.kind === "image" ? 0 : Math.max(0, Math.round(flicks));
+    // Images and drawings have one picture; a web composition shows its first frame, which
+    // the engine renders once for all of it.
+    const at = asset.kind === "video" ? Math.max(0, Math.round(flicks)) : 0;
     const id = `${key}@${at}`;
     const found = this.frames.get(id);
     if (found !== undefined) {

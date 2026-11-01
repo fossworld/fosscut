@@ -67,6 +67,18 @@ pub struct Workspace {
     open: Mutex<Option<Host>>,
 }
 
+/// Applies the user's edit on `host`, logged as `human` unless the request names someone
+/// else. `vector.explode` calls that give no parts get them from their drawing's file here,
+/// as the CLI and MCP get them (ADR-0036), so the window sends only the asset.
+fn run(host: &Host, mut request: Request) -> Result<Response, ApiError> {
+    if request.actor == "unknown" {
+        request.actor = "human".into();
+    }
+    let request =
+        fosscut_engine::vector::with_parts(host.bundle(), request, || Ok(host.project()))?;
+    host.execute(request)
+}
+
 fn guard<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -148,11 +160,28 @@ impl Workspace {
 
     /// Applies the user's edit as one transaction, logged as `human` unless the request
     /// names someone else.
-    pub fn execute(&self, mut request: Request) -> Result<Response, ApiError> {
-        if request.actor == "unknown" {
-            request.actor = "human".into();
-        }
-        self.with_host(|host| host.execute(request))
+    ///
+    /// `vector.explode` calls that give no parts get them from their drawing's file here,
+    /// as the CLI and MCP get them (ADR-0036), so the window sends only the asset.
+    pub fn execute(&self, request: Request) -> Result<Response, ApiError> {
+        self.with_host(|host| run(host, request))
+    }
+
+    /// [`Workspace::execute`] on the project at `bundle` only: refused with
+    /// `fosscut.project.not_found` when another project, or none, is open now. For work that
+    /// finishes in the background, such as a render imported once it is done, so it never
+    /// lands in a project opened since.
+    pub fn execute_on(&self, bundle: &Path, request: Request) -> Result<Response, ApiError> {
+        self.with_host(|host| {
+            if host.bundle() != bundle {
+                return Err(ApiError::new(
+                    "fosscut.project.not_found",
+                    format!("{} is no longer the open project", bundle.display()),
+                )
+                .with_hint("Open the project again and import the file from its renders folder."));
+            }
+            run(host, request)
+        })
     }
 
     /// The clients connected to the open project: agents and other front ends.

@@ -40,6 +40,14 @@ FossCut cannot ship or download such catalogues: ADR-0015 forbids copying them, 
 5. **One catalogue.** `fosscut_engine::library` lists every kind, with names, descriptions, tags, lengths and tempos, and searches it. `capabilities` lists the visual items and templates; `fosscut library` and the MCP `library` tool list everything and add any item with the right command.
 6. **Rights notes instead of a rights check.** Exports report each used asset's origin, `library` (free to use) or `yours` (check you may publish it), and fonts you imported. FossCut has no rights database and sends nothing anywhere to check (CC-172).
 
+## Implementation notes
+
+- **Motion-graphics content** (with [ADR-0036](0036-draw-vector-paths-with-strokes-trims-and-following.md) to [ADR-0039](0039-render-web-compositions-in-a-headless-browser.md)):
+  - **UI kit:** stickers for app ads (`presets/library/ui-kit.json`: search bar, caret, buttons, cards, panel, image slot, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes) and two screen backgrounds, sized in grid units of 1/120 of the canvas height. Marks drawn in a second colour (a toast's check, an icon's bag) are the stroke of the outline's last contour, shown by `trim_start`, so `draw_on` draws only them. Title templates `ui-search-text`, `ui-status-text` and `kinetic-type` set their text.
+  - **Drawings:** device frames (phone, tablet, laptop, browser window) and a street map as SVG files written by FossCut (`presets/library/drawings/`), kinds `device` and `drawing`. A device's screen is open, and its manifest gives the screen's rectangle and a canvas of its proportions; adding one reports where the screen lies on the timeline and the scale that makes that canvas fill it.
+  - **Web compositions:** HTML pages animated as a function of time through `window.fosscut.seek` (`presets/library/compositions/`), kind `composition`, whose `lines` replace the strings of their `fosscut-lines` element.
+  - Drawings and compositions are media like sounds: written into the bundle's `library/` folder (beside the existing file, under a short content hash, when another version is there) and imported as vector or web assets, so exports note them as library media. `fosscut library add` and the MCP `library` tool place them, and every item, with a `timeline` for a scene's compound timeline.
+
 ## Consequences
 
 - People and agents get a usable library without accounts, downloads or licence worries, and every item is readable data an agent can change.

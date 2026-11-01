@@ -1,9 +1,10 @@
 // A shape clip's shape as people edit it, with the engine's defaults filled in, and the
 // merge patch each edit turns into for `shape.set` (ADR-0028). Patches are sparse: a value
 // set back to its default sends null, which removes it, so the stored shape stays sparse.
-// An outline always sends `enabled`, which the engine needs to read it.
+// An outline always sends `enabled`, which the engine needs to read it. Strokes, open
+// paths, no fill and trims are vector paths (ADR-0036); `fill: null` means no fill.
 
-import type { ClipView, ShapeContentView, ShapeKind } from "../engine/types";
+import type { ClipView, LineCap, LineJoin, ShapeContentView, ShapeKind } from "../engine/types";
 import type { MessageKey } from "../i18n";
 import { TEXT_DEFAULTS, normalColor } from "./textFields";
 
@@ -32,6 +33,25 @@ export interface ShapeFields {
   /** Where the label's centre sits in the shape's box, -1 to 1. */
   label_x: number;
   label_y: number;
+  /** No fill at all, as lines have. */
+  no_fill: boolean;
+  /** A path joined back to its start; false for a line. */
+  closed: boolean;
+  /** A stroke centred on its edge, and its colour. */
+  stroke: boolean;
+  stroke_color: string;
+  /** A fraction of the canvas height. */
+  stroke_width: number;
+  cap: LineCap;
+  join: LineJoin;
+  /** Dashes and the gaps between them, as fractions of the canvas height. */
+  dashed: boolean;
+  dash: number;
+  gap: number;
+  /** The visible part of the outline, 0 to 1 of its length, moved along by the offset. */
+  trim_start: number;
+  trim_end: number;
+  trim_offset: number;
 }
 
 export type ShapeField = keyof ShapeFields;
@@ -49,7 +69,19 @@ export const SHAPE_DEFAULTS = {
   label_size: TEXT_DEFAULTS.size,
   label_x: 0,
   label_y: 0,
+  stroke_color: "#FFFFFF",
+  stroke_width: 0.01,
+  cap: "butt",
+  join: "miter",
+  dash: 0.02,
+  gap: 0.015,
+  trim_start: 0,
+  trim_end: 1,
+  trim_offset: 0,
 } as const;
+
+export const CAPS: LineCap[] = ["butt", "round", "square"];
+export const JOINS: LineJoin[] = ["miter", "round", "bevel"];
 
 /** The outlines a shape can switch to; a pen path keeps its points, so only paths offer it. */
 export const SHAPES: ShapeKind[] = ["rectangle", "ellipse", "star", "heart"];
@@ -79,14 +111,17 @@ export const SHAPE_NUMBERS: Partial<Record<ShapeField, ShapeNumber>> = {
   label_size: { label: "shape.number.label_size", min: 0.5, max: 100, step: 0.5, scale: 100, unit: "%" },
   label_x: { label: "shape.number.label_x", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
   label_y: { label: "shape.number.label_y", min: -100, max: 100, step: 5, scale: 100, unit: "%" },
+  dash: { label: "vector.dash", min: 0.1, max: 50, step: 0.1, scale: 100, unit: "%" },
+  gap: { label: "vector.gap", min: 0, max: 50, step: 0.1, scale: 100, unit: "%" },
 };
 
-const COLORS: ShapeField[] = ["color", "gradient_to", "outline_color", "label_color"];
-const SWITCHES: ShapeField[] = ["gradient", "radial", "outline"];
+const COLORS: ShapeField[] = ["color", "gradient_to", "outline_color", "label_color", "stroke_color"];
+const SWITCHES: ShapeField[] = ["gradient", "radial", "outline", "no_fill", "closed", "stroke", "dashed"];
 
 /** The clip's shape, or a plain white rectangle when the clip shows none. */
 function contentOf(clip: ClipView): ShapeContentView {
-  return clip.content ?? { shape: clip.shape ?? "rectangle", size: [0.3, 0.2] };
+  const content = clip.kind === "shape" ? (clip.content as ShapeContentView | undefined) : undefined;
+  return content ?? { shape: clip.shape ?? "rectangle", size: [0.3, 0.2] };
 }
 
 /** The clip's shape with every field at its stored value or its default. */
@@ -95,6 +130,8 @@ export function shapeOf(clip: ClipView): ShapeFields {
   const d = SHAPE_DEFAULTS;
   const gradient = c.fill?.gradient;
   const style = c.label?.style ?? {};
+  const stroke = c.stroke;
+  const dashes = stroke?.dashes ?? [];
   return {
     shape: c.shape,
     width: c.size[0],
@@ -113,7 +150,26 @@ export function shapeOf(clip: ClipView): ShapeFields {
     label_size: style.size ?? d.label_size,
     label_x: c.label_at?.[0] ?? d.label_x,
     label_y: c.label_at?.[1] ?? d.label_y,
+    no_fill: c.fill === null,
+    closed: c.closed ?? true,
+    stroke: stroke !== undefined && stroke !== null,
+    stroke_color: stroke?.color ?? d.stroke_color,
+    stroke_width: stroke?.width ?? d.stroke_width,
+    cap: stroke?.cap ?? d.cap,
+    join: stroke?.join ?? d.join,
+    dashed: dashes.length > 0,
+    dash: dashes[0] ?? d.dash,
+    gap: dashes[1] ?? dashes[0] ?? d.gap,
+    trim_start: c.trim_start ?? d.trim_start,
+    trim_end: c.trim_end ?? d.trim_end,
+    trim_offset: c.trim_offset ?? d.trim_offset,
   };
+}
+
+/** True when the shape is an open path: a line, which has no fill unless given one. */
+export function isOpen(clip: ClipView): boolean {
+  const s = shapeOf(clip);
+  return s.shape === "path" && !s.closed;
 }
 
 /** The number a field shows for its engine value. */
@@ -132,6 +188,9 @@ function checked(field: ShapeField, shown: unknown, kinds: ShapeKind[]): unknown
   if (COLORS.includes(field)) return typeof shown === "string" ? normalColor(shown) : null;
   if (SWITCHES.includes(field)) return typeof shown === "boolean" ? shown : null;
   if (field === "shape") return kinds.includes(shown as ShapeKind) ? shown : null;
+  if (field === "cap") return CAPS.includes(shown as LineCap) ? shown : null;
+  if (field === "join") return JOINS.includes(shown as LineJoin) ? shown : null;
+  if (field === "stroke_width" || field.startsWith("trim_")) return typeof shown === "number" && Number.isFinite(shown) ? shown : null;
   if (field === "label") return typeof shown === "string" ? shown.trim() : null;
   return null;
 }
@@ -156,6 +215,7 @@ export function shapePatch(clip: ClipView, field: ShapeField, shown: unknown): R
   const gradient = (change: Record<string, unknown>) => (now.gradient ? { fill: { gradient: change } } : null);
   const outline = (change: Record<string, unknown>) => ({ outline: { enabled: now.outline, ...change } });
   const label = (style: Record<string, unknown>) => (now.label ? { label: { style } } : null);
+  const stroke = (change: Record<string, unknown>) => (now.stroke ? { stroke: change } : null);
   const at = (x: number, y: number) => ({ label_at: x === 0 && y === 0 ? null : [x, y] });
   switch (field) {
     case "shape":
@@ -193,5 +253,31 @@ export function shapePatch(clip: ClipView, field: ShapeField, shown: unknown): R
       return now.label ? at(n, now.label_y) : null;
     case "label_y":
       return now.label ? at(now.label_x, n) : null;
+    case "no_fill":
+      return { fill: value ? null : { color: d.color } };
+    case "closed":
+      return now.shape === "path" ? { closed: value ? null : false } : null;
+    case "stroke":
+      return { stroke: value ? { color: now.stroke_color } : null };
+    case "stroke_color":
+      return stroke({ color: value });
+    case "stroke_width":
+      return n < 0 || n > 0.5 ? null : stroke({ width: sparse(n, d.stroke_width) });
+    case "cap":
+      return stroke({ cap: sparse(value, d.cap) });
+    case "join":
+      return stroke({ join: sparse(value, d.join) });
+    case "dashed":
+      return stroke({ dashes: value ? [d.dash, d.gap] : null });
+    case "dash":
+      return now.dashed ? stroke({ dashes: [n, now.gap] }) : null;
+    case "gap":
+      return now.dashed ? stroke({ dashes: [now.dash, n] }) : null;
+    case "trim_start":
+      return n < 0 || n > 1 ? null : { trim_start: sparse(n, d.trim_start) };
+    case "trim_end":
+      return n < 0 || n > 1 ? null : { trim_end: sparse(n, d.trim_end) };
+    case "trim_offset":
+      return { trim_offset: sparse(n, d.trim_offset) };
   }
 }

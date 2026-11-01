@@ -239,6 +239,8 @@ pub enum EffectCategory {
     Body,
     /// Sound: applied by the mixer, never to pictures (ADR-0026).
     Audio,
+    /// Light added to the picture: glows, sweeps and streaks ([`crate::light`]).
+    Light,
 }
 
 /// A built-in effect type and its parameters (ADR-0011, item 1).
@@ -1146,6 +1148,7 @@ pub fn effect_types() -> Vec<EffectSpec> {
     ]
     .into_iter()
     .chain(crate::voice_filters::specs())
+    .chain(crate::light::specs())
     .collect()
 }
 

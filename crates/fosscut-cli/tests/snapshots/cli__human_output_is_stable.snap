@@ -3,7 +3,7 @@ source: crates/fosscut-cli/tests/cli.rs
 expression: text
 ---
 $ fosscut project new Demo.fosscut --name Demo
-Demo (project_<random>)  revision 0  format 0.15.0
+Demo (project_<random>)  revision 0  format 0.16.0
 assets: 0  can undo: false  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 0 tracks, 0 clips, 00:00:00:00
 
@@ -93,15 +93,17 @@ $ fosscut history
 #1 r0→r1 commit by agent:test: text.add
 
 $ fosscut project info
-Demo (project_<random>)  revision 8  format 0.15.0
+Demo (project_<random>)  revision 8  format 0.16.0
 assets: 0  can undo: true  can redo: false
   timeline_0000 Timeline 1 (primary): 1920x1080 @ 30 fps, 2 tracks, 2 clips, 00:00:06:00
 
 $ fosscut capabilities
-API 0.1.0  project format 0.15.0
+API 0.1.0  project format 0.16.0
 commands:
   adjustment.add Add an adjustment layer: a clip on a video track whose effects (and opacity) apply to every picture below it for its time range, such as one grade over a whole sequence. Add effects with effects here or effect.add later.
-  animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.
+  animation.set  Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop, blur_in, pop_in, rise_in, swoop_in, glow_in), out (the same reversed, or blur_out, pop_out, rise_out, swoop_out, glow_out), or with a repeating combo (pulse, swing, float, shake), each after an optional delay; clear removes them. Animations move placement and opacity (and blur or glow) on top of keyframes; clips.stagger animates several clips one after another. draw_on (in) and draw_off (out) draw a shape clip's outline on and off through its trims.
+  camera.add     Add a camera clip: while it lasts, the timeline's 3D clips (transform.three_d true) are seen through it, with its field of view, position and depth (position_z pushes in), point of interest, orbit around it, roll and depth of field. Animate it with keyframe.set on camera.position_z, camera.orbit and the other camera.* properties.
+  camera.set     Change a camera clip's field of view, position, position_z, point of interest, orbit, roll or depth of field (depth_of_field, focus_offset, aperture, max_blur) by a merge patch.
   captions.add   Caption timed words: page them into caption clips (a few words per page, split at sentence ends and pauses) on a caption track, optionally styled with a preset. Never overwrites unless replace is set.
   captions.edit  Change one caption page: new timed words, new wording that keeps the page's timing, which words are emphasised, or its translation line (bilingual captions).
   captions.style Set how a caption track's captions look and move: a built-in preset, a style patch, or both.
@@ -112,18 +114,20 @@ commands:
   clip.copy_attributes Paste attributes: copy one clip's placement, crop, opacity, blend mode, volume and sound settings, effects, masks or animations (with their keyframes) to other clips, keeping their media. Effects and masks skip audio clips.
   clip.decompose Break a compound clip apart: put the part of its timeline it shows back in its place, clip by clip, on tracks of the same kinds. The compound timeline goes when nothing else shows it. The compound clip must have no speed, effects, masks, keyframes or placement of its own.
   clip.extract_audio Extract a video clip's sound into an audio clip of its own, on the first audio track free over its span (or a new one), grouped with the video so they stay in sync. The video clip is no longer heard; clip.restore_audio undoes it.
+  clip.follow    Move a clip (a dot, a logo, a title, any picture) along the outline of a shape clip on the same timeline, such as a route drawn as an open path: progress 0 to 1 of the path's length (animate follow.progress with keyframes), orient to turn with the path, offset to sit beside it; clear stops following.
   clip.freeze    Insert a freeze frame: hold the frame of a video clip at a time for a duration (two seconds by default), splitting the clip there and moving what follows on its track later. The held frame is silent.
   clip.group     Group two or more clips of a timeline so clip.move, clip.split, clip.trim and clip.remove edit them together (pass linked: false to edit one). They leave any group they were in.
   clip.move      Move a clip to a new position and/or a compatible track; its group moves by the same time unless linked: false. Never overwrites: fails with fosscut.clip.overlap.
   clip.remove    Remove a clip, and its group unless linked: false. Clips on the primary (lowest) video track need allow_destructive; ripple closes the gap.
   clip.replace   Replace a clip's media with another asset, keeping its place, length, speed, effects, masks, keyframes and animations. The new media must be long enough (fosscut.clip.source_range).
   clip.restore_audio Put a video clip's extracted sound back: remove the audio clips of its group that play the same media, and hear the video clip again.
-  clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
+  clip.set       Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel); in 3D transform.three_d (seen through the timeline's camera), transform.position_z, transform.rotation_x, transform.rotation_y and transform.anchor (pivot), and camera.* on camera clips. Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.
   clip.speed     Change a video, audio or compound clip's speed: a constant rate (0.05 to 100), a speed curve or preset (montage, hero, bullet, jump_cut, flash_in, flash_out), reverse, pitch (preserve or shift) and smooth slow motion (interpolate blend, or flow for in-between frames drawn by optical flow). The clip keeps the media it plays, so faster clips get shorter; ripple moves the clips after it.
   clip.split     Split a clip at a timeline position. The left part keeps the id; the right part gets a new id and continues the source. Clips of its group spanning the time split too unless linked: false.
   clip.trim      Move a clip's start or end edge: trim it shorter, or extend it into more of its media. The picture under the rest of the clip stays put. Never overwrites: fails with fosscut.clip.overlap, or fosscut.clip.source_range past the media. With ripple the clip keeps its start and later clips move by the change in length (delete left or right). Group members sharing the edge trim too unless linked: false.
   clip.ungroup   Take clips out of their groups, so each edits on its own again.
   clips.paste    Paste clips copied with the clips.copy query at a time, keeping their arrangement: new ids, the same media, effects, masks and keyframes, and groups among them kept. Never overwrites: fails with fosscut.clip.overlap.
+  clips.stagger  Animate several clips with one preset, each a step after the one before (step 0.1s by default, after an optional start), in an order: as listed, reversed, by start time, by place on the canvas (left_to_right, top_to_bottom, center_out and others) or shuffled. Sets each clip's in, out or combo animation with a growing delay; for exits the first in order leaves first.
   effect.add     Add an effect to a clip: to its picture (color.adjust for exposure, white balance, contrast, tone and saturation, color.curves, color.hsl, color.wheels, color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and others) or to its sound (audio.denoise, audio.enhance_voice, audio.vocals to isolate or remove a centred voice). Effects apply in order; on an adjustment clip picture effects apply to everything below it. capabilities lists every type with its parameters.
   effect.copy    Apply one clip's effects (with their keyframes) to other clips, replacing theirs or, with append, after them: the way to grade every clip alike.
   effect.move    Move an effect to another position in its clip's order; effects apply first to last.
@@ -148,10 +152,14 @@ commands:
   media.remove   Remove an asset from the media bin (never the file). An asset that clips show fails with fosscut.asset.in_use, unless remove_clips (with allow_destructive) removes them too.
   media.rename   Rename an asset in the media bin. Only the display name changes, not the file.
   media.replace  Replace an asset with another in every clip that shows it, keeping each clip's place, length and source position. The new media must be long enough (fosscut.clip.source_range). The old asset stays in the bin.
+  model.add      Add a 3D object: a glTF model asset (asset), extruded text (text), a shape clip's outline extruded (shape_clip), a box with rounded edges and its own material per face, a sphere, cylinder, plane, torus or a city-like grid of blocks, from FossCut's presets (shipping-box, city-blocks, podium, extruded-title, neon-ring, chrome-sphere) or fields. Materials have a colour, an image printed on them, metallic, roughness, emissive light and opacity; a sky light and a key light with a soft shadow light it; a floor can catch its shadow over footage. It is placed by its 3D transform and seen through the timeline's camera; animate model.light.azimuth, model.emissive_strength, model.depth, model.growth and more with keyframe.set.
+  model.set      Change a 3D object: start again from a preset, show another model asset, text or shape outline, and change fields by a merge patch (object, material, faces, emissive_strength, light, floor).
   multicam.create Make a multicam clip from angles recorded at the same time: a compound clip whose timeline holds each angle on its own track, lined up by their offsets, with one angle's sound. Cut between angles with multicam.switch.
   multicam.switch Cut a multicam clip to another angle from a time on: it splits there and the part after shows the angle (by number or track id).
-  shape.add      Draw a shape (rectangle, ellipse, star, heart, a pen path), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill, gradient, outline and label. Backgrounds go below the footage, other shapes above it.
-  shape.set      Change a shape clip's outline, size, roundness, fill, gradient, outline or label by a merge patch.
+  particles.add  Add a particle emitter: sparks, embers, dust in light, snow, confetti, bokeh, light streaks, a burst, gathering sparks or sparkles from FossCut's presets, or your own (emitter shape and place, rate and bursts, life, speed, direction and spread, gravity, wind, drag, turbulence, spin, size and opacity over life, colours, sprite: dot, spark streak, star, ring, square or image). It covers the canvas on a track above the footage; animate particles.rate, particles.emitter.position and more with keyframe.set.
+  particles.set  Change a particle clip's emitter: start again from a preset, change fields by a merge patch (rate, life, speed, direction, spread, gravity, wind, drag, turbulence, size, colours, sprite and more), and set bursts, prewarm and seed.
+  shape.add      Draw a shape (rectangle, ellipse, star, heart, a pen path, or SVG path data in canvas pixels as d), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill (null for none), gradient, outline, stroke (width, caps, joins, dashes) and trims (trim_end 0 then draw_on draws it on), and label. Open paths are lines. Backgrounds go below the footage, other shapes above it.
+  shape.set      Change a shape clip's outline, size, roundness, points, contours, fill (null for none), gradient, outline, stroke, trims or label by a merge patch.
   template.apply Build a new timeline from a project template (vertical-promo, quote-card, photo-montage, product-reveal, talking-head-intro) with your media in its slots and your lines in its titles; everything it adds stays editable.
   text.add       Add a text clip: a style or preset (outline, shadow, boxes, glow, spacing, case, underline, project fonts), spans that restyle parts, and a reveal (typewriter, word by word, line by line). Never overwrites: fails with fosscut.clip.overlap if the range is taken.
   text.preset_remove Remove a text preset saved in the project; clips styled with it keep their style.
@@ -168,6 +176,7 @@ commands:
   track.add      Add an empty video, audio or text track; later tracks draw on top of earlier ones.
   transition.remove Remove the transition from a clip into the next one: a plain cut again.
   transition.set Add or replace the transition from a clip into the next clip on its track (they must touch): dissolve, dip (to a color), wipe, slide, push (with a direction), zoom, blur, iris, clock or spin, centred on the cut. The sound crossfades with it.
+  vector.explode Split an imported SVG drawing (a logo, an icon, a map) into editable shape clips, one per path with its fill, stroke and placement, in a new compound timeline placed as one compound clip; open it to animate parts separately (draw_on, trims, keyframes, follow).
   voice.apply    Apply a voice preset (deep, giant, chipmunk, robot, alien, phone_call, radio, megaphone, broken_mic, whisper, stadium, cave, ghost) as ordinary voice.* sound effects the clip owns, so each can be adjusted afterwards.
 queries:
   capabilities   Commands, queries, their JSON Schemas, the request envelope, time formats and error codes.
@@ -207,6 +216,8 @@ operations:
   captions.dub         Speak each caption page (its words or its translation) with a local English voice, one clip per page at its start on an audio track; one undoable step.
   update.check         Ask GitHub once for the latest FossCut release and say whether it is newer; nothing about the user is sent and nothing is installed.
   models.install       Download a local model (speech for transcripts; matte, pose, voice and translate; and the ONNX Runtime they run on) after the user agrees to its size and license; every file is verified by SHA-256.
+  web.import           Import a web composition (a folder with an index.html, or one .html file) as a web asset that video clips show: copied into the bundle and rendered frame by frame in a headless browser with FossCut's clock (ADR-0039). Size, frame rate and duration come from the arguments or the page's fosscut:composition meta tag.
+  web.remotion         Render a composition of the user's own Remotion project with its installed Remotion (never installed by FossCut) into the bundle's renders folder as ProRes 4444 with alpha, then import it; needs the user's confirmation of Remotion's licence.
   frame.grab           Render one frame of a timeline as a PNG image, exactly as an export shows it.
   frame.contact_sheet  Render frames spread evenly over a timeline into one PNG grid, to check an edit at a glance.
 analyzers:
@@ -229,6 +240,7 @@ models (fosscut models install <name>):
   kokoro-82m               110.6 MB  en           not installed
   opus-mt-hu-en            120.0 MB  hu>en        not installed
   opus-mt-en-hu            120.0 MB  en>hu        not installed
+  chrome-headless-shell    104.0 MB  none         not installed
 export presets:
   mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
   mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)

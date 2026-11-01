@@ -215,7 +215,8 @@ fn transcripts_need_an_installed_model() {
 fn models_install_only_when_confirmed_and_verified() {
     let dir = workspace().join("models-install");
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(models(&dir).len(), 10);
+    // Ten analysis and voice models and runtimes, and the headless browser (ADR-0039).
+    assert_eq!(models(&dir).len(), 11);
     assert!(models(&dir).iter().all(|m| !m.installed));
     let download = ModelSource::Download(None);
 
