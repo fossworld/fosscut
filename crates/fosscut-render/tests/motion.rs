@@ -169,6 +169,7 @@ fn the_planner_centres_transitions_on_the_cut_and_applies_animations() {
         entrance: Some(Animation {
             preset: "slide_left".into(),
             duration: frames_of(10),
+            delay: fosscut_time::Flicks::ZERO,
         }),
         ..Default::default()
     };

@@ -174,12 +174,26 @@ pub mod codes {
     pub const TEXT_UNKNOWN_TEMPLATE: &str = "fosscut.text.unknown_template";
     /// A shape is out of range or not drawable.
     pub const SHAPE_INVALID: &str = "fosscut.shape.invalid";
+    /// A camera setting is out of range (ADR-0037).
+    pub const CAMERA_INVALID: &str = "fosscut.camera.invalid";
+    /// The clip is not a camera clip (ADR-0037).
+    pub const CAMERA_NOT_CAMERA: &str = "fosscut.camera.not_camera";
+    /// A clip cannot follow this path (ADR-0036).
+    pub const FOLLOW_INVALID: &str = "fosscut.follow.invalid";
+    /// A vector drawing cannot be split into shapes (ADR-0036).
+    pub const VECTOR_INVALID: &str = "fosscut.vector.invalid";
     /// No library item has this name.
     pub const LIBRARY_UNKNOWN_ITEM: &str = "fosscut.library.unknown_item";
     /// No project template has this name.
     pub const TEMPLATE_UNKNOWN: &str = "fosscut.template.unknown";
     /// A multicam request does not fit its clips or angles.
     pub const MULTICAM_INVALID: &str = "fosscut.multicam.invalid";
+    /// A particle emitter's settings are out of range, or a clip is not a particle clip.
+    pub const PARTICLES_INVALID: &str = "fosscut.particles.invalid";
+    /// A 3D object's settings are out of range, or a clip is not a 3D object (ADR-0040).
+    pub const OBJECT_INVALID: &str = "fosscut.object.invalid";
+    /// A model asset's file cannot be read as glTF, or lacks a file it names (ADR-0040).
+    pub const OBJECT_UNREADABLE: &str = "fosscut.object.unreadable";
     /// A canvas fill names clips without a picture of their own, or an amount out of range.
     pub const CANVAS_INVALID: &str = "fosscut.canvas.invalid";
     /// Caption words are empty, out of order, overlapping or outside their page.
@@ -435,6 +449,26 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             "Shapes are rectangle, ellipse, star, heart or path; read the message for the field.",
         ),
         entry(
+            CAMERA_INVALID,
+            "A camera setting is out of range.",
+            "field_of_view is 1 to 170 degrees, aperture 0 to 1, max_blur 0 to 0.2, the rest finite numbers; capabilities lists the camera.* properties.",
+        ),
+        entry(
+            CAMERA_NOT_CAMERA,
+            "The clip is not a camera clip.",
+            "Find camera clips with timeline.read (kind camera), or add one with camera.add.",
+        ),
+        entry(
+            FOLLOW_INVALID,
+            "A clip cannot follow this path.",
+            "Follow a shape clip on the same timeline that follows nothing itself, with a clip that has a picture; clip.follow with clear stops following.",
+        ),
+        entry(
+            VECTOR_INVALID,
+            "A vector drawing cannot be split into shapes.",
+            "vector.explode takes an imported .svg asset (kind vector) with at least one path; the CLI and the MCP edit tool read its paths from the file.",
+        ),
+        entry(
             LIBRARY_UNKNOWN_ITEM,
             "No library item has this name.",
             "capabilities lists the shapes, stickers and backgrounds under library; fosscut library list shows the sounds too.",
@@ -443,6 +477,21 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             MULTICAM_INVALID,
             "A multicam request does not fit its clips or angles.",
             "Give two or more video assets to multicam.create; switch angles of a multicam clip by number from 1 or by track id.",
+        ),
+        entry(
+            PARTICLES_INVALID,
+            "A particle emitter's settings are out of range, or a clip is not a particle clip.",
+            "Read the message for the field; capabilities lists the particle presets under library.particles and the emitter's fields under particles.",
+        ),
+        entry(
+            OBJECT_INVALID,
+            "A 3D object's settings are out of range, or a clip is not a 3D object.",
+            "Read the message for the field; capabilities lists the 3D object presets under library.models and the object's fields under models.",
+        ),
+        entry(
+            OBJECT_UNREADABLE,
+            "A model asset's file cannot be read as glTF 2.0, or a buffer or image it names is missing.",
+            "Import .glb files, or .gltf files beside the buffers and images they name; media.relink points the asset at its file again.",
         ),
         entry(
             CANVAS_INVALID,

@@ -70,6 +70,10 @@ pub enum Command {
     /// Import and list media.
     #[command(subcommand)]
     Media(MediaCommand),
+    /// Web compositions (HTML rendered in a headless browser) and renders of your own
+    /// Remotion projects (ADR-0039).
+    #[command(subcommand)]
+    Web(crate::web::WebCommand),
     /// Add tracks.
     #[command(subcommand)]
     Track(TrackCommand),
@@ -103,6 +107,16 @@ pub enum Command {
     /// Add and restyle titles, save text presets, and add title templates.
     #[command(subcommand)]
     Text(TextCommand),
+    /// Draw shapes, lines from SVG path data, strokes with caps, joins and dashes, and
+    /// trims that draw them on (ADR-0036).
+    #[command(subcommand)]
+    Shape(crate::vector::ShapeCommand),
+    /// Split imported SVG drawings into editable shape clips (ADR-0036).
+    #[command(subcommand)]
+    Vector(crate::vector::VectorCommand),
+    /// Cameras for clips placed in 3D: field of view, dolly, orbit and depth of field.
+    #[command(subcommand)]
+    Camera(crate::camera::CameraCommand),
     /// Level clips' loudness.
     #[command(subcommand)]
     Audio(AudioCommand),
@@ -110,6 +124,14 @@ pub enum Command {
     /// styles, looks, sound effects and music, free to use, also commercially.
     #[command(subcommand)]
     Library(LibraryCommand),
+    /// Particle emitters: sparks, embers, dust, snow, confetti, bokeh, light streaks and
+    /// bursts.
+    #[command(subcommand)]
+    Particles(crate::particles::ParticlesCommand),
+    /// 3D objects: glTF models, boxes, spheres, extruded text and shapes, and city blocks,
+    /// lit with a soft shadow and seen through the timeline's camera.
+    #[command(subcommand)]
+    Model(crate::model::ModelCommand),
     /// Caption speech word by word, style captions, and read or write SRT subtitle files.
     #[command(subcommand)]
     Captions(CaptionsCommand),
@@ -567,6 +589,9 @@ pub enum TrackCommand {
 /// `fosscut clip ...`
 #[derive(Debug, Subcommand)]
 pub enum ClipCommand {
+    /// Move a clip along the outline of a shape clip, such as a route drawn as a line,
+    /// turned with it if asked; --travel 0..1 moves it from start to end over the clip.
+    Follow(crate::vector::FollowArgs),
     /// Place a media asset on a track.
     Add {
         /// Asset id.
@@ -907,6 +932,23 @@ pub enum ClipCommand {
         /// false deactivates the clip; true activates it again.
         #[arg(long)]
         enabled: Option<bool>,
+        /// true places the clip in the timeline's 3D scene: seen through its camera, sorted
+        /// by depth, blurred by depth of field.
+        #[arg(long)]
+        three_d: Option<bool>,
+        /// Depth as a fraction of the canvas width; positive is away from the viewer.
+        #[arg(long, allow_hyphen_values = true)]
+        position_z: Option<f64>,
+        /// Degrees of tilt around the horizontal axis; positive tips the top edge away.
+        #[arg(long, allow_hyphen_values = true)]
+        rotation_x: Option<f64>,
+        /// Degrees of turn around the vertical axis; positive turns the right edge away.
+        #[arg(long, allow_hyphen_values = true)]
+        rotation_y: Option<f64>,
+        /// The pivot of rotation and scale as fractions of the picture from its centre, for
+        /// example -0.5,0 (the middle of the left edge).
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        anchor: Option<Vec<f64>>,
         /// Any property as PATH=VALUE, VALUE in JSON (a bare word is a string), for example
         /// transform.flip_horizontal=true, crop.left=0.1 or audio.channels=left. Repeatable.
         #[arg(long = "set", value_name = "PATH=VALUE")]
@@ -923,8 +965,9 @@ pub enum EffectCommand {
         #[arg(long)]
         clip: String,
         /// Effect type: for pictures color.adjust, color.curves, color.hsl, color.wheels,
-        /// color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain and
-        /// others; for sound audio.denoise, audio.enhance_voice or audio.vocals.
+        /// color.lut, color.vignette, blur.gaussian, detail.sharpen, stylize.grain, the
+        /// light effects light.glow, light.sweep and light.streaks, and others; for sound
+        /// audio.denoise, audio.enhance_voice or audio.vocals.
         #[arg(long = "type")]
         effect_type: String,
         /// A parameter as NAME=VALUE, VALUE in JSON (a bare word is a string). Repeatable.
@@ -1061,15 +1104,25 @@ pub enum AnimationCommand {
         #[arg(long)]
         clip: String,
         /// Entrance: fade, slide_left, slide_right, slide_up, slide_down, zoom_in,
-        /// zoom_out, spin, pop or drop.
+        /// zoom_out, spin, pop or drop, or blur_in, pop_in, rise_in, swoop_in or glow_in
+        /// (`fosscut capabilities` lists them all).
         #[arg(long = "in")]
         entrance: Option<String>,
-        /// Exit: the same presets.
+        /// Exit: the same presets, or blur_out, pop_out, rise_out, swoop_out or glow_out.
         #[arg(long = "out")]
         exit: Option<String>,
         /// Repeating: pulse, swing, float or shake.
         #[arg(long)]
         combo: Option<String>,
+        /// Start the entrance this long after the clip's start.
+        #[arg(long, value_parser = parse_time, requires = "entrance")]
+        in_delay: Option<TimeInput>,
+        /// End the exit this long before the clip's end.
+        #[arg(long, value_parser = parse_time, requires = "exit")]
+        out_delay: Option<TimeInput>,
+        /// Start the combo's cycles this late.
+        #[arg(long, value_parser = parse_time, requires = "combo")]
+        combo_delay: Option<TimeInput>,
         /// Remove in, out or combo. Repeatable.
         #[arg(long)]
         clear: Vec<String>,
@@ -1334,15 +1387,29 @@ pub struct RevealArgs {
     /// Reveal the text one unit at a time: letter, word or line.
     #[arg(long)]
     pub reveal: Option<String>,
-    /// How each unit appears: appear (at once), fade or rise.
+    /// How each unit appears: appear (at once), fade, rise, blur, pop, zoom, slide_left,
+    /// slide_right, drop or collapse.
     #[arg(long, requires = "reveal")]
     pub reveal_motion: Option<String>,
     /// Time until the whole text shows; 1 second when omitted.
     #[arg(long, value_parser = parse_time, requires = "reveal")]
     pub reveal_duration: Option<TimeInput>,
-    /// Also leave the same way before the clip ends.
+    /// Also leave before the clip ends, the last unit first.
     #[arg(long, requires = "reveal")]
     pub reveal_exit: bool,
+    /// How units leave with --reveal-exit, any motion; the arriving one when omitted.
+    #[arg(long, requires = "reveal_exit")]
+    pub reveal_exit_motion: Option<String>,
+    /// How much each unit's motion overlaps the next one's, 0 to 1; 0.5 when omitted.
+    #[arg(long, requires = "reveal")]
+    pub reveal_overlap: Option<f64>,
+    /// How each unit moves: linear, ease_in, ease_out, ease_in_out, back, bounce or
+    /// elastic; the motion's own when omitted.
+    #[arg(long, requires = "reveal")]
+    pub reveal_easing: Option<String>,
+    /// The order units arrive in: forward, backward, center, edges or random.
+    #[arg(long, requires = "reveal")]
+    pub reveal_order: Option<String>,
 }
 
 /// `fosscut text ...`
@@ -1460,15 +1527,17 @@ pub enum LibraryCommand {
     /// List the library, or search it.
     List {
         /// Only one kind: shape, sticker, background, template, title, text_style,
-        /// caption_style, look, sound or music.
+        /// caption_style, look, particles, device, drawing, composition, sound or music.
         #[arg(long)]
         kind: Option<String>,
         /// Words to find in names, descriptions and tags.
         #[arg(long)]
         search: Option<String>,
     },
-    /// Add an item to the project: a sound or music loop is imported and placed, a shape,
-    /// sticker or background drawn, a title or template added, a style or look applied.
+    /// Add an item to the project: a sound, music loop, device frame, drawing or web
+    /// composition is imported and placed (pictures at 0 s on a free track unless --at is
+    /// given; a device reports where its open screen is), a shape, sticker or background
+    /// drawn, a title, template or particle emitter added, a style or look applied.
     Add {
         /// The item's name.
         name: String,
@@ -1484,10 +1553,14 @@ pub enum LibraryCommand {
         /// The track to put it on.
         #[arg(long)]
         track: Option<String>,
+        /// The timeline to put it on, such as a scene's compound timeline; the primary
+        /// timeline when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
         /// The clip a look applies to.
         #[arg(long)]
         clip: Option<String>,
-        /// Lines for titles and templates (repeat the option).
+        /// Lines for titles, templates and compositions (repeat the option).
         #[arg(long = "line")]
         lines: Vec<String>,
         /// Assets for a template's slots (repeat the option).
@@ -1781,6 +1854,34 @@ pub enum ClipsCommand {
         /// Put them all on this track.
         #[arg(long)]
         track: Option<String>,
+    },
+    /// Animate several clips with one preset, each a step after the one before.
+    Stagger {
+        /// Clip ids. Repeatable.
+        #[arg(long = "clip", required = true)]
+        clips: Vec<String>,
+        /// The preset, such as pop_in, rise_in, blur_in or glow_in.
+        #[arg(long)]
+        preset: String,
+        /// Which animation: in (the default), out or combo.
+        #[arg(long)]
+        place: Option<String>,
+        /// How long each clip's animation takes.
+        #[arg(long, value_parser = parse_time)]
+        duration: Option<TimeInput>,
+        /// The wait between one clip and the next; 0.1s when omitted.
+        #[arg(long, value_parser = parse_time)]
+        step: Option<TimeInput>,
+        /// The first clip's wait.
+        #[arg(long, value_parser = parse_time)]
+        start: Option<TimeInput>,
+        /// listed (the default), reverse, timeline, left_to_right, right_to_left,
+        /// top_to_bottom, bottom_to_top, center_out or random.
+        #[arg(long)]
+        order: Option<String>,
+        /// The shuffle of --order random.
+        #[arg(long)]
+        seed: Option<u64>,
     },
 }
 

@@ -18,10 +18,13 @@ fosscut-model.workspace = true
 fosscut-render.workspace = true
 fosscut-time.workspace = true
 getrandom.workspace = true
+kurbo.workspace = true
 png.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+usvg.workspace = true
 wgpu.workspace = true
 
 [target.'cfg(unix)'.dependencies]

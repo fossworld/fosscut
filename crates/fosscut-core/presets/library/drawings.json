@@ -1,0 +1,51 @@
+[
+  {
+    "name": "phone",
+    "kind": "device",
+    "title": "Phone",
+    "description": "A generic modern phone in portrait: a graphite frame, a thin black bezel, a camera island and side buttons. Its screen is open, so whatever lies on the tracks below shows through it: a compound clip, a web composition such as shop-app, or a picture.",
+    "tags": ["device", "phone", "mobile", "mockup", "app", "screen", "frame"],
+    "file": "phone.svg",
+    "size": [412, 832],
+    "screen": { "rect": [26, 26, 360, 780], "radius": 46, "canvas": [720, 1560] }
+  },
+  {
+    "name": "tablet",
+    "kind": "device",
+    "title": "Tablet",
+    "description": "A generic tablet in landscape with a graphite frame, a black bezel and a camera dot. Its 4:3 screen is open: what lies below shows through.",
+    "tags": ["device", "tablet", "mockup", "app", "screen", "frame"],
+    "file": "tablet.svg",
+    "size": [1112, 856],
+    "screen": { "rect": [44, 44, 1024, 768], "radius": 22, "canvas": [1440, 1080] }
+  },
+  {
+    "name": "laptop",
+    "kind": "device",
+    "title": "Laptop",
+    "description": "A generic laptop seen from the front: a black lid with a camera dot over a silver deck. Its 16:9 screen is open, so a 1920x1080 compound clip or page below fills it exactly.",
+    "tags": ["device", "laptop", "computer", "mockup", "website", "screen", "frame"],
+    "file": "laptop.svg",
+    "size": [1600, 864],
+    "screen": { "rect": [176, 52, 1248, 702], "radius": 8, "canvas": [1920, 1080] }
+  },
+  {
+    "name": "browser",
+    "kind": "device",
+    "title": "Browser window",
+    "description": "A generic light browser window with a tab, navigation buttons and an address field, without any product's marks. Its 16:9 page area is open: a website, a dashboard or a web composition below shows in it.",
+    "tags": ["device", "browser", "window", "website", "web", "mockup", "frame"],
+    "file": "browser.svg",
+    "size": [1296, 824],
+    "screen": { "rect": [8, 96, 1280, 720], "radius": 16, "canvas": [1920, 1080] }
+  },
+  {
+    "name": "street-map",
+    "kind": "drawing",
+    "title": "Night street map",
+    "description": "A dark city map on a 240-pixel street grid with blocks, a park, a river and a diagonal avenue, 1920x1080. Streets run along x = 120, 360, 600, 840, 1080, 1320, 1560, 1800 and y = 90, 330, 570, 810, 1050, so on a 1920x1080 timeline a route drawn with shape.add d in those pixels follows them (for example M 360 1000 L 360 810 L 840 810 L 840 330 L 1560 330 L 1560 200). Tilt it in 3D for a map in perspective.",
+    "tags": ["map", "city", "streets", "route", "delivery", "navigation", "night"],
+    "file": "street-map.svg",
+    "size": [1920, 1080]
+  }
+]

@@ -17,8 +17,8 @@ export function clip(id: string, kind: string, start: number, end: number, extra
   return { id, kind, start: moment(start), end: moment(end), duration: moment(end - start), ...extra };
 }
 
-export function track(id: string, kind: string, index: number, clips: ClipView[]): TrackView {
-  return { id, kind, index, clips };
+export function track(id: string, kind: string, index: number, clips: ClipView[], name?: string): TrackView {
+  return name ? { id, kind, index, name, clips } : { id, kind, index, clips };
 }
 
 /** 6 s: a video clip on the bottom track, a 2 s title above it. */

@@ -36,7 +36,11 @@ fn property_of(command: &str, clip: &Clip, path: &str) -> Result<Property, ApiEr
             .with_hint(paths_hint())
             .with_details(json!({ "unknown": path }))
     })?;
-    let picture = !matches!(clip.content, ClipContent::Audio { .. });
+    // Camera clips (ADR-0037) have neither a picture nor sound of their own.
+    let picture = !matches!(
+        clip.content,
+        ClipContent::Audio { .. } | ClipContent::Camera(_)
+    );
     // A compound clip sounds like its timeline's mix (ADR-0025), so it has a volume,
     // fades and pan like the clips it holds.
     let sound = matches!(
@@ -47,9 +51,32 @@ fn property_of(command: &str, clip: &Clip, path: &str) -> Result<Property, ApiEr
         Applies::Picture => picture,
         Applies::Sound => sound,
         Applies::Any => true,
+        Applies::Camera => matches!(clip.content, ClipContent::Camera(_)),
+        Applies::Particles => matches!(clip.content, ClipContent::Particles { .. }),
+        // 3D objects with this setting (ADR-0040).
+        Applies::Model => super::model::has(clip, path),
+        // Shape outlines and the clips following them (ADR-0036).
+        Applies::Shape => matches!(clip.content, ClipContent::Shape(_)),
+        Applies::Follower => clip.follow.is_some(),
     };
     if !has {
-        let why = if picture {
+        let why = if property.applies == Applies::Camera {
+            "only camera clips have it"
+        } else if matches!(clip.content, ClipContent::Camera(_)) {
+            "a camera has no picture or sound"
+        } else if property.applies == Applies::Particles {
+            "only particle clips have it"
+        } else if property.applies == Applies::Model {
+            if matches!(clip.content, ClipContent::Model { .. }) {
+                super::model::missing(path)
+            } else {
+                "only 3D object clips have it"
+            }
+        } else if property.applies == Applies::Shape {
+            "only shape clips have it"
+        } else if property.applies == Applies::Follower {
+            "it follows no path (make it follow one with clip.follow)"
+        } else if picture {
             "it has no sound"
         } else {
             "it has no picture"
@@ -171,6 +198,21 @@ fn assign(
         "transform.rotation" => t.rotation = number(command, property, value)?,
         "transform.flip_horizontal" => t.flip_horizontal = flag()?,
         "transform.flip_vertical" => t.flip_vertical = flag()?,
+        // Placement in 3D (ADR-0037).
+        "transform.three_d" => t.three_d = flag()?,
+        "transform.position_z" => t.position_z = number(command, property, value)?,
+        "transform.rotation_x" => t.rotation_x = number(command, property, value)?,
+        "transform.rotation_y" => t.rotation_y = number(command, property, value)?,
+        "transform.anchor" => t.anchor = pair(command, property, value)?,
+        path if path.starts_with("camera.") => {
+            // Ranges first, as for every property; then the camera's own checks.
+            let value = match property.kind {
+                PropertyKind::Number => json!(number(command, property, value)?),
+                PropertyKind::Pair => json!(pair(command, property, value)?),
+                _ => value.clone(),
+            };
+            super::camera::assign(command, clip, property, &value)?
+        }
         "crop.left" => clip.crop.left = number(command, property, value)?,
         "crop.right" => clip.crop.right = number(command, property, value)?,
         "crop.top" => clip.crop.top = number(command, property, value)?,
@@ -184,6 +226,30 @@ fn assign(
         "audio.fade_out" => clip.audio.fade_out = time()?,
         "audio.channels" => {
             clip.audio.channels = serde_json::from_value(json!(choice()?)).unwrap_or_default()
+        }
+        path if path.starts_with("particles.") => {
+            // Particle emitter settings (ADR-0038).
+            let value = match property.kind {
+                PropertyKind::Pair => KeyValue::Pair(pair(command, property, value)?),
+                _ => KeyValue::Number(number(command, property, value)?),
+            };
+            let set = match &mut clip.content {
+                ClipContent::Particles { particles } => particles.set_value(path, value),
+                _ => false,
+            };
+            if !set {
+                return Err(invalid(format!("{command}: {path} cannot be set")));
+            }
+        }
+        path if path.starts_with("model.") => {
+            // 3D objects (ADR-0040).
+            let v = number(command, property, value)?;
+            super::model::assign(command, clip, path, v)?;
+        }
+        path if path.starts_with("shape.") || path.starts_with("follow.") => {
+            // Shape outlines and following (ADR-0036).
+            let v = number(command, property, value)?;
+            super::vector::assign(command, clip, path, v)?;
         }
         other => return Err(invalid(format!("{command}: {other} cannot be set"))),
     }
@@ -317,13 +383,15 @@ pub struct ClipSet {
     /// Paths: `transform.position`, `transform.scale`, `transform.stretch`,
     /// `transform.rotation`, `transform.flip_horizontal`, `transform.flip_vertical`,
     /// `crop.left`, `crop.right`, `crop.top`, `crop.bottom`, `opacity`, `blend`, `enabled`,
-    /// `volume`, `audio.pan`, `audio.fade_in`, `audio.fade_out`, `audio.channels`.
+    /// `volume`, `audio.pan`, `audio.fade_in`, `audio.fade_out`, `audio.channels`; placement
+    /// in 3D (ADR-0037): `transform.three_d`, `transform.position_z`, `transform.rotation_x`,
+    /// `transform.rotation_y`, `transform.anchor`; on camera clips `camera.<field>`.
     pub set: BTreeMap<String, Value>,
 }
 
 impl Command for ClipSet {
     const NAME: &'static str = "clip.set";
-    const SUMMARY: &'static str = "Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel). Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.";
+    const SUMMARY: &'static str = "Set a clip's properties by path: transform.position, transform.scale, transform.stretch (non-uniform), transform.rotation, transform.flip_horizontal and flip_vertical (mirror), crop.left/right/top/bottom, opacity, blend (multiply, screen, overlay and others), enabled (false deactivates), volume, audio.pan, audio.fade_in, audio.fade_out, audio.channels (fill channel); in 3D transform.three_d (seen through the timeline's camera), transform.position_z, transform.rotation_x, transform.rotation_y and transform.anchor (pivot), and camera.* on camera clips. Position and scale are relative to the canvas and the fitted size. Properties with keyframes are set with keyframe.set instead.";
     type Output = ClipProperties;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipProperties, ApiError> {
@@ -434,6 +502,11 @@ fn plain_value(clip: &Clip, path: &str) -> Option<KeyValue> {
         "transform.scale" => KeyValue::Number(t.scale),
         "transform.stretch" => KeyValue::Pair(t.stretch),
         "transform.rotation" => KeyValue::Number(t.rotation),
+        "transform.position_z" => KeyValue::Number(t.position_z),
+        "transform.rotation_x" => KeyValue::Number(t.rotation_x),
+        "transform.rotation_y" => KeyValue::Number(t.rotation_y),
+        "transform.anchor" => KeyValue::Pair(t.anchor),
+        path if path.starts_with("camera.") => return super::camera::plain_value(clip, path),
         "crop.left" => KeyValue::Number(clip.crop.left),
         "crop.right" => KeyValue::Number(clip.crop.right),
         "crop.top" => KeyValue::Number(clip.crop.top),
@@ -441,6 +514,17 @@ fn plain_value(clip: &Clip, path: &str) -> Option<KeyValue> {
         "opacity" => KeyValue::Number(clip.opacity),
         "volume" => KeyValue::Number(clip.volume),
         "audio.pan" => KeyValue::Number(clip.audio.pan),
+        path if path.starts_with("particles.") => match &clip.content {
+            ClipContent::Particles { particles } => return particles.value(path),
+            _ => return None,
+        },
+        path if path.starts_with("model.") => match &clip.content {
+            ClipContent::Model { model } => return model.value(path),
+            _ => return None,
+        },
+        path if path.starts_with("shape.") || path.starts_with("follow.") => {
+            return super::vector::plain_value(clip, path);
+        }
         _ => return None,
     })
 }
@@ -667,8 +751,12 @@ pub struct KeyframeSet {
     /// The clip.
     pub clip: Id,
     /// An animatable property: `transform.position`, `transform.scale`,
-    /// `transform.stretch`, `transform.rotation`, `crop.left`, `crop.right`, `crop.top`,
-    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`; a numeric effect parameter as
+    /// `transform.stretch`, `transform.rotation`, `transform.position_z`,
+    /// `transform.rotation_x`, `transform.rotation_y`, `transform.anchor`, a camera clip's
+    /// `camera.<field>` (ADR-0037), `crop.left`, `crop.right`, `crop.top`,
+    /// `crop.bottom`, `opacity`, `volume` or `audio.pan`; a shape clip's `shape.trim_start`,
+    /// `shape.trim_end`, `shape.trim_offset` or `shape.stroke_width`, or a following clip's
+    /// `follow.progress` (ADR-0036); a numeric effect parameter as
     /// `effects.<effect id>.<param>` (for example `effects.effect_0004.exposure`); or a mask's
     /// `center`, `size`, `rotation`, `feather`, `expansion` or `roundness` as
     /// `masks.<mask id>.<property>`.

@@ -725,6 +725,7 @@ impl FfmpegWriter {
         let source_format = match frame.format {
             PixelFormat::Nv12 => ffi::AV_PIX_FMT_NV12,
             PixelFormat::Yuv420p => ffi::AV_PIX_FMT_YUV420P,
+            PixelFormat::Rgba => ffi::AV_PIX_FMT_RGBA,
         };
         let mut source = self.source_frame(source_format, frame.width, frame.height)?;
         for (index, plane) in frame.planes.iter().enumerate() {
@@ -767,6 +768,7 @@ impl FfmpegWriter {
         let source_format = match frame.format {
             PixelFormat::Nv12 => ffi::AV_PIX_FMT_NV12,
             PixelFormat::Yuv420p => ffi::AV_PIX_FMT_YUV420P,
+            PixelFormat::Rgba => ffi::AV_PIX_FMT_RGBA,
         };
         let mut source = AVFrame::new();
         source.set_format(source_format);
@@ -805,7 +807,11 @@ impl FfmpegWriter {
                 .ok_or_else(|| MediaError::EncodeFailed {
                     message: "cannot scale frames to the output size".into(),
                 })?;
-                set_ranges(&scaler, full_in, full_out);
+                if frame.format == PixelFormat::Rgba {
+                    set_bt709(&scaler, true, video.format == ffi::AV_PIX_FMT_RGBA);
+                } else {
+                    set_ranges(&scaler, full_in, full_out);
+                }
                 &mut slot.insert((key, scaler)).1
             }
         };

@@ -190,6 +190,16 @@ pub enum Applies {
     Sound,
     /// Every clip.
     Any,
+    /// Camera clips (ADR-0037).
+    Camera,
+    /// Particle clips (ADR-0038).
+    Particles,
+    /// 3D object clips (ADR-0040).
+    Model,
+    /// Shape clips (ADR-0036).
+    Shape,
+    /// Clips that follow a shape clip's path (ADR-0036).
+    Follower,
 }
 
 /// One entry of the closed property vocabulary.
@@ -392,6 +402,60 @@ pub fn clip_properties() -> Vec<Property> {
                 "stereo as recorded, left or right to fill both channels with one side, or mono to mix both",
             )
         },
+    ]
+    .into_iter()
+    .chain(crate::camera::spatial_properties())
+    .chain(crate::particles::particle_properties())
+    .chain(crate::model3d::model_properties())
+    .chain(vector_properties())
+    .collect()
+}
+
+/// The properties of shape outlines and of clips following them (ADR-0036).
+fn vector_properties() -> Vec<Property> {
+    use PropertyKind::Number;
+    let fraction = (Some(0.0), Some(1.0));
+    vec![
+        prop(
+            "shape.trim_start",
+            Number,
+            Applies::Shape,
+            true,
+            fraction,
+            "where the visible part of a shape's outline starts, 0 to 1 of its length: its stroke, and the fill of an open path",
+        ),
+        prop(
+            "shape.trim_end",
+            Number,
+            Applies::Shape,
+            true,
+            fraction,
+            "where the visible part of a shape's outline ends, 0 to 1 of its length; 0 to 1 over time draws it on",
+        ),
+        prop(
+            "shape.trim_offset",
+            Number,
+            Applies::Shape,
+            true,
+            (None, None),
+            "moves the visible part along the outline by this fraction of its length, wrapping around",
+        ),
+        prop(
+            "shape.stroke_width",
+            Number,
+            Applies::Shape,
+            true,
+            (Some(0.0), Some(0.5)),
+            "a shape's stroke width as a fraction of the canvas height",
+        ),
+        prop(
+            "follow.progress",
+            Number,
+            Applies::Follower,
+            true,
+            (None, None),
+            "how far along the followed path a clip is, as a fraction of the path's length: 0 at its start, 1 at its end, past 1 round a closed path again",
+        ),
     ]
 }
 

@@ -5,9 +5,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::{KeyValue, Keyframe, evaluate};
+use crate::camera::CameraContent;
 use crate::caption::{CaptionContent, CaptionStyle};
 use crate::effect::Effect;
 use crate::mask::Mask;
+use crate::model3d::ModelContent;
+use crate::particles::ParticleContent;
 use crate::shape::ShapeContent;
 use crate::speed::Speed;
 use crate::text::TextContent;
@@ -210,6 +213,10 @@ pub struct Clip {
     /// tracks below) shows when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canvas: Option<CanvasFill>,
+    /// The shape clip whose path this clip moves along, with how far along it is
+    /// (ADR-0036); it stays where its transform puts it when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow: Option<crate::vector::Follow>,
     /// How a video or audio clip plays its source: faster, slower, along a curve,
     /// backwards or frozen (ADR-0023). Absent, it plays one to one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -244,6 +251,7 @@ impl Clip {
             group: None,
             angle: None,
             canvas: None,
+            follow: None,
             keyframes: BTreeMap::new(),
         }
     }
@@ -314,6 +322,10 @@ impl Clip {
             *source_in = *source_in + moved;
             self.speed = speed;
         }
+        // A particle clip's parts continue the same emission (ADR-0038).
+        if let ClipContent::Particles { particles } = &mut self.content {
+            particles.offset = particles.offset + from;
+        }
     }
 
     /// The value of an animatable property at `offset` from the clip's start: from its
@@ -344,6 +356,11 @@ impl Clip {
             rotation: self.number_at("transform.rotation", offset, t.rotation),
             flip_horizontal: t.flip_horizontal,
             flip_vertical: t.flip_vertical,
+            three_d: t.three_d,
+            position_z: self.number_at("transform.position_z", offset, t.position_z),
+            rotation_x: self.number_at("transform.rotation_x", offset, t.rotation_x),
+            rotation_y: self.number_at("transform.rotation_y", offset, t.rotation_y),
+            anchor: self.pair_at("transform.anchor", offset, t.anchor),
         }
     }
 
@@ -466,6 +483,23 @@ pub enum ClipContent {
         #[serde(default, skip_serializing_if = "is_default")]
         source_in: Flicks,
     },
+    /// A camera (ADR-0037): while it covers a time on a video track, the timeline's 3D
+    /// clips are seen through it. It draws and sounds nothing itself.
+    Camera(Box<CameraContent>),
+    /// A particle emitter (ADR-0038): sparks, embers, dust, snow, confetti and the like,
+    /// drawn over the whole canvas.
+    Particles {
+        /// The emitter, under a key of its own so its settings never meet the clip's
+        /// fields (`speed`, `opacity`, `blend`).
+        particles: Box<ParticleContent>,
+    },
+    /// A 3D object (ADR-0040): a glTF model or a built-in solid, lit and shaded, seen
+    /// through the timeline's camera and ordered among its 3D layers by depth.
+    Model {
+        /// The object, under a key of its own so its settings never meet the clip's
+        /// fields (`opacity`).
+        model: Box<ModelContent>,
+    },
 }
 
 impl ClipContent {
@@ -479,7 +513,11 @@ impl ClipContent {
             | ClipContent::Caption(_)
             | ClipContent::Adjustment
             | ClipContent::Shape(_)
-            | ClipContent::Timeline { .. } => None,
+            | ClipContent::Timeline { .. }
+            | ClipContent::Camera(_)
+            | ClipContent::Particles { .. } => None,
+            // A model asset (ADR-0040); built-in solids use none.
+            ClipContent::Model { model } => model.model_asset(),
         }
     }
 
@@ -512,6 +550,9 @@ impl ClipContent {
             ClipContent::Adjustment => "adjustment",
             ClipContent::Shape(_) => "shape",
             ClipContent::Timeline { .. } => "timeline",
+            ClipContent::Camera(_) => "camera",
+            ClipContent::Particles { .. } => "particles",
+            ClipContent::Model { .. } => "model",
         }
     }
 }
@@ -541,6 +582,28 @@ pub struct Transform {
     /// Mirrors the picture top to bottom.
     #[serde(default, skip_serializing_if = "is_default")]
     pub flip_vertical: bool,
+    /// Places the clip in the timeline's 3D scene (ADR-0037): it is seen through the
+    /// timeline's camera, sorted by depth with the 3D clips on the tracks next to it, and
+    /// blurred by the camera's depth of field. A 2D clip that turns in depth or moves in z
+    /// is seen through the default camera on its own.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub three_d: bool,
+    /// Depth as a fraction of the canvas width; positive is away from the viewer.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub position_z: f64,
+    /// Degrees the picture tilts around its horizontal axis; positive tips its top edge
+    /// away from the viewer.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub rotation_x: f64,
+    /// Degrees the picture turns around its vertical axis; positive turns its right edge
+    /// away from the viewer.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub rotation_y: f64,
+    /// The pivot that rotation and scale turn around, as fractions of the picture's width
+    /// and height from its centre (`[-0.5, 0]` is the middle of its left edge). Moving it
+    /// does not move the picture.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub anchor: [f64; 2],
 }
 
 impl Default for Transform {
@@ -552,6 +615,11 @@ impl Default for Transform {
             rotation: 0.0,
             flip_horizontal: false,
             flip_vertical: false,
+            three_d: false,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            anchor: [0.0, 0.0],
         }
     }
 }
@@ -560,6 +628,17 @@ impl Transform {
     /// Width and height factors relative to the fitted size: `scale` times `stretch`.
     pub fn size_factors(&self) -> [f64; 2] {
         [self.scale * self.stretch[0], self.scale * self.stretch[1]]
+    }
+
+    /// True when the placement needs the 3D path (ADR-0037): a 3D clip, or a 2D clip that
+    /// turns in depth, moves in z or turns around an anchor off its centre. Otherwise it
+    /// is a plain 2D placement.
+    pub fn is_spatial(&self) -> bool {
+        self.three_d
+            || self.position_z != 0.0
+            || self.rotation_x != 0.0
+            || self.rotation_y != 0.0
+            || self.anchor != [0.0, 0.0]
     }
 }
 

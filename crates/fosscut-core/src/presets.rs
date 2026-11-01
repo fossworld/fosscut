@@ -21,6 +21,9 @@ const SOURCES: [&str; 4] = [
 
 const TEXT_STYLES: &str = include_str!("../presets/text/styles.json");
 const VISUALS: &str = include_str!("../presets/library/visuals.json");
+/// The UI kit for motion-graphics ads: app parts drawn on a grid of 1/120 of the canvas
+/// height (search bar, buttons, cards, toasts, trackers, pins, swooshes).
+const UI_KIT: &str = include_str!("../presets/library/ui-kit.json");
 const PROJECT_TEMPLATES: &str = include_str!("../presets/library/templates.json");
 
 /// What a visual library item is (ADR-0028).
@@ -114,9 +117,11 @@ pub struct TemplateElement {
     pub position: Option<[f64; 2]>,
 }
 
-/// Every built-in shape, sticker and background.
+/// Every built-in shape, sticker and background, the UI kit's last.
 pub fn visuals() -> Vec<LibraryVisual> {
-    serde_json::from_str(VISUALS).unwrap_or_default()
+    let mut all: Vec<LibraryVisual> = serde_json::from_str(VISUALS).unwrap_or_default();
+    all.extend(serde_json::from_str::<Vec<LibraryVisual>>(UI_KIT).unwrap_or_default());
+    all
 }
 
 /// The library item called `name`.

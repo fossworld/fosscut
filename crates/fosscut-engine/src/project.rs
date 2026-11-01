@@ -195,6 +195,8 @@ impl Projects {
     /// `details.outcome` `unknown`; it is never retried here.
     pub fn execute(&self, bundle: &Path, request: Request) -> Result<Response, ApiError> {
         require_project(bundle)?;
+        // vector.explode reads the paths of its drawing from the file here (ADR-0036).
+        let request = crate::vector::with_parts(bundle, request, || self.snapshot(bundle))?;
         let key = live::bundle_key(bundle)?;
         let params = serde_json::to_value(&request)
             .map_err(|e| ApiError::new(codes::INTERNAL, format!("request: {e}")))?;

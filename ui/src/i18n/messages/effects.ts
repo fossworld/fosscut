@@ -39,6 +39,7 @@ export const en = {
   "effects.voice.choose": "Apply a voice preset",
   "effects.voice.replace": "Replace the voice filters it has",
   "effects.voice.replace.help": "Off: the preset's filters are added after the ones the clip has",
+  "effects.group.light": "Light",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -77,4 +78,5 @@ export const hu: Translation<typeof en> = {
   "effects.voice.choose": "Hang-előbeállítás alkalmazása",
   "effects.voice.replace": "A meglévő hangszűrők cseréje",
   "effects.voice.replace.help": "Kikapcsolva az előbeállítás szűrői a klip meglévő szűrői után kerülnek",
+  "effects.group.light": "Fény",
 };

@@ -7,6 +7,10 @@
 //! (`encode.wgsl`). Textures are cached between frames by size and layer slot.
 
 mod flow;
+mod light;
+mod objects;
+mod particles;
+mod three_d;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -156,6 +160,15 @@ enum Slot {
     /// A layer's picture with its subject cut out, which `key.subject` blurs into the
     /// background.
     SubjectHole(usize),
+    /// A layer blurred by the depth of field, drawn alone before its blur, per nesting
+    /// depth (ADR-0037).
+    Defocus(usize),
+    /// Textures of light effects ([`crate::light`]), per layer: 0 the padded picture, 1 the
+    /// bright pass, 2 and 3 a glow's halo and core, 4 and 5 the streak passes.
+    Light {
+        layer: usize,
+        kind: u8,
+    },
     /// The multisampled composite target, per nesting depth.
     CanvasSamples(usize),
     Readback,
@@ -217,6 +230,12 @@ pub struct Renderer {
     mask_cache: HashMap<String, Arc<Coverage>>,
     flow: flow::FlowPipelines,
     flows: flow::FlowCache,
+    /// Pipelines and sampler of layers placed in 3D (ADR-0037).
+    projected: three_d::Projected,
+    /// The particle sprite pipelines (ADR-0038).
+    particles: particles::ParticlePipelines,
+    /// The pipelines and caches of 3D objects (ADR-0040).
+    objects: objects::ObjectPipelines,
 }
 
 /// Rasterized text kept between frames; titles usually stay the same for many frames.
@@ -298,7 +317,14 @@ impl Renderer {
 
         // Effect passes share one bind group layout, so every entry point takes the same
         // bindings whether it uses them or not.
-        let effect_module = module("effects", include_str!("shaders/effects.wgsl"));
+        let effect_module = module(
+            "effects",
+            &format!(
+                "{}\n{}",
+                include_str!("shaders/effects.wgsl"),
+                include_str!("shaders/light.wgsl")
+            ),
+        );
         let texture_entry = |binding, dimension| wgpu::BindGroupLayoutEntry {
             binding,
             visibility: wgpu::ShaderStages::FRAGMENT,
@@ -342,6 +368,7 @@ impl Renderer {
             });
         let effects = PIXEL_ENTRIES
             .iter()
+            .chain(crate::light::ENTRIES.iter())
             .map(|&entry_point| {
                 let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                     label: Some(entry_point),
@@ -480,6 +507,9 @@ impl Renderer {
         });
         let no_lut = lut_texture(&device, &queue, &Lut3d::identity(2));
         let flow = flow::FlowPipelines::new(&device, COMMON);
+        let particles = particles::ParticlePipelines::new(&device, COMMON);
+        let objects = objects::ObjectPipelines::new(&device, &queue);
+        let projected = three_d::Projected::new(&device, &layer_pipeline_layout, COMMON);
         Renderer {
             device,
             queue,
@@ -506,6 +536,9 @@ impl Renderer {
             mask_cache: HashMap::new(),
             flow,
             flows: flow::FlowCache::default(),
+            projected,
+            particles,
+            objects,
         }
     }
 
@@ -695,7 +728,7 @@ impl Renderer {
         let mut current: Option<wgpu::Texture> = None;
         let mut flip = 0u8;
         let mut index = 0;
-        let normal = |step: &Step| matches!(step, Step::Layer(draw) if draw.blend == BlendMode::Normal && draw.path.is_empty());
+        let normal = |step: &Step| matches!(step, Step::Layer(draw) if draw.blend == BlendMode::Normal && draw.path.is_empty() && draw.defocus <= 0.0);
         loop {
             let run_end = steps[index..]
                 .iter()
@@ -726,12 +759,12 @@ impl Renderer {
                     })],
                     ..Default::default()
                 });
-                pass.set_pipeline(&self.composite);
                 let run = steps[index..run_end].iter().filter_map(|step| match step {
                     Step::Layer(draw) => Some(draw),
                     _ => None,
                 });
                 for draw in copy.iter().chain(run) {
+                    pass.set_pipeline(self.layer_pipeline(draw, false));
                     pass.set_bind_group(0, &draw.bind_group, &[]);
                     pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                     pass.draw(0..4, 0..1);
@@ -793,8 +826,8 @@ impl Renderer {
                                 })],
                                 ..Default::default()
                             });
-                            pass.set_pipeline(&self.composite);
                             if let Some(draw) = draw {
+                                pass.set_pipeline(self.layer_pipeline(draw, false));
                                 pass.set_bind_group(0, &draw.bind_group, &[]);
                                 pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                                 pass.draw(0..4, 0..1);
@@ -856,13 +889,17 @@ impl Renderer {
                 }
                 Step::Layer(draw) => {
                     let placed = self.canvas(Slot::Placed(self.nesting), size);
+                    // A layer the depth of field blurs is drawn alone, then blurred into
+                    // `placed` (ADR-0037).
+                    let defocused = (draw.defocus > 0.0).then(|| self.defocus_target(size));
                     {
+                        let drawn = defocused.as_ref().map_or(&placed, |(_, view)| view);
                         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("blended layer"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view: &samples_view,
                                 depth_slice: None,
-                                resolve_target: Some(&placed),
+                                resolve_target: Some(drawn),
                                 ops: wgpu::Operations {
                                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                                     store: wgpu::StoreOp::Discard,
@@ -871,14 +908,14 @@ impl Renderer {
                             ..Default::default()
                         });
                         if draw.path.is_empty() {
-                            pass.set_pipeline(&self.composite);
+                            pass.set_pipeline(self.layer_pipeline(draw, false));
                             pass.set_bind_group(0, &draw.bind_group, &[]);
                             pass.set_vertex_buffer(0, draw.vertex_buffer.slice(..));
                             pass.draw(0..4, 0..1);
                         } else {
                             // The average of the layer at every placement of the shutter.
                             let share = 1.0 / draw.path.len() as f64;
-                            pass.set_pipeline(&self.accumulate);
+                            pass.set_pipeline(self.layer_pipeline(draw, true));
                             pass.set_blend_constant(wgpu::Color {
                                 r: share,
                                 g: share,
@@ -891,6 +928,9 @@ impl Renderer {
                                 pass.draw(0..4, 0..1);
                             }
                         }
+                    }
+                    if let Some((texture, _)) = &defocused {
+                        self.defocus_into(encoder, texture, draw.defocus, &placed);
                     }
                     if draw.blend == BlendMode::Normal {
                         let none = [[0.0f32; 4]; SLOTS];
@@ -989,6 +1029,30 @@ impl Renderer {
         let mut opacity = layer.opacity;
         let mut temporal = None;
         let (texture, quad) = match &layer.source {
+            // A vector drawing renders at the size it shows, sharp at any resolution
+            // (ADR-0036).
+            LayerSource::Frame(source) if frames.vector(&source.asset).is_some() => {
+                let Some(image) = frames.vector(&source.asset) else {
+                    return Ok(None);
+                };
+                let (raster, natural) = self.drawing_raster(&image, layer, plan.canvas, size);
+                if raster.is_empty() {
+                    return Ok(None);
+                }
+                let texture = self.upload_rgba(
+                    encoder,
+                    index,
+                    (raster.width, raster.height),
+                    &raster.pixels,
+                );
+                (
+                    texture,
+                    Quad::Fitted {
+                        source: natural,
+                        rotation: 0,
+                    },
+                )
+            }
             LayerSource::Frame(source) => {
                 let (texture, frame, inputs) =
                     self.frame_layer(encoder, index, layer, source, frames)?;
@@ -1101,21 +1165,66 @@ impl Renderer {
                     },
                 )
             }
+            LayerSource::Particles(particles) => {
+                let Some(texture) = self.particle_layer(
+                    encoder,
+                    index,
+                    size,
+                    plan.canvas,
+                    particles,
+                    &layer.effects,
+                    frames,
+                )?
+                else {
+                    return Ok(None);
+                };
+                let canvas = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
+                (texture, Quad::natural(canvas, (0.0, 0.0)))
+            }
+            // A 3D object, drawn through its camera over the whole canvas (ADR-0040).
+            LayerSource::Model(object) => {
+                let Some(texture) = self.object_layer(
+                    encoder,
+                    index,
+                    size,
+                    plan.canvas,
+                    object,
+                    &layer.transform,
+                    layer.space.as_ref(),
+                    frames,
+                )?
+                else {
+                    return Ok(None);
+                };
+                let canvas = (f64::from(plan.canvas.0), f64::from(plan.canvas.1));
+                (texture, Quad::natural(canvas, (0.0, 0.0)))
+            }
             LayerSource::Adjustment | LayerSource::Transition(_) => return Ok(None),
         };
-        let layer_view = if layer.effects.is_empty() {
-            texture.create_view(&Default::default())
+        // Light effects pad the picture when their light spreads past it (crate::light).
+        let (layer_view, padding) = if layer.effects.is_empty() {
+            (texture.create_view(&Default::default()), None)
         } else {
             // Subject effects read the cached analyses of the frame the layer shows.
             let source = match &layer.source {
                 LayerSource::Frame(source) => Some(source),
                 _ => None,
             };
-            self.apply_effects(
+            let per_canvas_pixel = match &quad {
+                Quad::Fitted { source, rotation } => {
+                    crate::light::fitted_scale(plan.canvas, *source, *rotation)
+                        * f64::from(texture.width())
+                        / f64::from(source.0.max(1))
+                }
+                Quad::Natural { .. } => f64::from(size.1) / f64::from(plan.canvas.1.max(1)),
+            };
+            self.layer_effects(
                 encoder,
                 index,
                 &texture,
                 &layer.effects,
+                plan.canvas,
+                per_canvas_pixel,
                 frames,
                 source,
                 temporal.as_ref(),
@@ -1165,7 +1274,10 @@ impl Renderer {
             layout: &self.composite.get_bind_group_layout(0),
             entries: &[
                 entry(0, wgpu::BindingResource::TextureView(&layer_view)),
-                entry(1, wgpu::BindingResource::Sampler(&self.linear)),
+                entry(
+                    1,
+                    wgpu::BindingResource::Sampler(self.layer_sampler(layer, &quad, plan.canvas)),
+                ),
                 entry(2, wgpu::BindingResource::TextureView(&lut_view)),
                 entry(3, wgpu::BindingResource::Sampler(&self.linear)),
                 entry(4, self.uniform(&uniform).as_entire_binding()),
@@ -1183,18 +1295,42 @@ impl Renderer {
                     usage: wgpu::BufferUsages::VERTEX,
                 })
         };
-        let vertex_buffer = buffer(quad.vertices(plan.canvas, &layer.transform, layer.crop));
+        // A 3D object's picture is already seen through its camera and covers the canvas
+        // as it is; the depth of field still blurs it (ADR-0040).
+        let drawn = matches!(layer.source, LayerSource::Model(_));
+        let flat = fosscut_model::Transform::default();
+        let space = layer.space.as_ref().filter(|_| !drawn);
+        // Layers placed in 3D are projected through their camera (ADR-0037).
+        let place = |transform: &fosscut_model::Transform| {
+            let transform = if drawn { &flat } else { transform };
+            match (&padding, space) {
+                (Some(padding), space) => {
+                    self.padded_buffer(&quad, plan.canvas, transform, layer, space, padding)
+                }
+                (None, Some(space)) => {
+                    self.projected_buffer(&quad, plan.canvas, transform, layer.crop, space)
+                }
+                (None, None) => buffer(quad.vertices(plan.canvas, transform, layer.crop)),
+            }
+        };
+        let vertex_buffer = place(&layer.transform);
         // A motion blur's shutter: the layer at each placement while it is open.
-        let path = layer
-            .shutter
-            .iter()
-            .map(|transform| buffer(quad.vertices(plan.canvas, transform, layer.crop)))
-            .collect();
+        let path = if drawn {
+            Vec::new()
+        } else {
+            layer.shutter.iter().map(place).collect()
+        };
         Ok(Some(Draw {
             bind_group,
             vertex_buffer,
             path,
             blend: layer.blend,
+            projected: space.is_some(),
+            // The depth of field's blur radius in output pixels.
+            defocus: layer
+                .space
+                .as_ref()
+                .map_or(0.0, |s| (s.defocus * f64::from(size.0)) as f32),
         }))
     }
 
@@ -1762,6 +1898,9 @@ impl Renderer {
                         &target,
                     );
                 }
+                Pass::Light(kind) => {
+                    self.light_pass(encoder, layer, &current, effect, kind, &target);
+                }
                 Pass::Sharpen => {
                     let blurred = self.canvas_texture(Slot::Blurred(layer), size);
                     let blurred_view = blurred.create_view(&Default::default());
@@ -1959,6 +2098,8 @@ impl Renderer {
             vertex_buffer,
             path: Vec::new(),
             blend: BlendMode::Normal,
+            projected: false,
+            defocus: 0.0,
         }
     }
 
@@ -1970,7 +2111,11 @@ impl Renderer {
         frame: &VideoFrame,
         source: &SourceRef,
     ) -> Result<wgpu::Texture, RenderError> {
-        let matrix = yuv_to_rgb(&frame.color)?;
+        // R'G'B'A frames (ADR-0039) need no matrix; the shader reads them as they are.
+        let matrix = match frame.format {
+            PixelFormat::Rgba => [[0.0; 4]; 3],
+            _ => yuv_to_rgb(&frame.color)?,
+        };
         let transfer = TransferFunction::for_source(frame.color.transfer)?;
         if frame.planes.len() != frame.format.plane_count() || frame.width == 0 || frame.height == 0
         {
@@ -1986,6 +2131,7 @@ impl Renderer {
                 .plane_size(plane_index, frame.width, frame.height);
             let (format, width) = match (frame.format, plane_index) {
                 (PixelFormat::Nv12, 1) => (wgpu::TextureFormat::Rg8Unorm, row_bytes / 2),
+                (PixelFormat::Rgba, _) => (wgpu::TextureFormat::Rgba8Unorm, row_bytes / 4),
                 _ => (wgpu::TextureFormat::R8Unorm, row_bytes),
             };
             let texture = self.texture(
@@ -2010,7 +2156,8 @@ impl Renderer {
             );
             planes.push(texture.create_view(&Default::default()));
         }
-        let chroma_b = planes.get(2).unwrap_or(&planes[1]).clone();
+        let chroma_a = planes.get(1).unwrap_or(&planes[0]).clone();
+        let chroma_b = planes.get(2).unwrap_or(&chroma_a).clone();
 
         let mips = (frame.width.max(frame.height) as f32).log2().floor() as u32 + 1;
         let layer = self.texture(
@@ -2023,7 +2170,11 @@ impl Renderer {
         let uniform = ConvertUniform {
             rows: matrix,
             mode: [
-                u32::from(frame.format == PixelFormat::Yuv420p),
+                match frame.format {
+                    PixelFormat::Nv12 => 0,
+                    PixelFormat::Yuv420p => 1,
+                    PixelFormat::Rgba => 2,
+                },
                 transfer as u32,
                 0,
                 0,
@@ -2034,7 +2185,7 @@ impl Renderer {
             layout: &self.convert.get_bind_group_layout(0),
             entries: &[
                 entry(0, wgpu::BindingResource::TextureView(&planes[0])),
-                entry(1, wgpu::BindingResource::TextureView(&planes[1])),
+                entry(1, wgpu::BindingResource::TextureView(&chroma_a)),
                 entry(2, wgpu::BindingResource::TextureView(&chroma_b)),
                 entry(3, wgpu::BindingResource::Sampler(&self.linear)),
                 entry(4, self.uniform(&uniform).as_entire_binding()),
@@ -2244,6 +2395,49 @@ impl Renderer {
         let raster = Arc::new(self.text.rasterize(layer, canvas, scale));
         self.text_cache.insert(key, raster.clone());
         raster
+    }
+
+    /// A vector drawing (ADR-0036) rendered at the size `layer` shows it on a `size` output
+    /// of a `canvas` plan: fitted into the canvas and scaled by its transform. Cached by
+    /// the drawing's content and the size. Also returns the drawing's proportions as a
+    /// source size for fitting.
+    fn drawing_raster(
+        &mut self,
+        image: &crate::vector::VectorImage,
+        layer: &crate::plan::Layer,
+        canvas: (u32, u32),
+        size: (u32, u32),
+    ) -> (Arc<TextRaster>, (u32, u32)) {
+        let (w, h) = image.size();
+        let (w, h) = (w.max(1e-6), h.max(1e-6));
+        let (cw, ch) = (f64::from(canvas.0.max(1)), f64::from(canvas.1.max(1)));
+        let fit = (cw / w).min(ch / h);
+        let output = f64::from(size.1) / ch;
+        let [fx, fy] = layer.transform.size_factors();
+        let limit = f64::from(crate::vector::MAX_DRAWING_SIDE);
+        let (mut rw, mut rh) = (
+            (w * fit * fx.abs() * output).ceil().max(1.0),
+            (h * fit * fy.abs() * output).ceil().max(1.0),
+        );
+        let over = (rw.max(rh) / limit).max(1.0);
+        rw = (rw / over).round().max(1.0);
+        rh = (rh / over).round().max(1.0);
+        // Proportions precise enough for fitting, whatever the drawing's own size.
+        let k = 4096.0 / w.max(h);
+        let natural = (
+            ((w * k).round() as u32).max(1),
+            ((h * k).round() as u32).max(1),
+        );
+        let key = format!("vector|{}|{}x{}", image.key(), rw as u32, rh as u32);
+        if let Some(raster) = self.text_cache.get(&key) {
+            return (raster.clone(), natural);
+        }
+        if self.text_cache.len() >= TEXT_CACHE_LIMIT {
+            self.text_cache.clear();
+        }
+        let raster = Arc::new(image.rasterize(rw as u32, rh as u32));
+        self.text_cache.insert(key, raster.clone());
+        (raster, natural)
     }
 
     /// A composed shape, cached by the shape and output size.
@@ -2512,6 +2706,10 @@ struct Draw {
     /// drawn; empty when it does not move.
     path: Vec<wgpu::Buffer>,
     blend: BlendMode,
+    /// Drawn with the projected pipelines: its corners are in clip coordinates (ADR-0037).
+    projected: bool,
+    /// The depth of field's blur radius in output pixels; 0 when sharp.
+    defocus: f32,
 }
 
 /// How a layer's picture is placed on the canvas for a given transform.

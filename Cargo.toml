@@ -36,6 +36,12 @@ cpal = "0.18.2"
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash"] }
 # Operating-system randomness for live session keys and nonces (ADR-0022).
 getrandom = "0.4.3"
+# 3D objects (ADR-0040): glTF 2.0 models with their buffers and PNG or JPEG images (gltf,
+# MIT OR Apache-2.0; its `import` feature decodes images with the image crate), and polygon
+# triangulation for extruded text and paths (earcut, MIT OR Apache-2.0, a port of Mapbox's
+# ISC-licensed earcut).
+earcut = "0.4.11"
+gltf = { version = "1.4.1", default-features = false, features = ["import", "utils"] }
 half = "2.7.1"
 insta = { version = "1.49.0", features = ["json"] }
 # Windows named-pipe server with an owner-only access list for live sessions (ADR-0022).
@@ -75,6 +81,14 @@ unicode-normalization = "0.1.26"
 wgpu = "30.0.1"
 # whisper.cpp (MIT) built from source with CMake: local speech recognition (ADR-0020).
 whisper-rs = { version = "0.16.0", default-features = false }
+# Vector paths, strokes and SVG (ADR-0036): 2D curves with arc lengths and SVG path data
+# (kurbo, MIT OR Apache-2.0), antialiased path fills and strokes (tiny-skia, BSD-3-Clause),
+# and SVG parsing and rendering (usvg and resvg, MIT OR Apache-2.0). Without their default
+# features: no system fonts, no text, no embedded raster images.
+kurbo = "0.13.1"
+resvg = { version = "0.49.0", default-features = false }
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
+usvg = { version = "0.49.0", default-features = false }
 
 [workspace.lints.rust]
 # Crates that must never use unsafe code add `#![forbid(unsafe_code)]`; only backend modules

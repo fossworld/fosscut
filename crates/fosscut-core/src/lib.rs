@@ -25,6 +25,7 @@ mod commands;
 mod envelope;
 mod error;
 mod history;
+mod library_files;
 mod looks;
 mod presets;
 mod queries;
@@ -53,6 +54,11 @@ pub use commands::{
     TimelineRemove, TimelineRemoved, TimelineRename, TimelineReport, TimelineSetPrimary,
 };
 pub use commands::{
+    BurstInput, ParticlePreset, ParticlesAdd, ParticlesChanged, ParticlesSet, particle_preset,
+    particle_presets,
+};
+pub use commands::{CameraAdd, CameraReport, CameraSet};
+pub use commands::{
     CanvasChanged, CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle,
     CaptionsStyled, ClipAdd, ClipCanvas, ClipMove, ClipPlacement, ClipProperties, ClipRemove,
     ClipRemoved, ClipSet, ClipSplit, ClipSplitResult, ClipTrim, Easing, Fit, KeyInput,
@@ -61,7 +67,10 @@ pub use commands::{
     TimelineDuplicated, TimelineRemoveRanges, TrackAdd, TrackAdded, WordInput,
 };
 pub use commands::{ClipCompound, ClipDecompose, Compounded, Decomposed};
+pub use commands::{ClipFollow, Exploded, ExplodedPart, Followed, VectorExplode, VectorPart};
 pub use commands::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
+pub use commands::{ClipsStagger, StaggerOrder, StaggerPlace, Staggered, StaggeredClip};
+pub use commands::{ModelAdd, ModelChanged, ModelPreset, ModelSet, model_preset, model_presets};
 pub use commands::{
     RevealInput, TextAdd, TextChanged, TextPresetRemove, TextPresetSave, TextPresets, TextSet,
     TextTemplate,
@@ -70,6 +79,10 @@ pub use commands::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateAp
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};
+pub use library_files::{
+    DeviceScreen, DrawingKind, LibraryComposition, LibraryDrawing, ScreenPlacement, composition,
+    compositions, drawing, drawings,
+};
 pub use looks::{Look, LookEffect, look, looks};
 pub use presets::{
     CaptionPreset, LibraryVisual, LineLook, ProjectTemplate, TemplateCanvas, TemplateElement,

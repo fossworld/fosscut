@@ -23,7 +23,12 @@ export type FieldId =
   | "volume"
   | "pan"
   | "fade_in"
-  | "fade_out";
+  | "fade_out"
+  | "depth"
+  | "tilt"
+  | "turn"
+  | "anchor_x"
+  | "anchor_y";
 
 export interface Field {
   id: FieldId;
@@ -53,14 +58,17 @@ export interface Viewing {
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
-/** True for clips with a picture: everything but audio. */
+/** True for clips with a picture: everything but audio and cameras, which show nothing. */
 export function hasPicture(clip: ClipView): boolean {
-  return clip.kind !== "audio";
+  return clip.kind !== "audio" && clip.kind !== "camera";
 }
 
-/** True for clips placed on the canvas: an adjustment layer has no place of its own. */
+/**
+ * True for clips placed on the canvas: an adjustment layer has no place of its own, and a
+ * camera is placed by its own fields (ADR-0037).
+ */
 export function isPlaced(clip: ClipView): boolean {
-  return clip.kind !== "audio" && clip.kind !== "adjustment";
+  return clip.kind !== "audio" && clip.kind !== "adjustment" && clip.kind !== "camera";
 }
 
 /** True for clips with sound. */
@@ -95,6 +103,10 @@ function values(clip: ClipView, playhead: number) {
     scale: numberAt(clip, "transform.scale", playhead, t.scale ?? 1),
     stretch: pairAt(clip, "transform.stretch", playhead, t.stretch ?? [1, 1]),
     rotation: numberAt(clip, "transform.rotation", playhead, t.rotation ?? 0),
+    depth: numberAt(clip, "transform.position_z", playhead, t.position_z ?? 0),
+    tilt: numberAt(clip, "transform.rotation_x", playhead, t.rotation_x ?? 0),
+    turn: numberAt(clip, "transform.rotation_y", playhead, t.rotation_y ?? 0),
+    anchor: pairAt(clip, "transform.anchor", playhead, t.anchor ?? [0, 0]),
     crop: {
       left: numberAt(clip, "crop.left", playhead, crop.left ?? 0),
       right: numberAt(clip, "crop.right", playhead, crop.right ?? 0),
@@ -148,6 +160,13 @@ export function fieldsFor(clip: ClipView, viewing: Viewing): Field[] {
     fields.push(
       field("rotation", "transform.rotation", v.rotation, "°"),
       field("opacity", "opacity", v.opacity * 100, "%", { min: 0, max: 100 }),
+      // Placement in depth (ADR-0037): depth in % of the canvas width, the anchor in % of
+      // the picture from its centre.
+      field("depth", "transform.position_z", v.depth * 100, "%"),
+      field("tilt", "transform.rotation_x", v.tilt, "°"),
+      field("turn", "transform.rotation_y", v.turn, "°"),
+      field("anchor_x", "transform.anchor", v.anchor[0] * 100, "%", { min: -100, max: 100 }),
+      field("anchor_y", "transform.anchor", v.anchor[1] * 100, "%", { min: -100, max: 100 }),
     );
     if (clip.kind === "video" || clip.kind === "image") {
       fields.push(
@@ -182,6 +201,7 @@ export function fieldsFor(clip: ClipView, viewing: Viewing): Field[] {
 function engineValue(clip: ClipView, id: FieldId, shown: number, playhead: number): unknown {
   const v = values(clip, playhead);
   const [x, y] = v.position;
+  const [ax, ay] = v.anchor;
   const time = (seconds: number) => ({ flicks: Math.round(seconds * FLICKS_PER_SECOND) });
   switch (id) {
     case "x":
@@ -195,7 +215,15 @@ function engineValue(clip: ClipView, id: FieldId, shown: number, playhead: numbe
     case "scale_y":
       return [v.stretch[0], shown / 100 / v.scale];
     case "rotation":
+    case "tilt":
+    case "turn":
       return shown;
+    case "depth":
+      return shown / 100;
+    case "anchor_x":
+      return [shown / 100, ay];
+    case "anchor_y":
+      return [ax, shown / 100];
     case "crop_left":
     case "crop_right":
     case "crop_top":

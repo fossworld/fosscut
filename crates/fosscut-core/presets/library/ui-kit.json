@@ -1,0 +1,2369 @@
+[
+ {
+  "name": "ui-search-bar",
+  "kind": "sticker",
+  "title": "Search bar",
+  "description": "A white search field with a light edge, a magnifier and a grey placeholder, 48 by 7 grid units (a grid unit is 1/120 of the canvas height). Type into it with a text clip or the ui-search-text title over the placeholder, and a ui-caret; the magnifier is the stroke from trim 0.9227 to 1.",
+  "tags": [
+   "ui",
+   "app",
+   "search",
+   "field",
+   "input",
+   "typing"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.225,
+    0.058333
+   ],
+   "points": [
+    {
+     "at": [
+      -0.85417,
+      -1.0
+     ],
+     "in": [
+      -0.08054,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.85417,
+      -1.0
+     ],
+     "out": [
+      0.08054,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      -0.55228
+     ],
+     "out": [
+      0.0,
+      0.55228
+     ]
+    },
+    {
+     "at": [
+      0.85417,
+      1.0
+     ],
+     "in": [
+      0.08054,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.85417,
+      1.0
+     ],
+     "out": [
+      -0.08054,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      0.55228
+     ],
+     "out": [
+      0.0,
+      -0.55228
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.82917,
+        -0.41429
+       ],
+       "in": [
+        -0.02646,
+        0.0
+       ],
+       "out": [
+        0.02646,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.78125,
+        -0.08571
+       ],
+       "in": [
+        0.0,
+        -0.18146
+       ],
+       "out": [
+        0.0,
+        0.18146
+       ]
+      },
+      {
+       "at": [
+        -0.82917,
+        0.24286
+       ],
+       "in": [
+        0.02646,
+        0.0
+       ],
+       "out": [
+        -0.02646,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.87708,
+        -0.08571
+       ],
+       "in": [
+        0.0,
+        0.18146
+       ],
+       "out": [
+        0.0,
+        -0.18146
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.79375,
+        0.15714
+       ]
+      },
+      {
+       "at": [
+        -0.75,
+        0.45714
+       ]
+      }
+     ],
+     "closed": false
+    }
+   ],
+   "fill_rule": "nonzero",
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "outline": {
+    "enabled": true,
+    "color": "#DCE1E8",
+    "width": 0.03
+   },
+   "stroke": {
+    "color": "#7B8494",
+    "width": 0.0025,
+    "cap": "round",
+    "join": "round"
+   },
+   "trim_start": 0.9232,
+   "label": {
+    "text": "Search",
+    "style": {
+     "size": 0.02,
+     "color": "#7B8494"
+    }
+   },
+   "label_at": [
+    -0.58,
+    0.0
+   ]
+  }
+ },
+ {
+  "name": "ui-caret",
+  "kind": "sticker",
+  "title": "Text caret",
+  "description": "A thin rounded bar, 0.5 by 4 grid units, in the accent blue: the insertion point after typed text. Make it blink with opacity keyframes held at 1 and 0 every half second.",
+  "tags": [
+   "ui",
+   "cursor",
+   "typing",
+   "input"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.002344,
+    0.033333
+   ],
+   "roundness": 1.0,
+   "fill": {
+    "color": "#3D6BF5"
+   }
+  }
+ },
+ {
+  "name": "ui-button-primary",
+  "kind": "sticker",
+  "title": "Primary button",
+  "description": "A filled accent-blue pill with a bold white label, 24 by 7 grid units: the main action, such as Add to cart or Buy now. Recolour it with shape.set fill and label.",
+  "tags": [
+   "ui",
+   "app",
+   "button",
+   "action",
+   "cta",
+   "cart"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.1125,
+    0.058333
+   ],
+   "roundness": 1.0,
+   "fill": {
+    "color": "#3D6BF5"
+   },
+   "label": {
+    "text": "Add to cart",
+    "style": {
+     "size": 0.02,
+     "color": "#FFFFFF",
+     "bold": true
+    }
+   }
+  }
+ },
+ {
+  "name": "ui-button-secondary",
+  "kind": "sticker",
+  "title": "Secondary button",
+  "description": "A white pill with an accent-blue edge and label, 24 by 7 grid units: the second choice beside a primary button.",
+  "tags": [
+   "ui",
+   "app",
+   "button",
+   "outline",
+   "ghost"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.1125,
+    0.058333
+   ],
+   "roundness": 1.0,
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "outline": {
+    "enabled": true,
+    "color": "#3D6BF5",
+    "width": 0.05
+   },
+   "label": {
+    "text": "Details",
+    "style": {
+     "size": 0.02,
+     "color": "#3D6BF5",
+     "bold": true
+    }
+   }
+  }
+ },
+ {
+  "name": "ui-card",
+  "kind": "sticker",
+  "title": "Product card",
+  "description": "A white card with soft corners, 22 by 30 grid units: the base of a product tile. Put a ui-image-slot or a picture in its top part, a title and a ui-price-tag below; make several fly out in 3D or pop in with clips.stagger.",
+  "tags": [
+   "ui",
+   "app",
+   "card",
+   "product",
+   "tile",
+   "panel"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.103125,
+    0.25
+   ],
+   "roundness": 0.18,
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "outline": {
+    "enabled": true,
+    "color": "#E6EAF0",
+    "width": 0.01
+   }
+  }
+ },
+ {
+  "name": "ui-panel",
+  "kind": "sticker",
+  "title": "Wide panel",
+  "description": "A wide white panel with soft corners, 52 by 18 grid units, with a bold heading and a grey line at its upper left: a tracker card, an order summary or a message sheet. Change the label to restate it.",
+  "tags": [
+   "ui",
+   "app",
+   "card",
+   "panel",
+   "sheet",
+   "tracker"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.24375,
+    0.15
+   ],
+   "roundness": 0.2,
+   "fill": {
+    "color": "#FFFFFF"
+   },
+   "label": {
+    "text": "Arriving today\nOut for delivery",
+    "style": {
+     "size": 0.021667,
+     "color": "#151A23",
+     "bold": true,
+     "align": "left",
+     "line_height": 1.5
+    },
+    "spans": [
+     {
+      "start": 15,
+      "end": 31,
+      "bold": false,
+      "color": "#7B8494",
+      "size": 0.016667
+     }
+    ]
+   },
+   "label_at": [
+    -0.5,
+    -0.45
+   ]
+  }
+ },
+ {
+  "name": "ui-image-slot",
+  "kind": "sticker",
+  "title": "Image slot",
+  "description": "A soft peach gradient tile with rounded corners, 18 by 14 grid units: a stand-in for a product photo on a card. Put a picture over it, or recolour it per product.",
+  "tags": [
+   "ui",
+   "app",
+   "image",
+   "photo",
+   "placeholder",
+   "product"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.084375,
+    0.116667
+   ],
+   "roundness": 0.14,
+   "fill": {
+    "color": "#FFE3D3",
+    "gradient": {
+     "to": "#FFB08A",
+     "angle": 60
+    }
+   }
+  }
+ },
+ {
+  "name": "ui-price-tag",
+  "kind": "sticker",
+  "title": "Price tag",
+  "description": "An orange-red tag pointing left with a punched hole and a bold white price, 12 by 5 grid units. Change the label to the price.",
+  "tags": [
+   "ui",
+   "shop",
+   "price",
+   "tag",
+   "sale",
+   "label"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.05625,
+    0.041667
+   ],
+   "points": [
+    {
+     "at": [
+      -0.96667,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.6,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      -1.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      1.0
+     ]
+    },
+    {
+     "at": [
+      -0.6,
+      1.0
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.61667,
+        -0.2
+       ],
+       "in": [
+        -0.04602,
+        0.0
+       ],
+       "out": [
+        0.04602,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.53333,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.11046
+       ],
+       "out": [
+        0.0,
+        0.11046
+       ]
+      },
+      {
+       "at": [
+        -0.61667,
+        0.2
+       ],
+       "in": [
+        0.04602,
+        0.0
+       ],
+       "out": [
+        -0.04602,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.7,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.11046
+       ],
+       "out": [
+        0.0,
+        -0.11046
+       ]
+      }
+     ]
+    }
+   ],
+   "fill": {
+    "color": "#FF5A3C"
+   },
+   "stroke": {
+    "color": "#FF5A3C",
+    "width": 0.002083,
+    "cap": "butt",
+    "join": "round"
+   },
+   "label": {
+    "text": "$49",
+    "style": {
+     "size": 0.021667,
+     "color": "#FFFFFF",
+     "bold": true
+    }
+   },
+   "label_at": [
+    0.2,
+    0.0
+   ]
+  }
+ },
+ {
+  "name": "ui-toast",
+  "kind": "sticker",
+  "title": "Toast with check mark",
+  "description": "A dark pill with a white message and a green check mark at its left, 40 by 8 grid units: Added to cart, Order placed, Saved. The check is the stroke from trim 0.9474 to 1, so animation.set with draw_on draws it on.",
+  "tags": [
+   "ui",
+   "app",
+   "toast",
+   "snackbar",
+   "confirmation",
+   "check",
+   "success"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.1875,
+    0.066667
+   ],
+   "points": [
+    {
+     "at": [
+      -0.8,
+      -1.0
+     ],
+     "in": [
+      -0.11046,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.8,
+      -1.0
+     ],
+     "out": [
+      0.11046,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      -0.55228
+     ],
+     "out": [
+      0.0,
+      0.55228
+     ]
+    },
+    {
+     "at": [
+      0.8,
+      1.0
+     ],
+     "in": [
+      0.11046,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.8,
+      1.0
+     ],
+     "out": [
+      -0.11046,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      0.55228
+     ],
+     "out": [
+      0.0,
+      -0.55228
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.84,
+        0.0375
+       ]
+      },
+      {
+       "at": [
+        -0.7825,
+        0.325
+       ]
+      },
+      {
+       "at": [
+        -0.67,
+        -0.2875
+       ]
+      }
+     ],
+     "closed": false
+    }
+   ],
+   "fill_rule": "nonzero",
+   "fill": {
+    "color": "#1C2230"
+   },
+   "stroke": {
+    "color": "#2BD47D",
+    "width": 0.005,
+    "cap": "round",
+    "join": "round"
+   },
+   "trim_start": 0.9479,
+   "label": {
+    "text": "Added to cart",
+    "style": {
+     "size": 0.02,
+     "color": "#FFFFFF",
+     "bold": true
+    }
+   },
+   "label_at": [
+    0.12,
+    0.0
+   ]
+  }
+ },
+ {
+  "name": "ui-check-badge",
+  "kind": "sticker",
+  "title": "Check badge",
+  "description": "A green disc with a white check mark, 5 by 5 grid units: done, delivered, verified. The check is the stroke from trim 0.8223 to 1, so draw_on draws it.",
+  "tags": [
+   "ui",
+   "check",
+   "done",
+   "success",
+   "verified",
+   "badge"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.023438,
+    0.041667
+   ],
+   "points": [
+    {
+     "at": [
+      0.0,
+      -1.0
+     ],
+     "in": [
+      -0.55228,
+      0.0
+     ],
+     "out": [
+      0.55228,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      -0.55228
+     ],
+     "out": [
+      0.0,
+      0.55228
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      1.0
+     ],
+     "in": [
+      0.55228,
+      0.0
+     ],
+     "out": [
+      -0.55228,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.0
+     ],
+     "in": [
+      0.0,
+      0.55228
+     ],
+     "out": [
+      0.0,
+      -0.55228
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.46,
+        0.04
+       ]
+      },
+      {
+       "at": [
+        -0.14,
+        0.36
+       ]
+      },
+      {
+       "at": [
+        0.48,
+        -0.3
+       ]
+      }
+     ],
+     "closed": false
+    }
+   ],
+   "fill_rule": "nonzero",
+   "fill": {
+    "color": "#19B46B"
+   },
+   "stroke": {
+    "color": "#FFFFFF",
+    "width": 0.004583,
+    "cap": "round",
+    "join": "round"
+   },
+   "trim_start": 0.8228
+  }
+ },
+ {
+  "name": "ui-notification",
+  "kind": "sticker",
+  "title": "Notification banner",
+  "description": "A white banner with soft corners and two lines of text, a bold title over a grey message, 52 by 12 grid units, with room at its left for a ui-app-icon. Slide it down from the top of a phone screen.",
+  "tags": [
+   "ui",
+   "phone",
+   "notification",
+   "alert",
+   "banner",
+   "push"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    0.24375,
+    0.1
+   ],
+   "roundness": 0.34,
+   "fill": {
+    "color": "#FFFFFFF2"
+   },
+   "label": {
+    "text": "Your order has arrived\nLeft at the front door",
+    "style": {
+     "size": 0.018333,
+     "color": "#151A23",
+     "bold": true,
+     "align": "left",
+     "line_height": 1.45
+    },
+    "spans": [
+     {
+      "start": 23,
+      "end": 45,
+      "bold": false,
+      "color": "#7B8494"
+     }
+    ]
+   },
+   "label_at": [
+    0.04,
+    0.0
+   ]
+  }
+ },
+ {
+  "name": "ui-app-icon",
+  "kind": "sticker",
+  "title": "App icon",
+  "description": "An accent-blue rounded square with a white shopping bag drawn by its stroke, 7 by 7 grid units: a generic store app's icon for notifications and home screens. The bag is the stroke from trim 0.634 to 1.",
+  "tags": [
+   "ui",
+   "app",
+   "icon",
+   "store",
+   "bag",
+   "shop"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.032813,
+    0.058333
+   ],
+   "points": [
+    {
+     "at": [
+      -0.54286,
+      -1.0
+     ],
+     "in": [
+      -0.25247,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      0.54286,
+      -1.0
+     ],
+     "out": [
+      0.25247,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      -0.54286
+     ],
+     "in": [
+      0.0,
+      -0.25247
+     ]
+    },
+    {
+     "at": [
+      1.0,
+      0.54286
+     ],
+     "out": [
+      0.0,
+      0.25247
+     ]
+    },
+    {
+     "at": [
+      0.54286,
+      1.0
+     ],
+     "in": [
+      0.25247,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.54286,
+      1.0
+     ],
+     "out": [
+      -0.25247,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      0.54286
+     ],
+     "in": [
+      0.0,
+      0.25247
+     ]
+    },
+    {
+     "at": [
+      -1.0,
+      -0.54286
+     ],
+     "out": [
+      0.0,
+      -0.25247
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.42857,
+        -0.17143
+       ]
+      },
+      {
+       "at": [
+        0.42857,
+        -0.17143
+       ]
+      },
+      {
+       "at": [
+        0.52857,
+        0.54286
+       ]
+      },
+      {
+       "at": [
+        -0.52857,
+        0.54286
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.25714,
+        -0.17143
+       ],
+       "out": [
+        0.0,
+        -0.14202
+       ]
+      },
+      {
+       "at": [
+        0.0,
+        -0.42857
+       ],
+       "in": [
+        -0.14202,
+        0.0
+       ],
+       "out": [
+        0.14202,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.25714,
+        -0.17143
+       ],
+       "in": [
+        0.0,
+        -0.14202
+       ]
+      }
+     ],
+     "closed": false
+    }
+   ],
+   "fill_rule": "nonzero",
+   "fill": {
+    "color": "#3D6BF5"
+   },
+   "stroke": {
+    "color": "#FFFFFF",
+    "width": 0.00375,
+    "cap": "round",
+    "join": "round"
+   },
+   "trim_start": 0.6345
+  }
+ },
+ {
+  "name": "ui-tracker",
+  "kind": "sticker",
+  "title": "Progress tracker",
+  "description": "Four step dots joined by a line in light grey, 44 by 3 grid units: the track of an order or delivery tracker. Lay ui-tracker-progress over it at the same place.",
+  "tags": [
+   "ui",
+   "tracker",
+   "progress",
+   "steps",
+   "delivery",
+   "order"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.20625,
+    0.025
+   ],
+   "points": [
+    {
+     "at": [
+      -0.93182,
+      -0.33333
+     ],
+     "in": [
+      -0.01255,
+      0.0
+     ],
+     "out": [
+      0.01255,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.90909,
+      0.0
+     ],
+     "in": [
+      0.0,
+      -0.18409
+     ],
+     "out": [
+      0.0,
+      0.18409
+     ]
+    },
+    {
+     "at": [
+      -0.93182,
+      0.33333
+     ],
+     "in": [
+      0.01255,
+      0.0
+     ],
+     "out": [
+      -0.01255,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.95455,
+      0.0
+     ],
+     "in": [
+      0.0,
+      0.18409
+     ],
+     "out": [
+      0.0,
+      -0.18409
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.90909,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.33333,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.31061,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.28788,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        -0.31061,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.33333,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.28788,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.28788,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.31061,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.33333,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        0.31061,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.28788,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.33333,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.90909,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.93182,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.95455,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        0.93182,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.90909,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    }
+   ],
+   "fill": null,
+   "stroke": {
+    "color": "#DCE1E8",
+    "width": 0.008333,
+    "cap": "round",
+    "join": "round"
+   }
+  }
+ },
+ {
+  "name": "ui-tracker-progress",
+  "kind": "sticker",
+  "title": "Tracker progress",
+  "description": "The same four steps in accent blue, shown up to the third step: shape.trim_end 0.06, 0.37, 0.69, 1.00 end at steps one to four. Lay it over ui-tracker and draw it on with draw_on, or keyframe shape.trim_end from one step to the next.",
+  "tags": [
+   "ui",
+   "tracker",
+   "progress",
+   "steps",
+   "delivery",
+   "order"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.20625,
+    0.025
+   ],
+   "points": [
+    {
+     "at": [
+      -0.93182,
+      -0.33333
+     ],
+     "in": [
+      -0.01255,
+      0.0
+     ],
+     "out": [
+      0.01255,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.90909,
+      0.0
+     ],
+     "in": [
+      0.0,
+      -0.18409
+     ],
+     "out": [
+      0.0,
+      0.18409
+     ]
+    },
+    {
+     "at": [
+      -0.93182,
+      0.33333
+     ],
+     "in": [
+      0.01255,
+      0.0
+     ],
+     "out": [
+      -0.01255,
+      0.0
+     ]
+    },
+    {
+     "at": [
+      -0.95455,
+      0.0
+     ],
+     "in": [
+      0.0,
+      0.18409
+     ],
+     "out": [
+      0.0,
+      -0.18409
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.90909,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.33333,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.31061,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.28788,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        -0.31061,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.33333,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        -0.28788,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.28788,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.31061,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.33333,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        0.31061,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.28788,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.33333,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.90909,
+        0.0
+       ]
+      }
+     ],
+     "closed": false
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.93182,
+        -0.33333
+       ],
+       "in": [
+        -0.01255,
+        0.0
+       ],
+       "out": [
+        0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.95455,
+        0.0
+       ],
+       "in": [
+        0.0,
+        -0.18409
+       ],
+       "out": [
+        0.0,
+        0.18409
+       ]
+      },
+      {
+       "at": [
+        0.93182,
+        0.33333
+       ],
+       "in": [
+        0.01255,
+        0.0
+       ],
+       "out": [
+        -0.01255,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.90909,
+        0.0
+       ],
+       "in": [
+        0.0,
+        0.18409
+       ],
+       "out": [
+        0.0,
+        -0.18409
+       ]
+      }
+     ]
+    }
+   ],
+   "fill": null,
+   "stroke": {
+    "color": "#3D6BF5",
+    "width": 0.008333,
+    "cap": "round",
+    "join": "round"
+   },
+   "trim_end": 0.6894
+  }
+ },
+ {
+  "name": "ui-rating",
+  "kind": "sticker",
+  "title": "Star rating",
+  "description": "Five gold stars in a row, 16 by 3 grid units: a product's rating. Show fewer with a crop from the right (crop.right 0.2 leaves four).",
+  "tags": [
+   "ui",
+   "rating",
+   "stars",
+   "review",
+   "product"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.075,
+    0.025
+   ],
+   "points": [
+    {
+     "at": [
+      -0.8,
+      -0.9
+     ]
+    },
+    {
+     "at": [
+      -0.75525,
+      -0.26179
+     ]
+    },
+    {
+     "at": [
+      -0.62762,
+      -0.23205
+     ]
+    },
+    {
+     "at": [
+      -0.7276,
+      0.19213
+     ]
+    },
+    {
+     "at": [
+      -0.69346,
+      0.84872
+     ]
+    },
+    {
+     "at": [
+      -0.8,
+      0.47267
+     ]
+    },
+    {
+     "at": [
+      -0.90654,
+      0.84872
+     ]
+    },
+    {
+     "at": [
+      -0.8724,
+      0.19213
+     ]
+    },
+    {
+     "at": [
+      -0.97238,
+      -0.23205
+     ]
+    },
+    {
+     "at": [
+      -0.84475,
+      -0.26179
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        -0.4,
+        -0.9
+       ]
+      },
+      {
+       "at": [
+        -0.35525,
+        -0.26179
+       ]
+      },
+      {
+       "at": [
+        -0.22762,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        -0.3276,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        -0.29346,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        -0.4,
+        0.47267
+       ]
+      },
+      {
+       "at": [
+        -0.50654,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        -0.4724,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        -0.57238,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        -0.44475,
+        -0.26179
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.0,
+        -0.9
+       ]
+      },
+      {
+       "at": [
+        0.04475,
+        -0.26179
+       ]
+      },
+      {
+       "at": [
+        0.17238,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        0.0724,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        0.10654,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        0.0,
+        0.47267
+       ]
+      },
+      {
+       "at": [
+        -0.10654,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        -0.0724,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        -0.17238,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        -0.04475,
+        -0.26179
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.4,
+        -0.9
+       ]
+      },
+      {
+       "at": [
+        0.44475,
+        -0.26179
+       ]
+      },
+      {
+       "at": [
+        0.57238,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        0.4724,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        0.50654,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        0.4,
+        0.47267
+       ]
+      },
+      {
+       "at": [
+        0.29346,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        0.3276,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        0.22762,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        0.35525,
+        -0.26179
+       ]
+      }
+     ]
+    },
+    {
+     "points": [
+      {
+       "at": [
+        0.8,
+        -0.9
+       ]
+      },
+      {
+       "at": [
+        0.84475,
+        -0.26179
+       ]
+      },
+      {
+       "at": [
+        0.97238,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        0.8724,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        0.90654,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        0.8,
+        0.47267
+       ]
+      },
+      {
+       "at": [
+        0.69346,
+        0.84872
+       ]
+      },
+      {
+       "at": [
+        0.7276,
+        0.19213
+       ]
+      },
+      {
+       "at": [
+        0.62762,
+        -0.23205
+       ]
+      },
+      {
+       "at": [
+        0.75525,
+        -0.26179
+       ]
+      }
+     ]
+    }
+   ],
+   "fill_rule": "nonzero",
+   "fill": {
+    "color": "#FFB72B"
+   }
+  }
+ },
+ {
+  "name": "ui-map-pin",
+  "kind": "sticker",
+  "title": "Map pin",
+  "description": "An orange-red map pin with a round hole, 6 by 8 grid units, its tip at the bottom centre: a destination on a map. Drop it in with drop or pop_in; move it up by half its height to stand its tip on a point.",
+  "tags": [
+   "ui",
+   "map",
+   "pin",
+   "location",
+   "destination",
+   "marker"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.028125,
+    0.066667
+   ],
+   "points": [
+    {
+     "at": [
+      0.0,
+      0.975
+     ]
+    },
+    {
+     "at": [
+      -0.76594,
+      0.15
+     ],
+     "out": [
+      -0.27024,
+      -0.29108
+     ]
+    },
+    {
+     "at": [
+      -0.61987,
+      -0.77332
+     ],
+     "in": [
+      -0.35356,
+      0.23557
+     ],
+     "out": [
+      0.35356,
+      -0.23557
+     ]
+    },
+    {
+     "at": [
+      0.61987,
+      -0.77332
+     ],
+     "in": [
+      -0.35356,
+      -0.23557
+     ],
+     "out": [
+      0.35356,
+      0.23557
+     ]
+    },
+    {
+     "at": [
+      0.76594,
+      0.15
+     ],
+     "in": [
+      0.27024,
+      -0.29108
+     ]
+    }
+   ],
+   "contours": [
+    {
+     "points": [
+      {
+       "at": [
+        0.0,
+        -0.525
+       ],
+       "in": [
+        -0.2025,
+        0.0
+       ],
+       "out": [
+        0.2025,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        0.36667,
+        -0.25
+       ],
+       "in": [
+        0.0,
+        -0.15188
+       ],
+       "out": [
+        0.0,
+        0.15188
+       ]
+      },
+      {
+       "at": [
+        0.0,
+        0.025
+       ],
+       "in": [
+        0.2025,
+        0.0
+       ],
+       "out": [
+        -0.2025,
+        0.0
+       ]
+      },
+      {
+       "at": [
+        -0.36667,
+        -0.25
+       ],
+       "in": [
+        0.0,
+        0.15188
+       ],
+       "out": [
+        0.0,
+        -0.15188
+       ]
+      }
+     ]
+    }
+   ],
+   "fill": {
+    "color": "#FF5A3C"
+   }
+  }
+ },
+ {
+  "name": "ui-location-dot",
+  "kind": "sticker",
+  "title": "Location dot",
+  "description": "An accent-blue dot with a white ring, 3 by 3 grid units: a courier or a phone's position. Make it ride a route with clip.follow and keyframes on follow.progress, and give it a light.glow.",
+  "tags": [
+   "ui",
+   "map",
+   "dot",
+   "location",
+   "courier",
+   "follower"
+  ],
+  "content": {
+   "shape": "ellipse",
+   "size": [
+    0.014063,
+    0.025
+   ],
+   "fill": {
+    "color": "#3D6BF5"
+   },
+   "stroke": {
+    "color": "#FFFFFF",
+    "width": 0.004167,
+    "cap": "round",
+    "join": "round"
+   }
+  }
+ },
+ {
+  "name": "swoosh-underline",
+  "kind": "sticker",
+  "title": "Underline swoosh",
+  "description": "A brush-like underline rising gently to the right in an orange to yellow gradient with round ends, 40 by 5 grid units: put it under a word and draw it on with draw_on. Set shape.trim_end to 0 first if it should start hidden.",
+  "tags": [
+   "kinetic",
+   "type",
+   "underline",
+   "swoosh",
+   "stroke",
+   "accent"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.1875,
+    0.041667
+   ],
+   "points": [
+    {
+     "at": [
+      -0.97,
+      0.52
+     ],
+     "out": [
+      0.47,
+      -0.48
+     ]
+    },
+    {
+     "at": [
+      0.97,
+      -0.12
+     ],
+     "in": [
+      -0.77,
+      -0.32
+     ]
+    }
+   ],
+   "closed": false,
+   "fill": null,
+   "stroke": {
+    "color": "#FF7A45",
+    "gradient": {
+     "to": "#FFC53D"
+    },
+    "width": 0.01,
+    "cap": "round",
+    "join": "round"
+   }
+  }
+ },
+ {
+  "name": "swoosh-circle",
+  "kind": "sticker",
+  "title": "Circle swoosh",
+  "description": "A hand-drawn loop that circles a word and overshoots its start, in the accent orange with round ends, 30 by 12 grid units: draw it on around a price or a key word.",
+  "tags": [
+   "kinetic",
+   "type",
+   "circle",
+   "highlight",
+   "swoosh",
+   "stroke"
+  ],
+  "content": {
+   "shape": "path",
+   "size": [
+    0.140625,
+    0.1
+   ],
+   "points": [
+    {
+     "at": [
+      -0.73333,
+      0.58333
+     ],
+     "out": [
+      -0.23333,
+      -0.5
+     ]
+    },
+    {
+     "at": [
+      0.0,
+      -0.83333
+     ],
+     "in": [
+      -0.73333,
+      0.03333
+     ],
+     "out": [
+      0.7,
+      -0.03333
+     ]
+    },
+    {
+     "at": [
+      0.93333,
+      0.16667
+     ],
+     "in": [
+      0.04,
+      -0.43333
+     ],
+     "out": [
+      -0.04667,
+      0.53333
+     ]
+    },
+    {
+     "at": [
+      -0.06667,
+      0.86667
+     ],
+     "in": [
+      0.46667,
+      0.03333
+     ],
+     "out": [
+      -0.46667,
+      -0.03333
+     ]
+    },
+    {
+     "at": [
+      -0.63333,
+      -0.3
+     ],
+     "in": [
+      -0.18,
+      0.76667
+     ]
+    }
+   ],
+   "closed": false,
+   "fill": null,
+   "stroke": {
+    "color": "#FF7A45",
+    "width": 0.006667,
+    "cap": "round",
+    "join": "round"
+   }
+  }
+ },
+ {
+  "name": "ui-screen-light",
+  "kind": "background",
+  "title": "Light app screen",
+  "description": "A pale grey-blue page colour for light app screens, covering the canvas: the floor under cards, buttons and fields.",
+  "tags": [
+   "ui",
+   "app",
+   "screen",
+   "light",
+   "page"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#F4F6FA"
+   }
+  }
+ },
+ {
+  "name": "ui-screen-dark",
+  "kind": "background",
+  "title": "Dark app screen",
+  "description": "A deep blue-black page colour for dark app screens and night maps, covering the canvas.",
+  "tags": [
+   "ui",
+   "app",
+   "screen",
+   "dark",
+   "page",
+   "night"
+  ],
+  "content": {
+   "shape": "rectangle",
+   "size": [
+    1.0,
+    1.0
+   ],
+   "fill": {
+    "color": "#0F131A"
+   }
+  }
+ }
+]

@@ -11,12 +11,17 @@ authors.workspace = true
 [dependencies]
 bytemuck.workspace = true
 cosmic-text.workspace = true
+earcut.workspace = true
 fosscut-media.workspace = true
 fosscut-model.workspace = true
 fosscut-time.workspace = true
+gltf.workspace = true
 half.workspace = true
+kurbo.workspace = true
 pollster.workspace = true
+resvg.workspace = true
 thiserror.workspace = true
+tiny-skia.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
@@ -25,6 +30,7 @@ fosscut-core.workspace = true
 png.workspace = true
 wgpu.workspace = true
 proptest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

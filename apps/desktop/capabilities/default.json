@@ -76,6 +76,11 @@
     "allow-beats-markers",
     "allow-beats-cut",
     "allow-shorts-candidates",
-    "allow-shorts-make"
+    "allow-shorts-make",
+    "allow-web-pick",
+    "allow-web-import",
+    "allow-remotion-start",
+    "allow-remotion-status",
+    "allow-remotion-cancel"
   ]
 }

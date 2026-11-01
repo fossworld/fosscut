@@ -81,6 +81,8 @@ pub enum Pass {
     /// Passes that read the neighbouring source frames, their optical flow or their
     /// brightness (ADR-0035).
     Temporal(Temporal),
+    /// A light effect of several passes ([`crate::light`]).
+    Light(crate::light::Light),
 }
 
 /// The effects that compare a frame with the source frames around it (ADR-0035).
@@ -128,6 +130,10 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "motion.blur" => Pass::Temporal(Temporal::MotionBlur),
         "detail.denoise" => Pass::Temporal(Temporal::Denoise),
         "color.deflicker" => Pass::Temporal(Temporal::Deflicker),
+        "light.glow" => Pass::Light(crate::light::Light::Glow),
+        "light.streaks" => Pass::Light(crate::light::Light::Streaks),
+        "light.sweep" => Pass::Pixel("fs_light_sweep"),
+        crate::light::ANIMATION_BLUR => Pass::Blur,
         _ => return None,
     })
 }
@@ -356,6 +362,7 @@ pub fn pack(effect: &PlannedEffect, size: (u32, u32), lut_size: u32) -> [[f32; 4
         "motion.flash" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
         "motion.rainbow" => p[0] = [n("amount"), n("speed"), effect.time as f32, 0.0],
         "motion.zoom_pulse" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
+        "light.sweep" => p = crate::light::pack_sweep(effect, size),
         "key.chroma" => {
             p[0] = [n("similarity"), n("smoothness"), n("spill"), 0.0];
             let color = match effect.values.get("color") {

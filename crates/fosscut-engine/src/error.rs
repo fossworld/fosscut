@@ -310,6 +310,10 @@ pub enum EngineError {
         /// What went wrong.
         message: String,
     },
+    /// A web composition or a Remotion render failed (ADR-0039), with its own
+    /// `fosscut.web.*` code.
+    #[error("{0}")]
+    Web(crate::web::WebError),
 }
 
 impl EngineError {
@@ -357,6 +361,7 @@ impl EngineError {
             EngineError::NoSubject { .. } => "fosscut.reframe.no_subject",
             EngineError::NoShortCandidates { .. } => "fosscut.shorts.no_candidates",
             EngineError::Failed { code, .. } => code,
+            EngineError::Web(error) => error.code(),
         }
     }
 
@@ -481,6 +486,7 @@ impl EngineError {
             EngineError::NoShortCandidates { .. } => Some(
                 "Lower min_seconds or raise max_seconds, or choose a longer clip; candidates start and end at sentence ends in its transcript.".into(),
             ),
+            EngineError::Web(error) => error.hint(),
             _ => None,
         }
     }
@@ -570,6 +576,7 @@ impl EngineError {
                 "min_seconds": min_seconds,
                 "max_seconds": max_seconds,
             }),
+            EngineError::Web(error) => error.details(),
             _ => Value::Null,
         }
     }
@@ -850,6 +857,9 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "Record for longer, or check that the device works and is allowed.",
         ),
     ]
+    .into_iter()
+    .chain(crate::web::error_catalogue())
+    .collect()
 }
 
 /// A size in megabytes with one decimal, for messages.

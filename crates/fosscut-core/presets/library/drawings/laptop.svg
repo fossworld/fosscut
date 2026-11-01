@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="864" viewBox="0 0 1600 864">
+  <title>Laptop frame</title>
+  <!-- Drawn by FossCut: a generic laptop seen from the front. The screen (176, 52, 1248 x 702, radius 8) is open: what lies below shows through. -->
+  <defs>
+    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E1E5EB"/>
+      <stop offset="1" stop-color="#9EA5B0"/>
+    </linearGradient>
+  </defs>
+  <path id="lid" fill="#0E1014" fill-rule="evenodd" d="M 176 20 H 1424 A 36 36 0 0 1 1460 56 V 796 A 10 10 0 0 1 1450 806 H 150 A 10 10 0 0 1 140 796 V 56 A 36 36 0 0 1 176 20 Z M 184 52 H 1416 A 8 8 0 0 1 1424 60 V 746 A 8 8 0 0 1 1416 754 H 184 A 8 8 0 0 1 176 746 V 60 A 8 8 0 0 1 184 52 Z"/>
+  <path id="lid-rim" fill="none" stroke="#3A3F48" stroke-width="3" d="M 176 21.5 H 1424 A 34.5 34.5 0 0 1 1458.5 56 V 796 A 8.5 8.5 0 0 1 1450 804.5 H 150 A 8.5 8.5 0 0 1 141.5 796 V 56 A 34.5 34.5 0 0 1 176 21.5 Z"/>
+  <circle id="camera-lens" cx="800" cy="36" r="5" fill="#1A2433"/>
+  <rect id="hinge" x="160" y="806" width="1280" height="10" fill="#2A2E35"/>
+  <path id="deck" fill="url(#deck)" d="M 40 816 H 1560 V 836 A 20 20 0 0 1 1540 856 H 60 A 20 20 0 0 1 40 836 V 816 Z"/>
+  <path id="deck-notch" fill="#8C939E" d="M 712 816 H 888 V 822 A 6 6 0 0 1 882 828 H 718 A 6 6 0 0 1 712 822 V 816 Z"/>
+</svg>

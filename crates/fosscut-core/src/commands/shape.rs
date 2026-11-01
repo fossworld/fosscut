@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 
 use fosscut_model::{
-    AssetKind, Clip, ClipContent, Id, IdKind, MaskShape, Paint, PathPoint, Project, ShapeContent,
-    ShapeOutline, TextContent, Timeline, TimelineEntry, TimelineFormat, Track, TrackKind,
-    Transform, shape_issues,
+    AssetKind, Clip, ClipContent, Contour, FillRule, Id, IdKind, MaskShape, Paint, PathPoint,
+    Project, ShapeContent, ShapeOutline, ShapeStroke, TextContent, Timeline, TimelineEntry,
+    TimelineFormat, Track, TrackKind, Transform, shape_issues,
 };
 use fosscut_time::{Flicks, Rate, TimeInput};
 use schemars::JsonSchema;
@@ -53,7 +53,7 @@ fn fitted(item: &LibraryVisual, format: &TimelineFormat) -> ShapeContent {
 /// The video track a shape goes on: backgrounds below everything, other shapes above
 /// every video track. A track at that end holding only shapes and free over `range` is
 /// reused; otherwise a new one is made.
-fn graphics_track(
+pub(super) fn graphics_track(
     project: &mut Project,
     timeline: &Id,
     range: (Flicks, Flicks),
@@ -124,12 +124,45 @@ pub struct ShapeAdd {
     /// Points of a path, -1 to 1 across the shape's box.
     #[serde(default)]
     pub points: Option<Vec<PathPoint>>,
-    /// Its fill: `{"color": "#FF3366"}`, or with `gradient: {"to", "angle", "radial"}`.
+    /// SVG path data in canvas pixels (`M 200 800 C 600 200 1300 1000 1700 300`; the M, L,
+    /// H, V, C, S, Q, T, A and Z commands): makes a path shape sized and placed where the
+    /// data draws it, with its subpaths as contours (ADR-0036). A path whose subpaths are
+    /// all open is a line without fill unless `fill` is given.
     #[serde(default)]
-    pub fill: Option<Paint>,
+    pub d: Option<String>,
+    /// False leaves a path open: a line from its first point to its last.
+    #[serde(default)]
+    pub closed: Option<bool>,
+    /// More contours of a path after `points`: holes and separate parts.
+    #[serde(default)]
+    pub contours: Option<Vec<Contour>>,
+    /// Which areas of overlapping contours fill: `even_odd` or `nonzero` (`nonzero` for
+    /// `d`, as in SVG; otherwise `even_odd`).
+    #[serde(default)]
+    pub fill_rule: Option<FillRule>,
+    /// Its fill: `{"color": "#FF3366"}`, or with `gradient: {"to", "angle", "radial"}`;
+    /// `null` for none, as for a ring drawn by its stroke alone.
+    #[serde(default, deserialize_with = "some_value")]
+    #[schemars(with = "Option<Paint>")]
+    pub fill: Option<Option<Paint>>,
     /// An outline inside its edge.
     #[serde(default)]
     pub outline: Option<ShapeOutline>,
+    /// A stroke centred on its edge or along an open path: `{"color", "gradient", "width"
+    /// (fraction of the canvas height, 0.01 when omitted), "cap" (butt, round, square),
+    /// "join" (miter, round, bevel), "miter_limit", "dashes" and "dash_offset" (fractions
+    /// of the canvas height)}`.
+    #[serde(default)]
+    pub stroke: Option<ShapeStroke>,
+    /// Where the visible part of the outline starts, 0 to 1 of its length.
+    #[serde(default)]
+    pub trim_start: Option<f64>,
+    /// Where the visible part ends, 0 to 1 of its length; 0 hides it before a draw-on.
+    #[serde(default)]
+    pub trim_end: Option<f64>,
+    /// Moves the visible part along the outline by this fraction, wrapping around.
+    #[serde(default)]
+    pub trim_offset: Option<f64>,
     /// Text on it, as a text clip's content (`{"text": "NEW", "style": {...}}`).
     #[serde(default)]
     pub label: Option<TextContent>,
@@ -156,7 +189,7 @@ pub struct ShapeAdd {
 
 impl Command for ShapeAdd {
     const NAME: &'static str = "shape.add";
-    const SUMMARY: &'static str = "Draw a shape (rectangle, ellipse, star, heart, a pen path), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill, gradient, outline and label. Backgrounds go below the footage, other shapes above it.";
+    const SUMMARY: &'static str = "Draw a shape (rectangle, ellipse, star, heart, a pen path, or SVG path data in canvas pixels as d), a sticker (badges, buttons, arrows, speech bubbles, check marks) or a background (solid or gradient) from the built-in library, with its fill (null for none), gradient, outline, stroke (width, caps, joins, dashes) and trims (trim_end 0 then draw_on draws it on), and label. Open paths are lines. Backgrounds go below the footage, other shapes above it.";
     type Output = ClipPlacement;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ClipPlacement, ApiError> {
@@ -184,11 +217,49 @@ impl Command for ShapeAdd {
         if let Some(points) = self.points {
             shape.points = points;
         }
-        if let Some(fill) = self.fill {
-            shape.fill = fill;
+        let mut placed_at = None;
+        if let Some(data) = &self.d {
+            let path = vector_path(data, &format)?;
+            shape.shape = MaskShape::Path;
+            shape.size = path.size;
+            shape.closed = path.contours[0].closed;
+            shape.points = path.contours[0].points.clone();
+            shape.contours = path.contours[1..].to_vec();
+            shape.fill_rule = FillRule::Nonzero;
+            placed_at = Some(path.position);
+        }
+        if let Some(closed) = self.closed {
+            shape.closed = closed;
+        }
+        if let Some(contours) = self.contours {
+            shape.contours = contours;
+        }
+        if let Some(rule) = self.fill_rule {
+            shape.fill_rule = rule;
+        }
+        let open = shape.shape == MaskShape::Path
+            && !shape.closed
+            && shape.contours.iter().all(|c| !c.closed);
+        match self.fill {
+            Some(fill) => shape.fill = fill,
+            // Lines have no fill unless asked for.
+            None if open && item.is_none() => shape.fill = None,
+            None => {}
         }
         if let Some(outline) = self.outline {
             shape.outline = outline;
+        }
+        if let Some(stroke) = self.stroke {
+            shape.stroke = Some(stroke);
+        }
+        if let Some(trim) = self.trim_start {
+            shape.trim_start = trim;
+        }
+        if let Some(trim) = self.trim_end {
+            shape.trim_end = trim;
+        }
+        if let Some(trim) = self.trim_offset {
+            shape.trim_offset = trim;
         }
         if let Some(label) = self.label {
             shape.label = Some(label);
@@ -219,7 +290,9 @@ impl Command for ShapeAdd {
             )?,
         };
         let transform = self.transform.unwrap_or_else(|| Transform {
-            position: item.as_ref().and_then(|i| i.position).unwrap_or([0.0, 0.0]),
+            position: placed_at
+                .or_else(|| item.as_ref().and_then(|i| i.position))
+                .unwrap_or([0.0, 0.0]),
             ..Transform::default()
         });
         let id = ctx.project.allocate_id(IdKind::Clip);
@@ -238,6 +311,39 @@ impl Command for ShapeAdd {
         insert_sorted(track_doc, clip);
         Ok(placement)
     }
+}
+
+/// Reads a present field as `Some`, so `null` becomes `Some(None)` and an omitted field
+/// stays `None` through `#[serde(default)]`.
+fn some_value<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// A path from SVG path data in canvas pixels: its contours in its box, the box's size as
+/// fractions of the canvas, and where its middle is.
+struct DrawnPath {
+    contours: Vec<fosscut_model::Contour>,
+    size: [f64; 2],
+    position: [f64; 2],
+}
+
+fn vector_path(data: &str, format: &TimelineFormat) -> Result<DrawnPath, ApiError> {
+    let fitted = fosscut_model::parse_path_data(data, 1.0)
+        .map_err(|e| invalid(format!("shape.add: d: {e}")))?;
+    let (width, height) = (
+        f64::from(format.width.max(1)),
+        f64::from(format.height.max(1)),
+    );
+    let [x, y, w, h] = fitted.bounds;
+    Ok(DrawnPath {
+        contours: fitted.contours,
+        size: [w / width, h / height],
+        position: [(x + w / 2.0) / width - 0.5, (y + h / 2.0) / height - 0.5],
+    })
 }
 
 /// Changes a shape clip.
@@ -262,7 +368,7 @@ pub struct ShapeChanged {
 
 impl Command for ShapeSet {
     const NAME: &'static str = "shape.set";
-    const SUMMARY: &'static str = "Change a shape clip's outline, size, roundness, fill, gradient, outline or label by a merge patch.";
+    const SUMMARY: &'static str = "Change a shape clip's outline, size, roundness, points, contours, fill (null for none), gradient, outline, stroke, trims or label by a merge patch.";
     type Output = ShapeChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<ShapeChanged, ApiError> {
@@ -278,8 +384,13 @@ impl Command for ShapeSet {
         };
         let mut value = serde_json::to_value(current.as_ref()).unwrap_or_else(|_| json!({}));
         merge(&mut value, &self.set);
-        let shape: ShapeContent =
+        let mut shape: ShapeContent =
             serde_json::from_value(value).map_err(|e| invalid(format!("shape.set: {e}")))?;
+        // A merge patch's null removes a field, which would bring back the default white
+        // fill: `"fill": null` means no fill (ADR-0036).
+        if self.set.get("fill").is_some_and(Value::is_null) {
+            shape.fill = None;
+        }
         checked(ctx.project, Self::NAME, &shape)?;
         let doc = timeline_mut(ctx.project, &location.timeline)?;
         let track = &mut doc.tracks[location.track];
@@ -479,8 +590,16 @@ impl Command for TemplateApply {
                     size: None,
                     roundness: None,
                     points: None,
+                    d: None,
+                    closed: None,
+                    contours: None,
+                    fill_rule: None,
                     fill: None,
                     outline: None,
+                    stroke: None,
+                    trim_start: None,
+                    trim_end: None,
+                    trim_offset: None,
                     label: None,
                     label_at: None,
                     track: None,

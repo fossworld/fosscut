@@ -428,10 +428,28 @@ impl PreviewMedia {
                     }
                 }
             }
-            if let LayerSource::Frame(source) = &layer.source
+            // A vector drawing is drawn at the size it shows, not decoded (ADR-0036).
+            let drawing = match layer.frame_source() {
+                Some(source) => {
+                    crate::vector::open_drawing(project, bundle, &source.asset, &mut self.decoders)?
+                }
+                None => false,
+            };
+            // A video or image frame, or a particle sprite's image (ADR-0038).
+            if let Some(source) = layer.frame_source()
+                && !drawing
                 && !self.opened.contains_key(&source.asset)
             {
                 self.open(project, bundle, &source.asset, options)?;
+            }
+            // A 3D object's model, and the pictures its materials print (ADR-0040).
+            if let LayerSource::Model(object) = &layer.source {
+                crate::model::open_model(project, bundle, &object.content, &mut self.decoders)?;
+                for source in &object.textures {
+                    if !self.opened.contains_key(&source.asset) {
+                        self.open(project, bundle, &source.asset, options)?;
+                    }
+                }
             }
         }
         // Subject effects without their analysis show the clip unchanged for now.
@@ -476,7 +494,7 @@ impl PreviewMedia {
         let (decoder, source): (Decoder, PreviewSource) = match copy {
             Some(copy) => copy,
             None => (
-                Box::new(FfmpegVideoDecoder::open(&original, decoding)?),
+                crate::web::open_decoder(project, asset, &original, decoding)?,
                 PreviewSource::Original,
             ),
         };
@@ -606,6 +624,8 @@ impl PreviewMedia {
             LayerSource::Text(_)
             | LayerSource::Shape(_)
             | LayerSource::Caption(_)
+            | LayerSource::Particles(_)
+            | LayerSource::Model(_)
             | LayerSource::Adjustment => {}
         }
     }

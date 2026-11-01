@@ -53,6 +53,20 @@ pub trait FrameProvider {
         let _ = source;
         Ok(None)
     }
+
+    /// The drawing of vector asset `asset` (ADR-0036), which the renderer draws at the size
+    /// it shows instead of decoding frames; `None` for other assets.
+    fn vector(&self, asset: &Id) -> Option<Arc<crate::vector::VectorImage>> {
+        let _ = asset;
+        None
+    }
+
+    /// The loaded glTF model of model asset `asset` (ADR-0040), which 3D object layers
+    /// draw; `None` when it is not loaded.
+    fn model(&self, asset: &Id) -> Option<Arc<crate::objects::ModelData>> {
+        let _ = asset;
+        None
+    }
 }
 
 /// How many bytes of decoded frames a [`DecoderFrames`] keeps by default: enough for the
@@ -73,6 +87,8 @@ pub struct DecoderFrames {
     luts: HashMap<Id, Arc<Lut3d>>,
     fonts: HashMap<String, Arc<[u8]>>,
     subjects: HashMap<Id, Arc<dyn SubjectData>>,
+    vectors: HashMap<Id, Arc<crate::vector::VectorImage>>,
+    models: HashMap<Id, Arc<crate::objects::ModelData>>,
     window: FrameWindow,
 }
 
@@ -83,6 +99,8 @@ impl Default for DecoderFrames {
             luts: HashMap::new(),
             fonts: HashMap::new(),
             subjects: HashMap::new(),
+            vectors: HashMap::new(),
+            models: HashMap::new(),
             window: FrameWindow::new(WINDOW_BYTES),
         }
     }
@@ -144,6 +162,26 @@ impl DecoderFrames {
     /// The subject data of `asset`, if any.
     pub fn subject(&self, asset: &Id) -> Option<&Arc<dyn SubjectData>> {
         self.subjects.get(asset)
+    }
+
+    /// Uses `image` as the drawing of vector asset `asset` (ADR-0036).
+    pub fn insert_vector(&mut self, asset: Id, image: Arc<crate::vector::VectorImage>) {
+        self.vectors.insert(asset, image);
+    }
+
+    /// True when the drawing of `asset` is loaded.
+    pub fn has_vector(&self, asset: &Id) -> bool {
+        self.vectors.contains_key(asset)
+    }
+
+    /// Uses `model` as the glTF model of model asset `asset` (ADR-0040).
+    pub fn insert_model(&mut self, asset: Id, model: Arc<crate::objects::ModelData>) {
+        self.models.insert(asset, model);
+    }
+
+    /// True when the model of `asset` is loaded.
+    pub fn has_model(&self, asset: &Id) -> bool {
+        self.models.contains_key(asset)
     }
 }
 
@@ -275,6 +313,14 @@ impl FrameProvider for DecoderFrames {
             .subjects
             .get(&source.asset)
             .and_then(|data| data.pose(source.time)))
+    }
+
+    fn vector(&self, asset: &Id) -> Option<Arc<crate::vector::VectorImage>> {
+        self.vectors.get(asset).cloned()
+    }
+
+    fn model(&self, asset: &Id) -> Option<Arc<crate::objects::ModelData>> {
+        self.models.get(asset).cloned()
     }
 }
 

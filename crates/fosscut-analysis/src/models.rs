@@ -86,8 +86,9 @@ pub enum Layout {
 pub struct Manifest {
     /// Stable name, for example `whisper-base.en`.
     pub name: &'static str,
-    /// What it does: `speech`, `matte`, `pose`, `voice`, `translate`, or `runtime` for the
-    /// ONNX Runtime library the vision and voice models run on.
+    /// What it does: `speech`, `matte`, `pose`, `voice`, `translate`, `runtime` for the
+    /// ONNX Runtime library the vision and voice models run on, or `browser` for the headless
+    /// browser web compositions render in (ADR-0039).
     pub task: &'static str,
     /// SPDX license of the weights (or of the library).
     pub license: &'static str,
@@ -763,6 +764,234 @@ pub const MODELS: &[Manifest] = &[
         ],
         note: None,
     },
+    // Chrome for Testing's headless shell 156.0.8078.80 for macOS (ADR-0039), the browser
+    // web compositions render in when no Chrome, Chromium, Edge or Brave is installed. The
+    // archives are verified, then every file is kept.
+    Manifest {
+        name: "chrome-headless-shell",
+        task: "browser",
+        license: "LicenseRef-Chrome-for-Testing",
+        attribution: Some(
+            "Chrome for Testing by Google LLC, built from the Chromium project (BSD-3-Clause) and other open source software listed in LICENSE.headless_shell.",
+        ),
+        languages: "none",
+        layout: Layout::Folder,
+        files: &[
+            runtime(
+                "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+                "chrome-headless-shell-mac-arm64.zip",
+                103_982_159,
+                "ea615baa2e9caf0d02d1898a6562b5f8fa9c35239707dae0f592178df5b986ac",
+                MACOS_ARM,
+                &[
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/ABOUT",
+                        name: "ABOUT",
+                        size: 248,
+                        sha256: "34d078ce3003087a8374e7c6156fda374769b8047d6ddaf419d66414aa48edfb",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/LICENSE.headless_shell",
+                        name: "LICENSE.headless_shell",
+                        size: 2_151_339,
+                        sha256: "a2196c2e406ebe900cd6403a033935ecc641a971b7f2a57bd8c24afa9574e492",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/chrome-headless-shell",
+                        name: "chrome-headless-shell",
+                        size: 177_094_416,
+                        sha256: "febae66e849b516d551a7fd0434af84f7c7e688e93e43dbc1fb951bdc87ec869",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/headless_command_resources.pak",
+                        name: "headless_command_resources.pak",
+                        size: 3_109,
+                        sha256: "4eecdc01a7158a78f68b6b20f1452586aa04d2ed2e1b56084c55d51ec3f31707",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/headless_lib_data.pak",
+                        name: "headless_lib_data.pak",
+                        size: 730_182,
+                        sha256: "5085d8de3bfbab6fe8e8780d1675bc6d6a68830145d01bff6436b06b49f0e7a1",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/headless_lib_strings.pak",
+                        name: "headless_lib_strings.pak",
+                        size: 5_021_260,
+                        sha256: "3f6372558b21217a82115582e5c413861724b7035bdfdf32104868f913b517ec",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/icudtl.dat",
+                        name: "icudtl.dat",
+                        size: 10_824_576,
+                        sha256: "e1ed8f674bb8449731b79cae956042da59f9ecbd37c8d3f86586a22b4836e5b2",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/libEGL.dylib",
+                        name: "libEGL.dylib",
+                        size: 736,
+                        sha256: "8b7e5b3ebed9cd5fc1cde7ff1458fd5eb150d496d7474e13f963d43546c08aeb",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/libGLESv2.dylib",
+                        name: "libGLESv2.dylib",
+                        size: 736,
+                        sha256: "7765bf768e52ced295a67cb362e3ca9714e64208e6ecea4e67e5b4b85e094934",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/libvk_swiftshader.dylib",
+                        name: "libvk_swiftshader.dylib",
+                        size: 16_326_576,
+                        sha256: "94d3ebe226450420923fd681511ff87b2f887c1fdc21f9e8ef8e93a2e48f73dd",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/libvulkan.dylib",
+                        name: "libvulkan.dylib",
+                        size: 499_488,
+                        sha256: "eee9118541fe306c76ee84c95c69e781f57417a198cf14b2cfb581f34b2350f4",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/content.js",
+                        name: "resources/accessibility/reading_mode_gdocs_helper/content.js",
+                        size: 439,
+                        sha256: "6c0aeaaf9a71ad68aa45764c111e70bb23aa0fbf406644a375b6b709cbbe4b6e",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js",
+                        name: "resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js",
+                        size: 1_425,
+                        sha256: "d291adabcfcb1a4a4a2ffacdd9d04fdb473ab0d6903556bef7446be9c3646d86",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/resources/accessibility/reading_mode_gdocs_helper_manifest.json",
+                        name: "resources/accessibility/reading_mode_gdocs_helper_manifest.json",
+                        size: 2_375,
+                        sha256: "313b31982a5c4af013d11cde4883f27c11a63af76333dc0a3539dddf0d866094",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/v8_context_snapshot.arm64.bin",
+                        name: "v8_context_snapshot.arm64.bin",
+                        size: 753_112,
+                        sha256: "413651d04ca0dab47bd125fe5d1f73ab43614575883ddf2a2a3d47cd660748da",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-arm64/vk_swiftshader_icd.json",
+                        name: "vk_swiftshader_icd.json",
+                        size: 110,
+                        sha256: "d717d915e31e7c27948b80b36ab34e2d897888114c5c7d0af835f93eb53e58f5",
+                    },
+                ],
+            ),
+            runtime(
+                "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/mac-x64/chrome-headless-shell-mac-x64.zip",
+                "chrome-headless-shell-mac-x64.zip",
+                109_493_298,
+                "535d417d9034cbd11e7dacd1a71aa3d6e1b525e6d5dcd2671eb2532f01481228",
+                MACOS_INTEL,
+                &[
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/ABOUT",
+                        name: "ABOUT",
+                        size: 248,
+                        sha256: "34d078ce3003087a8374e7c6156fda374769b8047d6ddaf419d66414aa48edfb",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/LICENSE.headless_shell",
+                        name: "LICENSE.headless_shell",
+                        size: 2_151_339,
+                        sha256: "a2196c2e406ebe900cd6403a033935ecc641a971b7f2a57bd8c24afa9574e492",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/chrome-headless-shell",
+                        name: "chrome-headless-shell",
+                        size: 193_103_440,
+                        sha256: "ca5be1d3423afd143d241a86bab0a103c37ffef3dd2bb60dd14627e0a702e138",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/headless_command_resources.pak",
+                        name: "headless_command_resources.pak",
+                        size: 3_109,
+                        sha256: "4eecdc01a7158a78f68b6b20f1452586aa04d2ed2e1b56084c55d51ec3f31707",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/headless_lib_data.pak",
+                        name: "headless_lib_data.pak",
+                        size: 730_182,
+                        sha256: "5085d8de3bfbab6fe8e8780d1675bc6d6a68830145d01bff6436b06b49f0e7a1",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/headless_lib_strings.pak",
+                        name: "headless_lib_strings.pak",
+                        size: 5_021_260,
+                        sha256: "3f6372558b21217a82115582e5c413861724b7035bdfdf32104868f913b517ec",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/icudtl.dat",
+                        name: "icudtl.dat",
+                        size: 10_824_576,
+                        sha256: "e1ed8f674bb8449731b79cae956042da59f9ecbd37c8d3f86586a22b4836e5b2",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/libEGL.dylib",
+                        name: "libEGL.dylib",
+                        size: 552,
+                        sha256: "71a00bc0c12b510e63364720f1cda4735863113017e5051ee3a952dfcc475c69",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/libGLESv2.dylib",
+                        name: "libGLESv2.dylib",
+                        size: 560,
+                        sha256: "3a26faf71edbbbac22668b20c79ec787196084023e002be987fa5420179008de",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/libvk_swiftshader.dylib",
+                        name: "libvk_swiftshader.dylib",
+                        size: 4_420_128,
+                        sha256: "299dc3613f44acce28d9e74cabc16a0fdd799783ae2f5adae15b7fd3fc3362e7",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/libvulkan.dylib",
+                        name: "libvulkan.dylib",
+                        size: 479_152,
+                        sha256: "a2c904f5df8684d362c2896905b9c617cf5556810b7931ba26c4c93201c6acf3",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/resources/accessibility/reading_mode_gdocs_helper/content.js",
+                        name: "resources/accessibility/reading_mode_gdocs_helper/content.js",
+                        size: 439,
+                        sha256: "6c0aeaaf9a71ad68aa45764c111e70bb23aa0fbf406644a375b6b709cbbe4b6e",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js",
+                        name: "resources/accessibility/reading_mode_gdocs_helper/gdocs_script.js",
+                        size: 1_425,
+                        sha256: "d291adabcfcb1a4a4a2ffacdd9d04fdb473ab0d6903556bef7446be9c3646d86",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/resources/accessibility/reading_mode_gdocs_helper_manifest.json",
+                        name: "resources/accessibility/reading_mode_gdocs_helper_manifest.json",
+                        size: 2_375,
+                        sha256: "313b31982a5c4af013d11cde4883f27c11a63af76333dc0a3539dddf0d866094",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/v8_context_snapshot.x86_64.bin",
+                        name: "v8_context_snapshot.x86_64.bin",
+                        size: 753_112,
+                        sha256: "5e448d35ca437b8248e7eb866b002003e09f2e48d73cd678caf11bb10c1b5d89",
+                    },
+                    Member {
+                        path: "chrome-headless-shell-mac-x64/vk_swiftshader_icd.json",
+                        name: "vk_swiftshader_icd.json",
+                        size: 110,
+                        sha256: "d717d915e31e7c27948b80b36ab34e2d897888114c5c7d0af835f93eb53e58f5",
+                    },
+                ],
+            ),
+        ],
+        note: Some(
+            "Google's headless Chrome for rendering web compositions, distributed by Google under the Google Chrome Terms of Service; install it only when no Chrome, Chromium, Edge or Brave is installed.",
+        ),
+    },
 ];
 
 /// A model's file as front ends list it.
@@ -1306,13 +1535,23 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), MODELS.len());
-        let tasks = ["speech", "matte", "pose", "voice", "translate", "runtime"];
+        let tasks = [
+            "speech",
+            "matte",
+            "pose",
+            "voice",
+            "translate",
+            "runtime",
+            "browser",
+        ];
         let licenses = [
             "MIT",
             "Apache-2.0",
             "CC-BY-4.0",
             // Kokoro's weights with the CMU Pronouncing Dictionary.
             "Apache-2.0 AND BSD-2-Clause",
+            // Google's distribution of Chromium's headless shell (ADR-0039).
+            "LicenseRef-Chrome-for-Testing",
         ];
         for model in MODELS {
             assert_eq!(manifest(model.name), Ok(model));

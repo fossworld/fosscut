@@ -8,6 +8,17 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod support;
+// Layers placed in 3D (ADR-0037).
+#[path = "goldens/three_d.rs"]
+mod three_d;
+// Vector paths, strokes, trims, following and SVG drawings (ADR-0036).
+#[path = "goldens/vector.rs"]
+mod vector;
+// 3D objects (ADR-0040).
+#[path = "goldens/objects.rs"]
+mod objects;
+#[path = "objects_support/mod.rs"]
+mod objects_support;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -73,7 +84,7 @@ fn check_at(
     name: &str,
     renderer: &mut Renderer,
     plan: &RenderPlan,
-    frames: &mut Frames,
+    frames: &mut dyn fosscut_render::FrameProvider,
     size: (u32, u32),
 ) {
     let image = renderer
@@ -1389,4 +1400,378 @@ fn deflicker() {
         skipped: Vec::new(),
     };
     check("deflicker", &mut renderer, &plan, &mut frames);
+}
+
+/// A particle preset (ADR-0038) `seconds` into its clip, over a library background when
+/// one is named.
+fn particle_scene(preset: &str, seconds: f64, background: Option<&str>) -> RenderPlan {
+    let mut layers = Vec::new();
+    if let Some(name) = background {
+        layers.push(Layer::shape(fosscut_core::visual(name).unwrap().content));
+    }
+    layers.push(Layer::particles(fosscut_render::particles::ParticleLayer {
+        content: fosscut_core::particle_preset(preset).unwrap().content,
+        keyframes: Default::default(),
+        time: Flicks::from_seconds_f64(seconds).unwrap(),
+        frame: fosscut_time::Rate::FPS_30.frame_duration(),
+        sprite: None,
+    }));
+    RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    }
+}
+
+/// Particle presets at moments that show them in full: hot spark streaks, embers rising,
+/// confetti tumbling, bokeh discs, a burst flying out and sparks gathering in the centre.
+#[test]
+fn particle_presets() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = Frames::default();
+    for (name, preset, seconds, background) in [
+        ("particles-sparks", "sparks", 1.5, None),
+        ("particles-embers", "embers", 2.0, Some("night")),
+        ("particles-confetti", "confetti", 2.0, Some("slate")),
+        ("particles-bokeh", "bokeh", 1.0, Some("studio")),
+        ("particles-burst", "burst", 0.35, None),
+        ("particles-gather", "spark-gather", 1.0, None),
+    ] {
+        let plan = particle_scene(preset, seconds, background);
+        check_at(name, &mut renderer, &plan, &mut frames, TEXT_SIZE);
+    }
+}
+
+/// Light effects (ADR-0011) on a dark canvas, a 4x2 grid of small pictures: a white
+/// square with a glow at its defaults and at its extremes (wide, bright, tinted orange),
+/// the test pattern with a glow only from its highlights shown without the picture, sweeps
+/// at their defaults and at their extremes (wide, hard, bright, steep), and streaks at
+/// their defaults and at their extremes (long, steep, bright, from everything).
+#[test]
+fn light_effects() {
+    use fosscut_model::ParamValue::{Flag, Name, Number};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let tiles: Vec<(u64, Vec<PlannedEffect>)> = vec![
+        (1, vec![planned("light.glow", &[])]),
+        (
+            1,
+            vec![planned(
+                "light.glow",
+                &[
+                    ("radius", Number(0.5)),
+                    ("intensity", Number(8.0)),
+                    ("tint", Number(1.0)),
+                    ("color", Name("#FF7A00".into())),
+                ],
+            )],
+        ),
+        (
+            2,
+            vec![planned(
+                "light.glow",
+                &[
+                    ("radius", Number(0.1)),
+                    ("threshold", Number(1.0)),
+                    ("glow_only", Flag(true)),
+                    ("intensity", Number(4.0)),
+                ],
+            )],
+        ),
+        (2, vec![planned("light.sweep", &[])]),
+        (
+            2,
+            vec![planned(
+                "light.sweep",
+                &[
+                    ("position", Number(0.3)),
+                    ("angle", Number(-60.0)),
+                    ("width", Number(1.0)),
+                    ("softness", Number(0.0)),
+                    ("intensity", Number(4.0)),
+                    ("color", Name("#40C0FF".into())),
+                ],
+            )],
+        ),
+        (3, vec![planned("light.streaks", &[])]),
+        (
+            3,
+            vec![planned(
+                "light.streaks",
+                &[
+                    ("length", Number(1.0)),
+                    ("angle", Number(45.0)),
+                    ("intensity", Number(8.0)),
+                    ("threshold", Number(0.0)),
+                    ("tint", Number(1.0)),
+                ],
+            )],
+        ),
+        (2, Vec::new()),
+    ];
+    let mut layers = Vec::new();
+    for (index, (asset, effects)) in tiles.into_iter().enumerate() {
+        let (column, row) = ((index % 4) as f64, (index / 4) as f64);
+        layers.push(Layer {
+            transform: Transform {
+                position: [-0.375 + column * 0.25, -0.25 + row * 0.5],
+                scale: if asset == 3 { 0.08 } else { 0.18 },
+                ..Transform::default()
+            },
+            effects,
+            ..Layer::new(source(asset))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default()
+        .with(1, solid(64, 64, [235, 128, 128]))
+        .with(2, pattern(160, 90, 0))
+        .with(3, solid(32, 32, [235, 128, 128]));
+    check_at(
+        "light-effects",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        (640, 360),
+    );
+}
+
+/// An end card on a dark canvas: a title whose letters glow orange, and a sheen sweeping
+/// across a picture at two keyframes of its position (a quarter and three quarters of the
+/// way), planned from a project so the keyframes are evaluated as in preview and export.
+#[test]
+fn glowing_end_card() {
+    use fosscut_model::{
+        Clip, ClipContent, Effect, Id, IdKind, Interpolation, KeyValue, Keyframe, ParamValue,
+        Project, TimelineFormat, Track, TrackKind,
+    };
+    use fosscut_time::Rate;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let format = TimelineFormat {
+        width: 1920,
+        height: 1080,
+        rate: Rate::FPS_30,
+        sample_rate: 48_000,
+    };
+    let mut project = Project::new(Id::new(IdKind::Project, 1), "End card", format);
+    let timeline = project.manifest.primary_timeline.clone();
+    let second = |s: i64| Flicks::from_seconds(s).unwrap();
+    let effect = |id: u64, kind: &str, params: &[(&str, ParamValue)]| Effect {
+        id: Id::new(IdKind::Effect, id),
+        effect_type: kind.into(),
+        version: 1,
+        enabled: true,
+        params: params
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect(),
+        keyframes: Default::default(),
+    };
+    let mut title = Clip::new(
+        Id::new(IdKind::Clip, 2),
+        Flicks::ZERO,
+        second(4),
+        ClipContent::Text(Box::new(text("Everything you love.", |s| {
+            s.size = 0.09;
+            s.bold = true;
+        }))),
+    );
+    title.transform.position = [0.0, 0.28];
+    title.effects = vec![effect(
+        3,
+        "light.glow",
+        &[
+            ("radius", ParamValue::Number(0.03)),
+            ("intensity", ParamValue::Number(1.5)),
+            ("tint", ParamValue::Number(0.8)),
+            ("color", ParamValue::Name("#FF7A00".into())),
+        ],
+    )];
+    let mut card = Clip::new(
+        Id::new(IdKind::Clip, 4),
+        Flicks::ZERO,
+        second(4),
+        ClipContent::Image { asset: asset(1) },
+    );
+    card.transform.position = [0.0, -0.12];
+    card.transform.scale = 0.45;
+    let mut sweep = effect(5, "light.sweep", &[("width", ParamValue::Number(0.25))]);
+    sweep.keyframes.insert(
+        "position".into(),
+        vec![
+            Keyframe {
+                time: Flicks::ZERO,
+                value: KeyValue::Number(0.0),
+                interpolation: Interpolation::Linear,
+            },
+            Keyframe {
+                time: second(2),
+                value: KeyValue::Number(1.0),
+                interpolation: Interpolation::Linear,
+            },
+        ],
+    );
+    card.effects = vec![sweep];
+    project.media.assets.push(fosscut_model::Asset {
+        folder: None,
+        id: asset(1),
+        kind: fosscut_model::AssetKind::Image,
+        name: "card.png".into(),
+        path: Default::default(),
+        identity: None,
+        info: fosscut_model::MediaInfo {
+            video: Some(fosscut_model::VideoInfo {
+                width: 160,
+                height: 90,
+                rate: None,
+                codec: None,
+                rotation: 0,
+            }),
+            ..Default::default()
+        },
+    });
+    let doc = project.timelines.get_mut(&timeline).unwrap();
+    for (id, kind, clip) in [(6, TrackKind::Video, card), (7, TrackKind::Text, title)] {
+        doc.tracks.push(Track {
+            id: Id::new(IdKind::Track, id),
+            kind,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: vec![clip],
+        });
+    }
+    project.manifest.next_id = 10;
+    // The same card at a quarter and at three quarters of its sweep, side by side.
+    let mut layers = Vec::new();
+    for (time, x) in [
+        (Flicks::from_millis(500), -0.25),
+        (Flicks::from_millis(1500), 0.25),
+    ] {
+        let plan = fosscut_render::plan::plan_frame(&project, &timeline, time).unwrap();
+        for mut layer in plan.layers {
+            layer.transform.position[0] = layer.transform.position[0] * 0.5 + x;
+            layer.transform.position[1] *= 0.5;
+            layer.transform.scale *= 0.5;
+            layers.push(layer);
+        }
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, pattern(160, 90, 0));
+    check_at(
+        "glowing-end-card",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+}
+
+/// Text reveal motions (ADR-0027) caught part way, one line each: words coming into focus
+/// from a blur, popping past their size, sliding in from the right, letters dropping with a
+/// bounce, letters closing up from wide spacing, and words shrinking into place from the
+/// middle outwards.
+#[test]
+fn text_reveal_motions() {
+    use fosscut_model::{RevealMotion, RevealOrder, RevealUnit, TextReveal};
+    use fosscut_render::plan::LayerSource;
+    use fosscut_render::text::TextLayer;
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let lines = [
+        (
+            "Everything you love.",
+            RevealUnit::Word,
+            RevealMotion::Blur,
+            RevealOrder::Forward,
+        ),
+        (
+            "Pop goes the title",
+            RevealUnit::Word,
+            RevealMotion::Pop,
+            RevealOrder::Forward,
+        ),
+        (
+            "Slides in from the right",
+            RevealUnit::Word,
+            RevealMotion::SlideLeft,
+            RevealOrder::Forward,
+        ),
+        (
+            "Drops with a bounce",
+            RevealUnit::Letter,
+            RevealMotion::Drop,
+            RevealOrder::Forward,
+        ),
+        (
+            "TRACKING IN",
+            RevealUnit::Letter,
+            RevealMotion::Collapse,
+            RevealOrder::Forward,
+        ),
+        (
+            "Zooms from the middle",
+            RevealUnit::Word,
+            RevealMotion::Zoom,
+            RevealOrder::Center,
+        ),
+    ];
+    let layers = lines
+        .into_iter()
+        .enumerate()
+        .map(|(row, (words, unit, motion, order))| {
+            let mut content = text(words, |s| {
+                s.size = 0.06;
+                s.bold = true;
+            });
+            content.reveal = Some(TextReveal {
+                unit,
+                motion,
+                order,
+                duration: Flicks::from_seconds(1).unwrap(),
+                ..TextReveal::default()
+            });
+            Layer {
+                source: LayerSource::Text(Box::new(TextLayer {
+                    content,
+                    time: Flicks::from_millis(550),
+                    duration: Flicks::from_seconds(3).unwrap(),
+                })),
+                transform: Transform {
+                    position: [0.0, -0.4 + row as f64 * 0.16],
+                    ..Transform::default()
+                },
+                ..Layer::text(text("", |_| {}))
+            }
+        })
+        .collect();
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default();
+    check_at(
+        "text-reveal-motions",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
 }

@@ -1,9 +1,13 @@
 import {
+  Box,
+  ChevronDown,
   Clapperboard,
   Ellipsis,
+  FileCode2,
   FileType,
   FolderInput,
   FolderOpen,
+  Globe,
   Image,
   LayoutGrid,
   Link2,
@@ -12,7 +16,9 @@ import {
   Music,
   Palette,
   Pencil,
+  PenTool,
   Plus,
+  Shapes,
   Trash2,
   TriangleAlert,
   Upload,
@@ -40,6 +46,9 @@ const KINDS: [MediaFilter["kind"], MessageKey][] = [
   ["video", "media.filter.video"],
   ["audio", "media.filter.audio"],
   ["image", "media.filter.image"],
+  ["vector", "media.filter.vector"],
+  ["web", "media.filter.web"],
+  ["model", "media.filter.model"],
   ["lut", "media.filter.lut"],
   ["font", "media.filter.font"],
 ];
@@ -47,7 +56,24 @@ const KINDS: [MediaFilter["kind"], MessageKey][] = [
 const SORTS: SortKey[] = ["imported", "name", "duration", "kind"];
 
 /** The icon of an asset's kind. */
-export const ASSET_ICONS: Record<AssetView["kind"], LucideIcon> = { video: Film, audio: Music, image: Image, lut: Palette, font: FileType };
+export const ASSET_ICONS: Record<AssetView["kind"], LucideIcon> = {
+  video: Film,
+  audio: Music,
+  image: Image,
+  lut: Palette,
+  font: FileType,
+  vector: PenTool,
+  web: Globe,
+  model: Box,
+};
+
+/**
+ * True when clips can show the asset: drawings as images, compositions as video (ADR-0036,
+ * ADR-0039), 3D models as 3D objects (ADR-0040).
+ */
+export function placeable(asset: AssetView): boolean {
+  return !asset.missing && asset.kind !== "lut" && asset.kind !== "font";
+}
 
 /** How many frames hovering over a video's tile runs through. */
 const SKIM_FRAMES = 12;
@@ -95,7 +121,7 @@ function Tile({
     if (naming !== null && naming.trim() && naming !== asset.name) void editor.renameAsset(asset.id, naming);
     setNaming(null);
   };
-  const placeable = !asset.missing && asset.kind !== "lut" && asset.kind !== "font";
+  const canPlace = placeable(asset);
   const picture = Pictures.pictured(asset)
     ? skim !== null && asset.kind === "video"
       ? (editor.pictures.frame(asset, skimTime(asset, skim)) ?? editor.pictures.poster(asset))
@@ -113,7 +139,7 @@ function Tile({
   return (
     <li
       className={cx("tile", list && "row", chosen && "chosen", asset.missing && "missing", `asset-${asset.kind}`)}
-      draggable={placeable}
+      draggable={canPlace}
       onDragStart={(event) => {
         event.dataTransfer.setData(ASSET_DRAG, asset.id);
         event.dataTransfer.effectAllowed = "copy";
@@ -130,7 +156,7 @@ function Tile({
           setSkim((event.clientX - rect.left) / Math.max(1, rect.width));
         }}
         onPointerLeave={() => setSkim(null)}
-        onDoubleClick={() => placeable && void editor.addToTimeline(asset.id)}
+        onDoubleClick={() => canPlace && void editor.addToTimeline(asset.id)}
       >
         {picture ? (
           <img src={picture} alt="" draggable={false} />
@@ -158,7 +184,7 @@ function Tile({
           {asset.missing ? (
             <IconButton icon={Link2} size="sm" variant="solid" label={t("media.relink")} tooltip={t("media.relink.help")} onClick={() => void editor.relinkAsset(asset.id)} />
           ) : (
-            placeable && (
+            canPlace && (
               <IconButton icon={Plus} size="sm" variant="primary" label={t("media.add")} tooltip={t("media.add.help")} onClick={() => void editor.addToTimeline(asset.id)} />
             )
           )}
@@ -190,7 +216,10 @@ function Tile({
           align="end"
           className="tile-menu"
           items={[
-            ...(placeable ? [{ id: "add", label: t("media.add.help"), icon: Plus, onSelect: () => void editor.addToTimeline(asset.id) }] : []),
+            ...(canPlace ? [{ id: "add", label: t("media.add.help"), icon: Plus, onSelect: () => void editor.addToTimeline(asset.id) }] : []),
+            ...(asset.kind === "vector" && !asset.missing
+              ? [{ id: "explode", label: t("vector.explode"), icon: Shapes, detail: t("vector.paths", { count: asset.vector?.paths ?? 0 }), onSelect: () => void editor.explodeDrawing(asset.id) }]
+              : []),
             { id: "rename", label: t("media.rename"), icon: Pencil, onSelect: () => setNaming(asset.name) },
             { id: "show", label: t("media.show.help"), icon: FolderOpen, disabled: asset.missing, onSelect: () => void editor.revealAsset(asset.id) },
             ...(asset.missing ? [{ id: "relink", label: t("media.relink.help"), icon: Link2, onSelect: () => void editor.relinkAsset(asset.id) }] : []),
@@ -228,10 +257,23 @@ export function Media({ editor, state, folder }: { editor: Editor; state: Editor
   return (
     <section className="media">
       <div className="browser-actions">
-        <button type="button" className="primary small" onClick={() => void editor.importMedia()} title={t("media.import.help")}>
-          <Glyph icon={Upload} size="sm" />
-          {t("media.import")}
-        </button>
+        <span className="split-button">
+          <button type="button" className="primary small" onClick={() => void editor.importMedia()} title={t("media.import.help")}>
+            <Glyph icon={Upload} size="sm" />
+            {t("media.import")}
+          </button>
+          <Menu
+            label={t("media.import.more")}
+            icon={ChevronDown}
+            floating
+            buttonClassName="primary small"
+            items={[
+              { id: "page", label: t("web.import.page"), icon: Globe, onSelect: () => void editor.pickComposition(false) },
+              { id: "folder", label: t("web.import.folder"), icon: FolderOpen, onSelect: () => void editor.pickComposition(true) },
+              { id: "remotion", label: t("web.remotion.open"), icon: FileCode2, separated: true, onSelect: () => editor.openRemotion() },
+            ]}
+          />
+        </span>
         <button
           type="button"
           className={cx("small", recording && "recording")}

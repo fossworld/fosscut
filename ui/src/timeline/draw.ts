@@ -10,6 +10,7 @@ import type { ClipView, TimelineView } from "../engine/types";
 import { t } from "../i18n";
 import { FLICKS_PER_SECOND } from "../transport/time";
 import { HEADER, ROW, RULER, type View, rowY, rows, rulerLabel, rulerStep, timeToX } from "./geometry";
+import { clipName } from "../ui/kinds";
 import { DARK, type Palette, clipColors } from "./palette";
 
 export interface DrawState {
@@ -51,7 +52,7 @@ function sourceAt(clip: ClipView, flicks: number): number {
 }
 
 function label(clip: ClipView): string {
-  const name = clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.shape ?? clip.kind;
+  const name = clipName(clip);
   const speed = speedLabel(clip);
   const shown = speed ? `${name} (${speed})` : name;
   return clip.enabled === false ? t("timeline.clip.off", { name: shown }) : shown;
@@ -153,6 +154,10 @@ function block(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, x0: nu
     ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
     ctx.fillRect(x0, top + BLOCK - 7, width, 3);
     ctx.fillRect(x0, top + BLOCK - 13, width, 3);
+  } else if (clip.kind === "camera") {
+    viewfinders(ctx, view, clip, x0, x1, top, colors.tone);
+  } else if (clip.kind === "particles") {
+    sparks(ctx, view, clip, x0, x1, top, colors.tone);
   }
   // The kind's own tone along the top edge.
   ctx.fillStyle = colors.tone;
@@ -199,6 +204,65 @@ function block(ctx: CanvasRenderingContext2D, clip: ClipView, view: View, x0: nu
     ctx.fillText(label(clip), text, line);
     ctx.restore();
   }
+}
+
+/**
+ * A camera clip (ADR-0037): it shows nothing itself, so it is drawn as a strip of
+ * viewfinder frames, corner brackets at even steps from its start, distinct from clips with
+ * pictures.
+ */
+function viewfinders(ctx: CanvasRenderingContext2D, view: View, clip: ClipView, x0: number, x1: number, top: number, tone: string): void {
+  const step = 44;
+  const start = timeToX(clip.start.flicks, view);
+  const first = Math.max(0, Math.floor((x0 - start) / step));
+  const height = BLOCK - 22;
+  const y = top + 17;
+  ctx.strokeStyle = tone;
+  ctx.globalAlpha *= 0.55;
+  ctx.lineWidth = 1.5;
+  for (let x = start + first * step + 8; x < x1; x += step) {
+    const w = 26;
+    const c = 5;
+    ctx.beginPath();
+    for (const [cx, cy, dx, dy] of [
+      [x, y, 1, 1],
+      [x + w, y, -1, 1],
+      [x, y + height, 1, -1],
+      [x + w, y + height, -1, -1],
+    ] as const) {
+      ctx.moveTo(cx + dx * c, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy * c);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + height / 2, 2, 0, Math.PI * 2);
+    ctx.fillStyle = tone;
+    ctx.fill();
+  }
+  ctx.globalAlpha /= 0.55;
+}
+
+/** A particle clip (ADR-0038): a scatter of small dots, the same wherever it scrolls. */
+function sparks(ctx: CanvasRenderingContext2D, view: View, clip: ClipView, x0: number, x1: number, top: number, tone: string): void {
+  const start = timeToX(clip.start.flicks, view);
+  const cell = 18;
+  const first = Math.max(0, Math.floor((x0 - start) / cell));
+  ctx.fillStyle = tone;
+  ctx.globalAlpha *= 0.6;
+  for (let i = first; start + i * cell < x1; i += 1) {
+    // A fixed pattern by cell, so dots stay put as the view moves.
+    const a = Math.sin(i * 12.9898) * 43758.5453;
+    const b = Math.sin(i * 78.233) * 12345.6789;
+    const fx = a - Math.floor(a);
+    const fy = b - Math.floor(b);
+    const x = start + i * cell + fx * cell;
+    const y = top + 18 + fy * (BLOCK - 24);
+    ctx.beginPath();
+    ctx.arc(x, y, 0.8 + fx * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha /= 0.6;
 }
 
 /** A transition from `clip` into the next: a rounded badge across the cut, as long as it lasts. */

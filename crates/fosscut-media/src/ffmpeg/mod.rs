@@ -354,7 +354,8 @@ impl FfmpegVideoDecoder {
         Ok(())
     }
 
-    /// Copies a decoded frame into system memory as NV12 or YUV 4:2:0.
+    /// Copies a decoded frame into system memory as NV12 or YUV 4:2:0, or as R'G'B'A when
+    /// it has an alpha channel.
     fn copy_out(&mut self, decoded: &Decoded) -> Result<VideoFrame, MediaError> {
         let source = &decoded.frame;
         let transferred;
@@ -399,9 +400,29 @@ impl FfmpegVideoDecoder {
                 format = PixelFormat::Yuv420p;
                 image
             }
+            other if has_alpha(other) => {
+                // Pictures with transparency (ProRes 4444, PNG and GIF with alpha) keep it
+                // as straight-alpha R'G'B'A. Y'CbCr sources are converted with their own
+                // matrix and range; R'G'B' sources keep their code values.
+                format = PixelFormat::Rgba;
+                if is_yuv(other) {
+                    let resolved = color.resolved(image.height as u32);
+                    let table = match resolved.matrix {
+                        Matrix::Bt709 => ffi::SWS_CS_ITU709,
+                        Matrix::Bt2020Ncl => ffi::SWS_CS_BT2020,
+                        _ => ffi::SWS_CS_ITU601,
+                    };
+                    let full = resolved.range == Range::Full;
+                    converted =
+                        self.convert(image, other, ffi::AV_PIX_FMT_RGBA, Some((table, full)))?;
+                } else {
+                    converted = self.convert(image, other, ffi::AV_PIX_FMT_RGBA, None)?;
+                }
+                &converted
+            }
             other => {
                 format = PixelFormat::Nv12;
-                converted = self.convert_to_nv12(image, other)?;
+                converted = self.convert(image, other, ffi::AV_PIX_FMT_NV12, None)?;
                 if is_rgb(other) {
                     // swscale writes R'G'B' pictures (PNG, for one) into Y'CbCr with its
                     // default BT.601 matrix in limited range. Their primaries and transfer
@@ -431,7 +452,16 @@ impl FfmpegVideoDecoder {
         })
     }
 
-    fn convert_to_nv12(&mut self, image: &AVFrame, format: i32) -> Result<AVFrame, MediaError> {
+    /// Converts `image`, in pixel format `format`, to `target` at the same size. With
+    /// `colors` (a swscale coefficient table and whether the source is full range), Y'CbCr
+    /// is read with those coefficients instead of swscale's BT.601 default.
+    fn convert(
+        &mut self,
+        image: &AVFrame,
+        format: i32,
+        target: i32,
+        colors: Option<(u32, bool)>,
+    ) -> Result<AVFrame, MediaError> {
         let (width, height) = (image.width, image.height);
         let scaler = match self.scalers.entry(format) {
             std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -442,20 +472,42 @@ impl FfmpegVideoDecoder {
                     format,
                     width,
                     height,
-                    ffi::AV_PIX_FMT_NV12,
+                    target,
                     ffi::SWS_BILINEAR,
                     None,
                     None,
                     None,
                 )
                 .ok_or_else(|| MediaError::DecodeFailed {
-                    message: format!("cannot convert {} to NV12", pixel_format_name(format)),
+                    message: format!(
+                        "cannot convert {} to {}",
+                        pixel_format_name(format),
+                        pixel_format_name(target)
+                    ),
                 })?;
+                if let Some((table, full)) = colors {
+                    // SAFETY: `sws_getCoefficients` returns pointers to static tables, and
+                    // the context was just created and is owned here.
+                    unsafe {
+                        let source = ffi::sws_getCoefficients(table as i32);
+                        let rgb = ffi::sws_getCoefficients(ffi::SWS_CS_DEFAULT as i32);
+                        ffi::sws_setColorspaceDetails(
+                            context.as_ptr() as *mut _,
+                            source,
+                            i32::from(full),
+                            rgb,
+                            1,
+                            0,
+                            1 << 16,
+                            1 << 16,
+                        );
+                    }
+                }
                 entry.insert(context)
             }
         };
         let mut output = AVFrame::new();
-        output.set_format(ffi::AV_PIX_FMT_NV12);
+        output.set_format(target);
         output.set_width(width);
         output.set_height(height);
         output.alloc_buffer().map_err(|e| decode_failed(&e))?;
@@ -740,6 +792,30 @@ fn color_info(
 }
 
 /// Whether `format` stores R'G'B' rather than Y'CbCr.
+/// True when pixel format `format` is Y'CbCr: three or more components, neither R'G'B' nor
+/// a palette.
+fn is_yuv(format: i32) -> bool {
+    // SAFETY: `av_pix_fmt_desc_get` returns null or a pointer to a static descriptor.
+    let descriptor = unsafe { ffi::av_pix_fmt_desc_get(format) };
+    if descriptor.is_null() {
+        return false;
+    }
+    // SAFETY: checked non-null; descriptors are static and immutable.
+    let (flags, components) = unsafe { ((*descriptor).flags, (*descriptor).nb_components) };
+    let not_yuv = u64::from(ffi::AV_PIX_FMT_FLAG_RGB | ffi::AV_PIX_FMT_FLAG_PAL);
+    flags & not_yuv == 0 && components >= 3
+}
+
+/// True when pixel format `format` carries an alpha channel (including palettes, whose
+/// entries may be transparent).
+fn has_alpha(format: i32) -> bool {
+    // SAFETY: `av_pix_fmt_desc_get` returns null or a pointer to a static descriptor.
+    let descriptor = unsafe { ffi::av_pix_fmt_desc_get(format) };
+    // SAFETY: checked non-null; descriptors are static and immutable.
+    !descriptor.is_null()
+        && unsafe { (*descriptor).flags } & u64::from(ffi::AV_PIX_FMT_FLAG_ALPHA) != 0
+}
+
 fn is_rgb(format: i32) -> bool {
     // SAFETY: `av_pix_fmt_desc_get` returns null or a pointer to a static descriptor.
     let descriptor = unsafe { ffi::av_pix_fmt_desc_get(format) };

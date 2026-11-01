@@ -5,7 +5,8 @@ struct Convert {
     row0: vec4f,
     row1: vec4f,
     row2: vec4f,
-    // x: 0 = NV12 (interleaved chroma), 1 = three planes; y: source transfer.
+    // x: 0 = NV12 (interleaved chroma), 1 = three planes, 2 = R'G'B'A with straight alpha
+    // in one plane; y: source transfer.
     mode: vec4u,
 }
 
@@ -22,6 +23,11 @@ fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    if params.mode.x == 2u {
+        // Straight alpha in, premultiplied linear light out, as the compositor blends.
+        let c = textureLoad(luma, vec2i(position.xy), 0);
+        return vec4f(decode_transfer(c.rgb, params.mode.y) * c.a, c.a);
+    }
     let y = textureLoad(luma, vec2i(position.xy), 0).r;
     // Chroma is sampled bilinearly at the luma pixel's centre (centre-sited upsampling).
     let uv = position.xy / vec2f(textureDimensions(luma));
