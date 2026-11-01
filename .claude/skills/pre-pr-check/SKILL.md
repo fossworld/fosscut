@@ -79,5 +79,5 @@ pnpm run test
 
 - Never silence a failing check to get green: no `#[allow]` without a justification comment, no skipped or `#[ignore]`d tests, no retries, no lowered coverage minimums.
 - Every behaviour change and bug fix has a test that fails without it. Check this by reverting the fix locally or reasoning it through, and say how in the PR.
-- A PR cannot merge while the `CI result` check fails; it covers every test, lint, coverage and policy job.
+- A PR cannot merge while the `CI result` check fails; on pull requests it covers the macOS tests, lints and policy jobs, while Linux, Windows and coverage run nightly and on demand (ADR-0016, implementation notes).
 - If a check fails for reasons unrelated to your change, say so in the PR and open an issue instead of fixing it silently in the same PR.
