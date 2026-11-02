@@ -776,7 +776,12 @@ mod tests {
         assert_eq!(added.len(), 2);
         assert_eq!(added[0].effect_type, "light.glow");
         assert_eq!(added[0].values["intensity"], ParamValue::Number(1.25));
-        assert_eq!(added[0].values.len(), 6, "every glow parameter");
+        assert_eq!(
+            added[0].values.len(),
+            7,
+            "every glow parameter, mix included"
+        );
+        assert_eq!(added[0].mix(), 1.0);
         assert_eq!(added[1].effect_type, ANIMATION_BLUR);
         assert_eq!((added[1].seed, added[1].time), (4, 1.5));
         let mut effects = vec![

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=460, fps=30, duration=3.9">
+<title>Progress card</title>
+<!--
+  Made by FossCut for its library: a progress card, a title with a percentage counting up,
+  a bar filling, and step chips that tick off one by one as the bar passes them. Every
+  frame is a function of time, through window.fosscut.seek and the overlay kit. Free to
+  use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 32px 34px 34px; }
+  #head { display: flex; align-items: center; gap: 20px; }
+  #glyph { position: relative; width: 64px; height: 64px; border-radius: 18px; background: var(--accent); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; flex: none; }
+  #words { flex: 1; min-width: 0; }
+  #title { font-size: 36px; }
+  #status { margin-top: 6px; font-size: 25px; color: var(--muted); }
+  #percent { font-size: 60px; font-weight: 800; letter-spacing: -0.03em; color: var(--accent); flex: none; }
+  #bar { position: relative; height: 22px; margin-top: 30px; border-radius: 11px; background: var(--card-3); overflow: hidden; }
+  #fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 11px; background: var(--accent); overflow: hidden; }
+  #sheen { position: absolute; top: 0; bottom: 0; width: 160px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.45) 50%, rgba(255,255,255,0) 100%); }
+  #steps { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px; }
+  .step { position: relative; display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 22px 0 12px; border-radius: 30px;
+          background: var(--card-2); font-size: 25px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+  .step .mark { position: relative; width: 38px; height: 38px; flex: none; }
+  .step .ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--faint); opacity: 0.6; }
+  .step .spin { position: absolute; inset: 0; }
+  .step .tick { position: absolute; inset: 0; border-radius: 50%; background: var(--good); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .step.done { color: var(--ink); }
+  .step.active { color: var(--accent); background: var(--accent-soft); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

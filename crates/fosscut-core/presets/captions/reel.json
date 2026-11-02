@@ -1,0 +1,19 @@
+{
+  "name": "reel",
+  "description": "One heavy white word at a time with a soft shadow, a little below the middle of the frame; emphasised words pop in a blue box with yellow corner brackets. Made for talking-head reels: mark keywords with emphasis.",
+  "paging": { "max_words": 1, "max_lines": 1, "max_gap_ms": 400, "linger_ms": 120 },
+  "style": {
+    "weight": "black",
+    "size": 0.062,
+    "stroke": { "enabled": false },
+    "shadow": { "enabled": true, "color": "#000000A6", "offset": [0.0, 0.05], "blur": 0.22 },
+    "placement": 0.6,
+    "animators": [
+      { "type": "page.pop", "version": 1, "enabled": true, "params": { "from": 0.92, "duration_ms": 90 } },
+      { "type": "word.emphasis", "version": 1, "enabled": true, "params": {
+        "color": "#FFFFFF", "scale": 1.0, "pop": 1.14,
+        "box": { "color": "#2563EB", "padding": 0.22, "radius": 0.16 },
+        "brackets": { "color": "#FACC15", "length": 0.32, "thickness": 0.075, "gap": 0.12 } } }
+    ]
+  }
+}

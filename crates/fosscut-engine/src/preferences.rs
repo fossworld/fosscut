@@ -87,6 +87,8 @@ pub struct Preferences {
     pub notifications: bool,
     /// Keyboard shortcuts.
     pub shortcuts: Shortcuts,
+    /// The user's own agent, which the desktop app runs for AI edits (ADR-0043).
+    pub agent: AgentPreferences,
 }
 
 impl Default for Preferences {
@@ -103,6 +105,7 @@ impl Default for Preferences {
             updates: UpdatePolicy::Notify,
             notifications: true,
             shortcuts: Shortcuts::default(),
+            agent: AgentPreferences::default(),
         }
     }
 }
@@ -321,6 +324,15 @@ impl Default for Shortcuts {
             overrides: BTreeMap::new(),
         }
     }
+}
+
+/// The user's own agent (ADR-0043).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentPreferences {
+    /// The agent command line to run, as an absolute path; empty finds Claude Code by
+    /// itself (`FOSSCUT_AGENT`, then `claude` on the path and in its usual places).
+    pub command: String,
 }
 
 /// The shortcut sets the desktop app has.
@@ -552,6 +564,12 @@ impl Preferences {
                 return Err(invalid(format!("{name} must be an absolute path")));
             }
         }
+        let agent = self.agent.command.trim();
+        if !agent.is_empty() && !Path::new(agent).is_absolute() {
+            return Err(invalid(
+                "agent.command must be an absolute path, or empty to find the agent",
+            ));
+        }
         Ok(())
     }
 
@@ -738,6 +756,7 @@ mod tests {
             ("export.sound_name", "nothing"),
             ("performance.proxies", "sometimes"),
             ("locations.exports", "relative/folder"),
+            ("agent.command", "claude"),
             ("editing.missing", "1"),
             ("version", "3"),
         ] {
@@ -757,5 +776,21 @@ mod tests {
             Preferences::load(&file).unwrap_err().code(),
             "fosscut.preferences.unreadable"
         );
+    }
+
+    #[test]
+    fn the_agent_command_is_an_absolute_path_or_empty() {
+        let mut preferences = Preferences::default();
+        assert_eq!(preferences.agent.command, "");
+        let path = if cfg!(windows) {
+            r"C:\Tools\claude.exe"
+        } else {
+            "/opt/tools/claude"
+        };
+        preferences.set("agent.command", path).unwrap();
+        assert_eq!(preferences.agent.command, path);
+        assert_eq!(preferences.sparse()["agent"]["command"], path);
+        preferences.set("agent.command", "\"\"").unwrap();
+        assert_eq!(preferences, Preferences::default());
     }
 }

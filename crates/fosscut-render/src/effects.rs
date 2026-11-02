@@ -24,6 +24,15 @@ pub struct PlannedEffect {
 }
 
 impl PlannedEffect {
+    /// How much of the effect shows, 0 to 1: its `mix`, or 1 for effects without one (the
+    /// effects animations add).
+    pub fn mix(&self) -> f32 {
+        self.values
+            .get(fosscut_model::MIX)
+            .and_then(ParamValue::number)
+            .map_or(1.0, |v| v.clamp(0.0, 1.0) as f32)
+    }
+
     /// A number parameter, or 0.
     pub fn number(&self, name: &str) -> f32 {
         self.values

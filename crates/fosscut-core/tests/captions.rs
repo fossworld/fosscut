@@ -66,6 +66,73 @@ const SPEECH: &[(&str, u32, u32)] = &[
 ];
 
 #[test]
+fn the_reel_preset_pages_one_word_at_a_time_unless_told_otherwise() {
+    let mut session = vertical();
+    let mut speech = words(SPEECH);
+    speech[3]["emphasis"] = json!(true);
+    let added = run(
+        &mut session,
+        "captions.add",
+        json!({ "words": speech, "preset": "reel" }),
+    );
+    let pages = added.results[0]["pages"].as_array().unwrap().clone();
+    assert_eq!(pages.len(), 11, "one word per page");
+    assert_eq!(pages[3]["text"], "notice");
+    let doc = timeline_doc(&session);
+    let track = doc["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "caption")
+        .unwrap()
+        .clone();
+    let style = &track["caption_style"];
+    assert_eq!(style["placement"], json!(0.6));
+    assert_eq!(style["shadow"]["enabled"], true);
+    assert_eq!(style["animators"][1]["params"]["box"]["color"], "#2563EB");
+    // The emphasised word keeps its mark on its page.
+    let notice = track["clips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["lines"][0]["words"][0]["text"] == "notice")
+        .unwrap();
+    assert_eq!(notice["lines"][0]["words"][0]["emphasis"], true);
+
+    // Paging given in the call wins over the preset's.
+    let mut other = vertical();
+    let added = run(
+        &mut other,
+        "captions.add",
+        json!({ "words": words(SPEECH), "preset": "reel", "paging": { "max_words": 3 } }),
+    );
+    assert!(added.results[0]["pages"].as_array().unwrap().len() < 11);
+
+    // A style patch moves the page to any height; out of range is refused.
+    run(
+        &mut session,
+        "captions.style",
+        json!({ "style": { "placement": 0.3 } }),
+    );
+    let doc = timeline_doc(&session);
+    let track = doc["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "caption")
+        .unwrap()
+        .clone();
+    assert_eq!(track["caption_style"]["placement"], json!(0.3));
+    let error = fails(
+        &mut session,
+        "captions.style",
+        json!({ "style": { "placement": 1.4 } }),
+    );
+    assert_eq!(error.code, "fosscut.model.invalid", "{error:?}");
+    assert_eq!(error.details[0]["code"], "fosscut.model.caption_style");
+}
+
+#[test]
 fn words_become_pages_on_a_caption_track() {
     let mut session = vertical();
     let added = run(

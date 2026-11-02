@@ -39,6 +39,78 @@ pub struct GenerateRequest {
     /// Song lyrics: without a source track, caption the first audio track with sound
     /// (the music) before any video track.
     pub lyrics: bool,
+    /// Words to mark `emphasis`, for the `word.emphasis` animator (keywords).
+    pub emphasis: Vec<EmphasisWord>,
+}
+
+/// A word (or a few words in a row) to emphasise in generated captions.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EmphasisWord {
+    /// The word or words as spoken; case and punctuation do not matter.
+    pub text: String,
+    /// The timeline time it is said near, to pick one of several occurrences; every
+    /// occurrence when `None`.
+    pub at: Option<Flicks>,
+}
+
+/// A word as compared for emphasis: letters and digits, lower case.
+fn plain_word(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Marks `emphasis` on the words (as `captions.add` takes them, with flick times) that
+/// `wanted` names: every occurrence of each, or the one starting nearest its `at`. Fails
+/// naming those not found.
+pub fn mark_emphasis(words: &mut [Value], wanted: &[EmphasisWord]) -> Result<(), EngineError> {
+    let plain: Vec<String> = words
+        .iter()
+        .map(|w| plain_word(w["text"].as_str().unwrap_or_default()))
+        .collect();
+    let start = |w: &Value| w["start"]["flicks"].as_i64().unwrap_or_default();
+    let mut missing = Vec::new();
+    for word in wanted {
+        let tokens: Vec<String> = word
+            .text
+            .split_whitespace()
+            .map(plain_word)
+            .filter(|t| !t.is_empty())
+            .collect();
+        if tokens.is_empty() {
+            missing.push(word.text.clone());
+            continue;
+        }
+        let found: Vec<usize> = (0..plain.len())
+            .filter(|&i| {
+                plain.len() >= i + tokens.len()
+                    && tokens.iter().enumerate().all(|(k, t)| plain[i + k] == *t)
+            })
+            .collect();
+        let chosen: Vec<usize> = match word.at {
+            Some(at) => found
+                .iter()
+                .copied()
+                .min_by_key(|&i| (start(&words[i]) - at.get()).abs())
+                .into_iter()
+                .collect(),
+            None => found,
+        };
+        if chosen.is_empty() {
+            missing.push(word.text.clone());
+        }
+        for i in chosen {
+            for w in &mut words[i..i + tokens.len()] {
+                w["emphasis"] = json!(true);
+            }
+        }
+    }
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(EngineError::EmphasisNotFound { words: missing })
+    }
 }
 
 /// How lyrics are paged: a sung line per page, broken at breaths.
@@ -169,6 +241,7 @@ pub fn generate(project: &Project, request: &GenerateRequest) -> Result<Generate
             message: format!("the clips on {} contain no recognised words", track.id),
         });
     }
+    mark_emphasis(&mut words, &request.emphasis)?;
     Ok(Generated {
         timeline: timeline_id,
         source_track: track.id.clone(),
@@ -853,6 +926,61 @@ pub fn spread_words(text: &str, start: Flicks, end: Flicks) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keywords_are_emphasised_by_text_phrase_or_nearest_time() {
+        let said = |list: &[(&str, i64)]| -> Vec<Value> {
+            list.iter()
+                .map(|(text, ms)| {
+                    let at = Flicks::from_millis(*ms).get();
+                    json!({ "text": text, "start": { "flicks": at }, "end": { "flicks": at + 1 } })
+                })
+                .collect()
+        };
+        let speech = [
+            ("Free", 0),
+            ("tools,", 300),
+            ("free", 900),
+            ("time.", 1200),
+            ("AI", 2000),
+            ("edits", 2300),
+        ];
+        let marked = |wanted: &[EmphasisWord]| {
+            let mut words = said(&speech);
+            mark_emphasis(&mut words, wanted).map(|()| {
+                words
+                    .iter()
+                    .map(|w| w["emphasis"] == true)
+                    .collect::<Vec<bool>>()
+            })
+        };
+        let word = |text: &str, at: Option<i64>| EmphasisWord {
+            text: text.into(),
+            at: at.map(Flicks::from_millis),
+        };
+        // Every occurrence, whatever the case and punctuation.
+        assert_eq!(
+            marked(&[word("FREE!", None)]).unwrap(),
+            [true, false, true, false, false, false]
+        );
+        // The one nearest a time.
+        assert_eq!(
+            marked(&[word("free", Some(1000))]).unwrap(),
+            [false, false, true, false, false, false]
+        );
+        // A phrase marks its words in a row.
+        assert_eq!(
+            marked(&[word("ai edits", None), word("time", None)]).unwrap(),
+            [false, false, false, true, true, true]
+        );
+        // Words not said fail, naming them, and nothing is marked.
+        let missing = marked(&[word("free", None), word("paid", None), word("  ", None)]);
+        let Err(EngineError::EmphasisNotFound { words }) = missing else {
+            panic!("{missing:?}");
+        };
+        assert_eq!(words, ["paid", "  "]);
+        assert_eq!(marked(&[]).unwrap(), [false; 6]);
+    }
 
     #[test]
     fn srt_files_parse_with_markup_crlf_and_settings() {

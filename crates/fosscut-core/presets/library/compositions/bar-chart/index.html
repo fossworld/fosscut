@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=820, fps=30, duration=3.9">
+<title>Bar chart</title>
+<!--
+  Made by FossCut for its library: a bar chart card, a title and subtitle, bars growing
+  one after another with their values counting up, the highlighted bar in the accent
+  colour with a badge. Every frame is a function of time, through window.fosscut.seek and
+  the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 34px 36px 30px; }
+  #title { font-size: 40px; }
+  #subtitle { margin-top: 8px; font-size: 26px; color: var(--muted); }
+  #plot { position: relative; height: 470px; margin-top: 26px; }
+  .grid { position: absolute; left: 0; right: 0; height: 2px; background: var(--line); }
+  .col { position: absolute; bottom: 58px; top: 0; }
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 18px 18px 8px 8px; background: rgba(var(--accent-rgb), 0.22); transform-origin: 50% 100%; }
+  .col.top .bar { background: var(--accent); box-shadow: 0 12px 24px -8px rgba(var(--accent-rgb), 0.6); }
+  .value { position: absolute; left: -20px; right: -20px; text-align: center; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink-2); }
+  .col.top .value { color: var(--accent); }
+  .name { position: absolute; left: -24px; right: -24px; bottom: -48px; text-align: center; font-size: 25px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .flag { position: absolute; left: 50%; height: 44px; padding: 0 16px; border-radius: 22px; background: var(--ink); color: var(--card); font-size: 21px; font-weight: 800;
+          display: flex; align-items: center; gap: 6px; white-space: nowrap; transform-origin: 50% 100%; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

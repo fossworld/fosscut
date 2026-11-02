@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=800, height=800, fps=30, duration=2.9">
+<title>Arrow pointer</title>
+<!--
+  Made by FossCut for its library: a curved arrow that draws on towards the middle of the
+  canvas, where its tip lands, with an optional label at its tail, then nudges at its
+  target. Every frame is a function of time, through window.fosscut.seek and the overlay
+  kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #arrow { position: absolute; left: 0; top: 0; width: 800px; height: 800px; overflow: visible; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.32)); }
+  #arrow path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  #label { position: absolute; max-width: 360px; padding: 16px 26px; border-radius: 26px; background: var(--card); color: var(--ink);
+           box-shadow: var(--shadow-sm), 0 0 0 1px var(--edge); font-size: 32px; font-weight: 800; letter-spacing: -0.015em;
+           line-height: 1.15; text-align: center; transform-origin: 50% 50%; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

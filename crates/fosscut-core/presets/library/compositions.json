@@ -761,5 +761,1898 @@
         "shutter": 0.5
       }
     }
+  },
+  {
+    "name": "video-card",
+    "title": "Video card",
+    "description": "A generic video card, 1080x860 with a clear background: a 16:9 thumbnail with a play button, its length and a watched bar, the channel's avatar, the title and a line of views and age; it pops in, the views count up and the watched bar fills. Use it when the speaker mentions a video, a channel, an upload or a long-form piece. thumbnail takes a picture or a video (abstract art when empty). Above the speaker's head at scale 0.85, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "video",
+      "thumbnail",
+      "card",
+      "views",
+      "channel",
+      "play",
+      "upload",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "video-card",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "thumbnail",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "The thumbnail: a picture, or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "avatar",
+        "type": "slot",
+        "accepts": [
+          "image"
+        ],
+        "default": null,
+        "description": "The channel's picture; its initials on a gradient when empty."
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": "How I edit a week of videos in one afternoon",
+        "description": "The video's title, up to two lines.",
+        "max_length": 120
+      },
+      {
+        "name": "channel",
+        "type": "text",
+        "default": "Your Channel",
+        "description": "The channel's name; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "views",
+        "type": "text",
+        "default": "1.2M views",
+        "description": "The views, whose number counts up (\"1.2M views\", \"12,400 views\"); empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "age",
+        "type": "text",
+        "default": "2 days ago",
+        "description": "How old the video is; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "length",
+        "type": "text",
+        "default": "12:48",
+        "description": "The length badge on the thumbnail; empty hides it.",
+        "max_length": 12
+      },
+      {
+        "name": "watched",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.35,
+        "description": "How far the watched bar along the thumbnail's bottom fills; 0 hides it."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "app-window",
+    "title": "App window",
+    "description": "A generic editing app window, 1080x780 with a clear background: a title bar with an export button, a media panel, a viewer showing a picture or video, and a timeline whose clips build in under a running playhead. Use it when the speaker talks about editing software, a desktop app or the old way of working (lay cross-out over it with the same placement to cross it out). Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "app",
+      "window",
+      "editor",
+      "software",
+      "timeline",
+      "screen",
+      "ui",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "app-window",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "media",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "What the viewer shows: a picture, or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Untitled project",
+        "description": "The project name in the title bar.",
+        "max_length": 60
+      },
+      {
+        "name": "button",
+        "type": "text",
+        "default": "Export",
+        "description": "The button at the right of the title bar; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "panel",
+        "type": "text",
+        "default": "Media",
+        "description": "The media panel's heading; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "timeline",
+        "type": "bool",
+        "default": true,
+        "description": "Show the timeline with its clips and playhead under the viewer."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "terminal",
+    "title": "Terminal",
+    "description": "A terminal window, 1080x700 with a clear background, dark by default: each step is typed behind a prompt, waits a moment and gets a green check mark, one after another. Use it for a sequence of steps, commands or an automated process (\"it analyzes, cuts, captions and exports\"). With the default four steps the last check lands at about 4.6 s; raise speed or hold for other counts. Above the head at scale 0.9, position [0, -0.29].",
+    "tags": [
+      "terminal",
+      "command",
+      "code",
+      "steps",
+      "typing",
+      "checklist",
+      "automation",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "terminal",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Terminal",
+        "description": "The title bar's text.",
+        "max_length": 40
+      },
+      {
+        "name": "steps",
+        "type": "texts",
+        "max_length": 6,
+        "default": [
+          "analyze talking-head.mp4",
+          "cut --silences --retakes",
+          "captions --style bold",
+          "export reel.mp4 --vertical"
+        ],
+        "description": "The lines typed, one after another, up to six."
+      },
+      {
+        "name": "prompt",
+        "type": "text",
+        "default": "$",
+        "description": "The prompt before every line.",
+        "max_length": 4
+      },
+      {
+        "name": "done",
+        "type": "text",
+        "default": "done",
+        "description": "The word beside each check mark; empty shows the mark alone.",
+        "max_length": 20
+      },
+      {
+        "name": "typing",
+        "type": "number",
+        "min": 5,
+        "max": 120,
+        "default": 40,
+        "description": "Characters typed per second."
+      }
+    ],
+    "defaults": {
+      "hold": 5.5,
+      "theme": "dark"
+    }
+  },
+  {
+    "name": "review-frame",
+    "title": "Review frame",
+    "description": "A full-screen review app around a vertical video, 1080x1920: a bar with the file's name and a share button, version pills, the video in a rounded window, a scrubber with comment markers, a comment and Approve and Request changes buttons. Use it when the speaker talks about feedback, reviews, versions or sending a cut to a client. media shows a picture or video in the window; open: true leaves the window clear so the speaker's own clip shows through: put that clip under the overlay at scale 0.575, position [0, -0.05]. Place it full screen at scale 1.",
+    "tags": [
+      "review",
+      "feedback",
+      "approve",
+      "versions",
+      "comment",
+      "client",
+      "frame",
+      "app",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "review-frame",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "media",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "What the video window shows when open is off: a picture, or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "open",
+        "type": "bool",
+        "default": false,
+        "description": "Leave the video window clear so a clip below shows through it (a full-frame 9:16 clip at scale 0.575, position [0, -0.05] fills it)."
+      },
+      {
+        "name": "file_name",
+        "type": "text",
+        "default": "Final cut.mp4",
+        "description": "The file's name in the top bar.",
+        "max_length": 60
+      },
+      {
+        "name": "subtitle",
+        "type": "text",
+        "default": "Edited 2 min ago",
+        "description": "The line under the file's name; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "share",
+        "type": "text",
+        "default": "Share",
+        "description": "The top bar's button; empty hides it.",
+        "max_length": 20
+      },
+      {
+        "name": "versions",
+        "type": "texts",
+        "max_length": 6,
+        "default": [
+          "V1",
+          "V2",
+          "V3"
+        ],
+        "description": "The version pills, up to six."
+      },
+      {
+        "name": "current",
+        "type": "number",
+        "min": 0,
+        "max": 6,
+        "default": 0,
+        "description": "The version shown as current, counted from 1; 0 picks the last.",
+        "integer": true
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": "2 comments",
+        "description": "The pill at the end of the versions row; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "commenter",
+        "type": "text",
+        "default": "Alex Morgan",
+        "description": "Who wrote the comment; their initials mark the scrubber.",
+        "max_length": 40
+      },
+      {
+        "name": "timestamp",
+        "type": "text",
+        "default": "0:12",
+        "description": "The time the comment points at; empty hides it.",
+        "max_length": 12
+      },
+      {
+        "name": "comment",
+        "type": "text",
+        "default": "Love the pacing. Can we trim the intro a little?",
+        "description": "The comment, up to two lines; empty hides the comment card.",
+        "max_length": 160
+      },
+      {
+        "name": "approve",
+        "type": "text",
+        "default": "Approve",
+        "description": "The accent button; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "changes",
+        "type": "text",
+        "default": "Request changes",
+        "description": "The other button; empty hides it.",
+        "max_length": 30
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "social-post",
+    "title": "Social post",
+    "description": "A generic social media post, 1080x1240 with a clear background: an avatar with a name, handle and time, the post's text, a picture, and like, comment and share counts; the heart fills with a burst while the counts go up. Use it for a post, a viral moment, engagement or audience reactions. No platform's look or marks. Above the head at scale 0.58, position [0, -0.29]; the top half of a split screen at scale 0.77, position [0, -0.25].",
+    "tags": [
+      "social",
+      "post",
+      "likes",
+      "comments",
+      "share",
+      "feed",
+      "heart",
+      "engagement",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "social-post",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "avatar",
+        "type": "slot",
+        "accepts": [
+          "image"
+        ],
+        "default": null,
+        "description": "The poster's picture; their initials on a gradient when empty."
+      },
+      {
+        "name": "image",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "The post's picture or video; abstract art when empty."
+      },
+      {
+        "name": "show_image",
+        "type": "bool",
+        "default": true,
+        "description": "Show the picture; false makes a text post."
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": "Your Name",
+        "description": "The poster's name.",
+        "max_length": 50
+      },
+      {
+        "name": "handle",
+        "type": "text",
+        "default": "@yourname",
+        "description": "The handle shown under the name; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "time",
+        "type": "text",
+        "default": "2h",
+        "description": "How long ago it was posted; empty hides it.",
+        "max_length": 20
+      },
+      {
+        "name": "text",
+        "type": "text",
+        "default": "Recorded one take, let the edit do the rest. Here is the whole workflow.",
+        "description": "The post's text, up to three lines; empty hides it.",
+        "max_length": 200
+      },
+      {
+        "name": "likes",
+        "type": "text",
+        "default": "2.4K",
+        "description": "The likes, counted up (\"2.4K\", \"12,400\"); empty hides the number.",
+        "max_length": 20
+      },
+      {
+        "name": "comments",
+        "type": "text",
+        "default": "186",
+        "description": "The comments, counted up; empty hides the number.",
+        "max_length": 20
+      },
+      {
+        "name": "shares",
+        "type": "text",
+        "default": "92",
+        "description": "The shares, counted up; empty hides the number.",
+        "max_length": 20
+      },
+      {
+        "name": "liked",
+        "type": "bool",
+        "default": true,
+        "description": "Fill the heart with a burst."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "quote-panel",
+    "title": "Quote panel",
+    "description": "A quote panel, 1080x760 with a clear background: a large quotation mark, the quote revealed word by word with one phrase marked in the accent colour, and its author with an avatar and role. Use it for a key sentence, a testimonial, a rule of thumb or something someone said. Above the head at scale 0.9, position [0, -0.29].",
+    "tags": [
+      "quote",
+      "testimonial",
+      "statement",
+      "words",
+      "highlight",
+      "author",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "quote-panel",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "quote",
+        "type": "text",
+        "default": "Your first draft is never the edit. The edit is what you cut.",
+        "description": "The quote, up to about four lines.",
+        "max_length": 200
+      },
+      {
+        "name": "highlight",
+        "type": "text",
+        "default": "what you cut",
+        "description": "Words of the quote to mark in the accent colour, where they first appear; empty marks none.",
+        "max_length": 80
+      },
+      {
+        "name": "author",
+        "type": "text",
+        "default": "Your Name",
+        "description": "Who said it; empty hides the author row with role.",
+        "max_length": 50
+      },
+      {
+        "name": "role",
+        "type": "text",
+        "default": "Video creator",
+        "description": "The author's role; empty hides it.",
+        "max_length": 50
+      },
+      {
+        "name": "avatar",
+        "type": "slot",
+        "accepts": [
+          "image"
+        ],
+        "default": null,
+        "description": "The author's picture; their initials on a gradient when empty."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "before-after",
+    "title": "Before and after",
+    "description": "A before and after card, 1080x760 with a clear background: two pictures or videos in one frame split by a handle that sweeps across to reveal the after side and springs back to the split, each side labelled. Use it for a transformation, an improvement, raw against edited, or old against new. With empty slots both sides show the same art, dull and soft before, vivid after. Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "before",
+      "after",
+      "comparison",
+      "compare",
+      "slider",
+      "transformation",
+      "result",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "before-after",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "before",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "The before side: a picture, or a video that plays from the entrance; dulled art when empty."
+      },
+      {
+        "name": "after",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "The after side: a picture, or a video that plays from the entrance; vivid art when empty."
+      },
+      {
+        "name": "before_label",
+        "type": "text",
+        "default": "Before",
+        "description": "The before side's label; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "after_label",
+        "type": "text",
+        "default": "After",
+        "description": "The after side's label; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "split",
+        "type": "number",
+        "min": 0.05,
+        "max": 0.95,
+        "default": 0.5,
+        "description": "Where the handle settles, as a fraction of the width from the left."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "reel-fan",
+    "title": "Reel fan",
+    "description": "Three to five vertical video cards, 1080x960 with a clear background: they rise as a stack and fan out with a spring, each with a view count that counts up. Use it for short videos, a series of reels, results across posts or going viral. Slots reel_1 to reel_5 take pictures or videos, left to right (abstract art when empty). Above the head at scale 0.76, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "reels",
+      "shorts",
+      "vertical",
+      "videos",
+      "views",
+      "fan",
+      "cards",
+      "phone",
+      "viral",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "reel-fan",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "count",
+        "type": "number",
+        "min": 3,
+        "max": 5,
+        "default": 5,
+        "description": "How many cards fan out.",
+        "integer": true
+      },
+      {
+        "name": "views",
+        "type": "texts",
+        "max_length": 5,
+        "default": [
+          "845K",
+          "1.2M",
+          "2.4M",
+          "530K",
+          "1.7M"
+        ],
+        "description": "The count on each card, left to right, counted up; an empty text hides that card's count."
+      },
+      {
+        "name": "icon",
+        "type": "choice",
+        "choices": [
+          "play",
+          "eye",
+          "heart"
+        ],
+        "default": "play",
+        "description": "The icon before each count."
+      },
+      {
+        "name": "spread",
+        "type": "number",
+        "min": 0,
+        "max": 25,
+        "default": 10,
+        "description": "Degrees between neighbouring cards when fanned out."
+      },
+      {
+        "name": "reel_1",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 1 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "reel_2",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 2 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "reel_3",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 3 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "reel_4",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 4 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "reel_5",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 5 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "menu-grid",
+    "title": "Menu grid",
+    "description": "A menu of tiles, 1080x1080 with a clear background: tiles fill a grid one by one while a counter counts them, then one tile is chosen with a ring and a check and the others dim. Use it for a choice among options, templates, styles, presets or a library of things. Slots tile_1 to tile_9 take pictures or videos (abstract art when empty), labels name the tiles. Above the head at scale 0.68, position [0, -0.29]; the top half of a split screen at scale 0.88, position [0, -0.25].",
+    "tags": [
+      "menu",
+      "grid",
+      "options",
+      "choices",
+      "templates",
+      "styles",
+      "pick",
+      "select",
+      "catalogue",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "menu-grid",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Pick a style",
+        "description": "The heading.",
+        "max_length": 50
+      },
+      {
+        "name": "unit",
+        "type": "text",
+        "default": "styles",
+        "description": "The word after the counter (\"9 styles\"); empty shows the number alone.",
+        "max_length": 20
+      },
+      {
+        "name": "columns",
+        "type": "number",
+        "min": 2,
+        "max": 4,
+        "default": 3,
+        "description": "Tiles across.",
+        "integer": true
+      },
+      {
+        "name": "rows",
+        "type": "number",
+        "min": 1,
+        "max": 4,
+        "default": 3,
+        "description": "Rows of tiles.",
+        "integer": true
+      },
+      {
+        "name": "labels",
+        "type": "texts",
+        "max_length": 16,
+        "default": [
+          "Bold",
+          "Clean",
+          "Retro",
+          "Neon",
+          "Minimal",
+          "Pop",
+          "Film",
+          "Mono",
+          "Vivid"
+        ],
+        "description": "The tiles' names, in reading order; tiles without one show none."
+      },
+      {
+        "name": "selected",
+        "type": "number",
+        "min": 0,
+        "max": 16,
+        "default": 5,
+        "description": "The tile chosen at the end, counted from 1 in reading order; 0 chooses none.",
+        "integer": true
+      },
+      {
+        "name": "tile_1",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 1 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_2",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 2 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_3",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 3 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_4",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 4 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_5",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 5 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_6",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 6 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_7",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 7 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_8",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 8 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tile_9",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Tile 9 in reading order: a picture or a video that plays from the entrance; abstract art when empty."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "storyboard-list",
+    "title": "Storyboard list",
+    "description": "A storyboard, 1080x1180 with a clear background: numbered lines, each with a 16:9 thumbnail, a quoted line and its time, sliding in one after another under a title and a count. Use it for a plan, a script, an outline, the structure of a video or a list of moments. Slots thumb_1 to thumb_5 take pictures or videos (abstract art when empty). The top half of a split screen at scale 0.8, position [0, -0.25]; above the head at scale 0.62, position [0, -0.29].",
+    "tags": [
+      "storyboard",
+      "list",
+      "scenes",
+      "script",
+      "outline",
+      "plan",
+      "quotes",
+      "numbered",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "storyboard-list",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Storyboard",
+        "description": "The heading.",
+        "max_length": 50
+      },
+      {
+        "name": "unit",
+        "type": "text",
+        "default": "scenes",
+        "description": "The word after the count (\"4 scenes\"); empty shows the number alone.",
+        "max_length": 20
+      },
+      {
+        "name": "quotes",
+        "type": "texts",
+        "max_length": 5,
+        "default": [
+          "Nobody watches past the first three seconds",
+          "So I cut every pause and retake",
+          "Then captions do the heavy lifting",
+          "And the music carries the ending"
+        ],
+        "description": "The lines, up to five, each shown in quotation marks on up to two lines."
+      },
+      {
+        "name": "times",
+        "type": "texts",
+        "max_length": 5,
+        "default": [
+          "0:04",
+          "0:12",
+          "0:27",
+          "0:41"
+        ],
+        "description": "The time beside each line; an empty text hides it."
+      },
+      {
+        "name": "thumb_1",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Line 1's thumbnail: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "thumb_2",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Line 2's thumbnail: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "thumb_3",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Line 3's thumbnail: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "thumb_4",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Line 4's thumbnail: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "thumb_5",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Line 5's thumbnail: a picture or a video that plays from the entrance; abstract art when empty."
+      }
+    ],
+    "defaults": {
+      "hold": 4
+    }
+  },
+  {
+    "name": "cross-out",
+    "title": "Cross out",
+    "description": "Red X marks (or strike lines) drawn on stroke by stroke with a punch, 1080x780 with a clear background, placed by fractions of the canvas. Use it to reject something on screen: lay it over another overlay with the same placement (set width and height to that overlay's canvas when it differs), or over the video itself to cross out an object. marks lists the marks' centres from the canvas's middle.",
+    "tags": [
+      "cross",
+      "x",
+      "no",
+      "wrong",
+      "strike",
+      "reject",
+      "mistake",
+      "red",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "cross-out",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "style",
+        "type": "choice",
+        "choices": [
+          "x",
+          "strike"
+        ],
+        "default": "x",
+        "description": "An X, or a strike line across."
+      },
+      {
+        "name": "marks",
+        "type": "points",
+        "min": -0.5,
+        "max": 0.5,
+        "max_length": 12,
+        "default": [
+          [
+            0,
+            0
+          ]
+        ],
+        "description": "The marks' centres as [x, y] fractions of the canvas from its middle (-0.5 to 0.5), drawn one after another."
+      },
+      {
+        "name": "size",
+        "type": "number",
+        "min": 0.02,
+        "max": 1,
+        "default": 0.62,
+        "description": "Each mark's size: an X's width as a fraction of the canvas's shorter side, a strike's length as a fraction of its width."
+      },
+      {
+        "name": "thickness",
+        "type": "number",
+        "min": 0.01,
+        "max": 0.4,
+        "default": 0.11,
+        "description": "The stroke's width as a fraction of the mark's size."
+      },
+      {
+        "name": "color",
+        "type": "color",
+        "default": "#F04438",
+        "description": "The marks' colour; a white edge and a shadow keep them clear on any picture."
+      }
+    ],
+    "defaults": {
+      "hold": 2.5
+    }
+  },
+  {
+    "name": "arrow-pointer",
+    "title": "Arrow pointer",
+    "description": "A curved arrow, 800x800 with a clear background, that draws on towards the canvas's middle, where its tip lands, with an optional label at its tail, then nudges at its target. Use it to point at something in the picture or at another overlay: place the clip so the canvas's middle is on the target (position = the target's position), at scale 0.5 to 0.7.",
+    "tags": [
+      "arrow",
+      "point",
+      "pointer",
+      "look",
+      "here",
+      "annotation",
+      "callout",
+      "highlight",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "arrow-pointer",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "label",
+        "type": "text",
+        "default": "Look here",
+        "description": "The label at the arrow's tail; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "from",
+        "type": "choice",
+        "choices": [
+          "top-left",
+          "top",
+          "top-right",
+          "right",
+          "bottom-right",
+          "bottom",
+          "bottom-left",
+          "left"
+        ],
+        "default": "top-left",
+        "description": "Where the arrow comes from, towards the middle."
+      },
+      {
+        "name": "length",
+        "type": "number",
+        "min": 0.12,
+        "max": 0.42,
+        "default": 0.36,
+        "description": "The arrow's length as a fraction of the canvas."
+      },
+      {
+        "name": "curve",
+        "type": "number",
+        "min": -1,
+        "max": 1,
+        "default": 0.35,
+        "description": "How much the arrow bends, and to which side; 0 is straight."
+      },
+      {
+        "name": "color",
+        "type": "color",
+        "default": "#2F6BFF",
+        "description": "The arrow's colour, edged in white."
+      }
+    ],
+    "defaults": {
+      "hold": 2.5
+    }
+  },
+  {
+    "name": "audio-chip",
+    "title": "Audio chip",
+    "description": "A microphone chip, 760x280 with a clear background: a pill with a microphone, a label, a blinking recording dot with a running timer and a live waveform. Use it when the speaker mentions a microphone, recording, voice, sound or audio. Above the head at scale 0.6, position [0, -0.33].",
+    "tags": [
+      "audio",
+      "microphone",
+      "mic",
+      "recording",
+      "voice",
+      "waveform",
+      "sound",
+      "podcast",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "audio-chip",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "label",
+        "type": "text",
+        "default": "Mic on",
+        "description": "The chip's label; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "REC",
+        "description": "The word beside the recording dot; empty shows the timer alone.",
+        "max_length": 12
+      },
+      {
+        "name": "timer",
+        "type": "bool",
+        "default": true,
+        "description": "Show a timer running from start_time."
+      },
+      {
+        "name": "start_time",
+        "type": "text",
+        "default": "0:00",
+        "description": "Where the timer starts (\"0:00\", \"1:24\").",
+        "max_length": 12
+      },
+      {
+        "name": "bars",
+        "type": "number",
+        "min": 4,
+        "max": 40,
+        "default": 18,
+        "description": "Bars in the waveform.",
+        "integer": true
+      },
+      {
+        "name": "level",
+        "type": "number",
+        "min": 0.05,
+        "max": 1,
+        "default": 0.8,
+        "description": "How loud the waveform looks."
+      }
+    ]
+  },
+  {
+    "name": "waveform-sync",
+    "title": "Waveform sync",
+    "description": "Two sound waves of the same recording, 1080x640 with a clear background: the lower one, out of step, slides into line with the upper one, a marker flashes across both and a chip changes from the offset to In sync. Use it for syncing a separate microphone with the camera, lining up audio or anything clicking into place. Above the head at scale 0.9, position [0, -0.29].",
+    "tags": [
+      "sync",
+      "audio",
+      "waveform",
+      "microphone",
+      "camera",
+      "align",
+      "sound",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "waveform-sync",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Syncing audio",
+        "description": "The heading.",
+        "max_length": 50
+      },
+      {
+        "name": "top_label",
+        "type": "text",
+        "default": "Camera",
+        "description": "The upper wave's label; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "bottom_label",
+        "type": "text",
+        "default": "Microphone",
+        "description": "The lower wave's label; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "offset_label",
+        "type": "text",
+        "default": "Offset 0.42 s",
+        "description": "The chip before the waves line up; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "synced_label",
+        "type": "text",
+        "default": "In sync",
+        "description": "The chip once they line up.",
+        "max_length": 30
+      },
+      {
+        "name": "offset",
+        "type": "number",
+        "min": -0.5,
+        "max": 0.5,
+        "default": 0.16,
+        "description": "How far out of step the lower wave starts, as a fraction of the lane's width."
+      },
+      {
+        "name": "top_color",
+        "type": "color",
+        "default": "#8C96A8",
+        "description": "The upper wave's colour; the lower one takes the accent."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "timeline-cut",
+    "title": "Timeline cut",
+    "description": "A timeline losing its dead parts, 1080x620 with a clear background: the cut parts are marked in red with scissors, shrink away while the kept clips close up, and the total length counts down from one time to another, ending in green with a done chip. Use it when the speaker talks about cutting silences, filler, retakes or making a video shorter. Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "timeline",
+      "cut",
+      "trim",
+      "silence",
+      "dead air",
+      "shorter",
+      "duration",
+      "edit",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "timeline-cut",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "label",
+        "type": "text",
+        "default": "Total length",
+        "description": "The label over the counter; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "from",
+        "type": "text",
+        "default": "6:24",
+        "description": "The length before the cut (\"6:24\", \"1:02:03\").",
+        "max_length": 12
+      },
+      {
+        "name": "to",
+        "type": "text",
+        "default": "1:15",
+        "description": "The length after it.",
+        "max_length": 12
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "Cutting dead air",
+        "description": "The chip while cutting; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "done",
+        "type": "text",
+        "default": "Tightened",
+        "description": "The chip once cut; empty hides it.",
+        "max_length": 30
+      },
+      {
+        "name": "segments",
+        "type": "number",
+        "min": 3,
+        "max": 25,
+        "default": 11,
+        "description": "Kept and cut parts along the timeline, alternating (an odd count).",
+        "integer": true
+      },
+      {
+        "name": "seed",
+        "type": "number",
+        "min": 0,
+        "max": 1000000,
+        "default": 4,
+        "description": "Picks the parts' widths: the same seed gives the same timeline.",
+        "integer": true
+      }
+    ],
+    "defaults": {
+      "hold": 4
+    }
+  },
+  {
+    "name": "progress-card",
+    "title": "Progress card",
+    "description": "A progress card, 1080x460 with a clear background: a title and status line, a percentage counting up, a bar filling with a running sheen, and step chips that tick off one by one as the bar passes them, the current one spinning. Use it for work in progress, a pipeline, rendering or exporting, or how far along something is. Above the head at scale 0.9, position [0, -0.3].",
+    "tags": [
+      "progress",
+      "loading",
+      "steps",
+      "status",
+      "percent",
+      "bar",
+      "pipeline",
+      "workflow",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "progress-card",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Building your edit",
+        "description": "The heading.",
+        "max_length": 50
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "About 30 seconds left",
+        "description": "The line under the heading; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "steps",
+        "type": "texts",
+        "max_length": 8,
+        "default": [
+          "Cut",
+          "Captions",
+          "Music",
+          "Color",
+          "Export"
+        ],
+        "description": "The steps, in order, up to eight; each takes an equal share of the bar."
+      },
+      {
+        "name": "progress",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.72,
+        "description": "Where the bar stops, from 0 to 1."
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "stat-counter",
+    "title": "Stat counter",
+    "description": "A big number, 900x560 with a clear background: it counts up to its value with a prefix and suffix in the accent colour, an accent line grows under it, a label explains it and a trend chip pops in. Use it for any figure the speaker says: results, growth, money, hours saved, percentages. Above the head at scale 0.75, position [0, -0.29].",
+    "tags": [
+      "number",
+      "stat",
+      "statistic",
+      "counter",
+      "metric",
+      "growth",
+      "percent",
+      "result",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "stat-counter",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "value",
+        "type": "number",
+        "min": -1000000000000,
+        "max": 1000000000000,
+        "default": 10,
+        "description": "The number counted up to."
+      },
+      {
+        "name": "from",
+        "type": "number",
+        "min": -1000000000000,
+        "max": 1000000000000,
+        "default": 0,
+        "description": "The number counting starts from."
+      },
+      {
+        "name": "decimals",
+        "type": "number",
+        "min": 0,
+        "max": 3,
+        "default": 0,
+        "description": "Decimal places shown.",
+        "integer": true
+      },
+      {
+        "name": "prefix",
+        "type": "text",
+        "default": "",
+        "description": "Text before the number, such as \"$\" or \"+\".",
+        "max_length": 8
+      },
+      {
+        "name": "suffix",
+        "type": "text",
+        "default": "x",
+        "description": "Text after the number, such as \"%\", \"K\" or \" hrs\".",
+        "max_length": 12
+      },
+      {
+        "name": "kicker",
+        "type": "text",
+        "default": "This month",
+        "description": "The small line above the number; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "label",
+        "type": "text",
+        "default": "faster editing",
+        "description": "What the number means; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "trend",
+        "type": "text",
+        "default": "+24% vs last month",
+        "description": "The trend chip; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "trend_up",
+        "type": "bool",
+        "default": true,
+        "description": "A green chip with an up arrow; false makes it red with a down arrow."
+      }
+    ]
+  },
+  {
+    "name": "bar-chart",
+    "title": "Bar chart",
+    "description": "A bar chart card, 1080x820 with a clear background: a title and subtitle, up to twelve bars growing one after another with their values counting up, the highlighted bar in the accent colour with a badge. Use it to compare numbers: views per video, before and after figures, growth over time. Above the head at scale 0.88, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+    "tags": [
+      "chart",
+      "bar",
+      "graph",
+      "data",
+      "comparison",
+      "growth",
+      "statistics",
+      "analytics",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "bar-chart",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Views per video",
+        "description": "The heading.",
+        "max_length": 50
+      },
+      {
+        "name": "subtitle",
+        "type": "text",
+        "default": "Last five uploads",
+        "description": "The line under the heading; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "labels",
+        "type": "texts",
+        "max_length": 12,
+        "default": [
+          "Mon",
+          "Tue",
+          "Wed",
+          "Thu",
+          "Fri"
+        ],
+        "description": "The bars' names, left to right."
+      },
+      {
+        "name": "values",
+        "type": "numbers",
+        "min": 0,
+        "max": 1000000000000,
+        "max_length": 12,
+        "default": [
+          12,
+          18,
+          9,
+          26,
+          41
+        ],
+        "description": "The bars' values, left to right, up to twelve; the tallest fills the chart."
+      },
+      {
+        "name": "highlight",
+        "type": "number",
+        "min": 0,
+        "max": 12,
+        "default": 0,
+        "description": "The bar in the accent colour, counted from 1; 0 picks the largest.",
+        "integer": true
+      },
+      {
+        "name": "badge",
+        "type": "text",
+        "default": "Best",
+        "description": "The badge over the highlighted bar; empty hides it.",
+        "max_length": 20
+      },
+      {
+        "name": "prefix",
+        "type": "text",
+        "default": "",
+        "description": "Text before each value, such as \"$\".",
+        "max_length": 8
+      },
+      {
+        "name": "suffix",
+        "type": "text",
+        "default": "K",
+        "description": "Text after each value, such as \"K\" or \"%\".",
+        "max_length": 8
+      },
+      {
+        "name": "decimals",
+        "type": "number",
+        "min": 0,
+        "max": 3,
+        "default": 0,
+        "description": "Decimal places of the values.",
+        "integer": true
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "clock-card",
+    "title": "Clock card",
+    "description": "A clock card, 760x900 with a clear background: the hands sweep from one time to another while an accent arc fills the time that passed, the time counts under the clock with a label, and a chip says how long it was. Use it when the speaker talks about time spent, time saved, hours of work or a deadline. Above the head at scale 0.57, position [0, -0.29].",
+    "tags": [
+      "clock",
+      "time",
+      "hours",
+      "duration",
+      "saved",
+      "fast",
+      "schedule",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "clock-card",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "from",
+        "type": "text",
+        "default": "9:00",
+        "description": "The time the hands start at, as hours and minutes on a 12 hour face.",
+        "max_length": 8
+      },
+      {
+        "name": "to",
+        "type": "text",
+        "default": "11:30",
+        "description": "The time they sweep to; earlier than from means past 12.",
+        "max_length": 8
+      },
+      {
+        "name": "label",
+        "type": "text",
+        "default": "Editing time",
+        "description": "The label under the time; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "spent",
+        "type": "text",
+        "default": "2.5 hours",
+        "description": "The chip saying how long it was; empty hides it.",
+        "max_length": 30
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "lower-third-card",
+    "title": "Lower third card",
+    "description": "A lower third card, 1080x360 with a clear background: a thumbnail with a play button, a small tag, a title, a subtitle and a call-to-action button with a nudging arrow; it slides in from the left and leaves to the left. Use it to point to a longer video, a resource, a product or the speaker's name and role. Low on the screen at scale 0.92, position [0, 0.3], clear of captions at 60% of the height.",
+    "tags": [
+      "lower third",
+      "title",
+      "name",
+      "cta",
+      "link",
+      "watch",
+      "promo",
+      "card",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "lower-third-card",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "thumbnail",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "The thumbnail: a picture, or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "tag",
+        "type": "text",
+        "default": "New video",
+        "description": "The small tag over the title; empty hides it.",
+        "max_length": 24
+      },
+      {
+        "name": "title",
+        "type": "text",
+        "default": "Full breakdown",
+        "description": "The title, on one line.",
+        "max_length": 40
+      },
+      {
+        "name": "subtitle",
+        "type": "text",
+        "default": "The whole workflow, step by step",
+        "description": "The line under the title; empty hides it.",
+        "max_length": 60
+      },
+      {
+        "name": "cta",
+        "type": "text",
+        "default": "Watch now",
+        "description": "The button; empty hides it.",
+        "max_length": 24
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "comment-cta",
+    "title": "Comment call to action",
+    "description": "A comment notification, 1080x380 with a clear background: it drops in from the top with an avatar, a name, a time and a message whose keyword sits in an accent pill that pops and pulses, and leaves upwards. Use it for the closing call to action (\"comment EDIT and I'll send it to you\"). message holds {keyword} where the pill goes. Above the head at scale 0.9, position [0, -0.3], or low at scale 0.9, position [0, 0.3].",
+    "tags": [
+      "comment",
+      "cta",
+      "call to action",
+      "keyword",
+      "notification",
+      "engagement",
+      "dm",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "comment-cta",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "avatar",
+        "type": "slot",
+        "accepts": [
+          "image"
+        ],
+        "default": null,
+        "description": "The commenter's picture; their initials on a gradient when empty."
+      },
+      {
+        "name": "header",
+        "type": "text",
+        "default": "New comment",
+        "description": "The notification's heading.",
+        "max_length": 40
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": "your.handle",
+        "description": "The commenter's name; empty hides it.",
+        "max_length": 40
+      },
+      {
+        "name": "time",
+        "type": "text",
+        "default": "now",
+        "description": "When it came; empty hides it.",
+        "max_length": 20
+      },
+      {
+        "name": "message",
+        "type": "text",
+        "default": "Comment {keyword} and I'll send you the full workflow",
+        "description": "The message; {keyword} marks where the keyword's pill goes (after the message when missing).",
+        "max_length": 160
+      },
+      {
+        "name": "keyword",
+        "type": "text",
+        "default": "EDIT",
+        "description": "The word in the accent pill; empty shows the message alone.",
+        "max_length": 24
+      }
+    ],
+    "defaults": {
+      "hold": 3.5
+    }
+  },
+  {
+    "name": "grid-stage",
+    "title": "Grid stage",
+    "description": "A full-screen background, 1080x1920: a glowing perspective grid floor (and optionally a ceiling) running towards a lit horizon, with picture cards arcing over the speaker's head and swaying. Use it to swap the background behind a cut-out speaker (key.subject) for a stylised stage on an emphatic line. Put it under the speaker's clip at scale 1; head_y sets the height the cards arc around. Slots card_1 to card_6 take pictures or videos (abstract art when empty).",
+    "tags": [
+      "background",
+      "grid",
+      "3d",
+      "perspective",
+      "stage",
+      "glow",
+      "cards",
+      "arc",
+      "synthwave",
+      "overlay",
+      "explainer"
+    ],
+    "folder": "grid-stage",
+    "kit": "overlay",
+    "params": [
+      {
+        "name": "cards",
+        "type": "number",
+        "min": 0,
+        "max": 6,
+        "default": 5,
+        "description": "How many cards arc round the head; 0 shows the stage alone.",
+        "integer": true
+      },
+      {
+        "name": "card_1",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 1 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "card_2",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 2 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "card_3",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 3 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "card_4",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 4 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "card_5",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 5 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "card_6",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "video"
+        ],
+        "default": null,
+        "description": "Card 6 from the left: a picture or a video that plays from the entrance; abstract art when empty."
+      },
+      {
+        "name": "background",
+        "type": "color",
+        "default": "#060A18",
+        "description": "The stage's base colour; light colours make a light stage."
+      },
+      {
+        "name": "glow",
+        "type": "number",
+        "min": 0,
+        "max": 2,
+        "default": 1,
+        "description": "How strong the horizon's glow is; 0 turns it off."
+      },
+      {
+        "name": "ceiling",
+        "type": "bool",
+        "default": false,
+        "description": "Add a grid ceiling, for a tunnel."
+      },
+      {
+        "name": "grid_speed",
+        "type": "number",
+        "min": 0,
+        "max": 4,
+        "default": 0.6,
+        "description": "Grid squares per second the floor runs towards the viewer; 0 stands still."
+      },
+      {
+        "name": "sway",
+        "type": "number",
+        "min": -20,
+        "max": 20,
+        "default": 4,
+        "description": "How far the cards sway round the head, in degrees."
+      },
+      {
+        "name": "head_y",
+        "type": "number",
+        "min": 0.1,
+        "max": 0.8,
+        "default": 0.34,
+        "description": "The height of the speaker's head as a fraction of the canvas from the top; the cards arc over it."
+      },
+      {
+        "name": "radius",
+        "type": "number",
+        "min": 0.15,
+        "max": 0.6,
+        "default": 0.4,
+        "description": "The arc's radius as a fraction of the canvas width."
+      }
+    ],
+    "defaults": {
+      "hold": 4,
+      "theme": "dark"
+    }
   }
 ]

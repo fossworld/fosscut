@@ -257,7 +257,8 @@ mod tests {
                 "threshold",
                 "color",
                 "tint",
-                "glow_only"
+                "glow_only",
+                "mix"
             ]
         );
         let sweep = crate::effect_type(SWEEP).unwrap();

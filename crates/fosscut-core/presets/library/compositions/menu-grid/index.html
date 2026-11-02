@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1080, fps=30, duration=3.9">
+<title>Menu grid</title>
+<!--
+  Made by FossCut for its library: a menu of tiles filling a grid one by one while a
+  counter counts them, then one tile is chosen with a ring and a check. Every frame is a
+  function of time, through window.fosscut.seek and the overlay kit. Free to use, also
+  commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 30px 30px 32px; }
+  #head { display: flex; align-items: center; gap: 16px; height: 64px; }
+  #glyph { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+  #title { flex: 1; font-size: 36px; min-width: 0; }
+  #counter { height: 52px; font-size: 24px; }
+  #grid { position: relative; margin-top: 24px; }
+  .tile { position: absolute; border-radius: 22px; overflow: visible; }
+  .tile .face { position: absolute; inset: 0; border-radius: 22px; overflow: hidden; }
+  .tile .media { border-radius: 22px; }
+  .tile .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 55%; background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.5) 100%); }
+  .tile .name { position: absolute; left: 16px; right: 16px; bottom: 14px; color: #fff; font-size: 26px; font-weight: 800; letter-spacing: -0.01em;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .ring { position: absolute; inset: -9px; border-radius: 30px; border: 6px solid var(--accent); }
+  .tile .tick { position: absolute; right: -12px; top: -12px; width: 52px; height: 52px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+                display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25); border: 4px solid var(--card); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

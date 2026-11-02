@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::is_default;
+use crate::text::Shadow;
 use crate::timeline::{Align, Color};
 
 /// One caption page: what is on screen at once.
@@ -96,7 +97,13 @@ pub struct CaptionStyle {
     /// Background box behind each line (off when omitted).
     #[serde(rename = "box", default, skip_serializing_if = "is_default")]
     pub background: TextBox,
-    /// Where the page sits inside the safe area (bottom when omitted).
+    /// A soft shadow cast by the words and their outline, as text styles have: colour (its
+    /// alpha is the shadow's opacity), offset and blur in em (off when omitted).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub shadow: Shadow,
+    /// Where the page sits: `top`, `middle` or `bottom` of the safe area, or the height of
+    /// its centre as a fraction of the canvas height, kept inside the safe area (bottom
+    /// when omitted).
     #[serde(default, skip_serializing_if = "is_default")]
     pub placement: Placement,
     /// Animation, evaluated per frame from word times.
@@ -183,6 +190,7 @@ impl Default for CaptionStyle {
             uppercase: false,
             stroke: Stroke::default(),
             background: TextBox::default(),
+            shadow: Shadow::default(),
             placement: Placement::default(),
             animators: Vec::new(),
             translation: TranslationStyle::default(),
@@ -321,9 +329,11 @@ impl Default for TextBox {
     }
 }
 
-/// Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+/// Where a caption page sits inside the canvas's safe area (ADR-0021 item 5): a named
+/// place, or the height of the page's centre. In JSON a name (`"bottom"`) or a number
+/// (`0.6`).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(from = "PlacementValue", into = "PlacementValue")]
 pub enum Placement {
     /// At the top of the safe area.
     Top,
@@ -332,6 +342,63 @@ pub enum Placement {
     /// At the bottom of the safe area.
     #[default]
     Bottom,
+    /// The page's centre at this fraction of the canvas height, from 0 (top) to 1
+    /// (bottom); the page is kept inside the safe area.
+    Height(f64),
+}
+
+/// How [`Placement`] is written.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+enum PlacementValue {
+    Named(PlacementName),
+    Height(f64),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PlacementName {
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl From<PlacementValue> for Placement {
+    fn from(value: PlacementValue) -> Placement {
+        match value {
+            PlacementValue::Named(PlacementName::Top) => Placement::Top,
+            PlacementValue::Named(PlacementName::Middle) => Placement::Middle,
+            PlacementValue::Named(PlacementName::Bottom) => Placement::Bottom,
+            PlacementValue::Height(height) => Placement::Height(height),
+        }
+    }
+}
+
+impl From<Placement> for PlacementValue {
+    fn from(placement: Placement) -> PlacementValue {
+        match placement {
+            Placement::Top => PlacementValue::Named(PlacementName::Top),
+            Placement::Middle => PlacementValue::Named(PlacementName::Middle),
+            Placement::Bottom => PlacementValue::Named(PlacementName::Bottom),
+            Placement::Height(height) => PlacementValue::Height(height),
+        }
+    }
+}
+
+impl JsonSchema for Placement {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Placement".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Where a caption page sits: top, middle or bottom of the safe area, or the height of its centre as a fraction of the canvas height (0.6 is a little below the middle), kept inside the safe area.",
+            "anyOf": [
+                { "type": "string", "enum": ["top", "middle", "bottom"] },
+                { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+            ]
+        })
+    }
 }
 
 /// The safe area of a canvas as fractions of its width and height: left, top, right and
@@ -573,6 +640,23 @@ pub struct WordEmphasis {
     pub color: Color,
     /// Scale of emphasised words.
     pub scale: f64,
+    /// How far emphasised words pop up as they start (1, the default, is no pop): they
+    /// grow to this scale halfway through [`EMPHASIS_POP_MS`] and back.
+    #[serde(skip_serializing_if = "is_one")]
+    pub pop: f64,
+    /// A box behind each emphasised word; none when omitted.
+    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
+    pub word_box: Option<WordBox>,
+    /// Corner brackets around each emphasised word (and its box); none when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brackets: Option<Brackets>,
+}
+
+/// How long an emphasised word's pop lasts from its start, in milliseconds.
+pub const EMPHASIS_POP_MS: u32 = 240;
+
+fn is_one(value: &f64) -> bool {
+    *value == 1.0
 }
 
 impl Default for WordEmphasis {
@@ -580,6 +664,57 @@ impl Default for WordEmphasis {
         WordEmphasis {
             color: yellow(),
             scale: 1.1,
+            pop: 1.0,
+            word_box: None,
+            brackets: None,
+        }
+    }
+}
+
+/// A box behind one word, drawn at the word's size and scale.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct WordBox {
+    /// Its fill colour.
+    pub color: Color,
+    /// Space around the word as a fraction of the font size, from 0 to 1.
+    pub padding: f64,
+    /// Corner radius as a fraction of the box height, from 0 (square) to 0.5 (round ends).
+    pub radius: f64,
+}
+
+impl Default for WordBox {
+    fn default() -> WordBox {
+        WordBox {
+            color: Color::parse("#2F6BFF").unwrap_or_default(),
+            padding: 0.2,
+            radius: 0.15,
+        }
+    }
+}
+
+/// Four corner brackets around a word, like a viewfinder's.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct Brackets {
+    /// Their colour.
+    pub color: Color,
+    /// Each arm's length as a fraction of the font size, from 0.05 to 2.
+    pub length: f64,
+    /// Line thickness as a fraction of the font size, from 0.01 to 0.5.
+    pub thickness: f64,
+    /// Space between the word's box (or the word) and the brackets, as a fraction of the
+    /// font size, from 0 to 1.
+    pub gap: f64,
+}
+
+impl Default for Brackets {
+    fn default() -> Brackets {
+        Brackets {
+            color: yellow(),
+            length: 0.3,
+            thickness: 0.07,
+            gap: 0.1,
         }
     }
 }

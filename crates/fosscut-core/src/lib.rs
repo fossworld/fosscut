@@ -92,8 +92,8 @@ pub use looks::{Look, LookEffect, look, looks};
 pub use presets::{
     CaptionPreset, LibraryVisual, LineLook, ProjectTemplate, TemplateCanvas, TemplateElement,
     TemplateLine, TemplateReveal, TextStylePreset, TitleTemplate, VisualKind, caption_animators,
-    caption_preset, caption_presets, project_template, project_templates, text_style_preset,
-    text_style_presets, text_template, text_templates, visual, visuals,
+    caption_preset, caption_preset_paging, caption_presets, project_template, project_templates,
+    text_style_preset, text_style_presets, text_template, text_templates, visual, visuals,
 };
 pub use session::Session;
 

@@ -61,6 +61,19 @@ pub const SKILLS: &[Skill] = &[
         ],
     },
     Skill {
+        name: "talking-head-reel",
+        files: &[
+            (
+                "SKILL.md",
+                include_str!("../../../skills/talking-head-reel/SKILL.md"),
+            ),
+            (
+                "references/visuals.md",
+                include_str!("../../../skills/talking-head-reel/references/visuals.md"),
+            ),
+        ],
+    },
+    Skill {
         name: "talking-head-cleanup",
         files: &[(
             "SKILL.md",

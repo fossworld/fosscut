@@ -1677,6 +1677,7 @@ dependencies = [
  "fosscut-audio",
  "fosscut-core",
  "fosscut-engine",
+ "fosscut-mcp",
  "fosscut-model",
  "fosscut-render",
  "fosscut-time",

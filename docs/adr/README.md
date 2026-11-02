@@ -48,10 +48,11 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0040](0040-render-3d-objects-through-the-camera.md) | Render lit 3D objects through the timeline's camera | Proposed |
 | [0041](0041-keep-graphics-colours-at-their-code-values.md) | Keep graphics colours at their code values | Proposed |
 | [0042](0042-ship-threejs-scene-templates-as-web-compositions.md) | Ship Three.js scene templates as web compositions | Proposed |
+| [0043](0043-run-the-users-own-agent-from-the-desktop.md) | Run the user's own agent from the desktop | Proposed |
 
 ## Reading order
 
-- **Product shape:** 0002, 0006, 0007, 0013, 0022, 0031.
+- **Product shape:** 0002, 0006, 0007, 0013, 0022, 0031, 0043.
 - **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027, 0028, 0029, 0036.
 - **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026, 0030, 0032, 0033, 0034, 0035, 0037, 0038, 0039, 0040, 0041, 0042.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.

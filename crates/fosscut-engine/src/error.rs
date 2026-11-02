@@ -302,6 +302,23 @@ pub enum EngineError {
         /// The longest length asked for, in seconds.
         max_seconds: f64,
     },
+    /// A separate recording's sound matched the camera's too weakly to place it.
+    #[error(
+        "the recording matches the camera's sound too weakly to sync it (confidence {confidence:.2}, best offset {offset_seconds:.3} s)"
+    )]
+    SyncUncertain {
+        /// The best offset found, in seconds: the recording's sound at `t` is the camera's
+        /// at `t + offset_seconds`.
+        offset_seconds: f64,
+        /// How sure the match is, from 0 to 1; 0.3 is needed.
+        confidence: f64,
+    },
+    /// Words asked to be emphasised are not among the captioned words.
+    #[error("these words to emphasise are not in the captions: {}", words.join(", "))]
+    EmphasisNotFound {
+        /// The words not found, as given.
+        words: Vec<String>,
+    },
     /// Rendering, decoding, mixing or encoding failed.
     #[error("{message}")]
     Failed {
@@ -314,6 +331,10 @@ pub enum EngineError {
     /// `fosscut.web.*` code.
     #[error("{0}")]
     Web(crate::web::WebError),
+    /// The user's own agent could not be found, run or finish (ADR-0043), with its own
+    /// `fosscut.agent.*` code.
+    #[error("{0}")]
+    Agent(crate::agent::AgentError),
 }
 
 impl EngineError {
@@ -360,8 +381,11 @@ impl EngineError {
             EngineError::NoBeats { .. } => "fosscut.beats.none",
             EngineError::NoSubject { .. } => "fosscut.reframe.no_subject",
             EngineError::NoShortCandidates { .. } => "fosscut.shorts.no_candidates",
+            EngineError::SyncUncertain { .. } => "fosscut.audio.sync_uncertain",
+            EngineError::EmphasisNotFound { .. } => "fosscut.captions.emphasis_not_found",
             EngineError::Failed { code, .. } => code,
             EngineError::Web(error) => error.code(),
+            EngineError::Agent(error) => error.code(),
         }
     }
 
@@ -486,7 +510,14 @@ impl EngineError {
             EngineError::NoShortCandidates { .. } => Some(
                 "Lower min_seconds or raise max_seconds, or choose a longer clip; candidates start and end at sentence ends in its transcript.".into(),
             ),
+            EngineError::SyncUncertain { .. } => Some(
+                "Check that the recording and the camera captured the same moment with sound; give max_offset_seconds when you know roughly how far apart they started, or place the recording yourself with clip.add.".into(),
+            ),
+            EngineError::EmphasisNotFound { .. } => Some(
+                "Give words as the transcript has them (case and punctuation do not matter), with at inside the clip when a word is said more than once; media_analyze with the transcript lists the words.".into(),
+            ),
             EngineError::Web(error) => error.hint(),
+            EngineError::Agent(error) => error.hint(),
             _ => None,
         }
     }
@@ -576,7 +607,17 @@ impl EngineError {
                 "min_seconds": min_seconds,
                 "max_seconds": max_seconds,
             }),
+            EngineError::SyncUncertain {
+                offset_seconds,
+                confidence,
+            } => json!({
+                "offset_seconds": offset_seconds,
+                "confidence": confidence,
+                "minimum": crate::motion::SYNC_CONFIDENCE,
+            }),
+            EngineError::EmphasisNotFound { words } => json!({ "words": words }),
             EngineError::Web(error) => error.details(),
+            EngineError::Agent(error) => error.details(),
             _ => Value::Null,
         }
     }
@@ -655,6 +696,16 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
             "fosscut.reframe.no_subject",
             "No subject was found in any frame of the clip: no person in its pose analysis, an empty matte, or a region lost at once.",
             "Frame the clip yourself with clip.set, or follow another source (person, subject or region).",
+        ),
+        entry(
+            "fosscut.audio.sync_uncertain",
+            "A separate recording's sound matches the camera's too weakly (confidence under 0.3) to place it; nothing was changed.",
+            "Check both captured the same moment, give max_offset_seconds, or place the recording with clip.add at details.offset_seconds.",
+        ),
+        entry(
+            "fosscut.captions.emphasis_not_found",
+            "Words to emphasise when generating captions are not among the captioned words; nothing was changed.",
+            "Give the words as the transcript has them (details.words lists those missing), with at when a word is said more than once.",
         ),
         entry(
             "fosscut.shorts.no_candidates",
@@ -859,6 +910,7 @@ pub fn engine_error_catalogue() -> Vec<ErrorCode> {
     ]
     .into_iter()
     .chain(crate::web::error_catalogue())
+    .chain(crate::agent::error_catalogue())
     .collect()
 }
 
@@ -1527,6 +1579,11 @@ mod tests {
                 min_seconds: 15.0,
                 max_seconds: 60.0,
             },
+            EngineError::SyncUncertain {
+                offset_seconds: 0.0,
+                confidence: 0.1,
+            },
+            EngineError::EmphasisNotFound { words: Vec::new() },
         ];
         for error in &variants {
             assert!(

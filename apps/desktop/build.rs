@@ -80,6 +80,12 @@ fn main() {
         "remotion_start",
         "remotion_status",
         "remotion_cancel",
+        "agent_video_pick",
+        "agent_project",
+        "agent_find",
+        "agent_start",
+        "agent_status",
+        "agent_cancel",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

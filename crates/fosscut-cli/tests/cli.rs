@@ -923,6 +923,7 @@ fn skills_install_into_agent_folders() {
             "beat-sync",
             "long-to-shorts",
             "motion-graphics",
+            "talking-head-reel",
             "talking-head-cleanup",
             "vertical-reframe",
             "viral-captions"

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=700, fps=30, duration=5.9">
+<title>Terminal</title>
+<!--
+  Made by FossCut for its library: a terminal window that types its steps one after
+  another, each finished with a check mark. Every frame is a function of time, through
+  window.fosscut.seek and the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; }
+  #lines { position: relative; margin-top: 64px; padding: 30px 36px 32px; }
+  .row { position: relative; display: flex; align-items: center; height: 66px; font-size: 31px; }
+  .prompt { flex: none; width: 40px; font-weight: 800; color: var(--accent); }
+  .text { flex: 1; min-width: 0; white-space: pre; overflow: hidden; color: var(--ink); }
+  .caret { display: inline-block; width: 15px; height: 36px; margin-left: 4px; vertical-align: -6px; border-radius: 3px; background: var(--accent); }
+  .state { flex: none; position: relative; width: 150px; height: 46px; margin-left: 16px; }
+  .wait { position: absolute; right: 0; top: 0; height: 46px; display: flex; gap: 8px; align-items: center; }
+  .wait i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .done { position: absolute; right: 0; top: 0; height: 46px; display: flex; align-items: center; gap: 10px; font-size: 23px; font-weight: 700; color: var(--good); }
+  .done .tick { width: 42px; height: 42px; border-radius: 50%; background: var(--good); color: #fff; display: flex; align-items: center; justify-content: center; }
+  :root[data-theme="dark"] #card { background: #0E1219; }
+  :root[data-theme="dark"] .window-bar { background: #151A23; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

@@ -623,7 +623,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
     for older in [
         "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-        "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0",
+        "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0",
     ] {
         manifest["format_version"] = older.into();
         store
@@ -634,7 +634,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.16.0");
+    assert_eq!(FORMAT_VERSION, "0.17.0");
 }
 
 #[test]
@@ -711,6 +711,86 @@ fn caption_rules_report_their_codes() {
         assert!(!animator.enabled());
     }
     assert!(serde_json::from_str::<Animator>(r#"{ "type": "word.wobble" }"#).is_err());
+}
+
+#[test]
+fn reel_caption_styles_round_trip_and_are_checked() {
+    use serde_json::json;
+    // Styles written before shadows, numeric placements and keyword boxes read unchanged
+    // and write back the same, sparse.
+    let older = json!({ "weight": "black", "placement": "top",
+        "animators": [ { "type": "word.emphasis", "version": 1, "enabled": true,
+                         "params": { "color": "#FF0000", "scale": 1.2 } } ] });
+    let style: CaptionStyle = serde_json::from_value(older.clone()).unwrap();
+    assert_eq!(style.placement, Placement::Top);
+    assert!(!style.shadow.enabled);
+    assert_eq!(serde_json::to_value(&style).unwrap(), older);
+
+    // The new look: a shadow, the page's centre at 0.6 of the height, keywords boxed and
+    // bracketed with a pop.
+    let reel = json!({ "shadow": { "enabled": true, "color": "#00000099", "blur": 0.25 },
+        "placement": 0.6,
+        "animators": [ { "type": "word.emphasis", "version": 1, "enabled": true,
+            "params": { "color": "#FFFFFF", "scale": 1.0, "pop": 1.15,
+                        "box": { "color": "#2F6BFF" },
+                        "brackets": { "color": "#FFD60A", "length": 0.4 } } } ] });
+    let style: CaptionStyle = serde_json::from_value(reel.clone()).unwrap();
+    assert_eq!(style.placement, Placement::Height(0.6));
+    assert_eq!(
+        style.shadow.offset,
+        [0.06, 0.06],
+        "unset fields keep their defaults"
+    );
+    let Animator::WordEmphasis(emphasis) = &style.animators[0] else {
+        panic!("word.emphasis");
+    };
+    assert_eq!(emphasis.params.pop, 1.15);
+    let word_box = emphasis.params.word_box.clone().unwrap();
+    assert_eq!((word_box.padding, word_box.radius), (0.2, 0.15));
+    let brackets = emphasis.params.brackets.clone().unwrap();
+    assert_eq!((brackets.length, brackets.thickness), (0.4, 0.07));
+    let back = serde_json::to_value(&style).unwrap();
+    assert_eq!(back["placement"], json!(0.6));
+    assert_eq!(
+        back["shadow"],
+        json!({ "enabled": true, "color": "#00000099", "blur": 0.25 })
+    );
+    let params = &back["animators"][0]["params"];
+    assert_eq!(
+        params["box"],
+        json!({ "color": "#2F6BFF", "padding": 0.2, "radius": 0.15 })
+    );
+    assert_eq!(params["brackets"]["length"], json!(0.4));
+    assert_eq!(serde_json::from_value::<CaptionStyle>(back).unwrap(), style);
+    for name in ["top", "middle", "bottom"] {
+        let placement: Placement = serde_json::from_value(json!(name)).unwrap();
+        assert_eq!(serde_json::to_value(placement).unwrap(), json!(name));
+    }
+    assert!(serde_json::from_value::<Placement>(json!("left")).is_err());
+    assert!(serde_json::from_value::<CaptionStyle>(json!({ "shade": {} })).is_err());
+
+    // A project with the new look loads and saves the same.
+    let mut project = captioned_project();
+    caption_track(&mut project).caption_style = Some(style);
+    assert!(validate(&project).is_empty(), "{:?}", validate(&project));
+    let mut store = MemoryStore::new();
+    project.save_all(&mut store).unwrap();
+    assert_eq!(Project::load(&store).unwrap(), project);
+
+    // Values out of range are reported.
+    let codes = |project: &Project| -> Vec<String> {
+        validate(project).into_iter().map(|i| i.code).collect()
+    };
+    let mut wrong = project.clone();
+    let style = caption_track(&mut wrong).caption_style.as_mut().unwrap();
+    style.placement = Placement::Height(1.5);
+    style.shadow.blur = 2.0;
+    let Animator::WordEmphasis(emphasis) = &mut style.animators[0] else {
+        unreachable!()
+    };
+    emphasis.params.pop = 0.0;
+    emphasis.params.brackets.as_mut().unwrap().thickness = 0.0;
+    assert_eq!(codes(&wrong), ["fosscut.model.caption_style"; 4]);
 }
 
 #[test]

@@ -9,6 +9,7 @@ import {
   PanelRight,
   Proportions,
   Settings as Gear,
+  Sparkles,
   Sun,
   SunMoon,
   Upload,
@@ -35,6 +36,7 @@ function AppMenu({ editor }: { editor: Editor }) {
       buttonClassName="logo-button"
       items={[
         { id: "projects", label: t("app.menu.projects"), icon: FolderOpen, onSelect: () => void editor.close() },
+        { id: "agent", label: t("agent.menu"), icon: Sparkles, onSelect: () => void editor.openAgent() },
         { id: "settings", label: t("app.settings"), icon: Gear, separated: true, onSelect: () => editor.openSettings() },
         { id: "shortcuts", label: t("app.menu.shortcuts"), icon: Keyboard, onSelect: () => editor.openSettings("shortcuts") },
         ...themes.map((choice, index) => ({

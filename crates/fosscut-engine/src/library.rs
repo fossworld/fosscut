@@ -263,6 +263,109 @@ pub fn sound_media(bundle: &Path, name: &str) -> Result<Value, EngineError> {
     }))
 }
 
+/// The longest music bed [`music_bed_media`] writes: ten minutes.
+pub const MAX_BED: fosscut_time::Flicks = fosscut_time::Flicks::from_millis(600_000);
+
+/// How long the end of a music bed fades out: half a second.
+const BED_FADE_SECONDS: f64 = 0.5;
+
+/// Music loop `name` repeated back to back to last exactly `length`, its last half second
+/// faded out (the last repeat trimmed where the length ends), written into the bundle's
+/// library folder once per length. Returns the `media.add` arguments that import it, so a
+/// bed of any length is one clip and one asset.
+pub fn music_bed_media(
+    bundle: &Path,
+    name: &str,
+    length: fosscut_time::Flicks,
+) -> Result<Value, EngineError> {
+    let is_music = fosscut_audio::synth::sounds()
+        .iter()
+        .any(|s| s.name == name && s.kind == fosscut_audio::synth::SoundKind::Music);
+    if !is_music {
+        return Err(EngineError::InvalidArguments {
+            message: format!("{name} is not a music loop; only music fills a length"),
+        });
+    }
+    if !length.is_positive() || length > MAX_BED {
+        return Err(EngineError::InvalidArguments {
+            message: format!(
+                "a music bed lasts more than 0 s and at most {} s, not {} s",
+                MAX_BED.as_seconds_f64(),
+                length.as_seconds_f64()
+            ),
+        });
+    }
+    let samples =
+        fosscut_audio::synth::render(name, RATE).ok_or_else(|| EngineError::InvalidArguments {
+            message: format!("the library has no sound {name:?}"),
+        })?;
+    let frames = (i128::from(length.get()) * i128::from(RATE)
+        / i128::from(fosscut_time::FLICKS_PER_SECOND)) as usize;
+    let bed = fill(
+        &samples,
+        2,
+        frames,
+        (BED_FADE_SECONDS * f64::from(RATE)) as usize,
+    );
+    let millis = (length.as_seconds_f64() * 1000.0).round() as i64;
+    let relative = format!("{FOLDER}{name}-{millis}ms.wav");
+    let path = bundle.join(&relative);
+    let bytes = fosscut_audio::wav::wav_bytes(&bed, 2, RATE);
+    if std::fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| EngineError::InvalidArguments {
+                message: format!("cannot create {}: {e}", parent.display()),
+            })?;
+        }
+        std::fs::write(&path, &bytes).map_err(|e| EngineError::InvalidArguments {
+            message: format!("cannot write {}: {e}", path.display()),
+        })?;
+    }
+    let identity = crate::import::identity(&path).map_err(|e| EngineError::Failed {
+        code: e.code,
+        message: e.message,
+    })?;
+    let duration = fosscut_time::Flicks::new(
+        (frames as i128 * i128::from(fosscut_time::FLICKS_PER_SECOND) / i128::from(RATE)) as i64,
+    );
+    let seconds = format!("{}", (length.as_seconds_f64() * 1000.0).round() / 1000.0);
+    Ok(json!({
+        "name": format!("{name} {seconds}s.wav"),
+        "kind": "audio",
+        "path": { "relative": relative },
+        "identity": identity,
+        "info": {
+            "duration": duration.get(),
+            "container": "wav",
+            "audio": { "sample_rate": RATE, "channels": 2, "codec": "pcm_s16le" },
+        },
+    }))
+}
+
+/// `loop_samples` (interleaved, `channels` per frame) repeated back to back for `frames`
+/// frames, the last `fade` frames faded out on a quarter cosine.
+fn fill(loop_samples: &[f32], channels: usize, frames: usize, fade: usize) -> Vec<f32> {
+    let length = loop_samples.len() / channels.max(1);
+    if length == 0 {
+        return vec![0.0; frames * channels];
+    }
+    let mut out = Vec::with_capacity(frames * channels);
+    for frame in 0..frames {
+        let at = (frame % length) * channels;
+        out.extend_from_slice(&loop_samples[at..at + channels]);
+    }
+    let fade = fade.min(frames);
+    for i in 0..fade {
+        let left = (fade - i) as f64 / fade as f64;
+        let gain = (left * std::f64::consts::FRAC_PI_2).sin() as f32;
+        let frame = frames - fade + i;
+        for sample in &mut out[frame * channels..(frame + 1) * channels] {
+            *sample *= gain;
+        }
+    }
+    out
+}
+
 /// True for the items that become media: sounds and music, device frames, drawings and web
 /// compositions. [`media_args`] writes them into the bundle and gives the `media.add`
 /// arguments; `clip.add` then places the asset.
@@ -996,6 +1099,50 @@ mod tests {
             modified
         );
         assert!(sound_media(&bundle, "no-such-sound").is_err());
+        std::fs::remove_dir_all(&bundle).unwrap();
+    }
+
+    #[test]
+    fn loops_fill_a_length_back_to_back_and_fade_at_the_end() {
+        // A loop of four stereo frames, filled to ten with a fade over the last two.
+        let samples: Vec<f32> = (0..8).map(|i| 0.1 * (i / 2 + 1) as f32).collect();
+        let filled = fill(&samples, 2, 10, 2);
+        assert_eq!(filled.len(), 20);
+        assert_eq!(&filled[..8], &samples[..], "the loop as it is");
+        assert_eq!(&filled[8..12], &samples[..4], "then again from its start");
+        assert_eq!(
+            filled[16], samples[0],
+            "the fade's first frame keeps full level"
+        );
+        let last = filled[18] / samples[2];
+        assert!(
+            (last - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+            "{last}"
+        );
+        assert!(fill(&[], 2, 3, 1).iter().all(|s| *s == 0.0));
+
+        let bundle =
+            std::env::temp_dir().join(format!("fosscut-library-bed-{}", std::process::id()));
+        std::fs::create_dir_all(&bundle).unwrap();
+        let music = search(Some("music"), None)[0].name.clone();
+        let length = fosscut_time::Flicks::from_seconds(60).unwrap();
+        let args = music_bed_media(&bundle, &music, length).unwrap();
+        assert_eq!(args["info"]["duration"], length.get());
+        let relative = format!("{FOLDER}{music}-60000ms.wav");
+        assert_eq!(args["path"]["relative"], relative);
+        let bytes = std::fs::read(bundle.join(&relative)).unwrap();
+        // 60 s of 16-bit stereo at 48 kHz after the 44-byte header.
+        assert_eq!(bytes.len(), 44 + 60 * 48_000 * 4);
+        assert_eq!(args["name"], format!("{music} 60s.wav"));
+        for (name, seconds) in [(music.as_str(), 0), (music.as_str(), 601), ("whoosh", 10)] {
+            let error = music_bed_media(
+                &bundle,
+                name,
+                fosscut_time::Flicks::from_seconds(seconds).unwrap(),
+            )
+            .unwrap_err();
+            assert_eq!(error.code(), "fosscut.request.invalid_arguments");
+        }
         std::fs::remove_dir_all(&bundle).unwrap();
     }
 

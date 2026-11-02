@@ -1,4 +1,4 @@
-import { Bot, Clock, FolderOpen, Moon, Plus, RotateCcw, Settings as Gear, Sun, Trash2, Undo2, X } from "lucide-react";
+import { Bot, Clock, FolderOpen, Moon, Plus, RotateCcw, Settings as Gear, Sparkles, Sun, Trash2, Undo2, X } from "lucide-react";
 import { useState } from "react";
 
 import type { ProjectSummary } from "../engine/types";
@@ -98,6 +98,16 @@ export function Start({ editor, state }: { editor: Editor; state: EditorState })
             <section className="start-new" aria-label={t("app.start.new")}>
               <h1>{t("app.start.title")}</h1>
               <div className="new-cards">
+                <button type="button" className="new-card ai" onClick={() => void editor.pickAiVideo()} title={t("agent.start.card.help")}>
+                  <span className="new-art">
+                    <Glyph icon={Sparkles} size="lg" />
+                    <span className="plus">
+                      <Glyph icon={Plus} size="sm" />
+                    </span>
+                  </span>
+                  <span className="new-name">{t("agent.start.card")}</span>
+                  <span className="new-detail">{t("agent.start.card.detail")}</span>
+                </button>
                 {ASPECTS.map((aspect) => (
                   <button
                     key={aspect.id}
@@ -124,6 +134,7 @@ export function Start({ editor, state }: { editor: Editor; state: EditorState })
                   <span className="new-detail">{t("app.start.open.detail")}</span>
                 </button>
               </div>
+              <p className="hint start-drop">{t("agent.start.drop")}</p>
             </section>
             <section className="start-recent" aria-label={t("app.start.recent")}>
               <header className="start-recent-head">

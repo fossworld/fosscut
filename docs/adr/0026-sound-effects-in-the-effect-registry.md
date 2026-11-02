@@ -59,3 +59,7 @@ FossCut already has a registry of effect types with parameter schemas (ADR-0011 
 - Before Accepted:
   - **Listening test:** on recorded speech with room noise, the denoised result sounds better than the original.
   - **Speed:** effects-heavy preview starts stay under 150 ms on the reference laptop.
+
+## Implementation notes
+
+- **Clips with volume keyframes** (format 0.17.0): normalization measures such a clip without its volume keyframes, at volume 1, and scales the keyframes so the loudest reaches the volume found (or 1 with a limiter), keeping their shape. Music ducked under speech ([ADR-0034](0034-plan-shorts-reframes-and-beat-edits-from-measurements.md), `fosscut_engine::duck`) can therefore be leveled before or after ducking; each clip's result counts the `keyframes` scaled.

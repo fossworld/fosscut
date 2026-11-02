@@ -698,11 +698,15 @@ fn field_at(uv: vec2f) -> vec4f {
 
 // How much of the subject is at a pixel whose matte is `m`, for threshold `t`: the edge falls
 // at the threshold; values around it keep the matte's own softness, and the band narrows
-// towards either end so 0 keeps everything and 1 only solid subject.
+// towards either end so 0 keeps everything and 1 only solid subject. Near the ends the band
+// cannot narrow below its floor, so it moves down by what it lacks: at 0 it ends at 0, where
+// an empty matte is still kept in full, and at 1 it ends at 1, where a solid one is.
 fn subject_share(m: f32, threshold: f32) -> f32 {
     let t = clamp(threshold, 0.0, 1.0);
-    let band = max(0.5 * min(t, 1.0 - t), 0.002);
-    return smoothstep(t - band, t + band, m);
+    let narrow = 0.5 * min(t, 1.0 - t);
+    let band = max(narrow, 0.002);
+    let shift = band - narrow;
+    return smoothstep(t - band - shift, t + band - shift, m);
 }
 
 // key.subject: keeps the subject where its matte (feathered on the CPU) passes the threshold,

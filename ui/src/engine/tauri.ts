@@ -13,6 +13,8 @@ import type {
   DubCaptionsRequest,
   DubCaptionsResult,
   ColorSuggestion,
+  AgentChoice,
+  AgentSetup,
   EditRequest,
   EditResponse,
   ExportChoice,
@@ -325,6 +327,23 @@ export class TauriEngine implements EngineClient {
     start: (choice: RemotionChoice): Promise<JobStatus> => invoke("remotion_start", { choice }),
     status: (job: string): Promise<JobStatus> => invoke("remotion_status", { job }),
     cancel: (job: string): Promise<JobStatus> => invoke("remotion_cancel", { job }),
+  };
+
+  agent = {
+    pickVideo: (): Promise<string | null> => invoke("agent_video_pick"),
+    project: (video: string, width: number, height: number): Promise<Opened | null> => invoke("agent_project", { video, width, height }),
+    find: (): Promise<AgentSetup> => invoke("agent_find"),
+    start: (choice: AgentChoice): Promise<JobStatus> =>
+      invoke("agent_start", {
+        choice: {
+          brief: choice.brief,
+          max_turns: choice.max_turns ?? null,
+          max_budget_usd: choice.max_budget_usd ?? null,
+          confirmed: choice.confirmed,
+        },
+      }),
+    status: (job: string): Promise<JobStatus> => invoke("agent_status", { job }),
+    cancel: (job: string): Promise<JobStatus> => invoke("agent_cancel", { job }),
   };
 
   cache = {

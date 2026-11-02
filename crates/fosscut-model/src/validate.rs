@@ -1220,8 +1220,19 @@ fn check_caption_style(issues: &mut Issues, track: &Track, path: &str) {
         background,
         animators,
         translation,
+        shadow,
+        placement,
         ..
     } = style;
+    let within = |v: f64, low: f64, high: f64| v.is_finite() && (low..=high).contains(&v);
+    if !(shadow.offset.iter().all(|&v| within(v, -1.0, 1.0)) && within(shadow.blur, 0.0, 1.0)) {
+        bad("shadow offset must be from -1 to 1 em and blur from 0 to 1 em");
+    }
+    if let crate::Placement::Height(height) = placement
+        && !within(*height, 0.0, 1.0)
+    {
+        bad("placement as a number must be a fraction of the canvas height, from 0 to 1");
+    }
     if !(translation.size.is_finite() && (0.3..=1.0).contains(&translation.size)) {
         bad("translation size must be from 0.3 to 1 of the caption size");
     }
@@ -1258,9 +1269,28 @@ fn check_caption_style(issues: &mut Issues, track: &Track, path: &str) {
             Animator::PagePop(a) => vec![a.params.from],
             Animator::WordHighlight(a) => vec![a.params.scale],
             Animator::WordPop(a) => vec![a.params.scale],
-            Animator::WordEmphasis(a) => vec![a.params.scale],
+            Animator::WordEmphasis(a) => vec![a.params.scale, a.params.pop],
             _ => Vec::new(),
         };
+        if let Animator::WordEmphasis(a) = animator {
+            let word_box = a
+                .params
+                .word_box
+                .as_ref()
+                .is_none_or(|b| within(b.padding, 0.0, 1.0) && within(b.radius, 0.0, 0.5));
+            let brackets = a.params.brackets.as_ref().is_none_or(|b| {
+                within(b.length, 0.05, 2.0)
+                    && within(b.thickness, 0.01, 0.5)
+                    && within(b.gap, 0.0, 1.0)
+            });
+            if !(word_box && brackets) {
+                issues.push(
+                    path,
+                    "fosscut.model.caption_style",
+                    "word.emphasis box padding must be from 0 to 1 em and radius from 0 to 0.5; brackets length from 0.05 to 2 em, thickness from 0.01 to 0.5 em and gap from 0 to 1 em",
+                );
+            }
+        }
         if scales.iter().any(|s| !(s.is_finite() && *s > 0.0)) {
             issues.push(
                 path,

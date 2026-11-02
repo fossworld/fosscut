@@ -6,8 +6,12 @@ import { CacheStandIn } from "./cache";
 import { standInListing } from "./models";
 import { PreferenceStandIn } from "./preferences";
 import type {
+  AgentChoice,
+  AgentReport,
+  AgentSetup,
   ApiError,
   AppInfo,
+  FoundAgent,
   CacheKind,
   CacheUsage,
   CaptureDevice,
@@ -209,8 +213,12 @@ export class FakeEngine implements EngineClient {
 
   async closeProject(): Promise<void> {
     this.log("closeProject");
+    if (this.opened) this.closed = this.opened;
     this.opened = null;
   }
+
+  /** The project open before the last close, which a project made from a video reopens as. */
+  private closed: Opened | null = null;
 
   async query<T>(name: string, args?: unknown): Promise<T> {
     this.log("query", name, args);
@@ -1145,6 +1153,165 @@ export class FakeEngine implements EngineClient {
       if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
       if (entry.status.state === "running") {
         entry.status = { ...entry.status, state: "cancelled", error: { code: "fosscut.job.cancelled", message: "the remotion job was cancelled" } };
+      }
+      return entry.status;
+    },
+  };
+
+  /** The video `agent.pickVideo` answers; null as if the user cancelled. */
+  videoPick: string | null = null;
+  /** `agent.project` answers null, as if the user cancelled saving the project. */
+  videoProjectCancelled = false;
+  /** The agent found on this computer; null as if none were installed. */
+  agentFound: FoundAgent | null = { path: "/Users/demo/.local/bin/claude", name: "Claude Code", via: "path" };
+  /** Turns every agent run takes, and how many more each status read finds done. */
+  agentTurns = 12;
+  agentStep = 3;
+  /** Why every agent run is refused before it runs, when set. */
+  agentRefusal: ApiError | null = null;
+  agentRuns = new Map<string, { status: JobStatus; choice: AgentChoice }>();
+
+  /** What a run of `choice` would run, as `fosscut_engine::agent::plan` builds it. */
+  private agentCommand(choice: AgentChoice, agent: string): string[] {
+    const command = [agent, "-p", choice.brief, "--mcp-config", "/Users/demo/Library/Caches/fosscut/agent/5c1f0e9a2b7d4e11/mcp.json"];
+    command.push("--strict-mcp-config", "--allowedTools", "mcp__fosscut__*,Skill", "--disallowedTools", "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch");
+    command.push("--max-turns", String(choice.max_turns ?? 200));
+    if (choice.max_budget_usd !== undefined) command.push("--max-budget-usd", choice.max_budget_usd.toFixed(2));
+    command.push("--output-format", "stream-json", "--verbose");
+    return command;
+  }
+
+  /** AI edits as the desktop runs them: refused until confirmed, then `agentStep` turns per read, then a summary. */
+  agent = {
+    pickVideo: async (): Promise<string | null> => {
+      this.log("agent.pickVideo");
+      return this.videoPick;
+    },
+    project: async (video: string, width: number, height: number): Promise<Opened | null> => {
+      this.log("agent.project", video, width, height);
+      if (this.videoProjectCancelled) return null;
+      const stem = (video.split("/").pop() ?? "Untitled").replace(/\.[^.]*$/, "");
+      const bundle = `${video.slice(0, video.lastIndexOf("/") + 1)}${stem}.fosscut`;
+      const base: Opened = this.opened ??
+        this.closed ?? {
+          bundle,
+          info: {
+            id: "project_video",
+            name: stem,
+            revision: 2,
+            can_undo: true,
+            can_redo: false,
+            primary_timeline: "timeline_0000",
+            timelines: [{ id: "timeline_0000", name: stem, format: { width, height, rate: "30" }, duration: this.length(10), tracks: 1, clips: 1 }],
+            assets: 1,
+          },
+        };
+      this.opened = {
+        bundle,
+        info: {
+          ...base.info,
+          name: stem,
+          timelines: base.info.timelines.map((t, i) => (i === 0 ? { ...t, name: stem, format: { ...t.format, width, height } } : t)),
+        },
+      };
+      return this.opened;
+    },
+    find: async (): Promise<AgentSetup> => {
+      this.log("agent.find");
+      const project = this.opened?.info.name ?? "Untitled";
+      // A command named in Settings is the agent, found when it is a `claude`, as if the others were missing.
+      const configured = this.prefs.current.agent.command.trim();
+      const agent = configured ? (configured.endsWith("/claude") ? { path: configured, name: "Claude Code", via: "preference" } : null) : this.agentFound;
+      const tried = configured ? [`${configured} (preference)`] : ["claude on the path", "/Users/demo/.local/bin", "/Users/demo/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"];
+      return {
+        agent,
+        tried: agent ? [] : tried,
+        brief: `Edit the FossCut project "${project}" into a finished short-form reel. Follow FossCut's talking-head-reel skill.\n\nThe project is ${this.opened?.bundle ?? ""}. Work only through the fosscut MCP tools: every change appears live in the app, where the user can undo it.\n\n- Clean up the speech: cut silences, filler words and retakes.\n- Give every line a fitting visual from FossCut's library.\n- Add bold word-by-word captions in the spoken language.\n- Lay a music bed under the voice, ducked and levelled.\n\nDo not export. End with a short summary of what you changed.`,
+        max_turns: 200,
+        max_turns_limit: 1000,
+        notes: [
+          "The agent is your own installed program and runs with your own account and login; FossCut never sees or stores your keys. Its use of the AI model may cost money on your plan or bill.",
+          "It connects only to FossCut's tools for this project: other MCP servers are left out, and running commands, changing files and reaching the web are denied. Every change it makes appears live and can be undone.",
+        ],
+        skill: "talking-head-reel",
+        server: "/Applications/FossCut.app/Contents/MacOS/fosscut-desktop mcp",
+        setup: ["claude mcp add fosscut -- /Applications/FossCut.app/Contents/MacOS/fosscut-desktop mcp"],
+      };
+    },
+    start: async (choice: AgentChoice): Promise<JobStatus> => {
+      this.log("agent.start", choice);
+      if (!choice.brief.trim()) throw { code: "fosscut.request.invalid_arguments", message: "write what the agent should do" } satisfies ApiError;
+      if (this.agentRefusal) throw this.agentRefusal;
+      const setup = await this.agent.find();
+      const found = setup.agent;
+      if (!found) {
+        throw { code: "fosscut.agent.not_found", message: "no agent command line (Claude Code) was found on this computer", details: { tried: setup.tried } } satisfies ApiError;
+      }
+      const command = this.agentCommand(choice, found.path);
+      if (!choice.confirmed) {
+        const turns = choice.max_turns ?? 200;
+        const caps = choice.max_budget_usd === undefined ? `It stops after ${turns} turns, and you can cancel it at any time.` : `It stops after ${turns} turns or US$${choice.max_budget_usd.toFixed(2)} of model use, and you can cancel it at any time.`;
+        const notes = [...setup.notes, caps];
+        throw {
+          code: "fosscut.agent.confirmation_required",
+          message: `running ${found.path} needs the user's confirmation: ${notes.join(" ")}`,
+          hint: "Show the user the command and the notes in details; start again with confirmed only if they agree.",
+          details: { agent: found.path, command, notes },
+        } satisfies ApiError;
+      }
+      const job = `job_${String(300 + this.agentRuns.size).padStart(4, "0")}`;
+      const report: AgentReport = { agent: found.path, turns: 0, max_turns: choice.max_turns ?? 200, tool_calls: 0, tool_errors: 0, command };
+      const status: JobStatus = { job, kind: "agent", state: "running", progress: { done: 0, total: report.max_turns }, elapsed_ms: 0, agent: report };
+      this.agentRuns.set(job, { status, choice });
+      return status;
+    },
+    status: async (job: string): Promise<JobStatus> => {
+      this.log("agent.status", job);
+      const entry = this.agentRuns.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state !== "running") return entry.status;
+      const before = entry.status.agent as AgentReport;
+      const turns = Math.min(this.agentTurns, before.turns + this.agentStep);
+      const tools = ["timeline_read", "media_analyze", "edit", "library", "frame_grab"];
+      const said = [
+        "Reading the timeline and the transcript.",
+        "Cutting the pauses and the two retakes near the start.",
+        "Adding a video card and a terminal for the second and third lines.",
+        "Laying the music bed and checking frames at the cuts.",
+      ];
+      const report: AgentReport = {
+        ...before,
+        model: "claude-demo",
+        connected: true,
+        turns,
+        tool_calls: turns * 2,
+        tool_errors: turns > 6 ? 1 : 0,
+        last_tool: tools[turns % tools.length],
+        last_message: said[Math.min(said.length - 1, Math.floor((turns / this.agentTurns) * said.length))],
+      };
+      entry.status = { ...entry.status, progress: { done: turns, total: report.max_turns }, elapsed_ms: entry.status.elapsed_ms + 4_000, agent: report };
+      if (turns >= this.agentTurns) {
+        this.revision += 1;
+        entry.status = {
+          ...entry.status,
+          state: "succeeded",
+          agent: {
+            ...report,
+            outcome: "success",
+            cost_usd: 0.84,
+            duration_ms: entry.status.elapsed_ms,
+            summary: "Cut 9 pauses and 2 retakes (62.7 s to 48.1 s), added 11 visuals from the library with pop sounds, word-by-word captions with 6 highlighted keywords, and a lo-fi bed ducked under the voice at -14 LUFS.",
+          },
+        };
+      }
+      return entry.status;
+    },
+    cancel: async (job: string): Promise<JobStatus> => {
+      this.log("agent.cancel", job);
+      const entry = this.agentRuns.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state === "running") {
+        entry.status = { ...entry.status, state: "cancelled", error: { code: "fosscut.job.cancelled", message: "the agent was cancelled" } };
       }
       return entry.status;
     },

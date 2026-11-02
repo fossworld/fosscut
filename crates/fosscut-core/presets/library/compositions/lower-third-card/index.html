@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=360, fps=30, duration=3.9">
+<title>Lower third card</title>
+<!--
+  Made by FossCut for its library: a lower third card with a thumbnail, a small tag, a
+  title, a subtitle and a call to action with an arrow; it slides in from the left. Every
+  frame is a function of time, through window.fosscut.seek and the overlay kit. Free to
+  use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 40px; width: 952px; height: 236px; padding: 22px; display: flex; gap: 28px; align-items: center; }
+  #thumb { position: relative; width: 340px; height: 192px; border-radius: 22px; overflow: hidden; flex: none; }
+  #thumb .media { border-radius: 22px; }
+  #play { position: absolute; left: 50%; top: 50%; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; background: rgba(255,255,255,0.94);
+          color: var(--accent); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
+  #play svg { margin-left: 4px; }
+  #words { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+  #tag.chip { height: 40px; padding: 0 16px; font-size: 20px; border-radius: 20px; }
+  #title { margin-top: 12px; font-size: 48px; max-width: 100%; }
+  #subtitle { margin-top: 6px; font-size: 26px; color: var(--muted); max-width: 100%; }
+  #cta { margin-top: 16px; height: 52px; padding: 0 22px; font-size: 23px; border-radius: 26px; }
+  #cta .arrow { display: flex; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

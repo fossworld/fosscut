@@ -39,6 +39,10 @@ FossCut's users arrive with their own agent (Claude Code, Codex, Cursor), which 
 - **Cloud-only analysis:** simpler to ship, but costly, slow for long footage and bad for privacy.
 - **Bundling all models in the installer:** large downloads and license risk.
 
+## Implementation notes
+
+- **The user's own agent, run from the desktop** ([ADR-0043](0043-run-the-users-own-agent-from-the-desktop.md)): the "optional client of the same API" of the alternatives, without a model of FossCut's own. The app finds the agent command line the user installed (Claude Code first), shows the exact command, the account and cost note and the caps, and only after the user agrees runs it headless with FossCut's MCP server as its only tool source. The agent uses its own login; FossCut never handles keys, and the edits arrive through the live session like any agent's.
+
 ## Validation
 
 On a fixture with speech, pauses, filler words and music: transcript word timings within 100 ms of reference for English, beat times within 50 ms, shot boundaries at known cuts, all offline on an M1-class Mac within real time.

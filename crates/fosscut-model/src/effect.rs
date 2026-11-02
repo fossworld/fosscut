@@ -1149,7 +1149,31 @@ pub fn effect_types() -> Vec<EffectSpec> {
     .into_iter()
     .chain(crate::voice_filters::specs())
     .chain(crate::light::specs())
+    .map(|mut spec| {
+        // Every picture effect fades in and out by its mix, so an effect can be switched on
+        // for a range with keyframes (`effects.<id>.mix`); sound effects stay constant.
+        if !spec.is_audio() {
+            spec.params.push(mix());
+        }
+        spec
+    })
     .collect()
+}
+
+/// The name of the parameter every picture effect has: how much of the effect shows.
+pub const MIX: &str = "mix";
+
+/// The `mix` parameter of every picture effect: 0 shows the picture as it was before the
+/// effect, 1 (the default) the effect in full, in between a blend of the two.
+const fn mix() -> ParamSpec {
+    number(
+        MIX,
+        1.0,
+        0.0,
+        1.0,
+        "",
+        "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+    )
 }
 
 /// The built-in effect type called `name`.
@@ -1203,7 +1227,8 @@ mod tests {
         assert_eq!(values["exposure"], ParamValue::Number(1.0));
         assert_eq!(values["contrast"], ParamValue::Number(0.4));
         assert_eq!(values["saturation"], ParamValue::Number(0.0));
-        assert_eq!(values.len(), 11);
+        assert_eq!(values["mix"], ParamValue::Number(1.0));
+        assert_eq!(values.len(), 12);
         let curves = effect("color.curves").values_at(Flicks::ZERO).unwrap();
         assert_eq!(
             curves["red"],
@@ -1240,7 +1265,18 @@ mod tests {
                 );
             }
         }
-        assert_eq!(effect_type("color.hsl").unwrap().params.len(), 24);
+        assert_eq!(effect_type("color.hsl").unwrap().params.len(), 25);
+        // Every picture effect has a mix, last, from 0 to 1 with 1 the full effect.
+        for spec in types.iter().filter(|t| !t.is_audio()) {
+            let last = spec.params.last().unwrap();
+            assert_eq!(last.name, MIX, "{}", spec.name);
+            assert_eq!(
+                (last.default, last.min, last.max),
+                (ParamDefault::Number(1.0), Some(0.0), Some(1.0))
+            );
+        }
+        // Sound effects get none (a voice filter's own wet and dry mix is its own).
+        assert!(effect_type("audio.denoise").unwrap().param(MIX).is_none());
         assert!(
             effect_type("color.hsl")
                 .unwrap()

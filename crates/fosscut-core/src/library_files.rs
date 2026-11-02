@@ -39,7 +39,7 @@ const DRAWING_FILES: [(&str, &str); 5] = [
 ];
 
 /// The page of every composition, by folder.
-const COMPOSITION_PAGES: [(&str, &str); 6] = [
+const COMPOSITION_PAGES: [(&str, &str); 28] = [
     (
         "shop-app",
         include_str!("../presets/library/compositions/shop-app/index.html"),
@@ -64,10 +64,99 @@ const COMPOSITION_PAGES: [(&str, &str); 6] = [
         "product-podium-3d",
         include_str!("../presets/library/compositions/product-podium-3d/index.html"),
     ),
+    // The explainer overlays, made with the overlay kit.
+    (
+        "video-card",
+        include_str!("../presets/library/compositions/video-card/index.html"),
+    ),
+    (
+        "app-window",
+        include_str!("../presets/library/compositions/app-window/index.html"),
+    ),
+    (
+        "terminal",
+        include_str!("../presets/library/compositions/terminal/index.html"),
+    ),
+    (
+        "review-frame",
+        include_str!("../presets/library/compositions/review-frame/index.html"),
+    ),
+    (
+        "social-post",
+        include_str!("../presets/library/compositions/social-post/index.html"),
+    ),
+    (
+        "quote-panel",
+        include_str!("../presets/library/compositions/quote-panel/index.html"),
+    ),
+    (
+        "before-after",
+        include_str!("../presets/library/compositions/before-after/index.html"),
+    ),
+    (
+        "reel-fan",
+        include_str!("../presets/library/compositions/reel-fan/index.html"),
+    ),
+    (
+        "menu-grid",
+        include_str!("../presets/library/compositions/menu-grid/index.html"),
+    ),
+    (
+        "storyboard-list",
+        include_str!("../presets/library/compositions/storyboard-list/index.html"),
+    ),
+    (
+        "cross-out",
+        include_str!("../presets/library/compositions/cross-out/index.html"),
+    ),
+    (
+        "arrow-pointer",
+        include_str!("../presets/library/compositions/arrow-pointer/index.html"),
+    ),
+    (
+        "audio-chip",
+        include_str!("../presets/library/compositions/audio-chip/index.html"),
+    ),
+    (
+        "waveform-sync",
+        include_str!("../presets/library/compositions/waveform-sync/index.html"),
+    ),
+    (
+        "timeline-cut",
+        include_str!("../presets/library/compositions/timeline-cut/index.html"),
+    ),
+    (
+        "progress-card",
+        include_str!("../presets/library/compositions/progress-card/index.html"),
+    ),
+    (
+        "stat-counter",
+        include_str!("../presets/library/compositions/stat-counter/index.html"),
+    ),
+    (
+        "bar-chart",
+        include_str!("../presets/library/compositions/bar-chart/index.html"),
+    ),
+    (
+        "clock-card",
+        include_str!("../presets/library/compositions/clock-card/index.html"),
+    ),
+    (
+        "lower-third-card",
+        include_str!("../presets/library/compositions/lower-third-card/index.html"),
+    ),
+    (
+        "comment-cta",
+        include_str!("../presets/library/compositions/comment-cta/index.html"),
+    ),
+    (
+        "grid-stage",
+        include_str!("../presets/library/compositions/grid-stage/index.html"),
+    ),
 ];
 
 /// The other files of compositions, by folder and path in it.
-const COMPOSITION_FILES: [(&str, &str, &[u8]); 6] = [
+const COMPOSITION_FILES: [(&str, &str, &[u8]); 28] = [
     (
         "route-map-3d",
         "scene.js",
@@ -97,6 +186,116 @@ const COMPOSITION_FILES: [(&str, &str, &[u8]); 6] = [
         "product-podium-3d",
         "scene.js",
         include_bytes!("../presets/library/compositions/product-podium-3d/scene.js"),
+    ),
+    (
+        "video-card",
+        "main.js",
+        include_bytes!("../presets/library/compositions/video-card/main.js"),
+    ),
+    (
+        "app-window",
+        "main.js",
+        include_bytes!("../presets/library/compositions/app-window/main.js"),
+    ),
+    (
+        "terminal",
+        "main.js",
+        include_bytes!("../presets/library/compositions/terminal/main.js"),
+    ),
+    (
+        "review-frame",
+        "main.js",
+        include_bytes!("../presets/library/compositions/review-frame/main.js"),
+    ),
+    (
+        "social-post",
+        "main.js",
+        include_bytes!("../presets/library/compositions/social-post/main.js"),
+    ),
+    (
+        "quote-panel",
+        "main.js",
+        include_bytes!("../presets/library/compositions/quote-panel/main.js"),
+    ),
+    (
+        "before-after",
+        "main.js",
+        include_bytes!("../presets/library/compositions/before-after/main.js"),
+    ),
+    (
+        "reel-fan",
+        "main.js",
+        include_bytes!("../presets/library/compositions/reel-fan/main.js"),
+    ),
+    (
+        "menu-grid",
+        "main.js",
+        include_bytes!("../presets/library/compositions/menu-grid/main.js"),
+    ),
+    (
+        "storyboard-list",
+        "main.js",
+        include_bytes!("../presets/library/compositions/storyboard-list/main.js"),
+    ),
+    (
+        "cross-out",
+        "main.js",
+        include_bytes!("../presets/library/compositions/cross-out/main.js"),
+    ),
+    (
+        "arrow-pointer",
+        "main.js",
+        include_bytes!("../presets/library/compositions/arrow-pointer/main.js"),
+    ),
+    (
+        "audio-chip",
+        "main.js",
+        include_bytes!("../presets/library/compositions/audio-chip/main.js"),
+    ),
+    (
+        "waveform-sync",
+        "main.js",
+        include_bytes!("../presets/library/compositions/waveform-sync/main.js"),
+    ),
+    (
+        "timeline-cut",
+        "main.js",
+        include_bytes!("../presets/library/compositions/timeline-cut/main.js"),
+    ),
+    (
+        "progress-card",
+        "main.js",
+        include_bytes!("../presets/library/compositions/progress-card/main.js"),
+    ),
+    (
+        "stat-counter",
+        "main.js",
+        include_bytes!("../presets/library/compositions/stat-counter/main.js"),
+    ),
+    (
+        "bar-chart",
+        "main.js",
+        include_bytes!("../presets/library/compositions/bar-chart/main.js"),
+    ),
+    (
+        "clock-card",
+        "main.js",
+        include_bytes!("../presets/library/compositions/clock-card/main.js"),
+    ),
+    (
+        "lower-third-card",
+        "main.js",
+        include_bytes!("../presets/library/compositions/lower-third-card/main.js"),
+    ),
+    (
+        "comment-cta",
+        "main.js",
+        include_bytes!("../presets/library/compositions/comment-cta/main.js"),
+    ),
+    (
+        "grid-stage",
+        "main.js",
+        include_bytes!("../presets/library/compositions/grid-stage/main.js"),
     ),
 ];
 
@@ -291,8 +490,16 @@ impl LibraryComposition {
     }
 
     /// The page with `lines` in place of its placeholder lines and the canvas values of
-    /// `params` (`width`, `height`, `duration`, `fps`) in its meta tag.
+    /// `params` (`width`, `height`, `duration`, `fps`) in its meta tag. An overlay without a
+    /// `duration` lasts until its exit is over (`appear` plus `hold` plus the exit).
     pub fn html_with(&self, lines: &[String], params: &Map<String, Value>) -> String {
+        if self.kit == Some(CompositionKit::Overlay)
+            && let Some(seconds) = composition_params::overlay_duration(params)
+        {
+            let mut params = params.clone();
+            params.insert("duration".into(), Value::from(seconds));
+            return composition_params::with_canvas(&self.html(lines), &params);
+        }
         composition_params::with_canvas(&self.html(lines), params)
     }
 
@@ -474,7 +681,7 @@ mod tests {
     fn scene_templates_carry_their_kit_and_the_defaults_they_declare() {
         let scenes: Vec<LibraryComposition> = compositions()
             .into_iter()
-            .filter(|c| c.kit.is_some())
+            .filter(|c| c.kit == Some(CompositionKit::Three))
             .collect();
         let names: Vec<&str> = scenes.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(
@@ -572,6 +779,202 @@ mod tests {
         assert!(
             html.contains("content=\"width=540, height=960, fps=30, duration=2\""),
             "{html}"
+        );
+    }
+
+    /// The explainer overlays, in catalogue order.
+    const OVERLAYS: [&str; 22] = [
+        "video-card",
+        "app-window",
+        "terminal",
+        "review-frame",
+        "social-post",
+        "quote-panel",
+        "before-after",
+        "reel-fan",
+        "menu-grid",
+        "storyboard-list",
+        "cross-out",
+        "arrow-pointer",
+        "audio-chip",
+        "waveform-sync",
+        "timeline-cut",
+        "progress-card",
+        "stat-counter",
+        "bar-chart",
+        "clock-card",
+        "lower-third-card",
+        "comment-cta",
+        "grid-stage",
+    ];
+
+    /// The `fosscut:composition` meta tag's content in `html`.
+    fn meta(html: &str) -> String {
+        let start = html
+            .find("name=\"fosscut:composition\" content=\"")
+            .unwrap()
+            + 36;
+        html[start..start + html[start..].find('"').unwrap()].to_string()
+    }
+
+    #[test]
+    fn overlays_carry_their_kit_and_the_defaults_they_declare() {
+        let overlays: Vec<LibraryComposition> = compositions()
+            .into_iter()
+            .filter(|c| c.kit == Some(CompositionKit::Overlay))
+            .collect();
+        let names: Vec<&str> = overlays.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, OVERLAYS);
+        for overlay in &overlays {
+            let name = overlay.name.as_str();
+            let page = overlay.page();
+            assert!(page.starts_with("<!doctype html>"), "{name}");
+            for needed in [
+                r#"<link rel="stylesheet" href="kit/overlay.css">"#,
+                r#"<script src="kit/overlay.js"></script>"#,
+                r#"<script src="main.js" defer></script>"#,
+            ] {
+                assert!(page.contains(needed), "{name}: {needed}");
+            }
+            assert!(
+                !page.contains("fosscut:renderer"),
+                "{name} draws in software"
+            );
+            assert!(overlay.lines().is_empty(), "{name} takes params, not lines");
+            assert!(overlay.description.ends_with('.'), "{name}");
+            assert!(
+                overlay.description.contains("Use it"),
+                "{name} says when to use it"
+            );
+            assert!(!overlay.has_composition_slot(), "{name}");
+            let files = overlay.files();
+            let paths: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+            for needed in [
+                "main.js",
+                "kit/overlay.js",
+                "kit/overlay.css",
+                "kit/fonts/Inter-Regular.ttf",
+                "kit/fonts/Inter-Bold.ttf",
+                "kit/fonts/Inter-ExtraBold.ttf",
+                "kit/fonts/OFL.txt",
+            ] {
+                assert!(paths.contains(&needed), "{name}: {needed}");
+            }
+            // FossCut's own text only: plain ASCII (no emoji, no long dashes) and nothing
+            // fetched from the network.
+            let script = files
+                .iter()
+                .find(|(p, _)| p == "main.js")
+                .map(|(_, b)| String::from_utf8(b.to_vec()).unwrap())
+                .unwrap();
+            for (path, text) in [("index.html", page), ("main.js", script.as_str())] {
+                assert!(text.is_ascii(), "{name}/{path} is not plain ASCII");
+                assert!(
+                    !text.contains("http://") && !text.contains("https://"),
+                    "{name}/{path}"
+                );
+            }
+            let text = serde_json::to_string(overlay).unwrap();
+            assert!(!text.contains('\u{2014}'), "{name} has a long dash");
+            // The page's own defaults agree with the declared ones.
+            let start = script.find("// fosscut:defaults").expect("defaults marker");
+            let end = script.find("// fosscut:end").expect("end marker");
+            let block = &script[start..end];
+            let json = &block[block.find('{').unwrap()..=block.rfind('}').unwrap()];
+            let page_defaults: Value = serde_json::from_str(json).unwrap();
+            let mut declared = overlay.default_params();
+            for canvas in composition_params::CANVAS_PARAMS {
+                assert_eq!(declared.remove(canvas), Some(Value::Null), "{canvas}");
+            }
+            let declared = Value::Object(declared);
+            assert!(
+                same(&page_defaults, &declared),
+                "{name}: the page's defaults\n{page_defaults:#}\ndiffer from the declared\n{declared:#}"
+            );
+            let resolved = overlay.resolve_params(None, &[]).unwrap();
+            assert_eq!(resolved, overlay.default_params(), "{name}");
+            // The page's meta tag lasts until its exit is over, as html_with makes it.
+            assert_eq!(
+                meta(&overlay.html_with(&[], &resolved)),
+                meta(page),
+                "{name}"
+            );
+            // Each slot takes pictures, and more of them where the page plays videos.
+            for slot in overlay.params.iter().filter(|p| p.kind == ParamType::Slot) {
+                assert!(
+                    slot.accepts.contains(&SlotKind::Image),
+                    "{name}: {}",
+                    slot.name
+                );
+                assert_eq!(slot.default, Value::Null, "{name}: {}", slot.name);
+            }
+        }
+        for kit in [CompositionKit::Overlay, CompositionKit::Three] {
+            assert!(!kit.files().is_empty());
+        }
+        // The kit's ASCII rule holds for its own script and style sheet too.
+        for (path, bytes) in CompositionKit::Overlay.files() {
+            if path.ends_with(".js") || path.ends_with(".css") {
+                assert!(bytes.is_ascii(), "{path}");
+            }
+        }
+    }
+
+    #[test]
+    fn overlay_timing_sets_the_length_of_the_page() {
+        let card = composition("video-card").unwrap();
+        let held = card
+            .resolve_params(Some(&json!({ "appear": 0.5, "hold": 4 })), &[])
+            .unwrap();
+        assert!(
+            meta(&card.html_with(&[], &held)).ends_with("duration=4.9"),
+            "appear, hold and the exit"
+        );
+        let staying = card
+            .resolve_params(Some(&json!({ "hold": 2, "exit": false })), &[])
+            .unwrap();
+        assert!(meta(&card.html_with(&[], &staying)).ends_with("duration=2"));
+        let given = card
+            .resolve_params(
+                Some(&json!({ "hold": 2, "duration": 6, "width": 540, "height": 430 })),
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            meta(&card.html_with(&[], &given)),
+            "width=540, height=430, fps=30, duration=6"
+        );
+        // Lists and slots are checked like any parameter.
+        let terminal = composition("terminal").unwrap();
+        let steps = json!({ "steps": ["one", "two"], "theme": "light" });
+        let resolved = terminal.resolve_params(Some(&steps), &[]).unwrap();
+        assert_eq!(resolved["steps"], json!(["one", "two"]));
+        assert_eq!(resolved["hold"], json!(5.5), "the template's own default");
+        let too_many = json!({ "steps": ["1", "2", "3", "4", "5", "6", "7"] });
+        assert_eq!(
+            terminal
+                .resolve_params(Some(&too_many), &[])
+                .unwrap_err()
+                .code,
+            codes::LIBRARY_INVALID_PARAMS
+        );
+        let fan = composition("reel-fan").unwrap();
+        let filled = fan
+            .resolve_params(None, &["asset_0001".into(), "asset_0002".into()])
+            .unwrap();
+        assert_eq!(
+            (filled["reel_1"].as_str(), filled["reel_2"].as_str()),
+            (Some("asset_0001"), Some("asset_0002"))
+        );
+        assert_eq!(filled["reel_3"], Value::Null);
+        let chart = composition("bar-chart").unwrap();
+        let negative = json!({ "values": [3, -1] });
+        assert!(
+            chart
+                .resolve_params(Some(&negative), &[])
+                .unwrap_err()
+                .message
+                .contains("values item must be at least 0")
         );
     }
 }

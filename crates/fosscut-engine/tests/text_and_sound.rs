@@ -191,7 +191,7 @@ fn normalizing_reaches_the_target_with_a_volume_or_a_limiter() {
     assert!(held.clips[0].limited && held.clips[0].limiter.is_none());
     assert!((held.clips[0].gain_db - (-12.0 - peak)).abs() < 0.02);
 
-    // Titles have no sound; volume keyframes and odd targets are refused.
+    // Titles have no sound; odd targets are refused.
     assert!(normalize(&project, &bundle(), &[title], -14.0, -1.0, true).is_err());
     assert!(normalize(&project, &bundle(), one, 5.0, -1.0, true).is_err());
     assert!(normalize(&project, &bundle(), one, -14.0, 3.0, true).is_err());
@@ -199,17 +199,37 @@ fn normalizing_reaches_the_target_with_a_volume_or_a_limiter() {
     assert!(normalize(&project, &bundle(), &[], -14.0, -1.0, true).is_err());
     let missing = [Id::new(IdKind::Clip, 99)];
     assert!(normalize(&project, &bundle(), &missing, -14.0, -1.0, true).is_err());
+
+    // A clip with volume keyframes (ducked music, say) is measured without them and keeps
+    // their shape: they are scaled so the loudest reaches the volume found.
     let doc = project.timelines.get_mut(&timeline).unwrap();
+    let key = |ms: i64, value: f64| fosscut_model::Keyframe {
+        time: Flicks::from_millis(ms),
+        value: fosscut_model::KeyValue::Number(value),
+        interpolation: Default::default(),
+    };
     doc.tracks[0].clips[0].keyframes.insert(
         "volume".into(),
-        vec![fosscut_model::Keyframe {
-            time: Flicks::ZERO,
-            value: fosscut_model::KeyValue::Number(1.0),
-            interpolation: Default::default(),
-        }],
+        vec![key(0, 0.8), key(300, 0.2), key(600, 0.8)],
     );
-    let error = normalize(&project, &bundle(), one, -14.0, -1.0, true).unwrap_err();
-    assert!(error.to_string().contains("keyframes"), "{error}");
+    let keyed = normalize(&project, &bundle(), one, -20.0, -1.0, true).unwrap();
+    assert_eq!(keyed.clips[0].keyframes, 3);
+    assert!(
+        (keyed.clips[0].measured_lufs.unwrap() - lufs).abs() < 0.05,
+        "measured as before, at volume 1 without the keys"
+    );
+    let call = &keyed.commands[0];
+    assert_eq!(call["command"], "keyframe.set_all");
+    assert_eq!(call["args"]["property"], "volume");
+    let values: Vec<f64> = call["args"]["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k["value"].as_f64().unwrap())
+        .collect();
+    let volume = keyed.clips[0].volume;
+    assert!((values[0] - volume).abs() < 1e-3 && (values[2] - volume).abs() < 1e-3);
+    assert!((values[1] - volume / 4.0).abs() < 1e-3, "{values:?}");
 }
 
 /// Speech from the fixtures, alone on an audio track of a project next to the workspace.

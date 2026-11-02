@@ -69,8 +69,8 @@ impl From<&EngineError> for JobError {
 pub struct JobStatus {
     /// The job id, for example `job_0001`.
     pub job: String,
-    /// What the job does: `export`, `analysis`, `recording`, `proxy`, `remux` or
-    /// `remotion`.
+    /// What the job does: `export`, `analysis`, `recording`, `proxy`, `remux`,
+    /// `remotion` or `agent`.
     pub kind: String,
     /// Where it stands.
     pub state: JobState,
@@ -107,6 +107,10 @@ pub struct JobStatus {
     /// (ADR-0039).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remotion: Option<crate::remotion::RemotionReport>,
+    /// What the user's agent did so far, while it runs and after it ended however it ended
+    /// (ADR-0043).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<crate::agent::AgentReport>,
     /// The typed error, once the job failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JobError>,
@@ -132,6 +136,7 @@ enum Done {
     Proxy(ProxyReport),
     Remux(RemuxReport),
     Remotion(crate::remotion::RemotionReport),
+    Agent(crate::agent::AgentReport),
 }
 
 type Outcome = Option<Result<Done, EngineError>>;
@@ -147,6 +152,8 @@ struct Job {
     started: Instant,
     cancel: AtomicBool,
     progress: Mutex<Progress>,
+    /// An agent's report as it runs.
+    agent: Option<Arc<Mutex<crate::agent::AgentReport>>>,
     outcome: Mutex<Outcome>,
     finished: Condvar,
 }
@@ -195,6 +202,10 @@ impl Job {
                 Some(Done::Remotion(report)) => Some(report.clone()),
                 _ => None,
             },
+            agent: match done {
+                Some(Done::Agent(report)) => Some(report.clone()),
+                _ => self.agent.as_ref().map(|report| lock(report).clone()),
+            },
             error,
         }
     }
@@ -221,6 +232,7 @@ impl Job {
             started: Instant::now(),
             cancel: AtomicBool::new(false),
             progress: Mutex::new(Progress::default()),
+            agent: None,
             outcome: Mutex::new(None),
             finished: Condvar::new(),
         }
@@ -448,6 +460,50 @@ impl Jobs {
                 report.asset = Some(import(&plan.output)?);
             }
             Ok(Done::Remotion(report))
+        }))
+    }
+
+    /// Starts a checked run of the user's agent ([`crate::agent::run`]) on a new thread and
+    /// returns the job's status at once (ADR-0043). Progress counts the agent's turns
+    /// against its cap, and [`JobStatus::agent`] reports what it did, while it runs and
+    /// after it ended however it ended. Cancelling ends the agent with everything it
+    /// started; its edits so far stay in the project, where they can be undone. One agent
+    /// runs on a project at a time: another start for the same project while one runs
+    /// fails with [`EngineError::OutputBusy`].
+    pub fn start_agent(&self, plan: crate::agent::AgentPlan) -> Result<JobStatus, EngineError> {
+        let folder = plan.folder.display().to_string();
+        let key = format!("agent:{folder}");
+        let jobs = lock(&self.jobs);
+        if let Some(running) = jobs
+            .values()
+            .find(|job| job.key.as_deref() == Some(key.as_str()) && job.running())
+        {
+            return Err(EngineError::OutputBusy {
+                path: folder,
+                job: running.id.clone(),
+            });
+        }
+        let report = Arc::new(Mutex::new(crate::agent::AgentReport {
+            agent: plan.agent.path.display().to_string(),
+            max_turns: u64::from(plan.max_turns()),
+            command: plan.command.clone(),
+            ..crate::agent::AgentReport::default()
+        }));
+        let mut job = Job::new(jobs.len(), "agent", None, None, Some(key));
+        job.agent = Some(Arc::clone(&report));
+        *lock(&job.progress) = Progress {
+            done: 0,
+            total: u64::from(plan.max_turns()),
+        };
+        Ok(self.spawn(jobs, job, move |cancel, progress| {
+            let mut follow = |now: &crate::agent::AgentReport| {
+                *lock(&report) = now.clone();
+                progress(Progress {
+                    done: now.turns.min(now.max_turns),
+                    total: now.max_turns,
+                })
+            };
+            crate::agent::run(&plan, cancel, &mut follow).map(Done::Agent)
         }))
     }
 

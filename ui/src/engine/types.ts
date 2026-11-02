@@ -505,6 +505,8 @@ export interface JobStatus {
   asset?: string;
   /** A Remotion render once it succeeded: the file and the asset it became (ADR-0039). */
   remotion?: { output: string; composition: string; command: string[]; asset?: string };
+  /** What the user's agent did so far, while it runs and after it ended (ADR-0043). */
+  agent?: AgentReport;
 }
 
 /** What a capture device records, and what a recording records from. */
@@ -1042,6 +1044,8 @@ export interface Preferences {
   updates: "off" | "notify" | "check";
   notifications: boolean;
   shortcuts: { set: string; overrides: Record<string, string> };
+  /** The agent command line AI edits run, as an absolute path; empty finds Claude Code (ADR-0043). */
+  agent: { command: string };
 }
 
 /** What `preferences_get` and the calls that change preferences answer. */
@@ -1431,4 +1435,62 @@ export interface RemotionChoice {
   props?: unknown;
   entry?: string;
   confirmed: boolean;
+}
+
+/** An agent command line found on this computer (ADR-0043). */
+export interface FoundAgent {
+  path: string;
+  /** Its name for people, such as `Claude Code`. */
+  name: string;
+  /** How it was found: `preference`, `FOSSCUT_AGENT` or `path`. */
+  via: string;
+}
+
+/** What `agent_find` answers before an AI edit: the agent, the suggested brief and cap, the notes. */
+export interface AgentSetup {
+  /** The agent found, or null when there is none. */
+  agent: FoundAgent | null;
+  /** Where it was looked for, when it was not found. */
+  tried: string[];
+  brief: string;
+  max_turns: number;
+  max_turns_limit: number;
+  /** What the user is told about their account, the cost and the tools. */
+  notes: string[];
+  /** The skill the brief follows. */
+  skill: string;
+  /** The command that serves FossCut's MCP server from the app. */
+  server: string;
+  /** Lines that set up an agent by hand. */
+  setup: string[];
+}
+
+/** An AI edit to run (`agent_start`); refused until `confirmed`. */
+export interface AgentChoice {
+  brief: string;
+  max_turns?: number;
+  max_budget_usd?: number;
+  confirmed: boolean;
+}
+
+/** What the user's agent did so far, or in all once it ended. */
+export interface AgentReport {
+  agent: string;
+  model?: string;
+  session?: string;
+  /** Whether it reached FossCut's tools, once it said. */
+  connected?: boolean;
+  turns: number;
+  max_turns: number;
+  tool_calls: number;
+  tool_errors: number;
+  last_tool?: string;
+  last_message?: string;
+  cost_usd?: number;
+  duration_ms?: number;
+  /** How it ended: `success`, `error_max_turns`, `error_max_budget_usd` or `error_during_execution`. */
+  outcome?: string;
+  /** Its summary of what it changed. */
+  summary?: string;
+  command?: string[];
 }

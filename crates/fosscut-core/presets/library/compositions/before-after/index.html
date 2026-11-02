@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=760, fps=30, duration=3.9">
+<title>Before and after</title>
+<!--
+  Made by FossCut for its library: a before and after card, two pictures or videos in one
+  frame split by a handle that sweeps across and settles, each labelled. Every frame is a
+  function of time, through window.fosscut.seek and the overlay kit. Free to use, also
+  commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; height: 576px; padding: 18px; }
+  #frame { position: relative; width: 916px; height: 540px; border-radius: 24px; overflow: hidden; background: var(--card-3); }
+  .side { position: absolute; inset: 0; }
+  .side .media { border-radius: 0; }
+  #before.plain .art { filter: grayscale(0.9) brightness(0.82) contrast(0.85) blur(3px); transform: scale(1.04); }
+  #handle { position: absolute; top: 0; bottom: 0; width: 6px; margin-left: -3px; background: #FFFFFF; box-shadow: 0 0 14px rgba(0, 0, 0, 0.3); }
+  #knob { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; margin: -36px 0 0 -36px; border-radius: 50%; background: #FFFFFF;
+          color: #0B1220; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28); display: flex; align-items: center; justify-content: center; gap: 0; }
+  .label { position: absolute; top: 20px; height: 50px; padding: 0 20px; border-radius: 25px; display: flex; align-items: center;
+           font-size: 24px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; }
+  #before-label { left: 20px; background: rgba(8, 10, 14, 0.66); color: #FFFFFF; }
+  #after-label { right: 20px; background: var(--accent); color: var(--accent-ink); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

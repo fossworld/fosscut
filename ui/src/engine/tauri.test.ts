@@ -254,6 +254,26 @@ describe("the Tauri engine client", () => {
     ]);
   });
 
+  it("runs AI edits by the user's own agent through the app's commands", async () => {
+    const engine = new TauriEngine();
+    await engine.agent.pickVideo();
+    await engine.agent.project("/Users/me/raw.mp4", 1080, 1920);
+    await engine.agent.find();
+    await engine.agent.start({ brief: "Edit it.", confirmed: false });
+    await engine.agent.start({ brief: "Edit it.", max_turns: 40, max_budget_usd: 2.5, confirmed: true });
+    await engine.agent.status("job_0005");
+    await engine.agent.cancel("job_0005");
+    expect(invoke.mock.calls).toEqual([
+      ["agent_video_pick"],
+      ["agent_project", { video: "/Users/me/raw.mp4", width: 1080, height: 1920 }],
+      ["agent_find"],
+      ["agent_start", { choice: { brief: "Edit it.", max_turns: null, max_budget_usd: null, confirmed: false } }],
+      ["agent_start", { choice: { brief: "Edit it.", max_turns: 40, max_budget_usd: 2.5, confirmed: true } }],
+      ["agent_status", { job: "job_0005" }],
+      ["agent_cancel", { job: "job_0005" }],
+    ]);
+  });
+
   it("reads the caches' sizes as the app lists them", async () => {
     const engine = new TauriEngine();
     const caches = [{ kind: "proxies", path: "/cache/proxies", bytes: 300, entries: 1 }];

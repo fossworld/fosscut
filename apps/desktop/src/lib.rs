@@ -27,9 +27,13 @@
 //! - [`web`]: web compositions imported with their size and length (ADR-0039), and renders
 //!   of the user's own Remotion project, run in the background after the user agreed to
 //!   its licence note.
+//! - [`agent`]: an AI edit of a video by the user's own agent (ADR-0043): a project made
+//!   from the video, then the agent run headless after the user agreed to its command,
+//!   editing the live project through this app's executable in `mcp` mode.
 
 #![forbid(unsafe_code)]
 
+pub mod agent;
 pub mod announce;
 pub mod audio;
 pub mod auto_edit;
@@ -381,6 +385,12 @@ pub fn run() {
             commands::remotion_start,
             commands::remotion_status,
             commands::remotion_cancel,
+            agent::agent_video_pick,
+            agent::agent_project,
+            agent::agent_find,
+            agent::agent_start,
+            agent::agent_status,
+            agent::agent_cancel,
         ])
         .build(tauri::generate_context!());
     match app {

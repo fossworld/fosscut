@@ -31,6 +31,7 @@
 //   emitter kibocsátó, web composition webes kompozíció, render renderelés.
 
 import * as activity from "./messages/activity";
+import * as agent from "./messages/agent";
 import * as app from "./messages/app";
 import * as canvas from "./messages/canvas";
 import * as effects from "./messages/effects";
@@ -58,6 +59,7 @@ import type { Messages, Translation } from "./types";
 /** Each area's catalogues, by the prefix of its keys. */
 export const areas = {
   activity,
+  agent,
   app,
   canvas,
   effects,
@@ -85,6 +87,7 @@ export const areas = {
 /** Every English message. */
 export const english = {
   ...activity.en,
+  ...agent.en,
   ...app.en,
   ...canvas.en,
   ...effects.en,
@@ -114,6 +117,7 @@ export type MessageKey = keyof typeof english;
 
 const hungarian: Translation<typeof english> = {
   ...activity.hu,
+  ...agent.hu,
   ...app.hu,
   ...canvas.hu,
   ...effects.hu,

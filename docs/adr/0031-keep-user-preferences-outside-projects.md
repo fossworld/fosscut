@@ -41,6 +41,7 @@ FossCut has none of these yet. Projects must not hold machine-specific data (ADR
    - **`updates`:** off, notify or check, with notify as the default.
    - **`notifications`:** true.
    - **`shortcuts`:** a `set` name and `overrides` from action to keys.
+   - **`agent`:** `command`, the agent command line AI edits run, as an absolute path; empty, the default, finds Claude Code by itself ([ADR-0043](0043-run-the-users-own-agent-from-the-desktop.md)).
 3. **Front ends apply preferences as explicit arguments.** A command never reads preferences. The CLI and the desktop app fill a request from them: a new project's rate, an image clip's length, the normalize target. A request therefore means the same thing on every machine, and the operation log shows the values used.
 4. **The engine applies performance and cache preferences.** These change speed and disk use, never results. They cover hardware decoding and encoding, proxies, remuxed copies, the render cache and cache cleanup (ADR-0032). Exports and verification frame grabs read original media. Turning hardware encoding off never substitutes a codec: a codec without a software encoder becomes unavailable, with the usual typed error (ADR-0009).
 5. **Who may change them.**

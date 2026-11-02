@@ -370,6 +370,36 @@
         }
       ]
     },
+    "Brackets": {
+      "additionalProperties": false,
+      "description": "Four corner brackets around a word, like a viewfinder's.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#FFE14D",
+          "description": "Their colour."
+        },
+        "gap": {
+          "default": 0.1,
+          "description": "Space between the word's box (or the word) and the brackets, as a fraction of the\nfont size, from 0 to 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "length": {
+          "default": 0.3,
+          "description": "Each arm's length as a fraction of the font size, from 0.05 to 2.",
+          "format": "double",
+          "type": "number"
+        },
+        "thickness": {
+          "default": 0.07,
+          "description": "Line thickness as a fraction of the font size, from 0.01 to 0.5.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "BrushStroke": {
       "description": "One painted stroke of a brush mask.",
       "properties": {
@@ -542,7 +572,11 @@
         },
         "placement": {
           "$ref": "#/$defs/Placement",
-          "description": "Where the page sits inside the safe area (bottom when omitted)."
+          "description": "Where the page sits: `top`, `middle` or `bottom` of the safe area, or the height of\nits centre as a fraction of the canvas height, kept inside the safe area (bottom\nwhen omitted)."
+        },
+        "shadow": {
+          "$ref": "#/$defs/Shadow",
+          "description": "A soft shadow cast by the words and their outline, as text styles have: colour (its\nalpha is the shadow's opacity), offset and blur in em (off when omitted)."
         },
         "size": {
           "description": "Font size as a fraction of the canvas height (0.055 when omitted).",
@@ -2775,24 +2809,22 @@
       ]
     },
     "Placement": {
-      "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",
-      "oneOf": [
+      "anyOf": [
         {
-          "const": "top",
-          "description": "At the top of the safe area.",
+          "enum": [
+            "top",
+            "middle",
+            "bottom"
+          ],
           "type": "string"
         },
         {
-          "const": "middle",
-          "description": "Centred.",
-          "type": "string"
-        },
-        {
-          "const": "bottom",
-          "description": "At the bottom of the safe area.",
-          "type": "string"
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
         }
-      ]
+      ],
+      "description": "Where a caption page sits: top, middle or bottom of the safe area, or the height of its centre as a fraction of the canvas height (0.6 is a little below the middle), kept inside the safe area."
     },
     "Rate": {
       "description": "Exact frame rate as an integer or a fraction string, for example \"30\" or \"30000/1001\" (29.97). Decimals are not accepted.",
@@ -3758,14 +3790,65 @@
       },
       "type": "object"
     },
+    "WordBox": {
+      "additionalProperties": false,
+      "description": "A box behind one word, drawn at the word's size and scale.",
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/Color",
+          "default": "#2F6BFF",
+          "description": "Its fill colour."
+        },
+        "padding": {
+          "default": 0.2,
+          "description": "Space around the word as a fraction of the font size, from 0 to 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "radius": {
+          "default": 0.15,
+          "description": "Corner radius as a fraction of the box height, from 0 (square) to 0.5 (round ends).",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
     "WordEmphasis": {
       "additionalProperties": false,
       "description": "Parameters of `word.emphasis`.",
       "properties": {
+        "box": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WordBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A box behind each emphasised word; none when omitted."
+        },
+        "brackets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Brackets"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Corner brackets around each emphasised word (and its box); none when omitted."
+        },
         "color": {
           "$ref": "#/$defs/Color",
           "default": "#FFE14D",
           "description": "Colour of emphasised words."
+        },
+        "pop": {
+          "description": "How far emphasised words pop up as they start (1, the default, is no pop): they\ngrow to this scale halfway through [`EMPHASIS_POP_MS`] and back.",
+          "format": "double",
+          "type": "number"
         },
         "scale": {
           "default": 1.1,

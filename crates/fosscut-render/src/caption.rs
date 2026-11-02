@@ -1,19 +1,20 @@
 //! Captions (ADR-0021): every word's look evaluated from word times alone, and caption pages
 //! composed on the CPU at the output resolution. Words are laid out once at rest, so
-//! animation never reflows text; each word is then drawn with its outline, fill or karaoke
-//! fill, scale and box, and the page is placed inside the canvas's safe area.
+//! animation never reflows text; the words' shadow is drawn first, then each word with its
+//! box, corner brackets, outline, fill or karaoke fill and scale, and the page is placed
+//! inside the canvas's safe area, at a named place or at a height.
 
 use cosmic_text::{
     Attrs, Buffer, Color as GlyphColor, Family, Metrics, Shaping, Style as FontStyle, Weight,
 };
 use fosscut_model::{
-    Animator, CaptionContent, CaptionStyle, FontWeight, Placement, TextContent, TextStyle,
-    safe_margins,
+    Animator, CaptionContent, CaptionStyle, EMPHASIS_POP_MS, FontWeight, Placement, TextContent,
+    TextStyle, safe_margins,
 };
 use fosscut_time::Flicks;
 
 use crate::color::hex_to_linear;
-use crate::raster::{outline, over, rounded_rect};
+use crate::raster::{blur, outline, over, rounded_rect};
 use crate::text::{DEFAULT_FAMILY, LINE_HEIGHT, TextEngine, TextLayer, TextRaster};
 
 /// A caption page at one moment: what the plan hands the renderer.
@@ -42,7 +43,28 @@ pub struct WordLook {
     pub fill: Option<([f32; 4], f32)>,
     /// Colour of a box behind the word.
     pub box_color: Option<[f32; 4]>,
+    /// The box's padding in em and corner radius as a fraction of its height; the
+    /// highlight's box (0.15 em, 0.25) when `None`.
+    pub box_shape: Option<(f32, f32)>,
+    /// Corner brackets around the word and its box.
+    pub brackets: Option<BracketsLook>,
 }
+
+/// Corner brackets around a word, sizes in em.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BracketsLook {
+    /// Colour, linear RGB with alpha.
+    pub color: [f32; 4],
+    /// Each arm's length.
+    pub length: f32,
+    /// Line thickness.
+    pub thickness: f32,
+    /// Space between the word's box (or the word) and the brackets.
+    pub gap: f32,
+}
+
+/// The highlight box's padding in em and corner radius as a fraction of its height.
+const HIGHLIGHT_BOX: (f32, f32) = (0.15, 0.25);
 
 /// A page's look at a moment.
 #[derive(Clone, Debug, PartialEq)]
@@ -106,6 +128,8 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
                 scale: 1.0,
                 fill: None,
                 box_color: None,
+                box_shape: None,
+                brackets: None,
             })
             .collect(),
     };
@@ -145,6 +169,7 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
                         .box_color
                         .as_ref()
                         .map(|c| hex_to_linear(c.as_str()));
+                    look.box_shape = None;
                 }
             }
             Animator::WordPop(a) => {
@@ -169,10 +194,29 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
                 }
             }
             Animator::WordEmphasis(a) => {
+                let pop_length = millis(EMPHASIS_POP_MS);
                 for (look, word) in page.words.iter_mut().zip(&words) {
-                    if word.emphasis {
-                        look.color = hex_to_linear(a.params.color.as_str());
-                        look.scale *= a.params.scale as f32;
+                    if !word.emphasis {
+                        continue;
+                    }
+                    look.color = hex_to_linear(a.params.color.as_str());
+                    look.scale *= a.params.scale as f32;
+                    if a.params.pop != 1.0 && word.start <= t && t < word.start + pop_length {
+                        let bump =
+                            (progress(t - word.start, pop_length) * std::f32::consts::PI).sin();
+                        look.scale *= 1.0 + (a.params.pop as f32 - 1.0) * bump;
+                    }
+                    if let Some(word_box) = &a.params.word_box {
+                        look.box_color = Some(hex_to_linear(word_box.color.as_str()));
+                        look.box_shape = Some((word_box.padding as f32, word_box.radius as f32));
+                    }
+                    if let Some(brackets) = &a.params.brackets {
+                        look.brackets = Some(BracketsLook {
+                            color: hex_to_linear(brackets.color.as_str()),
+                            length: brackets.length as f32,
+                            thickness: brackets.thickness as f32,
+                            gap: brackets.gap as f32,
+                        });
                     }
                 }
             }
@@ -381,7 +425,28 @@ impl TextEngine {
         } else {
             0.0
         };
-        let margin = (size * 0.6 + stroke + padding).ceil();
+        // Room for outlines and line boxes, and for what reaches further: the shadow, and
+        // the boxes and brackets of words grown by their animators at their widest.
+        let shadow = &style.shadow;
+        let shadow_sigma = shadow.blur as f32 * size / 2.0;
+        let shadow_reach = if shadow.enabled {
+            shadow.offset[0].abs().max(shadow.offset[1].abs()) as f32 * size
+                + 3.0 * shadow_sigma
+                + stroke
+        } else {
+            0.0
+        };
+        let widest = lines
+            .iter()
+            .flatten()
+            .map(|(_, _, w)| *w)
+            .fold(0.0, f32::max);
+        let (grown, decorated) = reach(style);
+        let decoration_reach = (widest / 2.0 + decorated * size) * grown - widest / 2.0;
+        let margin = (size * 0.6 + stroke + padding)
+            .max(shadow_reach + 2.0)
+            .max(decoration_reach + 2.0)
+            .ceil();
         let width = (page_width + 2.0 * margin).ceil() as u32;
         let height = (lines_height + 2.0 * margin).ceil() as u32;
         let mut pixels = vec![[0.0f32; 4]; (width * height) as usize];
@@ -445,7 +510,15 @@ impl TextEngine {
             }
         }
 
-        let stroke_color = hex_to_linear(style.stroke.color.as_str());
+        // Every shown word drawn alone first: its ink, outline and place.
+        struct Drawn<'a> {
+            look: &'a WordLook,
+            rest: (f32, f32, f32),
+            ink: Ink,
+            outline: Option<Vec<f32>>,
+            origin: (i32, i32),
+        }
+        let mut drawn: Vec<Drawn> = Vec::new();
         for (word_index, text, _) in lines.iter().flatten() {
             let Some(look) = look.words.get(*word_index) else {
                 continue;
@@ -457,23 +530,6 @@ impl TextEngine {
             let center = (x + w / 2.0, y + line_height / 2.0);
             let word_size = size * look.scale.max(0.01);
             let word_stroke = stroke * look.scale.max(0.01);
-            if let Some(color) = look.box_color {
-                let half = (
-                    w * look.scale / 2.0 + size * 0.15,
-                    line_height * look.scale * 0.42,
-                );
-                let rect = [
-                    center.0 - half.0,
-                    center.1 - half.1,
-                    center.0 + half.0,
-                    center.1 + half.1,
-                ];
-                let mut mask = vec![0.0f32; pixels.len()];
-                rounded_rect(&mut mask, width, height, rect, (rect[3] - rect[1]) * 0.25);
-                for (pixel, &coverage) in pixels.iter_mut().zip(&mask) {
-                    over(pixel, color, coverage * look.alpha);
-                }
-            }
             let pad = word_stroke.ceil() as i32 + 2;
             let ink = self.word_ink(text, word_size, style, pad);
             let outline = (word_stroke > 0.0).then(|| {
@@ -487,7 +543,103 @@ impl TextEngine {
             // Place the word's advance box centre on its rest centre.
             let left = center.0 - (ink.pad as f32 + ink.advance / 2.0);
             let top = center.1 - (ink.pad as f32 + word_size * LINE_HEIGHT / 2.0);
-            let (ox, oy) = (left.round() as i32, top.round() as i32);
+            drawn.push(Drawn {
+                look,
+                rest: (x, y, w),
+                ink,
+                outline,
+                origin: (left.round() as i32, top.round() as i32),
+            });
+        }
+
+        // The shadow of every word (with its outline) under all of them, so no word's
+        // shadow falls on another word.
+        if shadow.enabled && !drawn.is_empty() {
+            let color = hex_to_linear(shadow.color.as_str());
+            let (dx, dy) = (
+                (shadow.offset[0] as f32 * size).round() as i32,
+                (shadow.offset[1] as f32 * size).round() as i32,
+            );
+            let mut mask = vec![0.0f32; pixels.len()];
+            for word in &drawn {
+                let source = word.outline.as_ref().unwrap_or(&word.ink.coverage);
+                for by in 0..word.ink.height {
+                    let py = word.origin.1 + by + dy;
+                    if py < 0 || py >= height as i32 {
+                        continue;
+                    }
+                    for bx in 0..word.ink.width {
+                        let px = word.origin.0 + bx + dx;
+                        if px < 0 || px >= width as i32 {
+                            continue;
+                        }
+                        let c = source[(by * word.ink.width + bx) as usize] * word.look.alpha;
+                        let cell = &mut mask[(py as u32 * width + px as u32) as usize];
+                        *cell = c + *cell * (1.0 - c);
+                    }
+                }
+            }
+            blur(&mut mask, width as usize, height as usize, shadow_sigma);
+            for (pixel, &coverage) in pixels.iter_mut().zip(&mask) {
+                over(pixel, color, coverage);
+            }
+        }
+
+        let stroke_color = hex_to_linear(style.stroke.color.as_str());
+        for word in &drawn {
+            let look = word.look;
+            let (x, y, w) = word.rest;
+            let center = (x + w / 2.0, y + line_height / 2.0);
+            let ink = &word.ink;
+            // The box around the word at its scale: the highlight's, or the emphasis box
+            // with its own padding and corners, which grows with the word.
+            let (half, box_radius) = match look.box_shape {
+                None => (
+                    (
+                        w * look.scale / 2.0 + size * HIGHLIGHT_BOX.0,
+                        line_height * look.scale * 0.42,
+                    ),
+                    HIGHLIGHT_BOX.1,
+                ),
+                Some((padding, radius)) => (
+                    (
+                        (w / 2.0 + padding * size) * look.scale,
+                        (0.42 * LINE_HEIGHT - HIGHLIGHT_BOX.0 + padding) * size * look.scale,
+                    ),
+                    radius,
+                ),
+            };
+            let rect = [
+                center.0 - half.0,
+                center.1 - half.1,
+                center.0 + half.0,
+                center.1 + half.1,
+            ];
+            if let Some(color) = look.box_color {
+                let mut mask = vec![0.0f32; pixels.len()];
+                let radius = (rect[3] - rect[1]) * box_radius;
+                rounded_rect(&mut mask, width, height, rect, radius);
+                for (pixel, &coverage) in pixels.iter_mut().zip(&mask) {
+                    over(pixel, color, coverage * look.alpha);
+                }
+            }
+            if let Some(brackets) = &look.brackets {
+                let em = size * look.scale;
+                let gap = brackets.gap * em;
+                let outer = [rect[0] - gap, rect[1] - gap, rect[2] + gap, rect[3] + gap];
+                let mut mask = vec![0.0f32; pixels.len()];
+                corner_brackets(
+                    &mut mask,
+                    (width, height),
+                    outer,
+                    brackets.length * em,
+                    (brackets.thickness * em).max(1.0),
+                );
+                for (pixel, &coverage) in pixels.iter_mut().zip(&mask) {
+                    over(pixel, brackets.color, coverage * look.alpha);
+                }
+            }
+            let (ox, oy) = word.origin;
             let karaoke_edge = look
                 .fill
                 .map(|(_, reached)| ink.pad as f32 + ink.advance * reached);
@@ -502,7 +654,7 @@ impl TextEngine {
                         continue;
                     }
                     let pixel = &mut pixels[(py as u32 * width + px as u32) as usize];
-                    if let Some(outline) = &outline {
+                    if let Some(outline) = &word.outline {
                         over(
                             pixel,
                             stroke_color,
@@ -562,6 +714,71 @@ impl TextEngine {
             canvas,
             scale,
         )
+    }
+}
+
+/// How far the style's animators can grow a word (its largest scale) and how far its box
+/// and brackets reach past the word's advance box, in em.
+fn reach(style: &CaptionStyle) -> (f32, f32) {
+    let mut grown = 1.0f32;
+    let mut decorated = 0.0f32;
+    for animator in style.animators.iter().filter(|a| a.enabled()) {
+        match animator {
+            Animator::WordHighlight(a) => {
+                grown *= (a.params.scale as f32).max(1.0);
+                if a.params.box_color.is_some() {
+                    decorated = decorated.max(HIGHLIGHT_BOX.0);
+                }
+            }
+            Animator::WordPop(a) => grown *= (a.params.scale as f32).max(1.0),
+            Animator::WordEmphasis(a) => {
+                grown *= (a.params.scale as f32).max(1.0) * (a.params.pop as f32).max(1.0);
+                let padding = a
+                    .params
+                    .word_box
+                    .as_ref()
+                    .map_or(HIGHLIGHT_BOX.0, |b| b.padding as f32);
+                if a.params.word_box.is_some() {
+                    decorated = decorated.max(padding);
+                }
+                if let Some(brackets) = &a.params.brackets {
+                    decorated = decorated.max(padding + brackets.gap as f32 + 0.05);
+                }
+            }
+            _ => {}
+        }
+    }
+    (grown, decorated)
+}
+
+/// Adds four corner brackets inside `outer` (`x0, y0, x1, y1`) to a coverage mask: at each
+/// corner an arm along each edge, `length` long and `thickness` thick, with round ends.
+fn corner_brackets(
+    mask: &mut [f32],
+    (width, height): (u32, u32),
+    outer: [f32; 4],
+    length: f32,
+    thickness: f32,
+) {
+    let [x0, y0, x1, y1] = outer;
+    let length = length
+        .min((x1 - x0) / 2.0)
+        .min((y1 - y0) / 2.0)
+        .max(thickness);
+    let round = thickness / 2.0;
+    for (cx, sx) in [(x0, 1.0f32), (x1, -1.0)] {
+        for (cy, sy) in [(y0, 1.0f32), (y1, -1.0)] {
+            let span = |from: f32, by: f32| {
+                let to = from + by;
+                [from.min(to), from.max(to)]
+            };
+            let [ax0, ax1] = span(cx, sx * length);
+            let [ay0, ay1] = span(cy, sy * thickness);
+            rounded_rect(mask, width, height, [ax0, ay0, ax1, ay1], round);
+            let [bx0, bx1] = span(cx, sx * thickness);
+            let [by0, by1] = span(cy, sy * length);
+            rounded_rect(mask, width, height, [bx0, by0, bx1, by1], round);
+        }
     }
 }
 
@@ -632,15 +849,27 @@ fn stack(
 }
 
 /// The page's centre in canvas pixels for a page `lines_height` canvas pixels tall, inside
-/// the canvas's safe area at the style's placement (ADR-0021 item 5).
+/// the canvas's safe area at the style's placement (ADR-0021 item 5). A placement by height
+/// puts the centre there, moved only as far as keeps the page inside the safe area.
 pub fn anchor(canvas: (u32, u32), placement: Placement, lines_height: f64) -> (f64, f64) {
     let (w, h) = (f64::from(canvas.0), f64::from(canvas.1));
     let [left, top, right, bottom] = safe_margins(canvas.0, canvas.1);
     let x = w * (1.0 + left - right) / 2.0;
+    let highest = h * top + lines_height / 2.0;
+    let lowest = h * (1.0 - bottom) - lines_height / 2.0;
     let y = match placement {
-        Placement::Top => h * top + lines_height / 2.0,
+        Placement::Top => highest,
         Placement::Middle => h * (1.0 + top - bottom) / 2.0,
-        Placement::Bottom => h * (1.0 - bottom) - lines_height / 2.0,
+        Placement::Bottom => lowest,
+        Placement::Height(fraction) => {
+            let wanted = h * fraction.clamp(0.0, 1.0);
+            // A page taller than the safe area centres in it.
+            if highest > lowest {
+                h * (1.0 + top - bottom) / 2.0
+            } else {
+                wanted.clamp(highest, lowest)
+            }
+        }
     };
     (x, y)
 }
@@ -787,6 +1016,7 @@ mod tests {
             params: WordEmphasis {
                 color: Color::parse("#FF0000").unwrap(),
                 scale: 1.5,
+                ..WordEmphasis::default()
             },
             ..Animated::default()
         });
@@ -1005,6 +1235,134 @@ mod tests {
     }
 
     #[test]
+    fn emphasised_words_get_their_box_brackets_and_pop() {
+        let emphasis = |pop: f64| {
+            Animator::WordEmphasis(Animated {
+                params: WordEmphasis {
+                    color: Color::parse("#FFFFFF").unwrap(),
+                    scale: 1.0,
+                    pop,
+                    word_box: Some(fosscut_model::WordBox::default()),
+                    brackets: Some(fosscut_model::Brackets::default()),
+                },
+                ..Animated::default()
+            })
+        };
+        // "news" (300 to 700 ms) is emphasised: boxed and bracketed, the others not.
+        let look = evaluate(&layer(vec![emphasis(1.0)], 0));
+        let news = &look.words[1];
+        assert_eq!(news.box_color, Some(hex_to_linear("#2F6BFF")));
+        assert_eq!(news.box_shape, Some((0.2, 0.15)));
+        let brackets = news.brackets.as_ref().unwrap();
+        assert_eq!(brackets.color, hex_to_linear("#FFE14D"));
+        assert!((brackets.length - 0.3).abs() < 1e-6);
+        assert!(look.words[0].box_color.is_none() && look.words[0].brackets.is_none());
+        // The pop peaks halfway through its 240 ms and is gone after.
+        let scale = |pop: f64, t: i64| evaluate(&layer(vec![emphasis(pop)], t)).words[1].scale;
+        assert!((scale(1.2, 300 + 120) - 1.2).abs() < 1e-6);
+        assert_eq!(scale(1.2, 299), 1.0);
+        assert_eq!(scale(1.2, 300 + 240), 1.0);
+        assert_eq!(scale(1.0, 420), 1.0, "no pop by default");
+
+        // Drawn: blue box pixels around the word, yellow bracket pixels at its corners,
+        // white letters on the box; a word without emphasis has none of them.
+        let style = |animators| CaptionStyle {
+            stroke: fosscut_model::Stroke::off(),
+            animators,
+            ..CaptionStyle::default()
+        };
+        let boxed = raster(style(vec![emphasis(1.0)]), 1000, (1920, 1080));
+        let plain = raster(style(Vec::new()), 1000, (1920, 1080));
+        let count = |r: &CaptionRaster, wanted: [f32; 4]| {
+            r.pixels
+                .iter()
+                .filter(|p| p[3] > 0.99 && (0..3).all(|c| (p[c] - wanted[c]).abs() < 0.02))
+                .count()
+        };
+        let (blue, yellow) = (hex_to_linear("#2F6BFF"), hex_to_linear("#FFE14D"));
+        assert!(count(&boxed, blue) > 200, "{}", count(&boxed, blue));
+        assert!(count(&boxed, yellow) > 40, "{}", count(&boxed, yellow));
+        assert_eq!(count(&plain, blue) + count(&plain, yellow), 0);
+        // The brackets lie outside the box: the topmost yellow row is above the topmost
+        // blue one.
+        let top = |r: &CaptionRaster, wanted: [f32; 4]| {
+            (0..r.height).find(|&y| {
+                (0..r.width).any(|x| {
+                    let p = r.at(x, y);
+                    p[3] > 0.99 && (0..3).all(|c| (p[c] - wanted[c]).abs() < 0.02)
+                })
+            })
+        };
+        assert!(top(&boxed, yellow).unwrap() < top(&boxed, blue).unwrap());
+        // The layout at rest is the same: the lines keep their height.
+        assert_eq!(boxed.lines_height, plain.lines_height);
+    }
+
+    #[test]
+    fn shadows_fall_soft_and_offset_under_every_word() {
+        let canvas = (1920, 1080);
+        let plain = raster(
+            CaptionStyle {
+                stroke: fosscut_model::Stroke::off(),
+                ..CaptionStyle::default()
+            },
+            1000,
+            canvas,
+        );
+        let shadowed = raster(
+            CaptionStyle {
+                stroke: fosscut_model::Stroke::off(),
+                shadow: fosscut_model::Shadow {
+                    enabled: true,
+                    color: Color::parse("#000000").unwrap(),
+                    offset: [0.0, 0.1],
+                    blur: 0.2,
+                },
+                ..CaptionStyle::default()
+            },
+            1000,
+            canvas,
+        );
+        assert!(shadowed.width >= plain.width, "the shadow needs room");
+        assert!(
+            ink(&shadowed) > ink(&plain) * 1.3,
+            "the shadow adds coverage"
+        );
+        // The letters stay white; dark coverage reaches further down than the letters.
+        let rows = |r: &CaptionRaster, dark: bool| -> Vec<u32> {
+            (0..r.height)
+                .filter(|&y| {
+                    (0..r.width).any(|x| {
+                        let p = r.at(x, y);
+                        if dark {
+                            p[3] > 0.05 && p[0] < 0.01 * p[3].max(1e-6) + 0.02
+                        } else {
+                            p[3] > 0.9 && p[0] / p[3] > 0.95
+                        }
+                    })
+                })
+                .collect()
+        };
+        let white = rows(&shadowed, false);
+        let dark = rows(&shadowed, true);
+        assert!(!white.is_empty() && !dark.is_empty());
+        assert!(
+            dark.last().unwrap() > white.last().unwrap(),
+            "it falls down"
+        );
+        // Soft: shadow coverage takes many levels, not just on and off.
+        let mut levels: Vec<u32> = shadowed
+            .pixels
+            .iter()
+            .filter(|p| p[3] > 0.0 && p[0] < 0.01)
+            .map(|p| (p[3] * 50.0) as u32)
+            .collect();
+        levels.sort_unstable();
+        levels.dedup();
+        assert!(levels.len() > 20, "{}", levels.len());
+    }
+
+    #[test]
     fn pages_anchor_inside_the_safe_area() {
         let tall = (1080, 1920);
         let (x, y) = anchor(tall, Placement::Bottom, 200.0);
@@ -1016,5 +1374,20 @@ mod tests {
         assert!((middle - 1920.0 * 0.44).abs() < 1e-9);
         let (wx, wy) = anchor((1920, 1080), Placement::Bottom, 100.0);
         assert!((wx - 960.0).abs() < 1e-9 && (wy - (1026.0 - 50.0)).abs() < 1e-9);
+        // By height: the centre where asked, kept inside the safe area.
+        let (_, at) = anchor(tall, Placement::Height(0.6), 200.0);
+        assert!((at - 1152.0).abs() < 1e-9);
+        let (_, low) = anchor(tall, Placement::Height(1.0), 200.0);
+        assert!(
+            (low - (1920.0 * 0.78 - 100.0)).abs() < 1e-9,
+            "no lower than bottom"
+        );
+        let (_, high) = anchor(tall, Placement::Height(0.0), 200.0);
+        assert!((high - 292.0).abs() < 1e-9, "no higher than top");
+        let (_, huge) = anchor(tall, Placement::Height(0.9), 1900.0);
+        assert!(
+            (huge - middle).abs() < 1e-9,
+            "a page taller than the area centres"
+        );
     }
 }

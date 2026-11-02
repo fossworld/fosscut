@@ -1,0 +1,83 @@
+[
+  {
+    "name": "appear",
+    "type": "number",
+    "min": 0,
+    "max": 600,
+    "default": 0,
+    "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear."
+  },
+  {
+    "name": "hold",
+    "type": "number",
+    "min": 0.2,
+    "max": 600,
+    "default": 3,
+    "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1."
+  },
+  {
+    "name": "exit",
+    "type": "bool",
+    "default": true,
+    "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends."
+  },
+  {
+    "name": "speed",
+    "type": "number",
+    "min": 0.25,
+    "max": 4,
+    "default": 1,
+    "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds."
+  },
+  {
+    "name": "theme",
+    "type": "choice",
+    "choices": [
+      "light",
+      "dark"
+    ],
+    "default": "light",
+    "description": "White cards with dark text, or near-black cards with light text."
+  },
+  {
+    "name": "accent",
+    "type": "color",
+    "default": "#2F6BFF",
+    "description": "The accent colour of highlights, bars, buttons and selections."
+  },
+  {
+    "name": "width",
+    "type": "number",
+    "integer": true,
+    "min": 16,
+    "max": 4096,
+    "default": null,
+    "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper."
+  },
+  {
+    "name": "height",
+    "type": "number",
+    "integer": true,
+    "min": 16,
+    "max": 4096,
+    "default": null,
+    "description": "Canvas height in pixels; the template's own when omitted."
+  },
+  {
+    "name": "duration",
+    "type": "number",
+    "min": 0.5,
+    "max": 1200,
+    "default": null,
+    "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on."
+  },
+  {
+    "name": "fps",
+    "type": "number",
+    "integer": true,
+    "min": 1,
+    "max": 120,
+    "default": null,
+    "description": "Frames per second; the template's own when omitted."
+  }
+]

@@ -322,6 +322,44 @@ fn effect_parameters_take_keyframes() {
 }
 
 #[test]
+fn every_picture_effect_mixes_in_and_out_with_keyframes() {
+    let (mut session, _, clip) = session_with_clip();
+    let added = run(
+        &mut session,
+        "effect.add",
+        json!({ "clip": clip, "type": "key.subject", "params": { "mix": 0.0 } }),
+    );
+    let effect = added.results[0]["effect"].as_str().unwrap().to_string();
+    // Switched on for 1 s to 3 s: held off, on, and off again.
+    let path = format!("effects.{effect}.mix");
+    run(
+        &mut session,
+        "keyframe.set_all",
+        json!({ "clip": clip, "property": path, "keys": [
+            { "offset": "0s", "value": 0.0, "easing": "hold" },
+            { "offset": "1s", "value": 1.0, "easing": "hold" },
+            { "offset": "3s", "value": 0.0, "easing": "hold" },
+        ] }),
+    );
+    let view = &full(&session)["tracks"][0]["clips"][0]["effects"][0];
+    assert_eq!(view["keyframes"]["mix"].as_array().unwrap().len(), 3);
+    // Mix is a number from 0 to 1 like any other.
+    let error = fails(
+        &mut session,
+        "keyframe.set",
+        json!({ "clip": clip, "property": path, "at": "2s", "value": 1.5 }),
+    );
+    assert_eq!(error.code, codes::INVALID_ARGUMENTS);
+    // Out of range is refused when adding too.
+    let error = fails(
+        &mut session,
+        "effect.add",
+        json!({ "clip": clip, "type": "color.adjust", "params": { "mix": -0.1 } }),
+    );
+    assert_eq!(error.code, codes::INVALID_ARGUMENTS);
+}
+
+#[test]
 fn copies_adjustments_and_looks() {
     let (mut session, _, clip) = session_with_clip();
     run(
