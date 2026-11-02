@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=620, fps=30, duration=4.4">
+<title>Timeline cut</title>
+<!--
+  Made by FossCut for its library: a timeline whose dead parts are marked and cut away,
+  the kept clips closing up, while the total length counts down from one time to another.
+  Every frame is a function of time, through window.fosscut.seek and the overlay kit.
+  Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 30px 32px 36px; }
+  #head { display: flex; align-items: flex-end; justify-content: space-between; height: 118px; }
+  #label { font-size: 24px; font-weight: 700; color: var(--muted); letter-spacing: 0.01em; }
+  #count { font-size: 84px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; margin-top: 8px; }
+  #status { position: relative; width: 320px; height: 52px; margin-bottom: 8px; }
+  #status .chip { position: absolute; right: 0; top: 0; }
+  #tracks { position: relative; height: 196px; margin-top: 26px; border-radius: 22px; background: var(--card-2); overflow: hidden; }
+  #ruler { position: absolute; left: 0; right: 0; top: 0; height: 32px; }
+  #ruler i { position: absolute; top: 14px; width: 2px; height: 10px; border-radius: 1px; background: var(--faint); opacity: 0.55; }
+  #ruler i.major { top: 10px; height: 14px; opacity: 0.9; }
+  .row { position: absolute; left: 16px; right: 16px; }
+  .seg { position: absolute; top: 0; bottom: 0; border-radius: 10px; overflow: hidden; }
+  .seg .fill { position: absolute; inset: 0 3px; border-radius: 10px; }
+  .keep.video .fill { background: var(--accent); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.2); }
+  .keep.video .fill b { position: absolute; left: 0; top: 0; bottom: 0; width: 40px; background: rgba(255, 255, 255, 0.24); }
+  .keep.sound .fill { background: rgba(var(--accent-rgb), 0.28); }
+  .cut .fill { background: repeating-linear-gradient(135deg, var(--card-3) 0 10px, var(--card) 10px 20px); box-shadow: inset 0 0 0 2px var(--line); }
+  .cut .flag { position: absolute; inset: 0 3px; border-radius: 10px; background: rgba(240, 68, 56, 0.9); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.25); }
+  .cut .snip { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: #fff; color: var(--bad);
+               display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); }
+  .wave { position: absolute; inset: 6px 10px; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

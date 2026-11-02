@@ -963,6 +963,59 @@ fn caption_presets_and_placements() {
     );
 }
 
+/// The reel look (ADR-0021, format 0.17.0): one word with a soft shadow at 0.6 of a tall
+/// canvas's height, a keyword in its box with corner brackets after its pop, and a shadow
+/// under a two-line page placed by height on a wide canvas.
+#[test]
+fn reel_captions_with_shadows_heights_and_keyword_boxes() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut tall = Frames::default().with(1, pattern(360, 640, 0));
+    let mut wide = Frames::default().with(1, pattern(640, 360, 0));
+
+    let word = page(&[&[("Stop", 0, 400, false)]]);
+    let plan = caption_scene((1080, 1920), preset("reel"), word, 300);
+    check_at(
+        "caption-reel-word",
+        &mut renderer,
+        &plan,
+        &mut tall,
+        TALL_SIZE,
+    );
+
+    let keyword = page(&[&[("editing", 0, 500, true)]]);
+    let plan = caption_scene((1080, 1920), preset("reel"), keyword, 400);
+    check_at(
+        "caption-reel-keyword",
+        &mut renderer,
+        &plan,
+        &mut tall,
+        TALL_SIZE,
+    );
+
+    let mut shadowed = preset("highlight");
+    shadowed.placement = Placement::Height(0.3);
+    shadowed.shadow = Shadow {
+        enabled: true,
+        color: Color::parse("#000000CC").unwrap(),
+        offset: [0.08, 0.1],
+        blur: 0.15,
+    };
+    let speech: &[&[(&str, i64, i64, bool)]] = &[
+        &[("This", 0, 250, false), ("changes", 250, 700, true)],
+        &[("everything", 750, 1300, false)],
+    ];
+    let plan = caption_scene((1920, 1080), shadowed, page(speech), 450);
+    check_at(
+        "caption-shadow-height-wide",
+        &mut renderer,
+        &plan,
+        &mut wide,
+        TEXT_SIZE,
+    );
+}
+
 /// Smooth slow motion: a moving test pattern half way between two of its frames, so both
 /// positions show at half strength.
 #[test]

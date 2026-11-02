@@ -49,6 +49,8 @@ pub enum Word {
     AllFiles,
     /// The title of the dialog that chooses a web composition's page or folder.
     ImportComposition,
+    /// The title of the dialog that chooses a video for an AI edit.
+    ChooseVideo,
 }
 
 /// `word` in `language` (a code of `fosscut_engine::preferences::LANGUAGES`); English for
@@ -77,6 +79,7 @@ pub fn word(language: &str, word: Word) -> &'static str {
         ("hu", Word::FontFiles) => "Betűtípusok",
         ("hu", Word::AllFiles) => "Minden fájl",
         ("hu", Word::ImportComposition) => "Webes kompozíció importálása",
+        ("hu", Word::ChooseVideo) => "Videó kiválasztása",
         (_, Word::OpenProject) => "Open a FossCut project",
         (_, Word::CreateProject) => "Create a FossCut project",
         (_, Word::FindMedia) => "Find the media file",
@@ -99,6 +102,7 @@ pub fn word(language: &str, word: Word) -> &'static str {
         (_, Word::FontFiles) => "Fonts",
         (_, Word::AllFiles) => "All files",
         (_, Word::ImportComposition) => "Import a web composition",
+        (_, Word::ChooseVideo) => "Choose a video",
     }
 }
 
@@ -131,6 +135,7 @@ mod tests {
             Word::FontFiles,
             Word::AllFiles,
             Word::ImportComposition,
+            Word::ChooseVideo,
         ];
         for text in all {
             assert_ne!(word("hu", text), word("en", text), "{text:?}");

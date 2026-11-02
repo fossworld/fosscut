@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=960, fps=30, duration=3.9">
+<title>Reel fan</title>
+<!--
+  Made by FossCut for its library: three to five vertical video cards rise as a stack and
+  fan out, each with a view count that counts up. Every frame is a function of time,
+  through window.fosscut.seek and the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  .reel { position: absolute; left: 395px; top: 196px; width: 290px; height: 516px; transform-origin: 50% 120%; }
+  /* A soft shadow painted as a gradient: blurred shadows on turned cards can differ by a
+     hair from frame to frame in the browser, gradients do not. */
+  .reel .plate { position: absolute; left: -26px; right: -26px; top: -6px; bottom: -46px; border-radius: 60px;
+                 background: radial-gradient(closest-side, rgba(16, 24, 40, 0.34) 0%, rgba(16, 24, 40, 0.20) 62%, rgba(16, 24, 40, 0.07) 84%, rgba(16, 24, 40, 0) 100%); }
+  :root[data-theme="dark"] .reel .plate { background: radial-gradient(closest-side, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.36) 62%, rgba(0, 0, 0, 0.12) 84%, rgba(0, 0, 0, 0) 100%); }
+  .reel .body { position: absolute; inset: 0; border-radius: 30px; padding: 7px; background: var(--card); box-shadow: 0 0 0 1px var(--edge); }
+  .reel .screen { position: relative; width: 100%; height: 100%; border-radius: 24px; overflow: hidden; background: var(--screen); }
+  .reel .media { border-radius: 24px; }
+  .reel .shade { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 100%); }
+  .reel .bars { position: absolute; left: 18px; right: 18px; bottom: 84px; }
+  .reel .bars i { display: block; height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.8); margin-top: 9px; }
+  .reel .bars i:last-child { width: 62%; background: rgba(255, 255, 255, 0.55); }
+  .reel .views { position: absolute; left: 14px; bottom: 16px; height: 50px; padding: 0 16px 0 10px; border-radius: 25px; background: rgba(8, 10, 14, 0.55);
+                 color: #fff; display: flex; align-items: center; gap: 8px; font-size: 25px; font-weight: 800; letter-spacing: -0.01em; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

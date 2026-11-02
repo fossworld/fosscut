@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=380, fps=30, duration=3.9">
+<title>Comment call to action</title>
+<!--
+  Made by FossCut for its library: a comment notification that drops in from the top,
+  with an avatar, a name, a time and a message whose keyword sits in an accent pill that
+  pops and pulses. Every frame is a function of time, through window.fosscut.seek and the
+  overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 40px; width: 952px; padding: 26px 30px 30px; border-radius: 40px; }
+  #top { display: flex; align-items: center; gap: 14px; font-size: 23px; font-weight: 700; color: var(--muted); }
+  #bell { width: 44px; height: 44px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); display: flex; align-items: center; justify-content: center; flex: none; }
+  #top .when { margin-left: auto; font-weight: 400; }
+  #body { display: flex; gap: 22px; margin-top: 20px; align-items: flex-start; }
+  #body .avatar { width: 84px; height: 84px; font-size: 32px; }
+  #text { flex: 1; min-width: 0; }
+  #name { font-size: 30px; font-weight: 800; letter-spacing: -0.015em; }
+  #message { margin-top: 8px; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.35; color: var(--ink); }
+  #keyword { display: inline-block; padding: 0 16px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); font-weight: 800; transform-origin: 50% 60%; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

@@ -1084,6 +1084,36 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ]),
             )
         }
+        Command::Audio(AudioCommand::Duck {
+            music,
+            speech,
+            depth,
+            attack,
+            release,
+            gap,
+            from,
+        }) => duck(cli, music, speech, *depth, [*attack, *release, *gap], from),
+        Command::Audio(AudioCommand::Sync {
+            camera,
+            recording,
+            track,
+            timeline,
+            max_offset,
+        }) => sync_audio(
+            cli,
+            camera,
+            recording,
+            track.as_deref(),
+            timeline.as_deref(),
+            max_offset.unwrap_or(0.0),
+        ),
+        Command::Clip(ClipCommand::PunchIn {
+            clip,
+            moments,
+            scale,
+            ease,
+            focus,
+        }) => punch_in(cli, clip, moments, *scale, *ease, focus.as_deref()),
         Command::Audio(AudioCommand::Voice {
             preset,
             clip,
@@ -1958,8 +1988,23 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
                     params,
                     media: media.clone(),
                 };
-                let media_add = library::media_args_with(&path, &item, &input, project.as_ref())
-                    .map_err(|e| engine_error(&e))?;
+                // Music given a length is a bed: the loop repeated to fill it, one asset.
+                let mut bed = None;
+                let media_add = match (item.kind, duration) {
+                    ("music", Some(length)) => {
+                        let snapshot = bundle::snapshot(&path)?;
+                        let (_, format) = timeline_of(&snapshot, timeline.as_deref())?;
+                        let rate = format.rate;
+                        let length = length.resolve(rate).map_err(|e| {
+                            ApiError::new(codes::INVALID_ARGUMENTS, format!("duration: {e}"))
+                        })?;
+                        let length = rate.frames_to_flicks(rate.frame_at(length));
+                        bed = Some(json!({ "flicks": length.get() }));
+                        library::music_bed_media(&path, &item.name, length)
+                    }
+                    _ => library::media_args_with(&path, &item, &input, project.as_ref()),
+                }
+                .map_err(|e| engine_error(&e))?;
                 // The import is the first write and takes the revision check and dry run;
                 // placing follows on the revision it made.
                 let mut import = Request::single("media.add", media_add);
@@ -1981,7 +2026,7 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
                         (start.is_some() && track.is_none()).then_some(json!(true)),
                     ),
                     ("start", start),
-                    ("duration", some(duration)),
+                    ("duration", bed.or_else(|| some(duration))),
                     ("track", some(track)),
                     ("timeline", some(timeline)),
                 ]);
@@ -2016,6 +2061,197 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
             )
         }
     }
+}
+
+/// A keyword for `captions generate --emphasis`: `WORDS` or `WORDS@TIME` (frames counted at
+/// `rate`).
+fn emphasis_word(
+    text: &str,
+    rate: Rate,
+) -> Result<fosscut_engine::captions::EmphasisWord, ApiError> {
+    let (words, at) = match text.rsplit_once('@') {
+        Some((words, time)) => {
+            let time: TimeInput = time.parse().map_err(|e| {
+                ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!("--emphasis {text}: the time after @: {e}"),
+                )
+            })?;
+            let at = time.resolve(rate).map_err(|e| {
+                ApiError::new(codes::INVALID_ARGUMENTS, format!("--emphasis {text}: {e}"))
+            })?;
+            (words, Some(at))
+        }
+        None => (text, None),
+    };
+    Ok(fosscut_engine::captions::EmphasisWord {
+        text: words.to_string(),
+        at,
+    })
+}
+
+/// Seconds as flicks, for options given in seconds.
+fn seconds_option(value: f64, what: &str) -> Result<fosscut_time::Flicks, ApiError> {
+    fosscut_time::Flicks::from_seconds_f64(value)
+        .map_err(|e| ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}")))
+}
+
+/// `fosscut audio duck`: keys the music clips' volume down under speech in one change.
+fn duck(
+    cli: &Cli,
+    music: &[String],
+    speech: &[String],
+    depth: Option<f64>,
+    [attack, release, gap]: [Option<f64>; 3],
+    from: &str,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::duck::{self, DuckContext, DuckOptions, SpeechSource};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let ids = |list: &[String], what: &str| {
+        list.iter()
+            .map(|c| parse_id(c, what))
+            .collect::<Result<Vec<Id>, ApiError>>()
+    };
+    let defaults = DuckOptions::default();
+    let options = DuckOptions {
+        depth_db: depth.unwrap_or(defaults.depth_db),
+        attack: attack.map_or(Ok(defaults.attack), |s| seconds_option(s, "attack"))?,
+        release: release.map_or(Ok(defaults.release), |s| seconds_option(s, "release"))?,
+        gap: gap.map_or(Ok(defaults.gap), |s| seconds_option(s, "gap"))?,
+        source: SpeechSource::named(from).map_err(|e| engine_error(&e))?,
+    };
+    let plan = duck::duck(
+        &snapshot,
+        &DuckContext {
+            bundle: path.clone(),
+            cache: fosscut_engine::cache_dir(),
+            models: fosscut_engine::models_dir(),
+        },
+        &ids(music, "music")?,
+        &ids(speech, "speech")?,
+        &options,
+        &mut progress_printer("finding speech"),
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_measured(cli, &path, "audio.duck", "duck", json!(plan), commands)
+}
+
+/// `fosscut audio sync`: places a separate recording under the camera's clips in one
+/// change, at the revision it was planned at (the ids it reports are the ones made).
+fn sync_audio(
+    cli: &Cli,
+    camera: &str,
+    recording: &str,
+    track: Option<&str>,
+    timeline: Option<&str>,
+    max_offset: f64,
+) -> Result<Outcome, ApiError> {
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let request = fosscut_engine::sync::SyncRequest {
+        camera: parse_id(camera, "camera")?,
+        recording: parse_id(recording, "recording")?,
+        timeline: timeline.map(|t| parse_id(t, "timeline")).transpose()?,
+        track: track.map(|t| parse_id(t, "track")).transpose()?,
+        max_offset_seconds: max_offset,
+    };
+    let plan = fosscut_engine::sync::sync_audio(&snapshot, &path, &request)
+        .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    let revision = plan.revision;
+    apply_at(
+        cli,
+        &path,
+        "audio.sync",
+        "sync",
+        json!(plan),
+        commands,
+        revision,
+    )
+}
+
+/// `fosscut clip punch-in`: eased zooms on the face for moments, in one change.
+fn punch_in(
+    cli: &Cli,
+    clip: &str,
+    moments: &[String],
+    scale: f64,
+    ease: f64,
+    focus: Option<&[f64]>,
+) -> Result<Outcome, ApiError> {
+    use fosscut_engine::punch::{Moment, PunchRequest};
+    let path = bundle::bundle_path(cli.project.as_deref())?;
+    let snapshot = bundle::snapshot(&path)?;
+    let clip = parse_id(clip, "clip")?;
+    let rate = snapshot
+        .timelines
+        .values()
+        .find(|t| t.tracks.iter().flat_map(|t| &t.clips).any(|c| c.id == clip))
+        .map_or(Rate::FPS_30, |t| t.format.rate);
+    let ease = seconds_option(ease, "ease")?;
+    let invalid = |m: &str, why: &str| {
+        ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("--moment {m}: {why}; give FROM,TO[,SCALE] such as 3.2s,4.6s,1.2"),
+        )
+    };
+    let parsed = moments
+        .iter()
+        .map(|m| {
+            let parts: Vec<&str> = m.split(',').map(str::trim).collect();
+            let time = |text: &str| {
+                text.parse::<TimeInput>()
+                    .and_then(|t| t.resolve(rate))
+                    .map_err(|e| invalid(m, &e.to_string()))
+            };
+            match parts.as_slice() {
+                [from, to] | [from, to, _] => Ok(Moment {
+                    start: time(from)?,
+                    end: time(to)?,
+                    scale: match parts.get(2) {
+                        Some(value) => value
+                            .parse()
+                            .map_err(|_| invalid(m, "the scale is a number"))?,
+                        None => scale,
+                    },
+                    ease,
+                }),
+                _ => Err(invalid(m, "it has two or three parts")),
+            }
+        })
+        .collect::<Result<Vec<Moment>, ApiError>>()?;
+    let focus = match focus {
+        None => None,
+        Some([x, y]) => Some([*x, *y]),
+        Some(_) => {
+            return Err(ApiError::new(
+                codes::INVALID_ARGUMENTS,
+                "--focus is X,Y: fractions of the picture from its left and top edges",
+            ));
+        }
+    };
+    let plan = fosscut_engine::punch::punch_in(
+        &snapshot,
+        &PunchRequest {
+            bundle: path.clone(),
+            cache: fosscut_engine::cache_dir(),
+            clip,
+            moments: parsed,
+            focus,
+        },
+    )
+    .map_err(|e| engine_error(&e))?;
+    let commands = plan.commands.clone();
+    apply_measured(
+        cli,
+        &path,
+        "clip.punch_in",
+        "punch_in",
+        json!(plan),
+        commands,
+    )
 }
 
 /// `fosscut audio normalize`: measures the clips and sets their volumes in one change.
@@ -3030,6 +3266,7 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
             min_pause_ms,
             skip_fillers,
             lyrics,
+            emphasis,
             replace,
         } => {
             let snapshot = bundle::snapshot(&path)?;
@@ -3058,6 +3295,13 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                     models: fosscut_engine::models_dir(),
                     skip_fillers: *skip_fillers,
                     lyrics: *lyrics,
+                    emphasis: {
+                        let (_, format) = timeline_of(&snapshot, timeline.as_deref())?;
+                        emphasis
+                            .iter()
+                            .map(|text| emphasis_word(text, format.rate))
+                            .collect::<Result<Vec<_>, ApiError>>()?
+                    },
                 },
             )
             .map_err(|e| engine_error(&e))?;
@@ -3085,7 +3329,15 @@ fn captions(cli: &Cli, command: &CaptionsCommand) -> Result<Outcome, ApiError> {
                     ("timeline", Some(json!(generated.timeline))),
                     ("track", some(track)),
                     ("preset", some(&preset)),
-                    ("paging", Some(paging)),
+                    // Without limits given, the preset's own paging applies (reel: a word
+                    // a page).
+                    (
+                        "paging",
+                        paging
+                            .as_object()
+                            .is_some_and(|p| !p.is_empty())
+                            .then_some(paging),
+                    ),
                     ("replace", replace.then_some(json!(true))),
                 ]),
             )

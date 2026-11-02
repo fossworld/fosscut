@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=900, height=560, fps=30, duration=3.4">
+<title>Stat counter</title>
+<!--
+  Made by FossCut for its library: a big number counting up to its value with a prefix
+  and suffix, a label under it, an accent line growing beneath and a trend chip. Every
+  frame is a function of time, through window.fosscut.seek and the overlay kit. Free to
+  use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 772px; padding: 40px 48px 46px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+  #kicker { display: flex; justify-content: center; align-items: center; gap: 12px; font-size: 24px; font-weight: 700; color: var(--muted); letter-spacing: 0.01em; }
+  #kicker .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+  #number { margin-top: 10px; font-size: 168px; font-weight: 800; letter-spacing: -0.045em; line-height: 0.95; white-space: nowrap; }
+  #number .affix { color: var(--accent); }
+  #line { height: 10px; margin-top: 22px; border-radius: 5px; background: var(--accent); transform-origin: 0 50%; width: 220px; }
+  #label { margin-top: 22px; font-size: 38px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink-2); line-height: 1.2; }
+  #trend { margin-top: 26px; }
+  #trend.chip { height: 54px; font-size: 25px; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

@@ -435,8 +435,8 @@ pub struct CaptionsArgs {
     /// generate: the track whose clips are captioned; the first video or audio track with
     /// sound when omitted.
     pub source_track: Option<String>,
-    /// A built-in look: `bold-pop`, `highlight`, `karaoke` or `boxed` (capabilities lists
-    /// them with descriptions).
+    /// A built-in look: `bold-pop`, `highlight`, `karaoke`, `boxed` or `reel` (capabilities
+    /// lists them with descriptions).
     pub preset: Option<String>,
     /// Changes to the caption track's look as a JSON merge patch, for example
     /// `{"placement": "middle", "size": 0.07}`.
@@ -454,6 +454,11 @@ pub struct CaptionsArgs {
     /// the karaoke look unless a preset is given.
     #[serde(default)]
     pub lyrics: bool,
+    /// generate: keywords to emphasise (the word.emphasis animator styles them; the reel
+    /// preset puts them in a box with corner brackets), each a word or words in a row as
+    /// said, every time it is said, or with at only where it is said nearest that time.
+    #[serde(default)]
+    pub emphasis: Vec<EmphasisArg>,
     /// export: `original` (the default), `translation` (each page's translation line) or
     /// `both` (bilingual: the words, then the translation).
     pub subtitles: Option<String>,
@@ -472,6 +477,16 @@ pub struct CaptionsArgs {
     pub allow_destructive: bool,
     /// Why, recorded in the project's history.
     pub reason: Option<String>,
+}
+
+/// A keyword for generated captions.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct EmphasisArg {
+    /// The word, or words in a row, as said; case and punctuation do not matter.
+    pub text: String,
+    /// The timeline time it is said near, to pick one of several occurrences; every
+    /// occurrence when omitted.
+    pub at: Option<TimeInput>,
 }
 
 /// What the `library` tool does.
@@ -501,7 +516,8 @@ pub struct LibraryArgs {
     pub search: Option<String>,
     /// add: where it starts.
     pub start: Option<fosscut_time::TimeInput>,
-    /// add: how long it lasts.
+    /// add: how long it lasts; a music loop repeats back to back to fill it (up to 600 s),
+    /// its end faded out, as one clip.
     pub duration: Option<fosscut_time::TimeInput>,
     /// add: the track.
     pub track: Option<String>,
@@ -586,6 +602,30 @@ pub enum AutoEditAction {
     ShortCandidates,
     /// Build a vertical short from a range of a clip's media.
     MakeShort,
+    /// Lower music clips under the speech of other clips with volume keyframes.
+    Duck,
+    /// Place a separate recording under every clip of the camera's video, synced by sound.
+    SyncAudio,
+    /// Zoom a talking head in for moments and back out, centred on the face.
+    PunchIn,
+}
+
+/// One punch-in moment: `at` with `duration`, or `start` and `end`, on the timeline.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub struct PunchMomentArg {
+    /// Where it starts; give duration with it.
+    pub at: Option<TimeInput>,
+    /// How long it lasts from at.
+    pub duration: Option<TimeInput>,
+    /// Where it starts, with end instead of at and duration.
+    pub start: Option<TimeInput>,
+    /// Where it ends.
+    pub end: Option<TimeInput>,
+    /// How far it zooms, 0.5 to 4 (1.15 when omitted).
+    pub scale: Option<f64>,
+    /// Seconds the zoom takes in, and back out (0.25 when omitted; at most half the
+    /// moment).
+    pub ease: Option<f64>,
 }
 
 /// A region of a picture: its centre and size as fractions of the picture.
@@ -607,12 +647,41 @@ pub struct AutoEditArgs {
     /// Path of a `.fosscut` bundle; the open project when omitted.
     pub project: Option<String>,
     /// `split_scenes`, `stabilize`, `track`, `multicam`, `multicam_sync`, `reframe`,
-    /// `camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates` or
-    /// `make_short`.
+    /// `camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates`,
+    /// `make_short`, `duck`, `sync_audio` or `punch_in`.
     pub action: AutoEditAction,
-    /// split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short:
-    /// the video clip to measure.
+    /// split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short,
+    /// punch_in: the video clip to measure.
     pub clip: Option<String>,
+    /// duck: the music clips to duck (or music for one).
+    #[serde(default)]
+    pub clips: Vec<String>,
+    /// duck: the clips whose speech the music ducks under; every other clip with sound on
+    /// the music's timeline when omitted.
+    #[serde(default)]
+    pub speech: Vec<String>,
+    /// duck: where speech comes from: `auto` (the cached transcript, or silences measured
+    /// now without one; the default), `transcript` or `silences`.
+    pub speech_from: Option<String>,
+    /// duck: how far the music goes down under speech, in dB, -60 to -1 (-12 when omitted).
+    pub depth_db: Option<f64>,
+    /// duck: seconds the music takes to go down before speech (0.2 when omitted).
+    pub attack: Option<f64>,
+    /// duck: seconds the music takes to come back after speech (0.5 when omitted).
+    pub release: Option<f64>,
+    /// duck: pauses in the speech shorter than this many seconds keep the music down (0.8
+    /// when omitted).
+    pub gap: Option<f64>,
+    /// sync_audio: the camera's video asset, whose own sound is the reference.
+    pub camera: Option<String>,
+    /// sync_audio: the separate recording's asset (from a microphone or recorder).
+    pub recording: Option<String>,
+    /// punch_in: the moments to zoom in, which must not overlap.
+    #[serde(default)]
+    pub moments: Vec<PunchMomentArg>,
+    /// punch_in: the point to zoom on, `[x, y]` as fractions of the picture from its left
+    /// and top edges, instead of the face from the cached pose analysis.
+    pub focus: Option<[f64; 2]>,
     /// stabilize: how much motion to remove, 0 (none) to 1 (very smooth), up to 3 for a
     /// locked-off look; 0.5 when omitted.
     pub strength: Option<f64>,
@@ -646,7 +715,7 @@ pub struct AutoEditArgs {
     /// beat_cuts: how far a cut may move; half the spacing of the beats that count when
     /// omitted.
     pub tolerance: Option<TimeInput>,
-    /// beat_markers, beat_cuts: the music clip.
+    /// beat_markers, beat_cuts: the music clip; duck: a music clip to duck (more in clips).
     pub music: Option<String>,
     /// beat_markers, beat_cuts: every how many beats (1 to 16; default 1).
     pub every: Option<u32>,
@@ -677,8 +746,8 @@ pub struct AutoEditArgs {
     pub offsets: Vec<TimeInput>,
     /// multicam: false lines the angles up at their starts instead of measuring offsets.
     pub sync: Option<bool>,
-    /// multicam, multicam_sync: look at most this many seconds either way; any offset when
-    /// omitted.
+    /// multicam, multicam_sync, sync_audio: look at most this many seconds either way; any
+    /// offset when omitted.
     pub max_offset_seconds: Option<f64>,
     /// multicam: which angle's sound plays, by number from 1; the first when omitted.
     pub sound: Option<usize>,
@@ -686,10 +755,12 @@ pub struct AutoEditArgs {
     pub name: Option<String>,
     /// multicam: where the multicam clip starts; appended when omitted.
     pub start: Option<TimeInput>,
-    /// multicam: track for the multicam clip; beat_cuts: the video track whose cuts move.
+    /// multicam: track for the multicam clip; beat_cuts: the video track whose cuts move;
+    /// sync_audio: the audio track for the recording (a new one when omitted).
     pub track: Option<String>,
-    /// multicam: timeline for the multicam clip; vertical: the timeline to copy; the primary
-    /// timeline when omitted.
+    /// multicam: timeline for the multicam clip; vertical: the timeline to copy; sync_audio:
+    /// the timeline whose camera clips get the recording; the primary timeline when
+    /// omitted.
     pub timeline: Option<String>,
     /// vertical, make_short: the canvas size in pixels; 1080 by 1920 when omitted.
     pub width: Option<u32>,

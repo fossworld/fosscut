@@ -87,6 +87,8 @@ import {
   verticalMade,
 } from "./smart";
 import { multicamPartAt } from "./multicam";
+import { AI_EDIT_CLOSED, type AiEditDialog, agentChoice, isVideo } from "./agentFlow";
+import { ASPECTS, type AspectId } from "./layout";
 
 /** How many history entries the activity panel shows. */
 const HISTORY = 50;
@@ -190,6 +192,8 @@ export interface EditorState {
   webImport: WebImportDialog | null;
   /** The dialog that renders a composition of the user's own Remotion project. */
   remotion: RemotionDialog;
+  /** An AI edit of a video by the user's own agent (ADR-0043); it outlives opening the project it makes. */
+  aiEdit: AiEditDialog;
 }
 
 /** Importing a web composition: the page chosen, and the import that runs or failed. */
@@ -423,6 +427,7 @@ const EMPTY: EditorState = {
   shortList: null,
   webImport: null,
   remotion: { open: false, step: "choose", choice: null, licence: null, command: [], job: null, busy: false, error: null },
+  aiEdit: AI_EDIT_CLOSED,
   notice: null,
   catalog: null,
   luts: [],
@@ -518,9 +523,9 @@ export class Editor {
   }
 
   /** What outlives a project: the recent list, the preferences, Settings and an update. */
-  private kept(): Pick<EditorState, "recent" | "preferences" | "settings" | "update" | "mediaWork" | "models"> {
-    const { recent, preferences, settings, update, mediaWork, models } = this.state;
-    return { recent, preferences, settings, update, mediaWork, models };
+  private kept(): Pick<EditorState, "recent" | "preferences" | "settings" | "update" | "mediaWork" | "models" | "aiEdit"> {
+    const { recent, preferences, settings, update, mediaWork, models, aiEdit } = this.state;
+    return { recent, preferences, settings, update, mediaWork, models, aiEdit };
   }
 
   // ---- Lifecycle ----
@@ -1321,7 +1326,7 @@ export class Editor {
 
   /**
    * Files dropped on the window: a project folder opens; other files are imported into the
-   * open project.
+   * open project. With no project open, a video starts an AI edit of it.
    */
   async dropped(paths: string[]): Promise<void> {
     const project = paths.find((path) => /\.fosscut\/?$/i.test(path));
@@ -1329,7 +1334,12 @@ export class Editor {
       if (this.state.opened?.bundle !== project) await this.open(project);
       return;
     }
-    if (this.state.opened && paths.length > 0) await this.importMedia(paths);
+    if (this.state.opened && paths.length > 0) {
+      await this.importMedia(paths);
+      return;
+    }
+    const video = paths.find(isVideo);
+    if (!this.state.opened && video && !this.state.aiEdit.busy && this.state.aiEdit.job?.state !== "running") this.openAiEdit(video);
   }
 
   /**
@@ -2420,6 +2430,184 @@ export class Editor {
   /** Back to the first step, to render another composition. */
   resetRemotion(): void {
     this.setRemotion({ step: "choose", licence: null, command: [], job: null, error: null });
+  }
+
+  // ---- AI edits by the user's own agent (ADR-0043) ----
+
+  private setAiEdit(patch: Partial<AiEditDialog>): void {
+    this.set({ aiEdit: { ...this.state.aiEdit, ...patch } });
+  }
+
+  /** Opens the AI edit dialog for `video`, at its first step: the canvas of the project to make. */
+  openAiEdit(video: string): void {
+    this.set({ aiEdit: { ...AI_EDIT_CLOSED, open: true, video } });
+  }
+
+  /** Asks for a video and opens the AI edit dialog with it, or chooses another video in it. */
+  async pickAiVideo(): Promise<void> {
+    try {
+      const video = await this.engine.agent.pickVideo();
+      if (!video) return;
+      if (this.state.aiEdit.open) this.setAiEdit({ video, error: null });
+      else this.openAiEdit(video);
+    } catch (error) {
+      if (this.state.aiEdit.open) this.setAiEdit({ error: asError(error) });
+      else this.notify(error);
+    }
+  }
+
+  setAiAspect(aspect: AspectId): void {
+    this.setAiEdit({ aspect });
+  }
+
+  /**
+   * Makes the project: asks where to save it (beside the video), imports the video onto its
+   * timeline and opens it, then looks for the agent. Nothing runs yet.
+   */
+  async createAiProject(): Promise<void> {
+    const dialog = this.state.aiEdit;
+    const aspect = ASPECTS.find((a) => a.id === dialog.aspect) ?? ASPECTS[1];
+    if (!dialog.video) return;
+    this.setAiEdit({ busy: true, error: null });
+    try {
+      const opened = await this.engine.agent.project(dialog.video, aspect.width, aspect.height);
+      if (!opened) {
+        this.setAiEdit({ busy: false });
+        return;
+      }
+      await this.show(opened);
+      await this.loadAgent();
+    } catch (error) {
+      this.setAiEdit({ busy: false, error: asError(error) });
+    }
+  }
+
+  /**
+   * Opens the AI edit of the open project at its brief, or shows the panel of the agent
+   * that runs.
+   */
+  async openAgent(): Promise<void> {
+    if (!this.state.opened) return;
+    if (this.state.aiEdit.job?.state === "running") {
+      this.setAiEdit({ open: true, collapsed: false });
+      return;
+    }
+    this.set({ aiEdit: { ...AI_EDIT_CLOSED, open: true, step: "brief" } });
+    await this.loadAgent();
+  }
+
+  /** Looks for the agent (again) and fills the brief and the cap, keeping what the user typed. */
+  async loadAgent(): Promise<void> {
+    const before = this.state.aiEdit;
+    this.setAiEdit({ open: true, busy: true, error: null });
+    try {
+      const setup = await this.engine.agent.find();
+      const typed = before.setup !== null;
+      this.setAiEdit({
+        busy: false,
+        step: "brief",
+        setup,
+        brief: typed ? before.brief : setup.brief,
+        maxTurns: typed ? before.maxTurns : String(setup.max_turns),
+      });
+    } catch (error) {
+      this.setAiEdit({ busy: false, step: "brief", error: asError(error) });
+    }
+  }
+
+  /** Changes the brief or the caps as typed. */
+  editAiBrief(patch: Partial<Pick<AiEditDialog, "brief" | "maxTurns" | "budget">>): void {
+    this.setAiEdit(patch);
+  }
+
+  /** Puts the suggested brief back. */
+  resetAiBrief(): void {
+    const setup = this.state.aiEdit.setup;
+    if (setup) this.setAiEdit({ brief: setup.brief });
+  }
+
+  /** Asks the engine for the command and the notes to agree to; nothing runs. */
+  async checkAgent(): Promise<void> {
+    const checked = agentChoice(this.state.aiEdit, false);
+    if ("problem" in checked) return;
+    this.setAiEdit({ busy: true, error: null });
+    try {
+      const job = await this.engine.agent.start(checked.choice);
+      this.setAiEdit({ busy: false, step: "run", job });
+    } catch (error) {
+      const api = asError(error);
+      if (api.code === "fosscut.agent.confirmation_required") {
+        const details = (api.details ?? {}) as { command?: string[]; notes?: string[] };
+        this.setAiEdit({ busy: false, step: "agree", command: details.command ?? [], notes: details.notes ?? [api.message] });
+      } else {
+        this.setAiEdit({ busy: false, error: api });
+      }
+    }
+  }
+
+  /** Starts the agent once the user agreed to the command and the notes. */
+  async confirmAgent(): Promise<void> {
+    const checked = agentChoice(this.state.aiEdit, true);
+    if ("problem" in checked) return;
+    this.setAiEdit({ busy: true, error: null });
+    try {
+      const job = await this.engine.agent.start(checked.choice);
+      this.setAiEdit({ busy: false, step: "run", job, collapsed: false });
+    } catch (error) {
+      this.setAiEdit({ busy: false, error: asError(error) });
+    }
+  }
+
+  /** Back from agreeing to the brief. */
+  backToBrief(): void {
+    this.setAiEdit({ step: "brief", command: [], notes: [], error: null });
+  }
+
+  /** Reads the run again; once it ended, the timeline shows its last edits and a notice says how it ended. */
+  async pollAgent(): Promise<void> {
+    const job = this.state.aiEdit.job;
+    if (!job || job.state !== "running") return;
+    try {
+      const status = await this.engine.agent.status(job.job);
+      if (this.state.aiEdit.job?.job !== status.job) return;
+      this.setAiEdit({ job: status });
+      if (status.state !== "running") {
+        if (this.state.opened) await this.refresh();
+        if (this.state.aiEdit.collapsed) {
+          this.set({
+            notice:
+              status.state === "succeeded"
+                ? { kind: "info", text: t("agent.run.noticeDone") }
+                : { kind: "error", text: t("agent.run.noticeEnded", { reason: status.error?.message ?? status.state }) },
+          });
+        }
+      }
+    } catch (error) {
+      this.setAiEdit({ error: asError(error) });
+    }
+  }
+
+  /** Stops the agent with everything it started; its edits so far stay and can be undone. */
+  async cancelAgent(): Promise<void> {
+    const job = this.state.aiEdit.job;
+    if (!job) return;
+    try {
+      this.setAiEdit({ job: await this.engine.agent.cancel(job.job) });
+      if (this.state.opened) await this.refresh();
+    } catch (error) {
+      this.setAiEdit({ error: asError(error) });
+    }
+  }
+
+  /** Shows only the run's status line, or all of it. */
+  collapseAiRun(collapsed: boolean): void {
+    this.setAiEdit({ collapsed });
+  }
+
+  /** Closes the dialog; a running agent keeps its panel. */
+  closeAiEdit(): void {
+    if (this.state.aiEdit.job?.state === "running") return;
+    this.set({ aiEdit: AI_EDIT_CLOSED });
   }
 
   // ---- Export ----

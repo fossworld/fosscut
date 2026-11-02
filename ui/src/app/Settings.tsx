@@ -118,7 +118,8 @@ export function Entry({
   numeric = true,
   step,
   list,
-}: Control & { unit?: string; numeric?: boolean; step?: number; list?: string }) {
+  wide = false,
+}: Control & { unit?: string; numeric?: boolean; step?: number; list?: string; wide?: boolean }) {
   const saved = String(valueAt(preferencesOf(state), k) ?? "");
   const [draft, setDraft] = useState<string | null>(null);
   const [local, setLocal] = useState<string | null>(null);
@@ -140,7 +141,7 @@ export function Entry({
       <label className="choice" title={help}>
         <span>{label}</span>
         <input
-          className="short"
+          className={wide ? "wide" : "short"}
           inputMode={numeric ? "decimal" : "text"}
           type="text"
           step={step}
@@ -227,6 +228,7 @@ export function GeneralSection({ editor, state }: Props) {
         label={t("settings.general.notifications")}
         help={t("settings.general.notifications.help")}
       />
+      <Entry editor={editor} state={state} k="agent.command" label={t("settings.general.agent")} help={t("settings.general.agent.help")} numeric={false} wide />
       {view && (
         <p className="muted hint" title={view.path}>
           {t("settings.general.file", { path: view.path })}

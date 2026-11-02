@@ -67,8 +67,23 @@ pub fn operations() -> Vec<OperationInfo> {
         ),
         (
             "library.add",
-            "Add an item of FossCut's own library: a sound or music loop (written into the bundle and imported), a shape, sticker, background, title or project template, a text or caption style, or a look; one undoable step.",
-            "fosscut library add <name> [--at TIME] [--clip ID] [--line TEXT] [--media ID]",
+            "Add an item of FossCut's own library: a sound or music loop (written into the bundle and imported; music given a duration repeats back to back to fill it as one bed, faded at the end), a shape, sticker, background, title or project template, a text or caption style, or a look; one undoable step.",
+            "fosscut library add <name> [--at TIME] [--duration TIME] [--clip ID] [--line TEXT] [--media ID]",
+        ),
+        (
+            "audio.duck",
+            "Lower music clips under speech: key their volume down by a depth over an attack before speech and back over a release after it, short pauses bridged, from the speech clips' cached transcripts or their silences (measured and cached); one undoable step.",
+            "fosscut audio duck --music ID [--music ID ...] [--speech ID ...] [--depth DB] [--attack S] [--release S] [--gap S] [--from auto|transcript|silences]",
+        ),
+        (
+            "audio.sync",
+            "Sync a separate recording to the camera: measure how far apart they started from their sound, place the recording under every clip of the camera's video on an audio track, mute the camera clips and group each pair; a doubtful match changes nothing; one undoable step.",
+            "fosscut audio sync --camera ASSET --recording ASSET [--track ID] [--timeline ID] [--max-offset S]",
+        ),
+        (
+            "clip.punch_in",
+            "Punch in on a talking head: zoom a video clip in for moments and back out, eased, centred on the face from its cached pose analysis (or a point, or the upper third), keying only its scale and anchor; one undoable step.",
+            "fosscut clip punch-in --clip ID --moment FROM,TO[,SCALE] [--moment ...] [--scale 1.15] [--ease 0.25] [--focus X,Y]",
         ),
         (
             "clip.split_scenes",

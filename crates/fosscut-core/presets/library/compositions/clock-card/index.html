@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=760, height=900, fps=30, duration=3.9">
+<title>Clock card</title>
+<!--
+  Made by FossCut for its library: a clock whose hands sweep from one time to another
+  while an accent arc fills the time that passed, with the time counting under it and a
+  label. Every frame is a function of time, through window.fosscut.seek and the overlay
+  kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 632px; padding: 44px 46px 40px; text-align: center; }
+  #face { position: relative; width: 440px; height: 440px; margin: 0 auto; }
+  #face svg { position: absolute; inset: 0; overflow: visible; }
+  #time { margin-top: 30px; font-size: 92px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+  #label { margin-top: 14px; font-size: 32px; font-weight: 700; color: var(--muted); letter-spacing: -0.01em; }
+  #spent { margin-top: 22px; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

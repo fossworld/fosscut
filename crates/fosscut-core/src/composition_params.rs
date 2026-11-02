@@ -3,7 +3,9 @@
 //! (images, videos, SVG drawings, 3D models and other web compositions). Front ends resolve
 //! them here, write them into the composition's folder as `params.json`, and copy the slots'
 //! files beside it, so the page reads only its own folder. Compositions made with the
-//! Three.js scene kit share the scene parameters of `presets/library/scene-params.json`.
+//! Three.js scene kit share the scene parameters of `presets/library/scene-params.json`;
+//! those made with the overlay kit share the timing and theme parameters of
+//! `presets/library/overlay-params.json`.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,6 +14,11 @@ use serde_json::{Map, Value};
 use crate::{ApiError, codes};
 
 const SCENE_PARAMS: &str = include_str!("../presets/library/scene-params.json");
+const OVERLAY_PARAMS: &str = include_str!("../presets/library/overlay-params.json");
+
+/// Seconds an overlay's exit takes (`EXIT` in `overlay-kit/overlay.js`): an overlay whose
+/// length is not given lasts `appear` plus `hold`, plus this when `exit` is on.
+pub const OVERLAY_EXIT_SECONDS: f64 = 0.4;
 
 /// Every file of the Three.js scene kit, by its path in a composition's folder: FossCut's
 /// stage module and Three.js itself (MIT, `presets/library/vendor/three/README.md`).
@@ -58,6 +65,36 @@ pub(crate) const THREE_KIT_FILES: [(&str, &[u8]); 10] = [
     ),
 ];
 
+/// Every file of the overlay kit, by its path in a composition's folder: FossCut's motion,
+/// theme and media script and its style sheet, and the bundled Inter font (SIL Open Font
+/// License, `fosscut-render/assets/fonts/inter/README.md`) in the weights the overlays use.
+pub(crate) const OVERLAY_KIT_FILES: [(&str, &[u8]); 6] = [
+    (
+        "kit/overlay.js",
+        include_bytes!("../presets/library/overlay-kit/overlay.js"),
+    ),
+    (
+        "kit/overlay.css",
+        include_bytes!("../presets/library/overlay-kit/overlay.css"),
+    ),
+    (
+        "kit/fonts/Inter-Regular.ttf",
+        include_bytes!("../../fosscut-render/assets/fonts/inter/Inter-Regular.ttf"),
+    ),
+    (
+        "kit/fonts/Inter-Bold.ttf",
+        include_bytes!("../../fosscut-render/assets/fonts/inter/Inter-Bold.ttf"),
+    ),
+    (
+        "kit/fonts/Inter-ExtraBold.ttf",
+        include_bytes!("../../fosscut-render/assets/fonts/inter/Inter-ExtraBold.ttf"),
+    ),
+    (
+        "kit/fonts/OFL.txt",
+        include_bytes!("../../fosscut-render/assets/fonts/inter/OFL.txt"),
+    ),
+];
+
 /// A kit of shared files a composition is made with.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -66,6 +103,11 @@ pub enum CompositionKit {
     /// and the scene parameters (transparency, background, exposure, tone mapping, bloom,
     /// depth of field, motion blur and the canvas).
     Three,
+    /// FossCut's overlay kit for explainer cards (`kit/overlay.js`, `kit/overlay.css` and
+    /// the Inter font): keyframed motion, light and dark themes with an accent colour,
+    /// media slots with generated placeholders, and the timing parameters `appear`,
+    /// `hold`, `exit` and `speed` with the theme and the canvas.
+    Overlay,
 }
 
 impl CompositionKit {
@@ -73,6 +115,7 @@ impl CompositionKit {
     pub fn files(self) -> &'static [(&'static str, &'static [u8])] {
         match self {
             CompositionKit::Three => &THREE_KIT_FILES,
+            CompositionKit::Overlay => &OVERLAY_KIT_FILES,
         }
     }
 
@@ -80,6 +123,7 @@ impl CompositionKit {
     pub fn params(self) -> Vec<CompositionParam> {
         match self {
             CompositionKit::Three => serde_json::from_str(SCENE_PARAMS).unwrap_or_default(),
+            CompositionKit::Overlay => serde_json::from_str(OVERLAY_PARAMS).unwrap_or_default(),
         }
     }
 }
@@ -106,6 +150,12 @@ pub enum ParamType {
     Slot,
     /// Several values in an object, described by `fields`.
     Group,
+    /// A list of texts, at most `max_length` of them (12 when not given), each at most
+    /// 200 characters; it may be empty.
+    Texts,
+    /// A list of numbers, each from `min` to `max` and whole when `integer`, at most
+    /// `max_length` of them (64 when not given); it may be empty.
+    Numbers,
 }
 
 /// The media a slot takes.
@@ -162,7 +212,7 @@ pub struct CompositionParam {
     /// Numbers must be whole.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub integer: bool,
-    /// Most characters of text, or most points.
+    /// Most characters of text, or most points, texts or numbers in a list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_length: Option<usize>,
     /// The values a choice takes.
@@ -352,6 +402,8 @@ fn check(
             )),
         },
         ParamType::Points => check_points(param, value).or_else(fail),
+        ParamType::Texts => check_texts(param, value).or_else(fail),
+        ParamType::Numbers => check_numbers(param, value).or_else(fail),
         ParamType::Slot => match value.as_str() {
             Some(text) if text.starts_with("asset_") && text.len() > 6 => Ok(value.clone()),
             Some(name)
@@ -456,6 +508,41 @@ fn check_points(param: &CompositionParam, value: &Value) -> Result<Value, String
     Ok(Value::Array(out))
 }
 
+fn list<'a>(value: &'a Value, limit: usize, what: &str) -> Result<&'a Vec<Value>, String> {
+    let Some(items) = value.as_array() else {
+        return Err(format!("must be a list of {what}, not {value}"));
+    };
+    if items.len() > limit {
+        return Err(format!("must have at most {limit} {what}"));
+    }
+    Ok(items)
+}
+
+fn check_texts(param: &CompositionParam, value: &Value) -> Result<Value, String> {
+    let items = list(value, param.max_length.unwrap_or(12), "texts")?;
+    for item in items {
+        match item.as_str() {
+            Some(text) if text.chars().count() <= 200 => {}
+            Some(_) => return Err("has a text longer than 200 characters".into()),
+            None => return Err(format!("has {item}, not a text")),
+        }
+    }
+    Ok(value.clone())
+}
+
+fn check_numbers(param: &CompositionParam, value: &Value) -> Result<Value, String> {
+    let items = list(value, param.max_length.unwrap_or(64), "numbers")?;
+    let mut out = Vec::new();
+    for item in items {
+        let n = item
+            .as_f64()
+            .ok_or_else(|| format!("has {item}, not a number"))?;
+        let n = check_number(param, n).map_err(|e| format!("item {e}"))?;
+        out.push(number(param, n));
+    }
+    Ok(Value::Array(out))
+}
+
 /// `#RGB`, `#RRGGBB` or `#RRGGBBAA` in upper case with six or eight digits.
 fn normalize_color(text: &str) -> Option<String> {
     let hex = text.trim().strip_prefix('#')?;
@@ -468,6 +555,20 @@ fn normalize_color(text: &str) -> Option<String> {
         _ => return None,
     };
     Some(format!("#{}", full.to_ascii_uppercase()))
+}
+
+/// The length of an overlay with `params` when its `duration` is not given: `appear` plus
+/// `hold`, plus the exit when `exit` is on, in seconds rounded up to a millisecond.
+pub(crate) fn overlay_duration(params: &Map<String, Value>) -> Option<f64> {
+    if params.get("duration").and_then(Value::as_f64).is_some() {
+        return None;
+    }
+    let appear = params.get("appear").and_then(Value::as_f64)?;
+    let hold = params.get("hold").and_then(Value::as_f64)?;
+    let exit = params.get("exit").and_then(Value::as_bool).unwrap_or(true);
+    let seconds = appear + hold + if exit { OVERLAY_EXIT_SECONDS } else { 0.0 };
+    // Up to the next millisecond, without letting float error in the sum add one.
+    Some((seconds * 1000.0 - 1e-6).ceil() / 1000.0)
 }
 
 /// `html` with the given canvas values (`width`, `height`, `duration` in seconds, `fps`) in
@@ -692,5 +793,110 @@ mod tests {
             r#"<head><meta charset="utf-8"><meta name="fosscut:composition" content="width=540, height=1920, fps=30, duration=2.5"></head>"#
         );
         assert_eq!(with_canvas("<p>no tag</p>", &values), "<p>no tag</p>");
+    }
+
+    fn lists() -> Vec<CompositionParam> {
+        serde_json::from_value(json!([
+            { "name": "steps", "type": "texts", "max_length": 3, "default": ["a", "b"], "description": "d" },
+            { "name": "values", "type": "numbers", "min": 0, "max": 10, "max_length": 4, "default": [1, 2], "description": "d" },
+            { "name": "counts", "type": "numbers", "integer": true, "min": 0, "max": 9, "default": [3], "description": "d" }
+        ]))
+        .unwrap()
+    }
+
+    #[test]
+    fn lists_of_texts_and_numbers_are_checked() {
+        let all = resolve("x", &lists(), None, &[]).unwrap();
+        assert_eq!(all["steps"], json!(["a", "b"]));
+        assert_eq!(all["values"], json!([1, 2]));
+        let given = json!({ "steps": [], "values": [0.5, 10], "counts": [4.0] });
+        let all = resolve("x", &lists(), Some(&given), &[]).unwrap();
+        assert_eq!(all["steps"], json!([]), "a list may be empty");
+        assert_eq!(all["values"], json!([0.5, 10.0]));
+        assert_eq!(all["counts"], json!([4]), "whole numbers stay whole");
+
+        let refused = |given: Value| {
+            let error = resolve("x", &lists(), Some(&given), &[]).unwrap_err();
+            assert_eq!(error.code, codes::LIBRARY_INVALID_PARAMS, "{given}");
+            error.message
+        };
+        assert!(refused(json!({ "steps": "one" })).contains("list of texts"));
+        assert!(refused(json!({ "steps": ["a", "b", "c", "d"] })).contains("at most 3 texts"));
+        assert!(refused(json!({ "steps": [1] })).contains("not a text"));
+        assert!(refused(json!({ "steps": ["x".repeat(201)] })).contains("longer than 200"));
+        assert!(refused(json!({ "values": [1, 2, 3, 4, 5] })).contains("at most 4 numbers"));
+        assert!(refused(json!({ "values": [11] })).contains("item must be at most 10"));
+        assert!(refused(json!({ "values": ["1"] })).contains("not a number"));
+        assert!(refused(json!({ "counts": [1.5] })).contains("whole number"));
+        assert!(refused(json!({ "steps": null })).contains("cannot be null"));
+    }
+
+    #[test]
+    fn the_overlay_kit_adds_timing_theme_and_canvas_params() {
+        let mut overrides = Map::new();
+        overrides.insert("hold".into(), json!(5));
+        overrides.insert("theme".into(), json!("dark"));
+        let all = all_params(&[], Some(CompositionKit::Overlay), &overrides);
+        let names: Vec<&str> = all.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "appear", "hold", "exit", "speed", "theme", "accent", "width", "height",
+                "duration", "fps"
+            ]
+        );
+        let values = defaults(&all);
+        assert_eq!(values["hold"], 5);
+        assert_eq!(values["theme"], "dark");
+        assert_eq!(values["appear"], 0);
+        assert_eq!(values["exit"], true);
+        assert_eq!(values["duration"], Value::Null);
+        // Every kit file is in place: the scripts, the style sheet and the fonts.
+        let files = CompositionKit::Overlay.files();
+        for (path, bytes) in files {
+            assert!(!bytes.is_empty(), "{path}");
+            if path.ends_with(".ttf") {
+                assert_eq!(&bytes[..4], &[0, 1, 0, 0], "{path} is a TrueType font");
+            }
+        }
+        let script = files
+            .iter()
+            .find(|(p, _)| *p == "kit/overlay.js")
+            .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
+            .unwrap();
+        assert!(
+            script.contains(&format!("const EXIT = {OVERLAY_EXIT_SECONDS};")),
+            "the kit's exit lasts as long as fosscut-core expects"
+        );
+        let style = files
+            .iter()
+            .find(|(p, _)| *p == "kit/overlay.css")
+            .map(|(_, b)| String::from_utf8_lossy(b).into_owned())
+            .unwrap();
+        for (path, _) in files.iter().filter(|(p, _)| p.ends_with(".ttf")) {
+            let font = path.trim_start_matches("kit/");
+            assert!(style.contains(&format!("url('{font}')")), "{font}");
+        }
+    }
+
+    #[test]
+    fn overlays_last_until_their_exit_is_over() {
+        let mut params = Map::new();
+        params.insert("appear".into(), json!(0.5));
+        params.insert("hold".into(), json!(2));
+        params.insert("exit".into(), json!(true));
+        params.insert("duration".into(), Value::Null);
+        assert_eq!(overlay_duration(&params), Some(2.9));
+        params.insert("exit".into(), json!(false));
+        assert_eq!(overlay_duration(&params), Some(2.5));
+        params.insert("hold".into(), json!(1.0 / 3.0));
+        assert_eq!(
+            overlay_duration(&params),
+            Some(0.834),
+            "rounded up to a millisecond"
+        );
+        params.insert("duration".into(), json!(4));
+        assert_eq!(overlay_duration(&params), None, "a given length wins");
+        assert_eq!(overlay_duration(&Map::new()), None);
     }
 }

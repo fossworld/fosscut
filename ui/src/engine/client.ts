@@ -12,6 +12,8 @@ import type {
   DubCaptionsResult,
   Client,
   ColorSuggestion,
+  AgentChoice,
+  AgentSetup,
   EditRequest,
   EditResponse,
   ExportChoice,
@@ -318,6 +320,27 @@ export interface EngineClient {
     start(choice: RemotionChoice): Promise<JobStatus>;
     status(job: string): Promise<JobStatus>;
     /** Stops the render; no file is kept. */
+    cancel(job: string): Promise<JobStatus>;
+  };
+  /**
+   * AI edits by the user's own agent (ADR-0043): a project made from a video, then the
+   * agent run headless on it in the background. Without `confirmed` the start refuses with
+   * `fosscut.agent.confirmation_required`, whose details carry the command and the notes.
+   */
+  agent: {
+    /** Asks the user for a video; null when they cancel. */
+    pickVideo(): Promise<string | null>;
+    /**
+     * Asks where to save a project made from `video` (beside it by default), creates it
+     * `width` by `height` at the video's rate, imports the video onto its timeline and
+     * opens it; null when the user cancels.
+     */
+    project(video: string, width: number, height: number): Promise<Opened | null>;
+    /** The agent found for the open project, the suggested brief, cap and notes. */
+    find(): Promise<AgentSetup>;
+    start(choice: AgentChoice): Promise<JobStatus>;
+    status(job: string): Promise<JobStatus>;
+    /** Stops the agent; its edits so far stay and can be undone. */
     cancel(job: string): Promise<JobStatus>;
   };
   /** The caches outside projects (ADR-0032): their sizes, and emptying them. */

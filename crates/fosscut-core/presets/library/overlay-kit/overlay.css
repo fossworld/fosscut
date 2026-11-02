@@ -1,0 +1,148 @@
+/*
+  FossCut's overlay kit (ADR-0042): the shared look of the library's explainer overlays,
+  written for FossCut and free to use, also commercially. Cards are white (light theme) or
+  near black (dark theme) with soft shadows, rounded corners and one accent colour, set
+  in Inter (SIL Open Font License, fonts/OFL.txt). The page stays transparent around them.
+  No CSS animations or transitions: overlay.js places everything for one time.
+*/
+
+@font-face { font-family: 'Inter'; src: url('fonts/Inter-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
+@font-face { font-family: 'Inter'; src: url('fonts/Inter-Bold.ttf') format('truetype'); font-weight: 600 700; font-style: normal; font-display: block; }
+@font-face { font-family: 'Inter'; src: url('fonts/Inter-ExtraBold.ttf') format('truetype'); font-weight: 800 900; font-style: normal; font-display: block; }
+
+:root {
+  --accent: #2F6BFF;
+  --accent-rgb: 47, 107, 255;
+  --accent-ink: #FFFFFF;
+  --accent-soft: rgba(var(--accent-rgb), 0.12);
+  --good: #12B76A;
+  --good-soft: rgba(18, 183, 106, 0.14);
+  --bad: #F04438;
+  --bad-soft: rgba(240, 68, 56, 0.14);
+  --warn: #F5A524;
+  --radius: 34px;
+  --radius-sm: 20px;
+  --radius-xs: 12px;
+}
+
+:root, :root[data-theme="light"] {
+  --card: #FFFFFF;
+  --card-2: #F4F6F9;
+  --card-3: #E9EDF2;
+  --ink: #0B1220;
+  --ink-2: #344054;
+  --muted: #667085;
+  --faint: #98A2B3;
+  --line: #E6E9EF;
+  --edge: rgba(16, 24, 40, 0.07);
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 10px 20px -6px rgba(16, 24, 40, 0.14), 0 26px 48px -14px rgba(16, 24, 40, 0.30);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.08), 0 6px 14px -4px rgba(16, 24, 40, 0.18);
+  --screen: #0F141C;
+}
+
+:root[data-theme="dark"] {
+  --card: #141922;
+  --card-2: #1C2230;
+  --card-3: #262D3B;
+  --ink: #F5F7FA;
+  --ink-2: #D0D5DD;
+  --muted: #8C96A8;
+  --faint: #667085;
+  --line: rgba(255, 255, 255, 0.09);
+  --edge: rgba(255, 255, 255, 0.08);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.30), 0 10px 20px -6px rgba(0, 0, 0, 0.40), 0 26px 48px -14px rgba(0, 0, 0, 0.62);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 14px -4px rgba(0, 0, 0, 0.45);
+  --screen: #07090D;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  font-kerning: normal;
+}
+
+/* The stage: the template's design size, scaled to the canvas by overlay.js. */
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#exit { position: absolute; inset: 0; transform-origin: 50% 50%; }
+.abs { position: absolute; }
+.hidden { display: none !important; }
+
+/* Cards. */
+.card {
+  position: absolute;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), 0 0 0 1px var(--edge);
+  overflow: hidden;
+}
+.card-flat { background: var(--card-2); border-radius: var(--radius-sm); }
+
+/* Type. */
+.title { font-weight: 800; letter-spacing: -0.025em; line-height: 1.12; }
+.heading { font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
+.body { font-weight: 400; line-height: 1.38; color: var(--ink-2); }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+.clip-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.clip-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clip-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nowrap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Chips, pills and badges. */
+.chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  height: 52px; padding: 0 22px; border-radius: 26px;
+  background: var(--card-2); color: var(--ink-2);
+  font-size: 24px; font-weight: 700; white-space: nowrap;
+}
+.chip.accent { background: var(--accent-soft); color: var(--accent); }
+.chip.solid { background: var(--accent); color: var(--accent-ink); }
+.chip.good { background: var(--good-soft); color: var(--good); }
+.chip.bad { background: var(--bad-soft); color: var(--bad); }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; height: 44px; padding: 0 12px; border-radius: 22px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 22px; font-weight: 800;
+}
+.button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  height: 64px; padding: 0 30px; border-radius: 32px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 26px; font-weight: 700; white-space: nowrap;
+}
+
+/* Avatars: initials on a gradient, or a picture. */
+.avatar {
+  position: relative; flex: none; overflow: hidden;
+  width: 72px; height: 72px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #FFFFFF; font-weight: 800; font-size: 28px; letter-spacing: -0.02em;
+}
+
+/* Icons drawn by overlay.js: strokes in the current colour. */
+.icon { width: 1em; height: 1em; flex: none; display: block; overflow: visible; }
+.icon .s { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon .f { fill: currentColor; stroke: none; }
+
+/* Window chrome. */
+.window-bar {
+  position: absolute; left: 0; top: 0; right: 0; height: 64px;
+  display: flex; align-items: center; gap: 12px; padding: 0 26px;
+  border-bottom: 1px solid var(--line);
+}
+.window-bar .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--card-3); flex: none; }
+.window-bar .name { margin-left: 14px; font-size: 22px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
+/* Media and placeholders fill their holder. */
+.media { position: absolute; inset: 0; overflow: hidden; background: var(--card-3); }
+.media > img, .media > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.media > .art { position: absolute; inset: 0; }
+
+/* Svg parts placed by transforms turn round their own middle. */
+svg .spin { transform-box: fill-box; transform-origin: 50% 50%; }

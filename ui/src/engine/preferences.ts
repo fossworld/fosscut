@@ -26,6 +26,7 @@ export function defaultPreferences(): Preferences {
     updates: "notify",
     notifications: true,
     shortcuts: { set: "fosscut", overrides: {} },
+    agent: { command: "" },
   };
 }
 
@@ -94,6 +95,10 @@ export function validatePreferences(preferences: Preferences, sounds: string[]):
     if (place !== null && !place.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(place)) {
       throw invalid(`locations.${key} must be an absolute path`);
     }
+  }
+  const agent = preferences.agent.command.trim();
+  if (agent && !agent.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(agent)) {
+    throw invalid("agent.command must be an absolute path, or empty to find the agent");
   }
 }
 

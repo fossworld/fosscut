@@ -134,6 +134,12 @@ impl Workspace {
         self.open(&new.path)
     }
 
+    /// Where the hosts of this workspace announce themselves (ADR-0022), which clients
+    /// such as the agent's MCP server must read to find them.
+    pub fn runtime(&self) -> &Path {
+        &self.runtime
+    }
+
     /// Closes the open project, if any.
     pub fn close(&self) {
         if let Some(host) = guard(&self.open).take() {

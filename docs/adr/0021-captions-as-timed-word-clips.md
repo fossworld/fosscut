@@ -119,6 +119,14 @@ The forces:
   - **Subtitles:** SRT export writes the words, the translations or both.
 - **Fillers and lyrics:** `captions generate` with `skip_fillers` leaves out the words the transcript marks as filler candidates (ADR-0020 item 5). With `lyrics`, it captions the music track first, one sung line per page broken at breaths, in the karaoke look; recognition of sung words is only as good as the speech model's.
 
+- **Reel captions** (format 0.17.0; older files read unchanged, since every new field has a default that keeps the old look):
+  - **Shadow:** the style's `shadow` is the text style's (ADR-0027): a colour whose alpha is its opacity, an offset and a blur in em, off by default. The shadows of all the page's words (with their outlines) are drawn first, blurred together, so no word's shadow falls on another word, and the page's margin grows to hold them.
+  - **Height:** `placement` also takes a number, the height of the page's centre as a fraction of the canvas height (`0.6` is a little below the middle). The page moves only as far as keeps it inside the safe area (item 5), and a page taller than the area centres in it. `top`, `middle` and `bottom` are unchanged.
+  - **Keywords:** `word.emphasis` gains `pop` (emphasised words grow to this scale halfway through 240 ms from their start and back; 1, no pop, by default), `box` (fill colour, padding in em, corner radius as a fraction of its height) and `brackets` (colour, arm length, thickness and gap in em, drawn at the box's corners, or the word's when there is no box). Box and brackets are drawn at the word's scale, so they pop with it; the layout at rest is unchanged.
+  - **Preset `reel`:** one heavy white word at a time with a soft shadow at 0.6 of the height, keywords in a blue box with yellow brackets and a pop. Presets may carry their own `paging`, which `captions.add` uses when the call gives none (`reel`: a word a page).
+  - **Keywords when generating:** `captions generate` (MCP `captions`, CLI `--emphasis WORDS[@TIME]`) takes `emphasis`: words as said, compared without case or punctuation; several words mark a phrase in a row; `at` picks the occurrence starting nearest that time, otherwise every occurrence is marked. Words not found fail with `fosscut.captions.emphasis_not_found`, naming them, and nothing is added.
+  - **Goldens:** `caption-reel-word` (a word with its shadow at 0.6 of a tall canvas), `caption-reel-keyword` (a keyword in its box with brackets after its pop) and `caption-shadow-height-wide` (a shadow under a two-line page at 0.3 of a wide canvas), reviewed.
+
 ## Validation
 
 - **Paging property tests:**

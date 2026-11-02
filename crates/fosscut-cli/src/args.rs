@@ -701,6 +701,27 @@ pub enum ClipCommand {
         #[arg(long)]
         shots: bool,
     },
+    /// Punch in on a talking head: zoom a video clip in for moments and back out, eased,
+    /// centred on the face (from the clip's cached pose analysis, or the upper third's
+    /// centre without one). Replaces its scale keyframes inside the moments.
+    PunchIn {
+        /// Clip id.
+        #[arg(long)]
+        clip: String,
+        /// A moment as FROM,TO or FROM,TO,SCALE on the timeline (repeat the option), such
+        /// as 3.2s,4.6s or 3.2s,4.6s,1.25.
+        #[arg(long = "moment", required = true)]
+        moments: Vec<String>,
+        /// How far each moment zooms when it gives no scale.
+        #[arg(long, default_value_t = fosscut_engine::punch::DEFAULT_SCALE)]
+        scale: f64,
+        /// Seconds the zoom takes in, and back out.
+        #[arg(long, default_value_t = 0.25)]
+        ease: f64,
+        /// The point to zoom on as X,Y fractions of the picture, instead of the face.
+        #[arg(long, value_delimiter = ',', num_args = 1)]
+        focus: Option<Vec<f64>>,
+    },
     /// Split a clip at a timeline position.
     Split {
         /// Clip id.
@@ -1277,7 +1298,8 @@ pub enum CaptionsCommand {
     /// analyze <asset> transcript` first. Words become pages of a few words on a caption
     /// track.
     Generate {
-        /// Built-in look: bold-pop, highlight, karaoke or boxed (see `fosscut capabilities`).
+        /// Built-in look: bold-pop, highlight, karaoke, boxed or reel (see `fosscut
+        /// capabilities`).
         #[arg(long)]
         preset: Option<String>,
         /// Track whose clips are captioned; the first video or audio track with sound when
@@ -1313,6 +1335,12 @@ pub enum CaptionsCommand {
         /// karaoke look unless --preset says otherwise.
         #[arg(long)]
         lyrics: bool,
+        /// A keyword to emphasise (repeat the option): a word, or words in a row, as said
+        /// (case and punctuation do not matter), every time it is said, or with @TIME only
+        /// where it is said nearest that time, such as free@12.5s. The word.emphasis
+        /// animator styles them (the reel preset boxes them).
+        #[arg(long = "emphasis")]
+        emphasis: Vec<String>,
         /// Replace the track's captions; needs --allow-destructive.
         #[arg(long)]
         replace: bool,
@@ -1351,7 +1379,7 @@ pub enum CaptionsCommand {
     },
     /// Set how a caption track looks and moves: a preset, a style patch, or both.
     Style {
-        /// Built-in look: bold-pop, highlight, karaoke or boxed.
+        /// Built-in look: bold-pop, highlight, karaoke, boxed or reel.
         #[arg(long)]
         preset: Option<String>,
         /// Changes as a JSON merge patch (text, @file or - for stdin), for example
@@ -1549,7 +1577,8 @@ pub enum LibraryCommand {
         /// Where it starts.
         #[arg(long, value_parser = parse_time)]
         at: Option<TimeInput>,
-        /// How long it lasts.
+        /// How long it lasts; a music loop repeats back to back to fill it (up to 600 s),
+        /// its end faded out.
         #[arg(long, value_parser = parse_time)]
         duration: Option<TimeInput>,
         /// The track to put it on.
@@ -1598,6 +1627,56 @@ pub enum AudioCommand {
         /// quieter than the target.
         #[arg(long)]
         no_limit: bool,
+    },
+    /// Lower music under speech: keys the music clips' volume to fall by --depth over
+    /// --attack before speech and rise back over --release after it, bridging pauses
+    /// shorter than --gap. Speech comes from the speech clips' cached transcripts, or their
+    /// silences (measured now) without one. Replaces the music clips' volume keyframes.
+    Duck {
+        /// The music clips (repeat the option).
+        #[arg(long = "music", required = true)]
+        music: Vec<String>,
+        /// The clips whose speech the music ducks under (repeat the option); every other
+        /// clip with sound on the music's timeline when omitted.
+        #[arg(long = "speech")]
+        speech: Vec<String>,
+        /// How far the music goes down, in dB, from -60 to -1; -12 when omitted.
+        #[arg(long, allow_hyphen_values = true)]
+        depth: Option<f64>,
+        /// Seconds the music takes to go down before speech; 0.2 when omitted.
+        #[arg(long)]
+        attack: Option<f64>,
+        /// Seconds the music takes to come back after speech; 0.5 when omitted.
+        #[arg(long)]
+        release: Option<f64>,
+        /// Pauses shorter than this many seconds keep the music down; 0.8 when omitted.
+        #[arg(long)]
+        gap: Option<f64>,
+        /// Where speech comes from: auto (the transcript when cached, else silences),
+        /// transcript or silences.
+        #[arg(long = "from", default_value = "auto")]
+        from: String,
+    },
+    /// Sync a separate recording to the camera: measures how far apart they started from
+    /// their sound, then places the recording under every clip of the camera's video on
+    /// an audio track, mutes the camera clips and groups each pair. A doubtful match
+    /// (confidence under 0.3) changes nothing.
+    Sync {
+        /// The camera's video asset.
+        #[arg(long)]
+        camera: String,
+        /// The recording's asset.
+        #[arg(long)]
+        recording: String,
+        /// The audio track for the recording; a new one when omitted.
+        #[arg(long)]
+        track: Option<String>,
+        /// The timeline; the primary one when omitted.
+        #[arg(long)]
+        timeline: Option<String>,
+        /// Look at most this many seconds either way; any offset when omitted.
+        #[arg(long)]
+        max_offset: Option<f64>,
     },
     /// Apply a voice preset, such as deep, chipmunk, robot, phone_call, megaphone or cave
     /// (`fosscut capabilities` lists them under voice_presets), as voice filters the clip

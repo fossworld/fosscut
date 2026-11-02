@@ -29,6 +29,9 @@ cpal.workspace = true
 fosscut-audio.workspace = true
 fosscut-core.workspace = true
 fosscut-engine.workspace = true
+# FossCut's MCP server, served by the app's own executable in `mcp` mode for the agents
+# the app runs (ADR-0043).
+fosscut-mcp.workspace = true
 fosscut-model.workspace = true
 fosscut-render.workspace = true
 fosscut-time.workspace = true

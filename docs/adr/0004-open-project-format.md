@@ -89,6 +89,8 @@ Illustrative clip (not normative; the generated schema is):
 
 - **3D objects** (format 0.16.0): a `.glb` file, or a `.gltf` file with the buffers and images it names, is a `model` asset copied into the bundle's `models/` folder by content, and clips of kind `model` draw a model or a built-in solid, as decided in [ADR-0040](0040-render-3d-objects-through-the-camera.md).
 
+- **Reel captions and effect mix** (format 0.17.0): caption styles gain a `shadow` and a `placement` that may be a height (a fraction of the canvas), `word.emphasis` gains `pop`, `box` and `brackets`, caption presets may carry `paging`, and every picture effect has a `mix` from 0 to 1 that keyframes as `effects.<id>.mix`, as noted in [ADR-0021](0021-captions-as-timed-word-clips.md) and [ADR-0011](0011-effects-and-animatable-properties.md). Older projects load unchanged.
+
 ## Validation
 
 - Round-trip property tests: load, save, load yields identical documents.

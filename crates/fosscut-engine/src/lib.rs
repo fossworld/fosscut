@@ -14,17 +14,26 @@
 //! Planners measure media, or read cached analyses, and return the commands that apply what
 //! they found: [`scenes`] splits at shot cuts, [`motion`] stabilizes and tracks, [`beats`]
 //! marks beats and moves cuts onto them, [`reframe`] makes clips follow their subject on a
-//! canvas of another shape, and [`shorts`] finds and builds short clips of long footage.
+//! canvas of another shape, [`shorts`] finds and builds short clips of long footage, [`duck`]
+//! lowers music under speech, [`sync`] places a separate recording under the camera's clips
+//! and [`punch`] zooms in on a face for a moment.
+//!
+//! Programs the user installed run only after the user agreed to the command shown
+//! ([`external`]): their own Remotion ([`remotion`]) and their own agent ([`agent`]), which
+//! edits a live project through FossCut's MCP server like any other client.
 
 #![forbid(unsafe_code)]
 
+pub mod agent;
 pub mod analysis;
 pub mod beats;
 pub mod cache;
 pub mod captions;
 pub mod color;
+pub mod duck;
 mod error;
 mod export;
+pub mod external;
 pub mod frame;
 pub mod frame_cache;
 pub mod hardware;
@@ -42,12 +51,14 @@ mod preset;
 pub mod preview;
 pub mod project;
 pub mod proxy;
+pub mod punch;
 pub mod record;
 pub mod reframe;
 pub mod remotion;
 pub mod remux;
 pub mod scenes;
 pub mod shorts;
+pub mod sync;
 pub mod updates;
 pub mod vector;
 pub mod voice;

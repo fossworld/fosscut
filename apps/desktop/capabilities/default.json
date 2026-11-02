@@ -81,6 +81,12 @@
     "allow-web-import",
     "allow-remotion-start",
     "allow-remotion-status",
-    "allow-remotion-cancel"
+    "allow-remotion-cancel",
+    "allow-agent-video-pick",
+    "allow-agent-project",
+    "allow-agent-find",
+    "allow-agent-start",
+    "allow-agent-status",
+    "allow-agent-cancel"
   ]
 }

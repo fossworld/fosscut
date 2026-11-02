@@ -49,13 +49,14 @@ pub use camera::{
     FIELD_OF_VIEW_RANGE, MAX_BLUR_LIMIT, camera_issues,
 };
 pub use caption::{
-    Animated, Animator, CaptionBox, CaptionContent, CaptionLine, CaptionStyle, CaptionWord,
-    FontWeight, PageFade, PagePop, Placement, Stroke, TextBox, TranslationStyle, WordEmphasis,
-    WordHighlight, WordKaraoke, WordPop, WordReveal, safe_margins,
+    Animated, Animator, Brackets, CaptionBox, CaptionContent, CaptionLine, CaptionStyle,
+    CaptionWord, EMPHASIS_POP_MS, FontWeight, PageFade, PagePop, Placement, Stroke, TextBox,
+    TranslationStyle, WordBox, WordEmphasis, WordHighlight, WordKaraoke, WordPop, WordReveal,
+    safe_margins,
 };
 pub use effect::{
-    AssetRef, Effect, EffectCategory, EffectSpec, HSL_BANDS, HSL_PARAMS, ParamDefault, ParamKind,
-    ParamSpec, ParamValue, effect_path, effect_type, effect_types,
+    AssetRef, Effect, EffectCategory, EffectSpec, HSL_BANDS, HSL_PARAMS, MIX, ParamDefault,
+    ParamKind, ParamSpec, ParamValue, effect_path, effect_type, effect_types,
 };
 pub use error::ModelError;
 pub use id::{Id, IdKind};
@@ -118,14 +119,16 @@ pub use vector::{
 /// open paths, trims and path following on shape clips and vector assets (ADR-0036), 3D
 /// placement and camera clips (ADR-0037), particle clips (ADR-0038), web composition assets
 /// (ADR-0039), 3D object clips and model assets (ADR-0040), light effects, animation delays
-/// and more text reveal motions.
-pub const FORMAT_VERSION: &str = "0.16.0";
+/// and more text reveal motions; 0.17.0 added caption shadows, caption placement at any
+/// height, boxed and bracketed caption keywords, caption preset paging (ADR-0021) and a
+/// `mix` on every picture effect (ADR-0011).
+pub const FORMAT_VERSION: &str = "0.17.0";
 
 /// Older format versions this build reads. Each is a subset of the current format, so it
 /// loads unchanged and is saved as [`FORMAT_VERSION`].
 pub const READABLE_VERSIONS: &[&str] = &[
     "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-    "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0",
+    "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0", "0.16.0",
 ];
 
 /// JSON Schemas of the stored documents, keyed by file stem, for `cargo xtask schemas`.

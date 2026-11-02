@@ -426,7 +426,7 @@ fn styled(
     merge(&mut value, patch);
     serde_json::from_value(value).map_err(|e| {
         ApiError::new(codes::INVALID_ARGUMENTS, format!("caption style: {e}")).with_hint(
-            "Style fields: font, weight, italic, size, color, align, uppercase, stroke, box, placement, animators; capabilities lists the animators.",
+            "Style fields: font, weight, italic, size, color, align, uppercase, stroke, box, shadow, placement (top, middle, bottom, or the page centre's height as a fraction such as 0.6), animators; capabilities lists the animators.",
         )
     })
 }
@@ -482,9 +482,10 @@ pub struct CaptionsAdd {
     /// Timeline; the primary timeline when omitted.
     #[serde(default)]
     pub timeline: Option<Id>,
-    /// How words are grouped into pages and lines.
+    /// How words are grouped into pages and lines; the preset's own paging (such as one
+    /// word per page for `reel`) or the defaults when omitted.
     #[serde(default)]
-    pub paging: Paging,
+    pub paging: Option<Paging>,
     /// A built-in look for the track (`capabilities` lists them), applied before `style`.
     #[serde(default)]
     pub preset: Option<String>,
@@ -584,13 +585,22 @@ impl Command for CaptionsAdd {
                 json!({ "track": track_id, "clips": existing }),
             )?;
         }
-        let max_chars = self.paging.max_chars_per_line.map_or_else(
+        let paging = self
+            .paging
+            .clone()
+            .or_else(|| {
+                self.preset
+                    .as_deref()
+                    .and_then(crate::presets::caption_preset_paging)
+            })
+            .unwrap_or_default();
+        let max_chars = paging.max_chars_per_line.map_or_else(
             || default_chars(ctx.project, &timeline, style.as_ref().unwrap_or(&base)),
             |n| n.max(1) as usize,
         );
         let pages = lay_out(
-            &page_words(&words, &self.paging, max_chars),
-            Flicks::from_millis(i64::from(self.paging.linger_ms)),
+            &page_words(&words, &paging, max_chars),
+            Flicks::from_millis(i64::from(paging.linger_ms)),
             until,
             rate,
         );

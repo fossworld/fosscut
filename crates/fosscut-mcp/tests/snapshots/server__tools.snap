@@ -4,7 +4,7 @@ expression: listing
 ---
 [
   {
-    "description": "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, or it needs more than the volume's +20 dB, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches.",
+    "description": "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, or it needs more than the volume's +20 dB, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; a clip with volume keyframes (such as ducked music) is measured without them and its keyframes are scaled so the loudest reaches the volume found, keeping their shape. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -83,7 +83,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. Returns the measurement and the response; check with frame_grab or contact_sheet.",
+    "description": "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. For talking-head reels: action duck lowers music under speech: the volume of clips (the music clips, or music for one) falls by depth_db (default -12) over attack seconds (0.2) before speech and comes back over release (0.5) after it, pauses under gap (0.8) bridged; speech is read from the speech clips' (every other clip with sound when omitted) cached transcript, or their silences measured now (speech_from auto, transcript or silences); it replaces the music's volume keyframes, and audio_normalize afterwards keeps their shape. action sync_audio places a separate recording (recording, an asset) under every clip of the camera's video asset (camera) on timeline, lined up by measuring their sound (max_offset_seconds limits the search), on track or a new audio track, mutes the camera clips and groups each pair; with confidence under 0.3 it fails with fosscut.audio.sync_uncertain and changes nothing; it reports offset and confidence. action punch_in zooms clip in for moments (at with duration, or start and end; scale default 1.15; ease seconds in and out, default 0.25) and back, centred on the face from the cached pose analysis (run media_analyze with [\"pose\"] first), focus [x, y], or the upper third's centre; it keys only transform.scale and transform.anchor. Returns the measurement and the response; check with frame_grab or contact_sheet.",
     "input": {
       "$defs": {
         "AutoEditAction": {
@@ -148,6 +148,21 @@ expression: listing
               "const": "make_short",
               "description": "Build a vertical short from a range of a clip's media.",
               "type": "string"
+            },
+            {
+              "const": "duck",
+              "description": "Lower music clips under the speech of other clips with volume keyframes.",
+              "type": "string"
+            },
+            {
+              "const": "sync_audio",
+              "description": "Place a separate recording under every clip of the camera's video, synced by sound.",
+              "type": "string"
+            },
+            {
+              "const": "punch_in",
+              "description": "Zoom a talking head in for moments and back out, centred on the face.",
+              "type": "string"
             }
           ]
         },
@@ -204,6 +219,72 @@ expression: listing
                 "number",
                 "null"
               ]
+            }
+          },
+          "type": "object"
+        },
+        "PunchMomentArg": {
+          "description": "One punch-in moment: `at` with `duration`, or `start` and `end`, on the timeline.",
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it starts; give duration with it."
+            },
+            "duration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How long it lasts from at."
+            },
+            "ease": {
+              "description": "Seconds the zoom takes in, and back out (0.25 when omitted; at most half the\nmoment).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "end": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it ends."
+            },
+            "scale": {
+              "description": "How far it zooms, 0.5 to 4 (1.15 when omitted).",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "start": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it starts, with end instead of at and duration."
             }
           },
           "type": "object"
@@ -307,7 +388,7 @@ expression: listing
       "properties": {
         "action": {
           "$ref": "#/$defs/AutoEditAction",
-          "description": "`split_scenes`, `stabilize`, `track`, `multicam`, `multicam_sync`, `reframe`,\n`camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates` or\n`make_short`."
+          "description": "`split_scenes`, `stabilize`, `track`, `multicam`, `multicam_sync`, `reframe`,\n`camera_track`, `vertical`, `beat_markers`, `beat_cuts`, `short_candidates`,\n`make_short`, `duck`, `sync_audio` or `punch_in`."
         },
         "angles": {
           "default": [],
@@ -328,11 +409,26 @@ expression: listing
           ],
           "description": "track: the timeline time where `region` is given; the clip's start when omitted."
         },
+        "attack": {
+          "description": "duck: seconds the music takes to go down before speech (0.2 when omitted).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "bpm": {
           "description": "beat_markers, beat_cuts: the music's tempo when known, in beats per minute, instead of\nestimating it.",
           "format": "double",
           "type": [
             "number",
+            "null"
+          ]
+        },
+        "camera": {
+          "description": "sync_audio: the camera's video asset, whose own sound is the reference.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -351,11 +447,19 @@ expression: listing
           ]
         },
         "clip": {
-          "description": "split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short:\nthe video clip to measure.",
+          "description": "split_scenes, stabilize, track, reframe, camera_track, short_candidates, make_short,\npunch_in: the video clip to measure.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "clips": {
+          "default": [],
+          "description": "duck: the music clips to duck (or music for one).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "count": {
           "description": "short_candidates: see min_seconds.",
@@ -363,6 +467,14 @@ expression: listing
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "depth_db": {
+          "description": "duck: how far the music goes down under speech, in dB, -60 to -1 (-12 when omitted).",
+          "format": "double",
+          "type": [
+            "number",
             "null"
           ]
         },
@@ -386,6 +498,19 @@ expression: listing
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "focus": {
+          "description": "punch_in: the point to zoom on, `[x, y]` as fractions of the picture from its left\nand top edges, instead of the face from the cached pose analysis.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
             "null"
           ]
         },
@@ -418,6 +543,14 @@ expression: listing
           ],
           "description": "make_short: where the short starts and ends in the clip's media (a candidate's span)."
         },
+        "gap": {
+          "description": "duck: pauses in the speech shorter than this many seconds keep the music down (0.8\nwhen omitted).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
         "height": {
           "description": "vertical, make_short: see width.",
           "format": "uint32",
@@ -435,7 +568,7 @@ expression: listing
           ]
         },
         "max_offset_seconds": {
-          "description": "multicam, multicam_sync: look at most this many seconds either way; any offset when\nomitted.",
+          "description": "multicam, multicam_sync, sync_audio: look at most this many seconds either way; any\noffset when omitted.",
           "format": "double",
           "type": [
             "number",
@@ -458,8 +591,15 @@ expression: listing
             "null"
           ]
         },
+        "moments": {
+          "description": "punch_in: the moments to zoom in, which must not overlap.",
+          "items": {
+            "$ref": "#/$defs/PunchMomentArg"
+          },
+          "type": "array"
+        },
         "music": {
-          "description": "beat_markers, beat_cuts: the music clip.",
+          "description": "beat_markers, beat_cuts: the music clip; duck: a music clip to duck (more in clips).",
           "type": [
             "string",
             "null"
@@ -494,6 +634,13 @@ expression: listing
             "null"
           ]
         },
+        "recording": {
+          "description": "sync_audio: the separate recording's asset (from a microphone or recorder).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "region": {
           "anyOf": [
             {
@@ -504,6 +651,14 @@ expression: listing
             }
           ],
           "description": "track: the region to follow at `at`, in the picture as it shows (find it with\nframe_grab)."
+        },
+        "release": {
+          "description": "duck: seconds the music takes to come back after speech (0.5 when omitted).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "request_id": {
           "description": "Retry key.",
@@ -525,6 +680,21 @@ expression: listing
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "speech": {
+          "default": [],
+          "description": "duck: the clips whose speech the music ducks under; every other clip with sound on\nthe music's timeline when omitted.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "speech_from": {
+          "description": "duck: where speech comes from: `auto` (the cached transcript, or silences measured\nnow without one; the default), `transcript` or `silences`.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -562,7 +732,7 @@ expression: listing
           ]
         },
         "timeline": {
-          "description": "multicam: timeline for the multicam clip; vertical: the timeline to copy; the primary\ntimeline when omitted.",
+          "description": "multicam: timeline for the multicam clip; vertical: the timeline to copy; sync_audio:\nthe timeline whose camera clips get the recording; the primary timeline when\nomitted.",
           "type": [
             "string",
             "null"
@@ -598,7 +768,7 @@ expression: listing
           "description": "beat_cuts: how far a cut may move; half the spacing of the beats that count when\nomitted."
         },
         "track": {
-          "description": "multicam: track for the multicam clip; beat_cuts: the video track whose cuts move.",
+          "description": "multicam: track for the multicam clip; beat_cuts: the video track whose cuts move;\nsync_audio: the audio track for the recording (a new one when omitted).",
           "type": [
             "string",
             "null"
@@ -676,7 +846,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+    "description": "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke, boxed, or reel: one heavy word at a time with a soft shadow at 0.6 of the height, keywords in a blue box with yellow corner brackets) and style (a style patch also sets placement to a height such as 0.6, a shadow, and word.emphasis box and brackets); emphasis marks keywords as said (text, with at to pick one occurrence). action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
     "input": {
       "$defs": {
         "CaptionsAction": {
@@ -705,6 +875,92 @@ expression: listing
             {
               "const": "dub",
               "description": "Speak each caption page with a local English voice on an audio track.",
+              "type": "string"
+            }
+          ]
+        },
+        "EmphasisArg": {
+          "description": "A keyword for generated captions.",
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The timeline time it is said near, to pick one of several occurrences; every\noccurrence when omitted."
+            },
+            "text": {
+              "description": "The word, or words in a row, as said; case and punctuation do not matter.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "type": "object"
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
               "type": "string"
             }
           ]
@@ -766,6 +1022,13 @@ expression: listing
           "description": "Report what would change without committing it (or, for export, without writing).",
           "type": "boolean"
         },
+        "emphasis": {
+          "description": "generate: keywords to emphasise (the word.emphasis animator styles them; the reel\npreset puts them in a box with corner brackets), each a word or words in a row as\nsaid, every time it is said, or with at only where it is said nearest that time.",
+          "items": {
+            "$ref": "#/$defs/EmphasisArg"
+          },
+          "type": "array"
+        },
         "expected_revision": {
           "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",
           "format": "uint64",
@@ -798,7 +1061,7 @@ expression: listing
           "description": "generate: paging limits, for example `{\"max_words\": 3, \"max_lines\": 1}`."
         },
         "preset": {
-          "description": "A built-in look: `bold-pop`, `highlight`, `karaoke` or `boxed` (capabilities lists\nthem with descriptions).",
+          "description": "A built-in look: `bold-pop`, `highlight`, `karaoke`, `boxed` or `reel` (capabilities\nlists them with descriptions).",
           "type": [
             "string",
             "null"
@@ -1531,7 +1794,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen, and Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first).",
+    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen; Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d; and 22 explainer overlays for talking-head reels: video-card, app-window, terminal, review-frame, social-post, quote-panel, before-after, reel-fan, menu-grid, storyboard-list, cross-out, arrow-pointer, audio-chip, waveform-sync, timeline-cut, progress-card, stat-counter, bar-chart, clock-card, lower-third-card, comment-cta, grid-stage, each with appear, hold, exit, speed, theme and accent), sound effects and music loops (music added with duration repeats back to back to fill it, faded at the end, as one clip: a whole bed in one call). action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first).",
     "input": {
       "$defs": {
         "LibraryAction": {
@@ -1639,7 +1902,7 @@ expression: listing
               "type": "null"
             }
           ],
-          "description": "add: how long it lasts."
+          "description": "add: how long it lasts; a music loop repeats back to back to fill it (up to 600 s),\nits end faded out, as one clip."
         },
         "expected_revision": {
           "description": "Fail with `fosscut.revision.conflict` unless the project is at this revision.",

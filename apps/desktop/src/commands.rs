@@ -47,7 +47,7 @@ pub(crate) fn given(text: Option<&str>) -> Option<&str> {
 }
 
 /// Runs blocking work (opening a project may wait for a writer) off the main thread.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Answer<T> + Send + 'static,
 ) -> Answer<T> {
     tauri::async_runtime::spawn_blocking(work)

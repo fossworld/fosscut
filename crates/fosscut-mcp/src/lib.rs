@@ -701,7 +701,7 @@ impl FosscutServer {
 
     /// Captions from transcripts and SRT files.
     #[tool(
-        description = "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke or boxed) and style. action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
+        description = "Word-timed captions. action generate captions the clips of a track from their cached transcripts (run media_analyze with analyzers [\"transcript\"] first): words become pages of a few words on a caption track, styled by preset (bold-pop, highlight, karaoke, boxed, or reel: one heavy word at a time with a soft shadow at 0.6 of the height, keywords in a blue box with yellow corner brackets) and style (a style patch also sets placement to a height such as 0.6, a shadow, and word.emphasis box and brackets); emphasis marks keywords as said (text, with at to pick one occurrence). action import adds pages from an SRT file, one per cue; action export writes a caption track to an SRT file. action translate translates a caption track into to (hu or en) with a local model (install opus-mt-en-hu or opus-mt-hu-en with models), as a second line under each page (mode bilingual) or in place of its words (mode replace); you may also translate pages yourself with edit and captions.edit. action dub speaks each page (or with translation its translation) with a local English voice (install kokoro-82m), one clip per page at its start on an audio track. generate, import, translate and dub are one undoable step with expected_revision, dry_run and request_id. Then change pages with edit (captions.edit) and the look with captions.style, and check frame_grab at a spoken word.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn captions(
@@ -853,6 +853,34 @@ impl FosscutServer {
                                 models: state.models.clone(),
                                 skip_fillers: args.skip_fillers,
                                 lyrics: args.lyrics,
+                                emphasis: {
+                                    let timeline_id = timeline.clone().unwrap_or_else(|| {
+                                        snapshot.manifest.primary_timeline.clone()
+                                    });
+                                    let rate = snapshot
+                                        .timelines
+                                        .get(&timeline_id)
+                                        .map_or(Rate::FPS_30, |t| t.format.rate);
+                                    args.emphasis
+                                        .iter()
+                                        .map(|word| {
+                                            Ok(fosscut_engine::captions::EmphasisWord {
+                                                text: word.text.clone(),
+                                                at: word
+                                                    .at
+                                                    .as_ref()
+                                                    .map(|at| at.resolve(rate))
+                                                    .transpose()
+                                                    .map_err(|e| {
+                                                        ApiError::new(
+                                                            codes::INVALID_ARGUMENTS,
+                                                            format!("emphasis at: {e}"),
+                                                        )
+                                                    })?,
+                                            })
+                                        })
+                                        .collect::<Result<Vec<_>, ApiError>>()?
+                                },
                             },
                         )?;
                         let paging = match (&args.paging, args.lyrics) {
@@ -991,7 +1019,7 @@ impl FosscutServer {
 
     /// Edits measured from media.
     #[tool(
-        description = "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. Returns the measurement and the response; check with frame_grab or contact_sheet."
+        description = "Edits measured from media on this machine, applied as one undoable step with expected_revision, dry_run and request_id. action split_scenes splits clip at its shot cuts (measured once and cached), so each shot is a clip of its own. action stabilize measures how the camera moved in clip and keys its transform.position, rotation and scale to cancel the shake (strength 0 to 1, default 0.5; up to 3 for a locked-off look), with one zoom up to 1.5 that hides the moving edges; it replaces those keyframes. action track follows region of clip (centre and size as fractions of the picture as it shows at at, found with frame_grab) from at to the clip's end, keying either mask (a mask of the clip: its centre follows) or follow (another clip such as a title or sticker: it moves as the region does from where it is); where the region is lost its last position holds and lost lists the ranges. action multicam makes a multicam clip of angles (video assets recorded at the same time, at least two): a compound timeline with each angle on its own track, lined up by offsets measured from their sound (unless offsets are given or sync is false; max_offset_seconds limits the search), one angle's sound (sound, from 1), placed at start; cut between angles afterwards with edit and the command multicam.switch. action multicam_sync only measures the offsets and their confidence (below 0.3 is doubtful). Framing follows a subject from cached analyses (run media_analyze first: [\"pose\"] for subject person, the default, or [\"matte\"] for any; [\"scenes\"] to frame shot by shot, unless shots is false): action reframe moves a crop of its timeline's shape over clip, so footage of another aspect follows its subject, or follows region from at; action camera_track zooms clip by zoom (1 to 4, default 1.5) on its own canvas and keeps the camera on the subject; action vertical copies timeline (the primary one by default) onto a width by height canvas (1080 by 1920) as a new timeline named name, every video clip following its subject and any without one left centred and listed. action beat_markers measures the beats of the music clip (once, cached; bpm when the tempo is known) and adds a marker on every every-th beat, counted from the first downbeat (4 marks bars); action beat_cuts moves each cut between the clips of track onto the nearest counted beat within tolerance, as roll edits, and lists the cuts it left with why. action short_candidates scores stretches of whole sentences of clip's cached transcript (min_seconds to max_seconds, default 15 to 60; count, default 10) by speech density, pauses, loudness, shot cuts and whether they stand alone, with the reasons and their media and timeline spans; action make_short builds a new vertical timeline of from to to of clip's media (a candidate's start and end), following its subject shot by shot, captioned from the transcript (captions, caption_preset) with an optional title. For talking-head reels: action duck lowers music under speech: the volume of clips (the music clips, or music for one) falls by depth_db (default -12) over attack seconds (0.2) before speech and comes back over release (0.5) after it, pauses under gap (0.8) bridged; speech is read from the speech clips' (every other clip with sound when omitted) cached transcript, or their silences measured now (speech_from auto, transcript or silences); it replaces the music's volume keyframes, and audio_normalize afterwards keeps their shape. action sync_audio places a separate recording (recording, an asset) under every clip of the camera's video asset (camera) on timeline, lined up by measuring their sound (max_offset_seconds limits the search), on track or a new audio track, mutes the camera clips and groups each pair; with confidence under 0.3 it fails with fosscut.audio.sync_uncertain and changes nothing; it reports offset and confidence. action punch_in zooms clip in for moments (at with duration, or start and end; scale default 1.15; ease seconds in and out, default 0.25) and back, centred on the face from the cached pose analysis (run media_analyze with [\"pose\"] first), focus [x, y], or the upper third's centre; it keys only transform.scale and transform.anchor. Returns the measurement and the response; check with frame_grab or contact_sheet."
     )]
     async fn auto_edit(
         &self,
@@ -1280,6 +1308,140 @@ impl FosscutServer {
                         let commands = plan.commands.clone();
                         ("short", motion_summary(&plan), commands)
                     }
+                    AutoEditAction::Duck => {
+                        use fosscut_engine::duck::{self, DuckContext, DuckOptions, SpeechSource};
+                        let mut music: Vec<fosscut_model::Id> = args
+                            .clips
+                            .iter()
+                            .map(|c| parse_id(c, "clips"))
+                            .collect::<Result<_, _>>()?;
+                        if let Some(one) = &args.music {
+                            music.insert(0, parse_id(one, "music")?);
+                        }
+                        let speech = args
+                            .speech
+                            .iter()
+                            .map(|c| parse_id(c, "speech"))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let seconds = |value: Option<f64>, default, what: &str| match value {
+                            None => Ok(default),
+                            Some(s) => fosscut_time::Flicks::from_seconds_f64(s).map_err(|e| {
+                                ApiError::new(codes::INVALID_ARGUMENTS, format!("{what}: {e}"))
+                            }),
+                        };
+                        let defaults = DuckOptions::default();
+                        let options = DuckOptions {
+                            depth_db: args.depth_db.unwrap_or(defaults.depth_db),
+                            attack: seconds(args.attack, defaults.attack, "attack")?,
+                            release: seconds(args.release, defaults.release, "release")?,
+                            gap: seconds(args.gap, defaults.gap, "gap")?,
+                            source: SpeechSource::named(
+                                args.speech_from.as_deref().unwrap_or("auto"),
+                            )?,
+                        };
+                        let plan = duck::duck(
+                            &snapshot,
+                            &DuckContext {
+                                bundle: bundle.clone(),
+                                cache: state.cache.clone(),
+                                models: state.models.clone(),
+                            },
+                            &music,
+                            &speech,
+                            &options,
+                            &mut progress,
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("duck", json!(plan), commands)
+                    }
+                    AutoEditAction::SyncAudio => {
+                        let asset = |value: &Option<String>, what: &str| {
+                            parse_id(
+                                required(value.as_deref(), &format!("sync_audio needs {what}"))?,
+                                what,
+                            )
+                        };
+                        let plan = fosscut_engine::sync::sync_audio(
+                            &snapshot,
+                            &bundle,
+                            &fosscut_engine::sync::SyncRequest {
+                                camera: asset(&args.camera, "camera")?,
+                                recording: asset(&args.recording, "recording")?,
+                                timeline: args
+                                    .timeline
+                                    .as_deref()
+                                    .map(|t| parse_id(t, "timeline"))
+                                    .transpose()?,
+                                track: args
+                                    .track
+                                    .as_deref()
+                                    .map(|t| parse_id(t, "track"))
+                                    .transpose()?,
+                                max_offset_seconds: max_offset,
+                            },
+                        )?;
+                        pinned = true;
+                        let commands = plan.commands.clone();
+                        ("sync", json!(plan), commands)
+                    }
+                    AutoEditAction::PunchIn => {
+                        use fosscut_engine::punch::{self, DEFAULT_EASE, DEFAULT_SCALE, Moment};
+                        let clip = clip()?;
+                        let rate = rate_of(&clip)?;
+                        let moments = args
+                            .moments
+                            .iter()
+                            .enumerate()
+                            .map(|(index, m)| {
+                                let what = format!("moments[{index}]");
+                                let time = |t: &fosscut_time::TimeInput, field: &str| {
+                                    resolve(t, rate, &format!("{what}.{field}"))
+                                };
+                                let (start, end) = match (&m.at, &m.duration, &m.start, &m.end) {
+                                    (Some(at), Some(length), None, None) => {
+                                        let at = time(at, "at")?;
+                                        (at, at + time(length, "duration")?)
+                                    }
+                                    (None, None, Some(start), Some(end)) => {
+                                        (time(start, "start")?, time(end, "end")?)
+                                    }
+                                    _ => {
+                                        return Err(ApiError::new(
+                                            codes::INVALID_ARGUMENTS,
+                                            format!("{what}: give at with duration, or start and end"),
+                                        ));
+                                    }
+                                };
+                                let ease = match m.ease {
+                                    Some(s) => fosscut_time::Flicks::from_seconds_f64(s).map_err(|e| {
+                                        ApiError::new(
+                                            codes::INVALID_ARGUMENTS,
+                                            format!("{what}.ease: {e}"),
+                                        )
+                                    })?,
+                                    None => DEFAULT_EASE,
+                                };
+                                Ok(Moment {
+                                    start,
+                                    end,
+                                    scale: m.scale.unwrap_or(DEFAULT_SCALE),
+                                    ease,
+                                })
+                            })
+                            .collect::<Result<Vec<_>, ApiError>>()?;
+                        let plan = punch::punch_in(
+                            &snapshot,
+                            &punch::PunchRequest {
+                                bundle: bundle.clone(),
+                                cache: state.cache.clone(),
+                                clip,
+                                moments,
+                                focus: args.focus,
+                            },
+                        )?;
+                        let commands = plan.commands.clone();
+                        ("punch_in", json!(plan), commands)
+                    }
                     AutoEditAction::MulticamSync => {
                         let found = motion::sync_offsets(&snapshot, &bundle, &angles()?, max_offset)?;
                         return Ok(json!({ "sync": found }));
@@ -1351,7 +1513,7 @@ impl FosscutServer {
 
     /// Lists and adds library items.
     #[tool(
-        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen, and Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
+        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen; Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d; and 22 explainer overlays for talking-head reels: video-card, app-window, terminal, review-frame, social-post, quote-panel, before-after, reel-fan, menu-grid, storyboard-list, cross-out, arrow-pointer, audio-chip, waveform-sync, timeline-cut, progress-card, stat-counter, bar-chart, clock-card, lower-third-card, comment-cta, grid-stage, each with appear, hold, exit, speed, theme and accent), sound effects and music loops (music added with duration repeats back to back to fill it, faded at the end, as one clip: a whole bed in one call). action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
     )]
     async fn library(
         &self,
@@ -1395,16 +1557,37 @@ impl FosscutServer {
                     let project = (args.params.is_some() || !args.media.is_empty())
                         .then(|| state.projects.snapshot(&bundle))
                         .transpose()?;
-                    let media_add = library::media_args_with(
-                        &bundle,
-                        &item,
-                        &library::CompositionInput {
-                            lines: args.lines.clone(),
-                            params: args.params.clone(),
-                            media: args.media.clone(),
-                        },
-                        project.as_ref(),
-                    )?;
+                    // Music given a length is a bed: the loop repeated to fill it, one asset.
+                    let mut bed = None;
+                    let media_add = match (item.kind, &args.duration) {
+                        ("music", Some(length)) => {
+                            let snapshot = state.projects.snapshot(&bundle)?;
+                            let timeline_id = match &args.timeline {
+                                Some(t) => parse_id(t, "timeline")?,
+                                None => snapshot.manifest.primary_timeline.clone(),
+                            };
+                            let rate = snapshot
+                                .timelines
+                                .get(&timeline_id)
+                                .map_or(Rate::FPS_30, |t| t.format.rate);
+                            let length = length.resolve(rate).map_err(|e| {
+                                ApiError::new(codes::INVALID_ARGUMENTS, format!("duration: {e}"))
+                            })?;
+                            let length = rate.frames_to_flicks(rate.frame_at(length));
+                            bed = Some(json!({ "flicks": length.get() }));
+                            library::music_bed_media(&bundle, &item.name, length)?
+                        }
+                        _ => library::media_args_with(
+                            &bundle,
+                            &item,
+                            &library::CompositionInput {
+                                lines: args.lines.clone(),
+                                params: args.params.clone(),
+                                media: args.media.clone(),
+                            },
+                            project.as_ref(),
+                        )?,
+                    };
                     let mut import = Request::single("media.add", media_add);
                     import.expected_revision = args.expected_revision;
                     import.dry_run = args.dry_run;
@@ -1434,8 +1617,9 @@ impl FosscutServer {
                             placed["free_track"] = json!(true);
                         }
                     }
-                    if let Some(duration) = &args.duration {
-                        placed["duration"] = json!(duration);
+                    if let Some(duration) = bed.or_else(|| args.duration.as_ref().map(|d| json!(d)))
+                    {
+                        placed["duration"] = duration;
                     }
                     if let Some(track) = &args.track {
                         placed["track"] = json!(track);
@@ -1484,7 +1668,7 @@ impl FosscutServer {
 
     /// Levels clips' loudness.
     #[tool(
-        description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, or it needs more than the volume's +20 dB, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; clips with volume keyframes are refused. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
+        description = "Level the loudness of clips with sound: each clip is measured as it plays (its speed and sound effects applied) with the ITU-R BS.1770 meter on this machine, and its volume is set so it reaches target_lufs (default -14, the short-form platform level) with peaks under ceiling_dbfs (default -1). Where a clip's peaks leave too little room, or it needs more than the volume's +20 dB, an audio.limiter (gain and ceiling) makes up the rest unless limit is false. Silent clips keep their volume; a clip with volume keyframes (such as ducked music) is measured without them and its keyframes are scaled so the loudest reaches the volume found, keeping their shape. One undoable step with expected_revision, dry_run and request_id; returns each clip's measured loudness, peak, gain, new volume, limiter and the loudness it reaches."
     )]
     async fn audio_normalize(
         &self,

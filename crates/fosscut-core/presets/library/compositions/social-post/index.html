@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1240, fps=30, duration=3.9">
+<title>Social post</title>
+<!--
+  Made by FossCut for its library: a generic social post, an avatar with a name, handle
+  and time, the post's text, a picture, and likes, comments and shares; the heart fills
+  with a burst while the counts go up. Every frame is a function of time, through
+  window.fosscut.seek and the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 30px 32px 26px; }
+  #head { display: flex; align-items: center; gap: 18px; }
+  #head .avatar { width: 80px; height: 80px; font-size: 30px; }
+  #who { flex: 1; min-width: 0; }
+  #name { font-size: 31px; font-weight: 800; letter-spacing: -0.015em; }
+  #handle { margin-top: 2px; font-size: 25px; color: var(--muted); }
+  #more { color: var(--faint); }
+  #text { margin-top: 22px; font-size: 33px; line-height: 1.38; color: var(--ink); }
+  #picture { position: relative; height: 560px; margin-top: 22px; border-radius: 26px; overflow: hidden; }
+  #picture .media { border-radius: 26px; }
+  #actions { display: flex; align-items: center; gap: 36px; height: 76px; margin-top: 12px; padding: 0 6px; font-size: 27px; font-weight: 700; color: var(--ink-2); }
+  .act { display: flex; align-items: center; gap: 12px; }
+  #heart { position: relative; width: 44px; height: 44px; }
+  #heart svg { position: absolute; inset: 0; }
+  #heart .full { color: #F2405D; }
+  #heart .full .s { fill: currentColor; }
+  .spark { position: absolute; left: 19px; top: 19px; width: 7px; height: 7px; border-radius: 50%; background: #F2405D; }
+  #liked { color: var(--ink); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

@@ -362,10 +362,23 @@ fn goldens(update: bool) -> Result<(), String> {
         scenes.env("FOSSCUT_UPDATE_GOLDENS", "1");
     }
     run(scenes)?;
+    // The explainer overlays' golden frames at their hold times, drawn the same way.
+    let mut overlays = cargo(&[
+        "test",
+        "-p",
+        "fosscut-engine",
+        "--test",
+        "overlays",
+        "enters_holds_and_leaves",
+    ]);
+    if update {
+        overlays.env("FOSSCUT_UPDATE_GOLDENS", "1");
+    }
+    run(overlays)?;
     if update {
         println!(
             "goldens rewritten in crates/fosscut-render/tests/goldens/ and \
-             crates/fosscut-engine/tests/goldens/scenes/; open every changed \
+             crates/fosscut-engine/tests/goldens/{{scenes,overlays}}/; open every changed \
              PNG and describe the visual change in the pull request"
         );
     }

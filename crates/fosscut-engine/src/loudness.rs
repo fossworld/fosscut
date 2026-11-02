@@ -5,6 +5,11 @@
 //! ceiling, measured again with the limiter until it reaches the target. Front ends apply
 //! the result as one request of `clip.set` and effect commands, so the change goes through
 //! the command framework and is undoable.
+//!
+//! A clip whose volume has keyframes (a fade drawn by hand, or music ducked under speech by
+//! [`crate::duck`]) is measured without them, at volume 1, and its keyframes are scaled so
+//! that the loudest reaches the volume found: the shape stays, the level moves. Normalizing
+//! and ducking can come in either order.
 
 use std::path::Path;
 
@@ -63,6 +68,14 @@ pub struct Leveled {
     /// True when it falls short of the target: the ceiling held it back without a
     /// limiter, or the gain range ran out.
     pub limited: bool,
+    /// How many volume keyframes were scaled instead of setting the volume; omitted when
+    /// it has none.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub keyframes: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 /// What `normalize` found, with the commands that apply it.
@@ -120,6 +133,7 @@ pub fn normalize(
                 limiter: None,
                 reached_lufs: None,
                 limited: false,
+                keyframes: 0,
             });
             continue;
         };
@@ -130,10 +144,7 @@ pub fn normalize(
         if (wanted <= headroom && wanted <= GAIN_RANGE.1) || !limit {
             let gain = wanted.min(headroom).clamp(GAIN_RANGE.0, GAIN_RANGE.1);
             let volume = round(10f64.powf(gain / 20.0) * 1000.0) / 1000.0;
-            commands.push(json!({
-                "command": "clip.set",
-                "args": { "clip": id, "set": { "volume": volume } },
-            }));
+            commands.push(alone.set_volume(id, volume));
             // A limiter from an earlier normalization would raise it further.
             if let Some(effect) = &alone.limiter {
                 commands.push(json!({
@@ -150,6 +161,7 @@ pub fn normalize(
                 limiter: None,
                 reached_lufs: Some(round(lufs + gain)),
                 limited: (gain - wanted).abs() > 0.005,
+                keyframes: alone.keys.len(),
             });
             continue;
         }
@@ -169,10 +181,7 @@ pub fn normalize(
         }
         let gain = round(gain);
         let params = json!({ "gain": gain, "ceiling": ceiling_dbfs });
-        commands.push(json!({
-            "command": "clip.set",
-            "args": { "clip": id, "set": { "volume": 1.0 } },
-        }));
+        commands.push(alone.set_volume(id, 1.0));
         commands.push(match &alone.limiter {
             Some(effect) => json!({
                 "command": "effect.set",
@@ -195,6 +204,7 @@ pub fn normalize(
             }),
             reached_lufs: reached.map(round),
             limited: reached.is_none_or(|r| target_lufs - r > 0.5),
+            keyframes: alone.keys.len(),
         });
     }
     Ok(Normalization {
@@ -228,9 +238,44 @@ struct Alone {
     duration: Flicks,
     /// The clip's own limiter, left out of the measurement.
     limiter: Option<Id>,
+    /// The clip's volume keyframes, left out of the measurement.
+    keys: Vec<fosscut_model::Keyframe>,
 }
 
 impl Alone {
+    /// The command that gives the clip `volume`: `clip.set`, or for a clip with volume
+    /// keyframes, the keyframes scaled so the loudest is `volume`.
+    fn set_volume(&self, id: &Id, volume: f64) -> Value {
+        let loudest = self
+            .keys
+            .iter()
+            .filter_map(|k| k.value.number())
+            .fold(0.0, f64::max);
+        if self.keys.is_empty() || loudest <= 0.0 {
+            return json!({
+                "command": "clip.set",
+                "args": { "clip": id, "set": { "volume": volume } },
+            });
+        }
+        let factor = volume / loudest;
+        let keys: Vec<Value> = self
+            .keys
+            .iter()
+            .map(|k| {
+                let value = k.value.number().unwrap_or_default() * factor;
+                json!({
+                    "offset": { "flicks": k.time.get() },
+                    "value": (value * 10_000.0).round() / 10_000.0,
+                    "easing": k.interpolation,
+                })
+            })
+            .collect();
+        json!({
+            "command": "keyframe.set_all",
+            "args": { "clip": id, "property": "volume", "keys": keys },
+        })
+    }
+
     /// Its loudness as it plays.
     fn measure(&self, sound: &mut Sound, bundle: &Path) -> Result<Loudness, EngineError> {
         let mut meter = LoudnessMeter::new(2);
@@ -307,13 +352,8 @@ fn alone(project: &Project, id: &Id) -> Result<Alone, EngineError> {
             message: format!("{id} is a {} clip without sound", clip.content.kind_name()),
         });
     }
-    if clip.keyframes.contains_key("volume") {
-        return Err(EngineError::InvalidArguments {
-            message: format!(
-                "{id} has volume keyframes; remove them (keyframe.remove with all) before normalizing"
-            ),
-        });
-    }
+    // Measured at volume 1: the keyframes are scaled afterwards, keeping their shape.
+    let keys = clip.keyframes.remove("volume").unwrap_or_default();
     let limiter = clip
         .effects
         .iter()
@@ -338,5 +378,6 @@ fn alone(project: &Project, id: &Id) -> Result<Alone, EngineError> {
         start,
         duration,
         limiter,
+        keys,
     })
 }

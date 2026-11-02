@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1180, fps=30, duration=4.4">
+<title>Storyboard list</title>
+<!--
+  Made by FossCut for its library: a storyboard, numbered lines each with a thumbnail, a
+  quote and its time, sliding in one after another under a title and a count. Every frame
+  is a function of time, through window.fosscut.seek and the overlay kit. Free to use,
+  also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 30px 30px 18px; }
+  #head { display: flex; align-items: center; gap: 16px; height: 64px; margin-bottom: 10px; }
+  #glyph { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+  #title { flex: 1; font-size: 36px; min-width: 0; }
+  #count { height: 52px; font-size: 24px; }
+  .item { position: relative; display: flex; align-items: center; gap: 22px; padding: 18px 8px; border-top: 2px solid var(--line); }
+  .num { width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 26px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex: none; }
+  .thumb { position: relative; width: 208px; height: 117px; border-radius: 16px; overflow: hidden; flex: none; }
+  .thumb .media { border-radius: 16px; }
+  .words { flex: 1; min-width: 0; }
+  .quote { font-size: 30px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.3; color: var(--ink); }
+  .time { margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 19px; background: var(--card-2);
+          font-size: 21px; font-weight: 700; color: var(--muted); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

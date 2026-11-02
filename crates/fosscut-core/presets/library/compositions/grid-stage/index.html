@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1920, fps=30, duration=4.4">
+<title>Grid stage</title>
+<!--
+  Made by FossCut for its library: a full-screen stage for a cut-out speaker, a glowing
+  perspective grid floor (and optionally a ceiling) running towards a lit horizon, with
+  picture cards arcing around the speaker's head and swaying. The grid is drawn on a
+  canvas and the cards placed in CSS 3D; every frame is a function of time, through
+  window.fosscut.seek and the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #back { position: absolute; inset: 0; }
+  #world { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; }
+  #horizon { position: absolute; left: 0; right: 0; height: 4px; border-radius: 2px; }
+  #shine { position: absolute; left: 0; right: 0; height: 80px; }
+  #haze { position: absolute; left: 0; right: 0; height: 520px; }
+  #arc { position: absolute; inset: 0; perspective: 1400px; perspective-origin: 50% 36%; }
+  .tile { position: absolute; width: 236px; height: 316px; margin: -158px 0 0 -118px; }
+  /* The shadow and glow are painted as a gradient behind the card: blurred shadows on
+     turned layers can differ by a hair from frame to frame in the browser. */
+  .tile .plate { position: absolute; left: -44px; right: -44px; top: -30px; bottom: -64px; border-radius: 80px; }
+  .tile .body { position: absolute; inset: 0; border-radius: 26px; padding: 6px; background: rgba(255, 255, 255, 0.92); }
+  .tile .face { position: relative; width: 100%; height: 100%; border-radius: 21px; overflow: hidden; }
+  .tile .media { border-radius: 21px; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

@@ -140,6 +140,7 @@ fn temporal_effects_are_registered_with_their_parameters() {
         &[
             ("amount", ParamKind::Number),
             ("samples", ParamKind::Number),
+            ("mix", ParamKind::Number),
         ],
     );
     assert_eq!(blur.param("amount").unwrap().max, Some(1.0));
@@ -156,6 +157,7 @@ fn temporal_effects_are_registered_with_their_parameters() {
         &[
             ("strength", ParamKind::Number),
             ("temporal", ParamKind::Bool),
+            ("mix", ParamKind::Number),
         ],
     );
     assert!(!denoise.param("temporal").unwrap().animatable);
@@ -165,6 +167,7 @@ fn temporal_effects_are_registered_with_their_parameters() {
         &[
             ("strength", ParamKind::Number),
             ("window", ParamKind::Number),
+            ("mix", ParamKind::Number),
         ],
     );
     assert_eq!(deflicker.param("window").unwrap().unit, "frames");

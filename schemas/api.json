@@ -359,20 +359,101 @@
       {
         "params_schema": {
           "$defs": {
+            "Brackets": {
+              "additionalProperties": false,
+              "description": "Four corner brackets around a word, like a viewfinder's.",
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/Color",
+                  "default": "#FFE14D",
+                  "description": "Their colour."
+                },
+                "gap": {
+                  "default": 0.1,
+                  "description": "Space between the word's box (or the word) and the brackets, as a fraction of the\nfont size, from 0 to 1.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "length": {
+                  "default": 0.3,
+                  "description": "Each arm's length as a fraction of the font size, from 0.05 to 2.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "thickness": {
+                  "default": 0.07,
+                  "description": "Line thickness as a fraction of the font size, from 0.01 to 0.5.",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
             "Color": {
               "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
               "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
               "type": "string"
+            },
+            "WordBox": {
+              "additionalProperties": false,
+              "description": "A box behind one word, drawn at the word's size and scale.",
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/Color",
+                  "default": "#2F6BFF",
+                  "description": "Its fill colour."
+                },
+                "padding": {
+                  "default": 0.2,
+                  "description": "Space around the word as a fraction of the font size, from 0 to 1.",
+                  "format": "double",
+                  "type": "number"
+                },
+                "radius": {
+                  "default": 0.15,
+                  "description": "Corner radius as a fraction of the box height, from 0 (square) to 0.5 (round ends).",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "type": "object"
             }
           },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "description": "Parameters of `word.emphasis`.",
           "properties": {
+            "box": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/WordBox"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A box behind each emphasised word; none when omitted."
+            },
+            "brackets": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Brackets"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Corner brackets around each emphasised word (and its box); none when omitted."
+            },
             "color": {
               "$ref": "#/$defs/Color",
               "default": "#FFE14D",
               "description": "Colour of emphasised words."
+            },
+            "pop": {
+              "description": "How far emphasised words pop up as they start (1, the default, is no pop): they\ngrow to this scale halfway through [`EMPHASIS_POP_MS`] and back.",
+              "format": "double",
+              "type": "number"
             },
             "scale": {
               "default": 1.1,
@@ -384,7 +465,7 @@
           "title": "WordEmphasis",
           "type": "object"
         },
-        "summary": "Words marked emphasis (captions.edit) stand out in colour and size.",
+        "summary": "Words marked emphasis (captions.edit, or emphasis when generating) stand out in colour and size, with an optional pop, box and corner brackets.",
         "type": "word.emphasis",
         "version": 1
       }
@@ -517,6 +598,65 @@
           "stroke": {
             "enabled": false
           }
+        }
+      },
+      {
+        "description": "One heavy white word at a time with a soft shadow, a little below the middle of the frame; emphasised words pop in a blue box with yellow corner brackets. Made for talking-head reels: mark keywords with emphasis.",
+        "name": "reel",
+        "paging": {
+          "linger_ms": 120,
+          "max_gap_ms": 400,
+          "max_lines": 1,
+          "max_words": 1
+        },
+        "style": {
+          "animators": [
+            {
+              "enabled": true,
+              "params": {
+                "duration_ms": 90,
+                "from": 0.92
+              },
+              "type": "page.pop",
+              "version": 1
+            },
+            {
+              "enabled": true,
+              "params": {
+                "box": {
+                  "color": "#2563EB",
+                  "padding": 0.22,
+                  "radius": 0.16
+                },
+                "brackets": {
+                  "color": "#FACC15",
+                  "gap": 0.12,
+                  "length": 0.32,
+                  "thickness": 0.075
+                },
+                "color": "#FFFFFF",
+                "pop": 1.14,
+                "scale": 1.0
+              },
+              "type": "word.emphasis",
+              "version": 1
+            }
+          ],
+          "placement": 0.6,
+          "shadow": {
+            "blur": 0.22,
+            "color": "#000000A6",
+            "enabled": true,
+            "offset": [
+              0.0,
+              0.05
+            ]
+          },
+          "size": 0.062,
+          "stroke": {
+            "enabled": false
+          },
+          "weight": "black"
         }
       }
     ],
@@ -1873,14 +2013,16 @@
         "description": "Pages timed words into caption clips on a caption track.",
         "properties": {
           "paging": {
-            "$ref": "#/$defs/Paging",
-            "default": {
-              "linger_ms": 300,
-              "max_gap_ms": 600,
-              "max_lines": 2,
-              "max_words": 4
-            },
-            "description": "How words are grouped into pages and lines."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Paging"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How words are grouped into pages and lines; the preset's own paging (such as one\nword per page for `reel`) or the defaults when omitted."
           },
           "preset": {
             "default": null,
@@ -2592,6 +2734,36 @@
               }
             ]
           },
+          "Brackets": {
+            "additionalProperties": false,
+            "description": "Four corner brackets around a word, like a viewfinder's.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#FFE14D",
+                "description": "Their colour."
+              },
+              "gap": {
+                "default": 0.1,
+                "description": "Space between the word's box (or the word) and the brackets, as a fraction of the\nfont size, from 0 to 1.",
+                "format": "double",
+                "type": "number"
+              },
+              "length": {
+                "default": 0.3,
+                "description": "Each arm's length as a fraction of the font size, from 0.05 to 2.",
+                "format": "double",
+                "type": "number"
+              },
+              "thickness": {
+                "default": 0.07,
+                "description": "Line thickness as a fraction of the font size, from 0.01 to 0.5.",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
           "CaptionStyle": {
             "additionalProperties": false,
             "description": "How a caption track's captions look and move; every field has a default.",
@@ -2628,7 +2800,11 @@
               },
               "placement": {
                 "$ref": "#/$defs/Placement",
-                "description": "Where the page sits inside the safe area (bottom when omitted)."
+                "description": "Where the page sits: `top`, `middle` or `bottom` of the safe area, or the height of\nits centre as a fraction of the canvas height, kept inside the safe area (bottom\nwhen omitted)."
+              },
+              "shadow": {
+                "$ref": "#/$defs/Shadow",
+                "description": "A soft shadow cast by the words and their outline, as text styles have: colour (its\nalpha is the shadow's opacity), offset and blur in em (off when omitted)."
               },
               "size": {
                 "description": "Font size as a fraction of the canvas height (0.055 when omitted).",
@@ -2731,24 +2907,55 @@
             "type": "object"
           },
           "Placement": {
-            "description": "Where a caption page sits inside the canvas's safe area (ADR-0021 item 5).",
-            "oneOf": [
+            "anyOf": [
               {
-                "const": "top",
-                "description": "At the top of the safe area.",
+                "enum": [
+                  "top",
+                  "middle",
+                  "bottom"
+                ],
                 "type": "string"
               },
               {
-                "const": "middle",
-                "description": "Centred.",
-                "type": "string"
-              },
-              {
-                "const": "bottom",
-                "description": "At the bottom of the safe area.",
-                "type": "string"
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
               }
-            ]
+            ],
+            "description": "Where a caption page sits: top, middle or bottom of the safe area, or the height of its centre as a fraction of the canvas height (0.6 is a little below the middle), kept inside the safe area."
+          },
+          "Shadow": {
+            "additionalProperties": false,
+            "description": "A shadow cast by the letters (and their outline).",
+            "properties": {
+              "blur": {
+                "description": "How soft it is in em, from 0 (sharp) to 1 (0.08 when omitted).",
+                "format": "double",
+                "type": "number"
+              },
+              "color": {
+                "$ref": "#/$defs/Color",
+                "description": "Its colour (black at 70% when omitted)."
+              },
+              "enabled": {
+                "description": "Whether it is drawn.",
+                "type": "boolean"
+              },
+              "offset": {
+                "description": "How far it falls, right and down, in em, each from -1 to 1 ([0.06, 0.06] when\nomitted).",
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "enabled"
+            ],
+            "type": "object"
           },
           "Stroke": {
             "additionalProperties": false,
@@ -2821,14 +3028,65 @@
             },
             "type": "object"
           },
+          "WordBox": {
+            "additionalProperties": false,
+            "description": "A box behind one word, drawn at the word's size and scale.",
+            "properties": {
+              "color": {
+                "$ref": "#/$defs/Color",
+                "default": "#2F6BFF",
+                "description": "Its fill colour."
+              },
+              "padding": {
+                "default": 0.2,
+                "description": "Space around the word as a fraction of the font size, from 0 to 1.",
+                "format": "double",
+                "type": "number"
+              },
+              "radius": {
+                "default": 0.15,
+                "description": "Corner radius as a fraction of the box height, from 0 (square) to 0.5 (round ends).",
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
           "WordEmphasis": {
             "additionalProperties": false,
             "description": "Parameters of `word.emphasis`.",
             "properties": {
+              "box": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/WordBox"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A box behind each emphasised word; none when omitted."
+              },
+              "brackets": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Brackets"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Corner brackets around each emphasised word (and its box); none when omitted."
+              },
               "color": {
                 "$ref": "#/$defs/Color",
                 "default": "#FFE14D",
                 "description": "Colour of emphasised words."
+              },
+              "pop": {
+                "description": "How far emphasised words pop up as they start (1, the default, is no pop): they\ngrow to this scale halfway through [`EMPHASIS_POP_MS`] and back.",
+                "format": "double",
+                "type": "number"
               },
               "scale": {
                 "default": 1.1,
@@ -26796,6 +27054,15 @@
           "meaning": "like saturation, but mostly on muted colors",
           "min": -1.0,
           "name": "vibrance"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Exposure, white balance, contrast, tone ranges and saturation: the basic color corrections.",
@@ -26841,6 +27108,15 @@
           "meaning": "the blue channel's curve",
           "min": 0.0,
           "name": "blue"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Tone curves for brightness and for each of red, green and blue: control points from 0 to 1, joined smoothly without overshoot.",
@@ -27066,6 +27342,15 @@
           "meaning": "darkens (negative) or lightens (positive) this band",
           "min": -1.0,
           "name": "magenta_lightness"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Hue, saturation and lightness for eight color bands: red, orange, yellow, green, aqua, blue, purple and magenta.",
@@ -27159,6 +27444,15 @@
           "meaning": "darkens or brightens everything",
           "min": -1.0,
           "name": "offset_luma"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Lift, gamma and gain wheels for shadows, midtones and highlights, and an offset for everything: each a color push [x, y] inside the unit circle plus a brightness amount.",
@@ -27196,6 +27490,15 @@
           "meaning": "keeps skin tones closer to the original",
           "min": 0.0,
           "name": "protect_skin"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Applies a 3D LUT from a .cube file imported as a media asset, with an intensity and protection for skin tones.",
@@ -27241,6 +27544,15 @@
           "meaning": "how soft the transition is",
           "min": 0.0,
           "name": "feather"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Darkens (or lightens) the edges of the picture.",
@@ -27269,6 +27581,15 @@
           "min": 2.0,
           "name": "window",
           "unit": "frames"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Evens out brightness that flickers from frame to frame, as under mains-powered lights or in time-lapses, by scaling each frame toward the average brightness of the source frames around it; slower changes such as fades stay. Reads neighbouring frames, so it costs more to render.",
@@ -27297,6 +27618,15 @@
           "min": 0.01,
           "name": "block",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Digital glitches: bands of the picture jump sideways and the colors split, changing every few frames.",
@@ -27326,6 +27656,15 @@
           "min": -180.0,
           "name": "angle",
           "unit": "degrees"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Shifts red one way and blue the other, like a misaligned lens.",
@@ -27345,6 +27684,15 @@
           "min": 0.002,
           "name": "size",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Turns the picture into large square blocks.",
@@ -27363,6 +27711,15 @@
           "meaning": "how worn the tape looks",
           "min": 0.0,
           "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Old tape: wobbling lines, bleeding color, scanlines and noise.",
@@ -27384,6 +27741,15 @@
           "kind": "choice",
           "meaning": "horizontal reflects the left half, vertical the top half, quad the top-left quarter",
           "name": "mode"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Reflects one half of the picture onto the other, or a quarter into all four.",
@@ -27402,6 +27768,15 @@
           "meaning": "levels per channel",
           "min": 2.0,
           "name": "levels"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Reduces each channel to a few flat levels.",
@@ -27420,6 +27795,15 @@
           "meaning": "how much: 1 is the full negative",
           "min": 0.0,
           "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Turns the picture into its negative.",
@@ -27449,6 +27833,15 @@
           "min": 0.1,
           "name": "speed",
           "unit": "per second"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Shakes the picture like a handheld camera on the move.",
@@ -27467,6 +27860,15 @@
           "meaning": "length of the streaks",
           "min": 0.0,
           "name": "amount"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Streaks the picture outwards from the middle, as in a fast zoom.",
@@ -27495,6 +27897,15 @@
           "min": 0.1,
           "name": "rate",
           "unit": "per second"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Brief white flashes on a beat.",
@@ -27523,6 +27934,15 @@
           "min": 0.0,
           "name": "speed",
           "unit": "per second"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Cycles the colors through the rainbow.",
@@ -27551,6 +27971,15 @@
           "min": 0.1,
           "name": "rate",
           "unit": "per second"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Zooms in and out on a beat.",
@@ -27579,6 +28008,15 @@
           "meaning": "how many positions along the motion are averaged, rounded to a whole number: more is smoother and slower",
           "min": 2.0,
           "name": "samples"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path; a clip placed in 3D also streaks as the camera moves. Reads neighbouring frames, so it costs more to render.",
@@ -27622,6 +28060,15 @@
           "meaning": "how much of the key's color is removed from what stays",
           "min": 0.0,
           "name": "spill"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Makes one color transparent, such as a green or blue screen, with soft edges and spill removal.",
@@ -27697,6 +28144,15 @@
           "min": 0.0,
           "name": "blur",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Keeps the subject and removes the background (or, with invert, removes the subject), from the clip's cached matte: run media_analyze with analyzers [\"matte\"] first (options {\"matte\": {\"model\": \"subject\"}} for source subject). Exports and frame grabs fail with fosscut.analysis.missing until it is cached.",
@@ -27732,6 +28188,15 @@
           "meaning": "how soft the line's outer edge is, as a share of its width",
           "min": 0.0,
           "name": "softness"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Draws a line around the person, behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
@@ -27767,6 +28232,15 @@
           "meaning": "how bright the light is: 0 none, 1 full at the person's edge",
           "min": 0.0,
           "name": "strength"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Surrounds the person with colored light that fades away from them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
@@ -27815,6 +28289,15 @@
           "meaning": "how dark the shadow is",
           "min": 0.0,
           "name": "opacity"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Casts a soft drop shadow of the person onto what is behind them, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
@@ -27850,6 +28333,15 @@
           "min": 0.0,
           "name": "size",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Scatters twinkling sparkles along the person's arms, shoulders, torso and legs, placed the same way every time the frame renders, from the clip's cached pose: run media_analyze with analyzers [\"pose\"] first.",
@@ -27869,6 +28361,15 @@
           "min": 0.0,
           "name": "radius",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Gaussian blur.",
@@ -27897,6 +28398,15 @@
           "min": 0.0005,
           "name": "radius",
           "unit": "of height"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Sharpens edges with an unsharp mask.",
@@ -27922,6 +28432,15 @@
           "kind": "bool",
           "meaning": "also average with the neighbouring frames, following their motion: stronger on still and slowly moving parts",
           "name": "temporal"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Reduces grain and sensor noise while keeping edges: edge-preserving smoothing within the frame and, with temporal on, averaging with the matching parts of the neighbouring source frames along their motion, leaving out what moved out of view or changed. Temporal reads neighbouring frames, so it costs more to render.",
@@ -27949,6 +28468,15 @@
           "meaning": "grain size: 1 is fine grain at 1080p",
           "min": 0.5,
           "name": "size"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Adds moving film grain, the same on every render of a frame.",
@@ -28339,6 +28867,15 @@
           "kind": "bool",
           "meaning": "shows only the light, without the layer itself",
           "name": "glow_only"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Soft light around the layer's bright parts that spreads past its edges: a halo for logos, lines and titles on dark backgrounds, or a bloom on a video's highlights. Works on any picture clip.",
@@ -28410,6 +28947,15 @@
           "meaning": "how much of the band's light also glows past the layer's opaque pixels onto what is around and below it, so the sweep shows on white text or logos: 0 keeps the light on the layer's pixels, 1 a full glow",
           "min": 0.0,
           "name": "bloom"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "A band of light that moves across the layer's visible pixels, such as a sheen over a logo on an end card: keyframe position from 0 to 1. Transparent parts stay transparent unless bloom lets the band's light glow past the layer's edges, which makes the sweep show on white or very bright layers too.",
@@ -28473,6 +29019,15 @@
           "meaning": "how much of the streaks takes the colour instead of the source's own colours",
           "min": 0.0,
           "name": "tint"
+        },
+        {
+          "animatable": true,
+          "default": 1.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the effect shows: 0 the picture without it, 1 in full; keyframe it to switch the effect on for a range",
+          "min": 0.0,
+          "name": "mix"
         }
       ],
       "summary": "Anamorphic streaks: thin lines of light from the layer's highlights, fading with distance, that spread past its edges. Works on any picture clip.",
@@ -28853,7 +29408,7 @@
       "meaning": "Internal failure."
     }
   ],
-  "format_version": "0.16.0",
+  "format_version": "0.17.0",
   "library": {
     "compositions": [
       {
@@ -30336,6 +30891,3597 @@
           "threejs"
         ],
         "title": "3D product on a podium"
+      },
+      {
+        "description": "A generic video card, 1080x860 with a clear background: a 16:9 thumbnail with a play button, its length and a watched bar, the channel's avatar, the title and a line of views and age; it pops in, the views count up and the watched bar fills. Use it when the speaker mentions a video, a channel, an upload or a long-form piece. thumbnail takes a picture or a video (abstract art when empty). Above the speaker's head at scale 0.85, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "video-card",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "The thumbnail: a picture, or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumbnail",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image"
+            ],
+            "default": null,
+            "description": "The channel's picture; its initials on a gradient when empty.",
+            "name": "avatar",
+            "type": "slot"
+          },
+          {
+            "default": "How I edit a week of videos in one afternoon",
+            "description": "The video's title, up to two lines.",
+            "max_length": 120,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "Your Channel",
+            "description": "The channel's name; empty hides it.",
+            "max_length": 60,
+            "name": "channel",
+            "type": "text"
+          },
+          {
+            "default": "1.2M views",
+            "description": "The views, whose number counts up (\"1.2M views\", \"12,400 views\"); empty hides it.",
+            "max_length": 40,
+            "name": "views",
+            "type": "text"
+          },
+          {
+            "default": "2 days ago",
+            "description": "How old the video is; empty hides it.",
+            "max_length": 40,
+            "name": "age",
+            "type": "text"
+          },
+          {
+            "default": "12:48",
+            "description": "The length badge on the thumbnail; empty hides it.",
+            "max_length": 12,
+            "name": "length",
+            "type": "text"
+          },
+          {
+            "default": 0.35,
+            "description": "How far the watched bar along the thumbnail's bottom fills; 0 hides it.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "watched",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "video",
+          "thumbnail",
+          "card",
+          "views",
+          "channel",
+          "play",
+          "upload",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Video card"
+      },
+      {
+        "description": "A generic editing app window, 1080x780 with a clear background: a title bar with an export button, a media panel, a viewer showing a picture or video, and a timeline whose clips build in under a running playhead. Use it when the speaker talks about editing software, a desktop app or the old way of working (lay cross-out over it with the same placement to cross it out). Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "app-window",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "What the viewer shows: a picture, or a video that plays from the entrance; abstract art when empty.",
+            "name": "media",
+            "type": "slot"
+          },
+          {
+            "default": "Untitled project",
+            "description": "The project name in the title bar.",
+            "max_length": 60,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "Export",
+            "description": "The button at the right of the title bar; empty hides it.",
+            "max_length": 24,
+            "name": "button",
+            "type": "text"
+          },
+          {
+            "default": "Media",
+            "description": "The media panel's heading; empty hides it.",
+            "max_length": 24,
+            "name": "panel",
+            "type": "text"
+          },
+          {
+            "default": true,
+            "description": "Show the timeline with its clips and playhead under the viewer.",
+            "name": "timeline",
+            "type": "bool"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "app",
+          "window",
+          "editor",
+          "software",
+          "timeline",
+          "screen",
+          "ui",
+          "overlay",
+          "explainer"
+        ],
+        "title": "App window"
+      },
+      {
+        "description": "A terminal window, 1080x700 with a clear background, dark by default: each step is typed behind a prompt, waits a moment and gets a green check mark, one after another. Use it for a sequence of steps, commands or an automated process (\"it analyzes, cuts, captions and exports\"). With the default four steps the last check lands at about 4.6 s; raise speed or hold for other counts. Above the head at scale 0.9, position [0, -0.29].",
+        "lines": [],
+        "name": "terminal",
+        "params": [
+          {
+            "default": "Terminal",
+            "description": "The title bar's text.",
+            "max_length": 40,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": [
+              "analyze talking-head.mp4",
+              "cut --silences --retakes",
+              "captions --style bold",
+              "export reel.mp4 --vertical"
+            ],
+            "description": "The lines typed, one after another, up to six.",
+            "max_length": 6,
+            "name": "steps",
+            "type": "texts"
+          },
+          {
+            "default": "$",
+            "description": "The prompt before every line.",
+            "max_length": 4,
+            "name": "prompt",
+            "type": "text"
+          },
+          {
+            "default": "done",
+            "description": "The word beside each check mark; empty shows the mark alone.",
+            "max_length": 20,
+            "name": "done",
+            "type": "text"
+          },
+          {
+            "default": 40,
+            "description": "Characters typed per second.",
+            "max": 120.0,
+            "min": 5.0,
+            "name": "typing",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 5.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "dark",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "terminal",
+          "command",
+          "code",
+          "steps",
+          "typing",
+          "checklist",
+          "automation",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Terminal"
+      },
+      {
+        "description": "A full-screen review app around a vertical video, 1080x1920: a bar with the file's name and a share button, version pills, the video in a rounded window, a scrubber with comment markers, a comment and Approve and Request changes buttons. Use it when the speaker talks about feedback, reviews, versions or sending a cut to a client. media shows a picture or video in the window; open: true leaves the window clear so the speaker's own clip shows through: put that clip under the overlay at scale 0.575, position [0, -0.05]. Place it full screen at scale 1.",
+        "lines": [],
+        "name": "review-frame",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "What the video window shows when open is off: a picture, or a video that plays from the entrance; abstract art when empty.",
+            "name": "media",
+            "type": "slot"
+          },
+          {
+            "default": false,
+            "description": "Leave the video window clear so a clip below shows through it (a full-frame 9:16 clip at scale 0.575, position [0, -0.05] fills it).",
+            "name": "open",
+            "type": "bool"
+          },
+          {
+            "default": "Final cut.mp4",
+            "description": "The file's name in the top bar.",
+            "max_length": 60,
+            "name": "file_name",
+            "type": "text"
+          },
+          {
+            "default": "Edited 2 min ago",
+            "description": "The line under the file's name; empty hides it.",
+            "max_length": 60,
+            "name": "subtitle",
+            "type": "text"
+          },
+          {
+            "default": "Share",
+            "description": "The top bar's button; empty hides it.",
+            "max_length": 20,
+            "name": "share",
+            "type": "text"
+          },
+          {
+            "default": [
+              "V1",
+              "V2",
+              "V3"
+            ],
+            "description": "The version pills, up to six.",
+            "max_length": 6,
+            "name": "versions",
+            "type": "texts"
+          },
+          {
+            "default": 0,
+            "description": "The version shown as current, counted from 1; 0 picks the last.",
+            "integer": true,
+            "max": 6.0,
+            "min": 0.0,
+            "name": "current",
+            "type": "number"
+          },
+          {
+            "default": "2 comments",
+            "description": "The pill at the end of the versions row; empty hides it.",
+            "max_length": 30,
+            "name": "notes",
+            "type": "text"
+          },
+          {
+            "default": "Alex Morgan",
+            "description": "Who wrote the comment; their initials mark the scrubber.",
+            "max_length": 40,
+            "name": "commenter",
+            "type": "text"
+          },
+          {
+            "default": "0:12",
+            "description": "The time the comment points at; empty hides it.",
+            "max_length": 12,
+            "name": "timestamp",
+            "type": "text"
+          },
+          {
+            "default": "Love the pacing. Can we trim the intro a little?",
+            "description": "The comment, up to two lines; empty hides the comment card.",
+            "max_length": 160,
+            "name": "comment",
+            "type": "text"
+          },
+          {
+            "default": "Approve",
+            "description": "The accent button; empty hides it.",
+            "max_length": 24,
+            "name": "approve",
+            "type": "text"
+          },
+          {
+            "default": "Request changes",
+            "description": "The other button; empty hides it.",
+            "max_length": 30,
+            "name": "changes",
+            "type": "text"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "review",
+          "feedback",
+          "approve",
+          "versions",
+          "comment",
+          "client",
+          "frame",
+          "app",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Review frame"
+      },
+      {
+        "description": "A generic social media post, 1080x1240 with a clear background: an avatar with a name, handle and time, the post's text, a picture, and like, comment and share counts; the heart fills with a burst while the counts go up. Use it for a post, a viral moment, engagement or audience reactions. No platform's look or marks. Above the head at scale 0.58, position [0, -0.29]; the top half of a split screen at scale 0.77, position [0, -0.25].",
+        "lines": [],
+        "name": "social-post",
+        "params": [
+          {
+            "accepts": [
+              "image"
+            ],
+            "default": null,
+            "description": "The poster's picture; their initials on a gradient when empty.",
+            "name": "avatar",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "The post's picture or video; abstract art when empty.",
+            "name": "image",
+            "type": "slot"
+          },
+          {
+            "default": true,
+            "description": "Show the picture; false makes a text post.",
+            "name": "show_image",
+            "type": "bool"
+          },
+          {
+            "default": "Your Name",
+            "description": "The poster's name.",
+            "max_length": 50,
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "default": "@yourname",
+            "description": "The handle shown under the name; empty hides it.",
+            "max_length": 40,
+            "name": "handle",
+            "type": "text"
+          },
+          {
+            "default": "2h",
+            "description": "How long ago it was posted; empty hides it.",
+            "max_length": 20,
+            "name": "time",
+            "type": "text"
+          },
+          {
+            "default": "Recorded one take, let the edit do the rest. Here is the whole workflow.",
+            "description": "The post's text, up to three lines; empty hides it.",
+            "max_length": 200,
+            "name": "text",
+            "type": "text"
+          },
+          {
+            "default": "2.4K",
+            "description": "The likes, counted up (\"2.4K\", \"12,400\"); empty hides the number.",
+            "max_length": 20,
+            "name": "likes",
+            "type": "text"
+          },
+          {
+            "default": "186",
+            "description": "The comments, counted up; empty hides the number.",
+            "max_length": 20,
+            "name": "comments",
+            "type": "text"
+          },
+          {
+            "default": "92",
+            "description": "The shares, counted up; empty hides the number.",
+            "max_length": 20,
+            "name": "shares",
+            "type": "text"
+          },
+          {
+            "default": true,
+            "description": "Fill the heart with a burst.",
+            "name": "liked",
+            "type": "bool"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "social",
+          "post",
+          "likes",
+          "comments",
+          "share",
+          "feed",
+          "heart",
+          "engagement",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Social post"
+      },
+      {
+        "description": "A quote panel, 1080x760 with a clear background: a large quotation mark, the quote revealed word by word with one phrase marked in the accent colour, and its author with an avatar and role. Use it for a key sentence, a testimonial, a rule of thumb or something someone said. Above the head at scale 0.9, position [0, -0.29].",
+        "lines": [],
+        "name": "quote-panel",
+        "params": [
+          {
+            "default": "Your first draft is never the edit. The edit is what you cut.",
+            "description": "The quote, up to about four lines.",
+            "max_length": 200,
+            "name": "quote",
+            "type": "text"
+          },
+          {
+            "default": "what you cut",
+            "description": "Words of the quote to mark in the accent colour, where they first appear; empty marks none.",
+            "max_length": 80,
+            "name": "highlight",
+            "type": "text"
+          },
+          {
+            "default": "Your Name",
+            "description": "Who said it; empty hides the author row with role.",
+            "max_length": 50,
+            "name": "author",
+            "type": "text"
+          },
+          {
+            "default": "Video creator",
+            "description": "The author's role; empty hides it.",
+            "max_length": 50,
+            "name": "role",
+            "type": "text"
+          },
+          {
+            "accepts": [
+              "image"
+            ],
+            "default": null,
+            "description": "The author's picture; their initials on a gradient when empty.",
+            "name": "avatar",
+            "type": "slot"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "quote",
+          "testimonial",
+          "statement",
+          "words",
+          "highlight",
+          "author",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Quote panel"
+      },
+      {
+        "description": "A before and after card, 1080x760 with a clear background: two pictures or videos in one frame split by a handle that sweeps across to reveal the after side and springs back to the split, each side labelled. Use it for a transformation, an improvement, raw against edited, or old against new. With empty slots both sides show the same art, dull and soft before, vivid after. Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "before-after",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "The before side: a picture, or a video that plays from the entrance; dulled art when empty.",
+            "name": "before",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "The after side: a picture, or a video that plays from the entrance; vivid art when empty.",
+            "name": "after",
+            "type": "slot"
+          },
+          {
+            "default": "Before",
+            "description": "The before side's label; empty hides it.",
+            "max_length": 24,
+            "name": "before_label",
+            "type": "text"
+          },
+          {
+            "default": "After",
+            "description": "The after side's label; empty hides it.",
+            "max_length": 24,
+            "name": "after_label",
+            "type": "text"
+          },
+          {
+            "default": 0.5,
+            "description": "Where the handle settles, as a fraction of the width from the left.",
+            "max": 0.95,
+            "min": 0.05,
+            "name": "split",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "before",
+          "after",
+          "comparison",
+          "compare",
+          "slider",
+          "transformation",
+          "result",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Before and after"
+      },
+      {
+        "description": "Three to five vertical video cards, 1080x960 with a clear background: they rise as a stack and fan out with a spring, each with a view count that counts up. Use it for short videos, a series of reels, results across posts or going viral. Slots reel_1 to reel_5 take pictures or videos, left to right (abstract art when empty). Above the head at scale 0.76, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "reel-fan",
+        "params": [
+          {
+            "default": 5,
+            "description": "How many cards fan out.",
+            "integer": true,
+            "max": 5.0,
+            "min": 3.0,
+            "name": "count",
+            "type": "number"
+          },
+          {
+            "default": [
+              "845K",
+              "1.2M",
+              "2.4M",
+              "530K",
+              "1.7M"
+            ],
+            "description": "The count on each card, left to right, counted up; an empty text hides that card's count.",
+            "max_length": 5,
+            "name": "views",
+            "type": "texts"
+          },
+          {
+            "choices": [
+              "play",
+              "eye",
+              "heart"
+            ],
+            "default": "play",
+            "description": "The icon before each count.",
+            "name": "icon",
+            "type": "choice"
+          },
+          {
+            "default": 10,
+            "description": "Degrees between neighbouring cards when fanned out.",
+            "max": 25.0,
+            "min": 0.0,
+            "name": "spread",
+            "type": "number"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 1 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "reel_1",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 2 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "reel_2",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 3 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "reel_3",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 4 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "reel_4",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 5 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "reel_5",
+            "type": "slot"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "reels",
+          "shorts",
+          "vertical",
+          "videos",
+          "views",
+          "fan",
+          "cards",
+          "phone",
+          "viral",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Reel fan"
+      },
+      {
+        "description": "A menu of tiles, 1080x1080 with a clear background: tiles fill a grid one by one while a counter counts them, then one tile is chosen with a ring and a check and the others dim. Use it for a choice among options, templates, styles, presets or a library of things. Slots tile_1 to tile_9 take pictures or videos (abstract art when empty), labels name the tiles. Above the head at scale 0.68, position [0, -0.29]; the top half of a split screen at scale 0.88, position [0, -0.25].",
+        "lines": [],
+        "name": "menu-grid",
+        "params": [
+          {
+            "default": "Pick a style",
+            "description": "The heading.",
+            "max_length": 50,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "styles",
+            "description": "The word after the counter (\"9 styles\"); empty shows the number alone.",
+            "max_length": 20,
+            "name": "unit",
+            "type": "text"
+          },
+          {
+            "default": 3,
+            "description": "Tiles across.",
+            "integer": true,
+            "max": 4.0,
+            "min": 2.0,
+            "name": "columns",
+            "type": "number"
+          },
+          {
+            "default": 3,
+            "description": "Rows of tiles.",
+            "integer": true,
+            "max": 4.0,
+            "min": 1.0,
+            "name": "rows",
+            "type": "number"
+          },
+          {
+            "default": [
+              "Bold",
+              "Clean",
+              "Retro",
+              "Neon",
+              "Minimal",
+              "Pop",
+              "Film",
+              "Mono",
+              "Vivid"
+            ],
+            "description": "The tiles' names, in reading order; tiles without one show none.",
+            "max_length": 16,
+            "name": "labels",
+            "type": "texts"
+          },
+          {
+            "default": 5,
+            "description": "The tile chosen at the end, counted from 1 in reading order; 0 chooses none.",
+            "integer": true,
+            "max": 16.0,
+            "min": 0.0,
+            "name": "selected",
+            "type": "number"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 1 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_1",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 2 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_2",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 3 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_3",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 4 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_4",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 5 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_5",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 6 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_6",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 7 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_7",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 8 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_8",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Tile 9 in reading order: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "tile_9",
+            "type": "slot"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "menu",
+          "grid",
+          "options",
+          "choices",
+          "templates",
+          "styles",
+          "pick",
+          "select",
+          "catalogue",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Menu grid"
+      },
+      {
+        "description": "A storyboard, 1080x1180 with a clear background: numbered lines, each with a 16:9 thumbnail, a quoted line and its time, sliding in one after another under a title and a count. Use it for a plan, a script, an outline, the structure of a video or a list of moments. Slots thumb_1 to thumb_5 take pictures or videos (abstract art when empty). The top half of a split screen at scale 0.8, position [0, -0.25]; above the head at scale 0.62, position [0, -0.29].",
+        "lines": [],
+        "name": "storyboard-list",
+        "params": [
+          {
+            "default": "Storyboard",
+            "description": "The heading.",
+            "max_length": 50,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "scenes",
+            "description": "The word after the count (\"4 scenes\"); empty shows the number alone.",
+            "max_length": 20,
+            "name": "unit",
+            "type": "text"
+          },
+          {
+            "default": [
+              "Nobody watches past the first three seconds",
+              "So I cut every pause and retake",
+              "Then captions do the heavy lifting",
+              "And the music carries the ending"
+            ],
+            "description": "The lines, up to five, each shown in quotation marks on up to two lines.",
+            "max_length": 5,
+            "name": "quotes",
+            "type": "texts"
+          },
+          {
+            "default": [
+              "0:04",
+              "0:12",
+              "0:27",
+              "0:41"
+            ],
+            "description": "The time beside each line; an empty text hides it.",
+            "max_length": 5,
+            "name": "times",
+            "type": "texts"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Line 1's thumbnail: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumb_1",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Line 2's thumbnail: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumb_2",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Line 3's thumbnail: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumb_3",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Line 4's thumbnail: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumb_4",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Line 5's thumbnail: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumb_5",
+            "type": "slot"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 4,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "storyboard",
+          "list",
+          "scenes",
+          "script",
+          "outline",
+          "plan",
+          "quotes",
+          "numbered",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Storyboard list"
+      },
+      {
+        "description": "Red X marks (or strike lines) drawn on stroke by stroke with a punch, 1080x780 with a clear background, placed by fractions of the canvas. Use it to reject something on screen: lay it over another overlay with the same placement (set width and height to that overlay's canvas when it differs), or over the video itself to cross out an object. marks lists the marks' centres from the canvas's middle.",
+        "lines": [],
+        "name": "cross-out",
+        "params": [
+          {
+            "choices": [
+              "x",
+              "strike"
+            ],
+            "default": "x",
+            "description": "An X, or a strike line across.",
+            "name": "style",
+            "type": "choice"
+          },
+          {
+            "default": [
+              [
+                0,
+                0
+              ]
+            ],
+            "description": "The marks' centres as [x, y] fractions of the canvas from its middle (-0.5 to 0.5), drawn one after another.",
+            "max": 0.5,
+            "max_length": 12,
+            "min": -0.5,
+            "name": "marks",
+            "type": "points"
+          },
+          {
+            "default": 0.62,
+            "description": "Each mark's size: an X's width as a fraction of the canvas's shorter side, a strike's length as a fraction of its width.",
+            "max": 1.0,
+            "min": 0.02,
+            "name": "size",
+            "type": "number"
+          },
+          {
+            "default": 0.11,
+            "description": "The stroke's width as a fraction of the mark's size.",
+            "max": 0.4,
+            "min": 0.01,
+            "name": "thickness",
+            "type": "number"
+          },
+          {
+            "default": "#F04438",
+            "description": "The marks' colour; a white edge and a shadow keep them clear on any picture.",
+            "name": "color",
+            "type": "color"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 2.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "cross",
+          "x",
+          "no",
+          "wrong",
+          "strike",
+          "reject",
+          "mistake",
+          "red",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Cross out"
+      },
+      {
+        "description": "A curved arrow, 800x800 with a clear background, that draws on towards the canvas's middle, where its tip lands, with an optional label at its tail, then nudges at its target. Use it to point at something in the picture or at another overlay: place the clip so the canvas's middle is on the target (position = the target's position), at scale 0.5 to 0.7.",
+        "lines": [],
+        "name": "arrow-pointer",
+        "params": [
+          {
+            "default": "Look here",
+            "description": "The label at the arrow's tail; empty hides it.",
+            "max_length": 40,
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "choices": [
+              "top-left",
+              "top",
+              "top-right",
+              "right",
+              "bottom-right",
+              "bottom",
+              "bottom-left",
+              "left"
+            ],
+            "default": "top-left",
+            "description": "Where the arrow comes from, towards the middle.",
+            "name": "from",
+            "type": "choice"
+          },
+          {
+            "default": 0.36,
+            "description": "The arrow's length as a fraction of the canvas.",
+            "max": 0.42,
+            "min": 0.12,
+            "name": "length",
+            "type": "number"
+          },
+          {
+            "default": 0.35,
+            "description": "How much the arrow bends, and to which side; 0 is straight.",
+            "max": 1.0,
+            "min": -1.0,
+            "name": "curve",
+            "type": "number"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The arrow's colour, edged in white.",
+            "name": "color",
+            "type": "color"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 2.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "arrow",
+          "point",
+          "pointer",
+          "look",
+          "here",
+          "annotation",
+          "callout",
+          "highlight",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Arrow pointer"
+      },
+      {
+        "description": "A microphone chip, 760x280 with a clear background: a pill with a microphone, a label, a blinking recording dot with a running timer and a live waveform. Use it when the speaker mentions a microphone, recording, voice, sound or audio. Above the head at scale 0.6, position [0, -0.33].",
+        "lines": [],
+        "name": "audio-chip",
+        "params": [
+          {
+            "default": "Mic on",
+            "description": "The chip's label; empty hides it.",
+            "max_length": 30,
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "default": "REC",
+            "description": "The word beside the recording dot; empty shows the timer alone.",
+            "max_length": 12,
+            "name": "status",
+            "type": "text"
+          },
+          {
+            "default": true,
+            "description": "Show a timer running from start_time.",
+            "name": "timer",
+            "type": "bool"
+          },
+          {
+            "default": "0:00",
+            "description": "Where the timer starts (\"0:00\", \"1:24\").",
+            "max_length": 12,
+            "name": "start_time",
+            "type": "text"
+          },
+          {
+            "default": 18,
+            "description": "Bars in the waveform.",
+            "integer": true,
+            "max": 40.0,
+            "min": 4.0,
+            "name": "bars",
+            "type": "number"
+          },
+          {
+            "default": 0.8,
+            "description": "How loud the waveform looks.",
+            "max": 1.0,
+            "min": 0.05,
+            "name": "level",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "audio",
+          "microphone",
+          "mic",
+          "recording",
+          "voice",
+          "waveform",
+          "sound",
+          "podcast",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Audio chip"
+      },
+      {
+        "description": "Two sound waves of the same recording, 1080x640 with a clear background: the lower one, out of step, slides into line with the upper one, a marker flashes across both and a chip changes from the offset to In sync. Use it for syncing a separate microphone with the camera, lining up audio or anything clicking into place. Above the head at scale 0.9, position [0, -0.29].",
+        "lines": [],
+        "name": "waveform-sync",
+        "params": [
+          {
+            "default": "Syncing audio",
+            "description": "The heading.",
+            "max_length": 50,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "Camera",
+            "description": "The upper wave's label; empty hides it.",
+            "max_length": 30,
+            "name": "top_label",
+            "type": "text"
+          },
+          {
+            "default": "Microphone",
+            "description": "The lower wave's label; empty hides it.",
+            "max_length": 30,
+            "name": "bottom_label",
+            "type": "text"
+          },
+          {
+            "default": "Offset 0.42 s",
+            "description": "The chip before the waves line up; empty hides it.",
+            "max_length": 30,
+            "name": "offset_label",
+            "type": "text"
+          },
+          {
+            "default": "In sync",
+            "description": "The chip once they line up.",
+            "max_length": 30,
+            "name": "synced_label",
+            "type": "text"
+          },
+          {
+            "default": 0.16,
+            "description": "How far out of step the lower wave starts, as a fraction of the lane's width.",
+            "max": 0.5,
+            "min": -0.5,
+            "name": "offset",
+            "type": "number"
+          },
+          {
+            "default": "#8C96A8",
+            "description": "The upper wave's colour; the lower one takes the accent.",
+            "name": "top_color",
+            "type": "color"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "sync",
+          "audio",
+          "waveform",
+          "microphone",
+          "camera",
+          "align",
+          "sound",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Waveform sync"
+      },
+      {
+        "description": "A timeline losing its dead parts, 1080x620 with a clear background: the cut parts are marked in red with scissors, shrink away while the kept clips close up, and the total length counts down from one time to another, ending in green with a done chip. Use it when the speaker talks about cutting silences, filler, retakes or making a video shorter. Above the head at scale 0.9, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "timeline-cut",
+        "params": [
+          {
+            "default": "Total length",
+            "description": "The label over the counter; empty hides it.",
+            "max_length": 30,
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "default": "6:24",
+            "description": "The length before the cut (\"6:24\", \"1:02:03\").",
+            "max_length": 12,
+            "name": "from",
+            "type": "text"
+          },
+          {
+            "default": "1:15",
+            "description": "The length after it.",
+            "max_length": 12,
+            "name": "to",
+            "type": "text"
+          },
+          {
+            "default": "Cutting dead air",
+            "description": "The chip while cutting; empty hides it.",
+            "max_length": 30,
+            "name": "status",
+            "type": "text"
+          },
+          {
+            "default": "Tightened",
+            "description": "The chip once cut; empty hides it.",
+            "max_length": 30,
+            "name": "done",
+            "type": "text"
+          },
+          {
+            "default": 11,
+            "description": "Kept and cut parts along the timeline, alternating (an odd count).",
+            "integer": true,
+            "max": 25.0,
+            "min": 3.0,
+            "name": "segments",
+            "type": "number"
+          },
+          {
+            "default": 4,
+            "description": "Picks the parts' widths: the same seed gives the same timeline.",
+            "integer": true,
+            "max": 1000000.0,
+            "min": 0.0,
+            "name": "seed",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 4,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "timeline",
+          "cut",
+          "trim",
+          "silence",
+          "dead air",
+          "shorter",
+          "duration",
+          "edit",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Timeline cut"
+      },
+      {
+        "description": "A progress card, 1080x460 with a clear background: a title and status line, a percentage counting up, a bar filling with a running sheen, and step chips that tick off one by one as the bar passes them, the current one spinning. Use it for work in progress, a pipeline, rendering or exporting, or how far along something is. Above the head at scale 0.9, position [0, -0.3].",
+        "lines": [],
+        "name": "progress-card",
+        "params": [
+          {
+            "default": "Building your edit",
+            "description": "The heading.",
+            "max_length": 50,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "About 30 seconds left",
+            "description": "The line under the heading; empty hides it.",
+            "max_length": 60,
+            "name": "status",
+            "type": "text"
+          },
+          {
+            "default": [
+              "Cut",
+              "Captions",
+              "Music",
+              "Color",
+              "Export"
+            ],
+            "description": "The steps, in order, up to eight; each takes an equal share of the bar.",
+            "max_length": 8,
+            "name": "steps",
+            "type": "texts"
+          },
+          {
+            "default": 0.72,
+            "description": "Where the bar stops, from 0 to 1.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "progress",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "progress",
+          "loading",
+          "steps",
+          "status",
+          "percent",
+          "bar",
+          "pipeline",
+          "workflow",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Progress card"
+      },
+      {
+        "description": "A big number, 900x560 with a clear background: it counts up to its value with a prefix and suffix in the accent colour, an accent line grows under it, a label explains it and a trend chip pops in. Use it for any figure the speaker says: results, growth, money, hours saved, percentages. Above the head at scale 0.75, position [0, -0.29].",
+        "lines": [],
+        "name": "stat-counter",
+        "params": [
+          {
+            "default": 10,
+            "description": "The number counted up to.",
+            "max": 1000000000000.0,
+            "min": -1000000000000.0,
+            "name": "value",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "The number counting starts from.",
+            "max": 1000000000000.0,
+            "min": -1000000000000.0,
+            "name": "from",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "Decimal places shown.",
+            "integer": true,
+            "max": 3.0,
+            "min": 0.0,
+            "name": "decimals",
+            "type": "number"
+          },
+          {
+            "default": "",
+            "description": "Text before the number, such as \"$\" or \"+\".",
+            "max_length": 8,
+            "name": "prefix",
+            "type": "text"
+          },
+          {
+            "default": "x",
+            "description": "Text after the number, such as \"%\", \"K\" or \" hrs\".",
+            "max_length": 12,
+            "name": "suffix",
+            "type": "text"
+          },
+          {
+            "default": "This month",
+            "description": "The small line above the number; empty hides it.",
+            "max_length": 40,
+            "name": "kicker",
+            "type": "text"
+          },
+          {
+            "default": "faster editing",
+            "description": "What the number means; empty hides it.",
+            "max_length": 60,
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "default": "+24% vs last month",
+            "description": "The trend chip; empty hides it.",
+            "max_length": 40,
+            "name": "trend",
+            "type": "text"
+          },
+          {
+            "default": true,
+            "description": "A green chip with an up arrow; false makes it red with a down arrow.",
+            "name": "trend_up",
+            "type": "bool"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "number",
+          "stat",
+          "statistic",
+          "counter",
+          "metric",
+          "growth",
+          "percent",
+          "result",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Stat counter"
+      },
+      {
+        "description": "A bar chart card, 1080x820 with a clear background: a title and subtitle, up to twelve bars growing one after another with their values counting up, the highlighted bar in the accent colour with a badge. Use it to compare numbers: views per video, before and after figures, growth over time. Above the head at scale 0.88, position [0, -0.29]; the top half of a split screen at scale 1, position [0, -0.25].",
+        "lines": [],
+        "name": "bar-chart",
+        "params": [
+          {
+            "default": "Views per video",
+            "description": "The heading.",
+            "max_length": 50,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "Last five uploads",
+            "description": "The line under the heading; empty hides it.",
+            "max_length": 60,
+            "name": "subtitle",
+            "type": "text"
+          },
+          {
+            "default": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri"
+            ],
+            "description": "The bars' names, left to right.",
+            "max_length": 12,
+            "name": "labels",
+            "type": "texts"
+          },
+          {
+            "default": [
+              12,
+              18,
+              9,
+              26,
+              41
+            ],
+            "description": "The bars' values, left to right, up to twelve; the tallest fills the chart.",
+            "max": 1000000000000.0,
+            "max_length": 12,
+            "min": 0.0,
+            "name": "values",
+            "type": "numbers"
+          },
+          {
+            "default": 0,
+            "description": "The bar in the accent colour, counted from 1; 0 picks the largest.",
+            "integer": true,
+            "max": 12.0,
+            "min": 0.0,
+            "name": "highlight",
+            "type": "number"
+          },
+          {
+            "default": "Best",
+            "description": "The badge over the highlighted bar; empty hides it.",
+            "max_length": 20,
+            "name": "badge",
+            "type": "text"
+          },
+          {
+            "default": "",
+            "description": "Text before each value, such as \"$\".",
+            "max_length": 8,
+            "name": "prefix",
+            "type": "text"
+          },
+          {
+            "default": "K",
+            "description": "Text after each value, such as \"K\" or \"%\".",
+            "max_length": 8,
+            "name": "suffix",
+            "type": "text"
+          },
+          {
+            "default": 0,
+            "description": "Decimal places of the values.",
+            "integer": true,
+            "max": 3.0,
+            "min": 0.0,
+            "name": "decimals",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "chart",
+          "bar",
+          "graph",
+          "data",
+          "comparison",
+          "growth",
+          "statistics",
+          "analytics",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Bar chart"
+      },
+      {
+        "description": "A clock card, 760x900 with a clear background: the hands sweep from one time to another while an accent arc fills the time that passed, the time counts under the clock with a label, and a chip says how long it was. Use it when the speaker talks about time spent, time saved, hours of work or a deadline. Above the head at scale 0.57, position [0, -0.29].",
+        "lines": [],
+        "name": "clock-card",
+        "params": [
+          {
+            "default": "9:00",
+            "description": "The time the hands start at, as hours and minutes on a 12 hour face.",
+            "max_length": 8,
+            "name": "from",
+            "type": "text"
+          },
+          {
+            "default": "11:30",
+            "description": "The time they sweep to; earlier than from means past 12.",
+            "max_length": 8,
+            "name": "to",
+            "type": "text"
+          },
+          {
+            "default": "Editing time",
+            "description": "The label under the time; empty hides it.",
+            "max_length": 40,
+            "name": "label",
+            "type": "text"
+          },
+          {
+            "default": "2.5 hours",
+            "description": "The chip saying how long it was; empty hides it.",
+            "max_length": 30,
+            "name": "spent",
+            "type": "text"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "clock",
+          "time",
+          "hours",
+          "duration",
+          "saved",
+          "fast",
+          "schedule",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Clock card"
+      },
+      {
+        "description": "A lower third card, 1080x360 with a clear background: a thumbnail with a play button, a small tag, a title, a subtitle and a call-to-action button with a nudging arrow; it slides in from the left and leaves to the left. Use it to point to a longer video, a resource, a product or the speaker's name and role. Low on the screen at scale 0.92, position [0, 0.3], clear of captions at 60% of the height.",
+        "lines": [],
+        "name": "lower-third-card",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "The thumbnail: a picture, or a video that plays from the entrance; abstract art when empty.",
+            "name": "thumbnail",
+            "type": "slot"
+          },
+          {
+            "default": "New video",
+            "description": "The small tag over the title; empty hides it.",
+            "max_length": 24,
+            "name": "tag",
+            "type": "text"
+          },
+          {
+            "default": "Full breakdown",
+            "description": "The title, on one line.",
+            "max_length": 40,
+            "name": "title",
+            "type": "text"
+          },
+          {
+            "default": "The whole workflow, step by step",
+            "description": "The line under the title; empty hides it.",
+            "max_length": 60,
+            "name": "subtitle",
+            "type": "text"
+          },
+          {
+            "default": "Watch now",
+            "description": "The button; empty hides it.",
+            "max_length": 24,
+            "name": "cta",
+            "type": "text"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "lower third",
+          "title",
+          "name",
+          "cta",
+          "link",
+          "watch",
+          "promo",
+          "card",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Lower third card"
+      },
+      {
+        "description": "A comment notification, 1080x380 with a clear background: it drops in from the top with an avatar, a name, a time and a message whose keyword sits in an accent pill that pops and pulses, and leaves upwards. Use it for the closing call to action (\"comment EDIT and I'll send it to you\"). message holds {keyword} where the pill goes. Above the head at scale 0.9, position [0, -0.3], or low at scale 0.9, position [0, 0.3].",
+        "lines": [],
+        "name": "comment-cta",
+        "params": [
+          {
+            "accepts": [
+              "image"
+            ],
+            "default": null,
+            "description": "The commenter's picture; their initials on a gradient when empty.",
+            "name": "avatar",
+            "type": "slot"
+          },
+          {
+            "default": "New comment",
+            "description": "The notification's heading.",
+            "max_length": 40,
+            "name": "header",
+            "type": "text"
+          },
+          {
+            "default": "your.handle",
+            "description": "The commenter's name; empty hides it.",
+            "max_length": 40,
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "default": "now",
+            "description": "When it came; empty hides it.",
+            "max_length": 20,
+            "name": "time",
+            "type": "text"
+          },
+          {
+            "default": "Comment {keyword} and I'll send you the full workflow",
+            "description": "The message; {keyword} marks where the keyword's pill goes (after the message when missing).",
+            "max_length": 160,
+            "name": "message",
+            "type": "text"
+          },
+          {
+            "default": "EDIT",
+            "description": "The word in the accent pill; empty shows the message alone.",
+            "max_length": 24,
+            "name": "keyword",
+            "type": "text"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 3.5,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "light",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "comment",
+          "cta",
+          "call to action",
+          "keyword",
+          "notification",
+          "engagement",
+          "dm",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Comment call to action"
+      },
+      {
+        "description": "A full-screen background, 1080x1920: a glowing perspective grid floor (and optionally a ceiling) running towards a lit horizon, with picture cards arcing over the speaker's head and swaying. Use it to swap the background behind a cut-out speaker (key.subject) for a stylised stage on an emphatic line. Put it under the speaker's clip at scale 1; head_y sets the height the cards arc around. Slots card_1 to card_6 take pictures or videos (abstract art when empty).",
+        "lines": [],
+        "name": "grid-stage",
+        "params": [
+          {
+            "default": 5,
+            "description": "How many cards arc round the head; 0 shows the stage alone.",
+            "integer": true,
+            "max": 6.0,
+            "min": 0.0,
+            "name": "cards",
+            "type": "number"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 1 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_1",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 2 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_2",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 3 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_3",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 4 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_4",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 5 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_5",
+            "type": "slot"
+          },
+          {
+            "accepts": [
+              "image",
+              "video"
+            ],
+            "default": null,
+            "description": "Card 6 from the left: a picture or a video that plays from the entrance; abstract art when empty.",
+            "name": "card_6",
+            "type": "slot"
+          },
+          {
+            "default": "#060A18",
+            "description": "The stage's base colour; light colours make a light stage.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "How strong the horizon's glow is; 0 turns it off.",
+            "max": 2.0,
+            "min": 0.0,
+            "name": "glow",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Add a grid ceiling, for a tunnel.",
+            "name": "ceiling",
+            "type": "bool"
+          },
+          {
+            "default": 0.6,
+            "description": "Grid squares per second the floor runs towards the viewer; 0 stands still.",
+            "max": 4.0,
+            "min": 0.0,
+            "name": "grid_speed",
+            "type": "number"
+          },
+          {
+            "default": 4,
+            "description": "How far the cards sway round the head, in degrees.",
+            "max": 20.0,
+            "min": -20.0,
+            "name": "sway",
+            "type": "number"
+          },
+          {
+            "default": 0.34,
+            "description": "The height of the speaker's head as a fraction of the canvas from the top; the cards arc over it.",
+            "max": 0.8,
+            "min": 0.1,
+            "name": "head_y",
+            "type": "number"
+          },
+          {
+            "default": 0.4,
+            "description": "The arc's radius as a fraction of the canvas width.",
+            "max": 0.6,
+            "min": 0.15,
+            "name": "radius",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the entrance starts, in seconds from the clip's start; before it the canvas is clear.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "appear",
+            "type": "number"
+          },
+          {
+            "default": 4,
+            "description": "Seconds from the entrance's start until the exit starts; the visual is complete by then at speed 1.",
+            "max": 600.0,
+            "min": 0.2,
+            "name": "hold",
+            "type": "number"
+          },
+          {
+            "default": true,
+            "description": "Leave with a short exit motion (0.4 s) after hold; false keeps it in place until the clip ends.",
+            "name": "exit",
+            "type": "bool"
+          },
+          {
+            "default": 1,
+            "description": "Plays the entrance and the inner motion (typing, counting, building) faster above 1 or slower below; hold and the exit keep their seconds.",
+            "max": 4.0,
+            "min": 0.25,
+            "name": "speed",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "light",
+              "dark"
+            ],
+            "default": "dark",
+            "description": "White cards with dark text, or near-black cards with light text.",
+            "name": "theme",
+            "type": "choice"
+          },
+          {
+            "default": "#2F6BFF",
+            "description": "The accent colour of highlights, bars, buttons and selections.",
+            "name": "accent",
+            "type": "color"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted. The design scales to fit, so a larger canvas renders it sharper.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; when omitted, appear plus hold, plus 0.4 s for the exit when exit is on.",
+            "max": 1200.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "background",
+          "grid",
+          "3d",
+          "perspective",
+          "stage",
+          "glow",
+          "cards",
+          "arc",
+          "synthwave",
+          "overlay",
+          "explainer"
+        ],
+        "title": "Grid stage"
       }
     ],
     "drawings": [

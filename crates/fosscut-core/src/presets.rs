@@ -12,11 +12,12 @@ use serde_json::{Value, json};
 
 use crate::{ApiError, codes};
 
-const SOURCES: [&str; 4] = [
+const SOURCES: [&str; 5] = [
     include_str!("../presets/captions/bold-pop.json"),
     include_str!("../presets/captions/highlight.json"),
     include_str!("../presets/captions/karaoke.json"),
     include_str!("../presets/captions/boxed.json"),
+    include_str!("../presets/captions/reel.json"),
 ];
 
 const TEXT_STYLES: &str = include_str!("../presets/text/styles.json");
@@ -319,6 +320,10 @@ pub struct CaptionPreset {
     pub name: String,
     /// What it looks like and what it suits.
     pub description: String,
+    /// How `captions.add` pages words with this preset when the call gives no paging, such
+    /// as one word per page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paging: Option<crate::Paging>,
     /// The look it gives a caption track.
     pub style: CaptionStyle,
 }
@@ -346,6 +351,15 @@ pub fn caption_preset(name: &str) -> Result<CaptionStyle, ApiError> {
             )
             .with_hint(format!("Presets: {}.", names.join(", ")))
         })
+}
+
+/// The paging of the preset called `name`, when it has its own; `None` for an unknown
+/// name, which [`caption_preset`] reports.
+pub fn caption_preset_paging(name: &str) -> Option<crate::Paging> {
+    caption_presets()
+        .into_iter()
+        .find(|p| p.name == name)
+        .and_then(|p| p.paging)
 }
 
 /// Every caption animator with its version, what it does and, unless `brief`, the JSON
@@ -385,7 +399,7 @@ pub fn caption_animators(brief: bool) -> Vec<Value> {
         ),
         (
             "word.emphasis",
-            "Words marked emphasis (captions.edit) stand out in colour and size.",
+            "Words marked emphasis (captions.edit, or emphasis when generating) stand out in colour and size, with an optional pop, box and corner brackets.",
             schema(schemars::schema_for!(WordEmphasis)),
         ),
     ];
@@ -412,7 +426,7 @@ mod tests {
     fn every_preset_parses_and_is_distinct() {
         let presets = caption_presets();
         let names: Vec<&str> = presets.iter().map(|p| p.name.as_str()).collect();
-        assert_eq!(names, ["bold-pop", "highlight", "karaoke", "boxed"]);
+        assert_eq!(names, ["bold-pop", "highlight", "karaoke", "boxed", "reel"]);
         for preset in &presets {
             assert!(preset.description.ends_with('.'));
             assert!(!preset.style.animators.is_empty(), "{}", preset.name);
@@ -422,6 +436,24 @@ mod tests {
             assert_ne!(pair[0].style, pair[1].style);
         }
         assert_eq!(caption_preset("boxed").unwrap(), presets[3].style);
+        // The reel look: one word per page, a shadow, at 0.6 of the height, keywords boxed
+        // and bracketed with a pop.
+        let reel = caption_preset("reel").unwrap();
+        assert!(reel.shadow.enabled);
+        assert_eq!(reel.placement, fosscut_model::Placement::Height(0.6));
+        let emphasis = reel
+            .animators
+            .iter()
+            .find_map(|a| match a {
+                Animator::WordEmphasis(a) => Some(&a.params),
+                _ => None,
+            })
+            .unwrap();
+        assert!(emphasis.word_box.is_some() && emphasis.brackets.is_some());
+        assert!(emphasis.pop > 1.0);
+        assert_eq!(caption_preset_paging("reel").unwrap().max_words, 1);
+        assert!(caption_preset_paging("boxed").is_none());
+        assert!(caption_preset_paging("neon").is_none());
         let unknown = caption_preset("neon").unwrap_err();
         assert_eq!(unknown.code, codes::CAPTIONS_UNKNOWN_PRESET);
         assert!(unknown.hint.unwrap().contains("karaoke"));

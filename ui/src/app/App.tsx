@@ -26,6 +26,7 @@ const ModelInstall = lazy(() => import("./ModelInstall").then((m) => ({ default:
 const Record = lazy(() => import("../panels/Record").then((m) => ({ default: m.Record })));
 const WebImport = lazy(() => import("./Compositions").then((m) => ({ default: m.WebImport })));
 const RemotionRender = lazy(() => import("./Compositions").then((m) => ({ default: m.RemotionRender })));
+const AiEdit = lazy(() => import("./AiEdit").then((m) => ({ default: m.AiEdit })));
 
 /** How often the list of connected agents is read, in milliseconds. */
 const CLIENTS_POLL = 2000;
@@ -162,6 +163,11 @@ export function App({ editor }: { editor: Editor }) {
         if (event.key === "Escape") editor.closeRemotion();
         return;
       }
+      // The AI edit's steps are modal; the panel of a running agent is not.
+      if (now.aiEdit.open && now.aiEdit.step !== "run") {
+        if (event.key === "Escape" && !now.aiEdit.busy) editor.closeAiEdit();
+        return;
+      }
       const action = actionFor(keystroke(event), MAC, undefined, focusOf(event.target));
       if (!action || (!open && action !== "basic.settings")) return;
       event.preventDefault();
@@ -278,7 +284,10 @@ export function App({ editor }: { editor: Editor }) {
           </Suspense>
         </>
       )}
-      <Suspense fallback={null}>{state.settings.open && <Settings editor={editor} state={state} />}</Suspense>
+      <Suspense fallback={null}>
+        {state.aiEdit.open && <AiEdit editor={editor} state={state} />}
+        {state.settings.open && <Settings editor={editor} state={state} />}
+      </Suspense>
     </div>
   );
 }

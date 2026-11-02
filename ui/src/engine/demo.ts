@@ -55,6 +55,10 @@ function library(): LibraryItem[] {
 
 export function demoEngine(): FakeEngine {
   const engine = new FakeEngine();
+  // An AI edit (ADR-0043) of a video "chosen" from Downloads, taking about half a minute.
+  engine.videoPick = "/Users/demo/Downloads/test_raw.mp4";
+  engine.agentTurns = 30;
+  engine.agentStep = 2;
   engine.revision = 6;
   engine.opened = {
     bundle: "/demo/Launch.fosscut",

@@ -688,6 +688,8 @@ fn layer_for(
                 time: offset.as_seconds_f64(),
             })
         })
+        // An effect mixed down to nothing is left out, as if switched off for the moment.
+        .filter(|e| e.mix() > 0.0)
         .collect();
     let masks: Vec<fosscut_model::Mask> = clip
         .masks
@@ -1378,6 +1380,32 @@ mod tests {
                 .all(|l| !matches!(l.source, LayerSource::Adjustment)),
             "an adjustment without effects draws nothing"
         );
+
+        // An effect switched on for a range by its mix: left out where the mix is 0,
+        // planned with its mix where it shows.
+        let key = |frame: i64, value: f64| fosscut_model::Keyframe {
+            time: frames(frame),
+            value: fosscut_model::KeyValue::Number(value),
+            interpolation: fosscut_model::Interpolation::Hold,
+        };
+        let mut mixed = effect(5, "stylize.invert", true);
+        mixed
+            .keyframes
+            .insert("mix".into(), vec![key(0, 0.0), key(30, 0.5), key(90, 0.0)]);
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks[0].clips[0].effects = vec![mixed];
+        let at = |frame: i64| {
+            plan_frame(&project, &timeline, frames(frame))
+                .unwrap()
+                .layers[0]
+                .effects
+                .iter()
+                .map(|e| e.mix())
+                .collect::<Vec<f32>>()
+        };
+        assert_eq!(at(10), Vec::<f32>::new(), "off before the range");
+        assert_eq!(at(60), [0.5]);
+        assert_eq!(at(95), Vec::<f32>::new(), "off after it");
     }
 
     #[test]

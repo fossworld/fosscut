@@ -201,6 +201,99 @@ fn the_subject_key_keeps_the_figure_and_replaces_the_background() {
 }
 
 #[test]
+fn threshold_zero_keeps_everything_and_one_keeps_the_solid_subject() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = frames();
+    let plain = render(&mut renderer, vec![Layer::new(source(1))], &mut frames);
+    let green = render(&mut renderer, vec![Layer::new(source(2))], &mut frames);
+    let at = |image: &Image, (x, y): (u32, u32)| rgb(image, x, y);
+    let keyed = |renderer: &mut Renderer, frames: &mut Frames, threshold: f64| {
+        render(
+            renderer,
+            vec![
+                Layer::new(source(2)),
+                with(vec![effect(
+                    "key.subject",
+                    &[("threshold", n(threshold))],
+                    0.0,
+                )]),
+            ],
+            frames,
+        )
+    };
+    // Threshold 0 keeps the whole picture: the background stays in full, not half shown
+    // over the layer below (the band once straddled 0, so an empty matte kept half).
+    let everything = keyed(&mut renderer, &mut frames, 0.0);
+    for point in [FAR, BEYOND, TORSO] {
+        assert!(
+            near(at(&everything, point), at(&plain, point), 2),
+            "kept at {point:?}: {:?} vs {:?}",
+            at(&everything, point),
+            at(&plain, point)
+        );
+    }
+    // Threshold 1 keeps the solid subject in full and nothing around it.
+    let solid = keyed(&mut renderer, &mut frames, 1.0);
+    assert!(
+        near(at(&solid, TORSO), at(&plain, TORSO), 2),
+        "{:?} vs {:?}",
+        at(&solid, TORSO),
+        at(&plain, TORSO)
+    );
+    assert!(near(at(&solid, FAR), at(&green, FAR), 2));
+}
+
+#[test]
+fn the_subject_key_mixes_in_by_its_mix() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = frames();
+    let at = |image: &Image, (x, y): (u32, u32)| rgb(image, x, y);
+    let mixed = |renderer: &mut Renderer, frames: &mut Frames, mix: f64| {
+        render(
+            renderer,
+            vec![
+                Layer::new(source(2)),
+                with(vec![effect("key.subject", &[("mix", n(mix))], 0.0)]),
+            ],
+            frames,
+        )
+    };
+    let plain = render(&mut renderer, vec![Layer::new(source(1))], &mut frames);
+    let keyed = mixed(&mut renderer, &mut frames, 1.0);
+    // Mix 0 is the picture as it was; mix 1 the full key, as without a mix.
+    assert_eq!(mixed(&mut renderer, &mut frames, 0.0), plain);
+    assert_eq!(
+        keyed,
+        render(
+            &mut renderer,
+            vec![
+                Layer::new(source(2)),
+                with(vec![effect("key.subject", &[], 0.0)])
+            ],
+            &mut frames
+        )
+    );
+    // Halfway, the background shows half over the layer below: between the two in linear
+    // light, so the sRGB codes lie strictly between them.
+    let half = mixed(&mut renderer, &mut frames, 0.5);
+    let (a, b, h) = (at(&plain, FAR), at(&keyed, FAR), at(&half, FAR));
+    for c in 0..3 {
+        let (low, high) = (a[c].min(b[c]), a[c].max(b[c]));
+        if high - low > 8 {
+            assert!(low + 2 < h[c] && h[c] + 2 < high, "{a:?} {h:?} {b:?}");
+        }
+    }
+    assert!(
+        near(at(&half, TORSO), at(&plain, TORSO), 2),
+        "the figure stays"
+    );
+}
+
+#[test]
 fn the_outline_hugs_the_figure_from_behind() {
     let Some(mut renderer) = renderer() else {
         return;

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=780, fps=30, duration=2.9">
+<title>Cross out</title>
+<!--
+  Made by FossCut for its library: red X marks (or strike lines) drawn on stroke by stroke
+  with a punchy pop, placed by fractions of the canvas, to lay over a card or a picture
+  of the same size and cross it out. Every frame is a function of time, through
+  window.fosscut.seek and the overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #marks { position: absolute; inset: 0; overflow: visible; }
+  .mark { position: absolute; overflow: visible; }
+  .mark path { fill: none; stroke-linecap: round; }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

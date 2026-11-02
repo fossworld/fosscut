@@ -163,6 +163,63 @@ fn every_effect_leaves_the_picture_alone_at_rest() {
 }
 
 #[test]
+fn every_effect_mixes_in_by_its_mix_and_chains_after_a_partial_mix() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = provider(Frames::default().with(1, solid(64, 36, [200, 40, 120])));
+    let plain = render(&mut renderer, vec![Layer::new(source(1))], &mut frames);
+    let inverted = |mix: f64| effect("stylize.invert", &[("amount", n(1.0)), ("mix", n(mix))]);
+    let full = render(
+        &mut renderer,
+        vec![with(vec![inverted(1.0)], 1)],
+        &mut frames,
+    );
+    let none = render(
+        &mut renderer,
+        vec![with(vec![inverted(0.0)], 1)],
+        &mut frames,
+    );
+    assert_eq!(none, plain, "mix 0 is the picture without the effect");
+    assert_ne!(full, plain);
+    // Halfway: each channel halfway between the two in linear light.
+    let half = render(
+        &mut renderer,
+        vec![with(vec![inverted(0.5)], 1)],
+        &mut frames,
+    );
+    let (a, b, h) = (rgb(&plain, 30, 18), rgb(&full, 30, 18), rgb(&half, 30, 18));
+    for c in 0..3 {
+        let expected = (linear(a[c]) + linear(b[c])) / 2.0;
+        assert!(
+            (linear(h[c]) - expected).abs() < 0.01,
+            "{c}: {a:?} {b:?} {h:?}"
+        );
+    }
+    // Partial mixes chain: a blur after a half mix, then another half mix, render the
+    // same pixels as one after the other in any texture order.
+    let chained = render(
+        &mut renderer,
+        vec![with(
+            vec![
+                inverted(0.5),
+                effect("blur.gaussian", &[("radius", n(0.0))]),
+                inverted(0.5),
+            ],
+            1,
+        )],
+        &mut frames,
+    );
+    let twice = render(
+        &mut renderer,
+        vec![with(vec![inverted(0.5), inverted(0.5)], 1)],
+        &mut frames,
+    );
+    assert!(near(rgb(&chained, 30, 18), rgb(&twice, 30, 18), 2));
+    assert_ne!(rgb(&twice, 30, 18), rgb(&half, 30, 18));
+}
+
+#[test]
 fn adjust_moves_light_balance_and_color() {
     let Some(mut renderer) = renderer() else {
         return;

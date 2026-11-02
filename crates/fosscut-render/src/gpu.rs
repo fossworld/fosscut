@@ -1684,7 +1684,10 @@ impl Renderer {
         let mut current = input.clone();
         // Layer textures arrive mipmapped; effect outputs are not until mips are made.
         let mut mipped = input.mip_level_count() > 1;
-        let mut turn = 0u8;
+        // The effect texture `current` is in, if any: each pass writes to another one, and
+        // a partial mix blends the two into a third.
+        let mut current_turn: Option<u8> = None;
+        let free = |taken: &[Option<u8>]| (0u8..3).find(|t| !taken.contains(&Some(*t)));
         for (effect_index, effect) in effects.iter().enumerate() {
             let Some(pass) = pass_for(&effect.effect_type) else {
                 continue;
@@ -1692,6 +1695,7 @@ impl Renderer {
             let needs_mips = matches!(pass, Pass::Blur | Pass::Sharpen | Pass::Mipped(_));
             if needs_mips && !mipped {
                 if current.mip_level_count() == 1 {
+                    let turn = free(&[current_turn]).unwrap_or(0);
                     let copy = self.texture(
                         Slot::Effect { layer, turn },
                         size,
@@ -1699,7 +1703,7 @@ impl Renderer {
                         mips,
                         usage,
                     );
-                    turn ^= 1;
+                    current_turn = Some(turn);
                     let params = [[0.0f32; 4]; SLOTS];
                     let view = current.create_view(&Default::default());
                     self.effect_pass(
@@ -1716,14 +1720,17 @@ impl Renderer {
                 }
                 self.generate_mips(encoder, &current, current.mip_level_count());
             }
+            let out_turn = free(&[current_turn]).unwrap_or(0);
             let out = self.texture(
-                Slot::Effect { layer, turn },
+                Slot::Effect {
+                    layer,
+                    turn: out_turn,
+                },
                 size,
                 CANVAS_FORMAT,
                 mips,
                 usage,
             );
-            turn ^= 1;
             let target = level_zero(&out);
             let input_view = current.create_view(&Default::default());
             let height = size.1 as f32;
@@ -1936,7 +1943,39 @@ impl Renderer {
                     );
                 }
             }
-            current = out;
+            // A partial mix blends the picture before the effect back in (ADR-0011:
+            // `effects.<id>.mix`); the planner leaves out effects mixed to nothing.
+            let mix = effect.mix();
+            if mix < 1.0 {
+                let mix_turn = free(&[current_turn, Some(out_turn)]).unwrap_or(0);
+                let mixed = self.texture(
+                    Slot::Effect {
+                        layer,
+                        turn: mix_turn,
+                    },
+                    size,
+                    CANVAS_FORMAT,
+                    mips,
+                    usage,
+                );
+                let mut params = [[0.0f32; 4]; SLOTS];
+                params[0][0] = mix;
+                self.effect_pass(
+                    encoder,
+                    "fs_mix",
+                    &level_zero(&out),
+                    Some(&level_zero(&current)),
+                    None,
+                    None,
+                    &params,
+                    &level_zero(&mixed),
+                );
+                current = mixed;
+                current_turn = Some(mix_turn);
+            } else {
+                current = out;
+                current_turn = Some(out_turn);
+            }
             mipped = false;
         }
         if !mipped && current.mip_level_count() > 1 {

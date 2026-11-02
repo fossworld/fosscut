@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1920, fps=30, duration=3.9">
+<title>Review frame</title>
+<!--
+  Made by FossCut for its library: a full-screen review app around a vertical video, a
+  bar with the file's name and a share button, version pills, the video (from a slot, or
+  an open window to a clip below), a scrubber with comment markers, a comment and
+  approve buttons. Every frame is a function of time, through window.fosscut.seek and the
+  overlay kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  :root { --page: #EDF0F5; }
+  :root[data-theme="dark"] { --page: #0A0D13; }
+  #page { position: absolute; inset: 0; }
+  #page.solid { background: var(--page); }
+  /* The video window: in open mode its huge spread shadow paints the page around a clear hole. */
+  #frame { position: absolute; left: 229.5px; top: 312px; width: 621px; height: 1104px; border-radius: 34px; overflow: hidden; background: var(--screen); }
+  #page.open #frame { background: transparent; box-shadow: 0 0 0 2600px var(--page); }
+  #frame .media { border-radius: 34px; }
+  #edge { position: absolute; left: 229.5px; top: 312px; width: 621px; height: 1104px; border-radius: 34px; box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55); }
+  #bar { left: 64px; top: 84px; width: 952px; height: 120px; border-radius: 30px; display: flex; align-items: center; gap: 18px; padding: 0 22px; }
+  #back { width: 68px; height: 68px; border-radius: 50%; background: var(--card-2); color: var(--ink-2); display: flex; align-items: center; justify-content: center; flex: none; }
+  #file { flex: 1; min-width: 0; }
+  #name { font-size: 31px; font-weight: 800; letter-spacing: -0.015em; }
+  #sub { margin-top: 2px; font-size: 23px; color: var(--muted); }
+  #people { display: flex; flex: none; }
+  #people .avatar { width: 56px; height: 56px; font-size: 18px; letter-spacing: -0.04em; border: 4px solid var(--card); margin-left: -14px; }
+  #share { height: 60px; font-size: 24px; padding: 0 26px; }
+  #versions { position: absolute; left: 64px; top: 228px; right: 64px; display: flex; gap: 12px; align-items: center; }
+  .pill { height: 56px; min-width: 76px; padding: 0 22px; border-radius: 28px; background: var(--card); box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center;
+          font-size: 24px; font-weight: 800; color: var(--muted); }
+  .pill.on { background: var(--accent); color: var(--accent-ink); }
+  #notes { margin-left: auto; }
+  #scrub { position: absolute; left: 229.5px; top: 1448px; width: 621px; height: 52px; }
+  #track { position: absolute; left: 0; right: 0; top: 22px; height: 8px; border-radius: 4px; background: rgba(var(--accent-rgb), 0.2); }
+  #played { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); }
+  .marker { position: absolute; top: 0; width: 52px; height: 52px; margin-left: -26px; }
+  .marker .avatar { width: 52px; height: 52px; font-size: 17px; letter-spacing: -0.04em; border: 4px solid var(--card); box-shadow: var(--shadow-sm); }
+  #comment { left: 64px; top: 1530px; width: 952px; padding: 26px 30px 28px; border-radius: 30px; display: flex; gap: 20px; }
+  #comment .avatar { width: 72px; height: 72px; font-size: 27px; }
+  #words { flex: 1; min-width: 0; }
+  #who { display: flex; align-items: center; gap: 12px; font-size: 27px; font-weight: 800; }
+  #who .chip { height: 40px; padding: 0 14px; font-size: 21px; }
+  #text { margin-top: 10px; font-size: 30px; line-height: 1.35; color: var(--ink-2); }
+  #buttons { position: absolute; left: 64px; right: 64px; top: 1764px; display: flex; gap: 18px; }
+  #buttons .button { flex: 1; height: 84px; border-radius: 42px; font-size: 29px; }
+  #changes { background: var(--card); color: var(--ink); box-shadow: var(--shadow-sm), 0 0 0 1px var(--edge); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>

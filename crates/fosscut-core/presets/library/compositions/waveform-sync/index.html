@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=640, fps=30, duration=3.9">
+<title>Waveform sync</title>
+<!--
+  Made by FossCut for its library: two sound waves of the same recording, the lower one
+  out of step, slide into line; a marker flashes across both and a chip says they are in
+  sync. Every frame is a function of time, through window.fosscut.seek and the overlay
+  kit. Free to use, also commercially.
+-->
+<link rel="stylesheet" href="kit/overlay.css">
+<style>
+  #card { left: 64px; top: 44px; width: 952px; padding: 30px 32px 34px; }
+  #head { display: flex; align-items: center; gap: 18px; height: 60px; }
+  #glyph { width: 56px; height: 56px; border-radius: 16px; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+  #title { flex: 1; font-size: 34px; min-width: 0; }
+  #status { position: relative; height: 52px; width: 230px; flex: none; }
+  #status .chip { position: absolute; right: 0; top: 0; }
+  .lane { position: relative; height: 150px; margin-top: 22px; border-radius: 22px; background: var(--card-2); overflow: hidden; }
+  .lane .name { position: absolute; left: 20px; top: 14px; z-index: 2; height: 36px; padding: 0 14px; border-radius: 10px; background: var(--card);
+                box-shadow: var(--shadow-sm); display: flex; align-items: center; gap: 8px; font-size: 21px; font-weight: 700; color: var(--ink-2); }
+  .lane .name i { width: 12px; height: 12px; border-radius: 50%; }
+  .wave { position: absolute; top: 0; height: 150px; }
+  #marker { position: absolute; top: 112px; width: 4px; margin-left: -2px; border-radius: 2px; background: var(--good); box-shadow: 0 0 18px rgba(18, 183, 106, 0.7); }
+</style>
+<script src="kit/overlay.js"></script>
+<script src="main.js" defer></script>
+</head>
+<body></body>
+</html>
