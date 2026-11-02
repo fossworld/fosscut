@@ -1,6 +1,7 @@
 //! Golden frames of layers placed in 3D (ADR-0037), a module of `goldens.rs`: a card
 //! turned with perspective, a stack of cards sorted by depth, a camera dolly and orbit,
-//! the depth of field, and a tilted card with a mask and an effect in its own space.
+//! the depth of field, a tilted card with a mask and an effect in its own space, and
+//! motion blur from the camera's own move.
 
 use fosscut_model::{
     Asset, AssetKind, CameraContent, Clip, ClipContent, Id, IdKind, Interpolation, KeyValue,
@@ -319,4 +320,52 @@ fn three_d_camera_orbit() {
     let (project, timeline) = camera_project();
     let plan = plan_frame(&project, &timeline, Rate::FPS_30.frames_to_flicks(59)).unwrap();
     check("three-d-camera-orbit", &mut renderer, &plan, &mut frames());
+}
+
+/// The camera scene with a motion blur on the map and the cards and its orbit sped up to
+/// 35 degrees right and 12 up in six frames, caught halfway through it: the cards hold
+/// still, yet what lies away from the point of interest streaks along the camera's swing
+/// (the gold card behind it, the coral card's free edge in front of it and the map's
+/// edges), the teal card at the point of interest stays nearly sharp, and the background
+/// (2D) stays sharp.
+#[test]
+fn three_d_camera_motion_blur() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let (mut project, timeline) = camera_project();
+    let doc = project.timelines.get_mut(&timeline).unwrap();
+    for (n, track) in doc.tracks.iter_mut().enumerate().skip(1).take(4) {
+        track.clips[0].effects.push(fosscut_model::Effect {
+            id: Id::new(IdKind::Effect, 60 + n as u64),
+            effect_type: "motion.blur".into(),
+            version: 1,
+            enabled: true,
+            params: [("amount".to_string(), ParamValue::Number(1.0))].into(),
+            keyframes: Default::default(),
+        });
+    }
+    let key = |frame: i64, value: [f64; 2]| Keyframe {
+        time: Rate::FPS_30.frames_to_flicks(frame),
+        value: KeyValue::Pair(value),
+        interpolation: Interpolation::EASE_IN_OUT,
+    };
+    doc.tracks[5].clips[0].keyframes.insert(
+        "camera.orbit".into(),
+        vec![key(30, [0.0, 0.0]), key(36, [35.0, 12.0])],
+    );
+    let plan = plan_frame(&project, &timeline, Rate::FPS_30.frames_to_flicks(33)).unwrap();
+    assert!(
+        plan.layers
+            .iter()
+            .filter_map(|l| l.space.as_ref())
+            .all(|s| s.shutter.len() == 12),
+        "every 3D layer sees the camera move"
+    );
+    check(
+        "three-d-camera-motion-blur",
+        &mut renderer,
+        &plan,
+        &mut frames(),
+    );
 }

@@ -228,6 +228,12 @@ pub struct FrameArgs {
     pub timeline: Option<String>,
     /// Image width in pixels (default 640); the height keeps the aspect ratio.
     pub width: Option<u32>,
+    /// Also write the image to this `.png` file, for example `style-2.png`, to give the
+    /// user; an existing file needs allow_destructive.
+    pub out: Option<String>,
+    /// Replace `out` if it exists. Ask the user first.
+    #[serde(default)]
+    pub allow_destructive: bool,
 }
 
 /// Arguments of `contact_sheet`.
@@ -242,6 +248,12 @@ pub struct SheetArgs {
     pub width: Option<u32>,
     /// Timeline id; the primary timeline when omitted.
     pub timeline: Option<String>,
+    /// Also write the sheet to this `.png` file, for example `sheet.png`, to give the user;
+    /// an existing file needs allow_destructive.
+    pub out: Option<String>,
+    /// Replace `out` if it exists. Ask the user first.
+    #[serde(default)]
+    pub allow_destructive: bool,
 }
 
 /// Arguments of `export`.
@@ -501,9 +513,15 @@ pub struct LibraryArgs {
     /// add: lines for titles, templates and compositions; the text of a text style's clip.
     #[serde(default)]
     pub lines: Vec<String>,
-    /// add: assets for a template's slots.
+    /// add: assets for a template's slots, or a composition's slots in the order they are
+    /// declared.
     #[serde(default)]
     pub media: Vec<String>,
+    /// add: a composition's parameters by name, as `library list` shows them: colours
+    /// (`#RRGGBB`), texts, numbers, true or false, choices, point lists, groups (objects),
+    /// and slots, which take an asset id (composition slots also a library composition's
+    /// name). Other parameters make another copy of the composition.
+    pub params: Option<serde_json::Value>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would change without committing it.

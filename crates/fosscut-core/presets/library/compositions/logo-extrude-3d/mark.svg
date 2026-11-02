@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="-110 -110 220 220">
+  <!-- FossCut's own placeholder mark for the extruded logo template: a ring around a four-point spark. Free to use, also commercially. -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M 100 0 A 100 100 0 1 0 -100 0 A 100 100 0 1 0 100 0 Z M 74 0 A 74 74 0 1 1 -74 0 A 74 74 0 1 1 74 0 Z"/>
+  <path fill="#FFFFFF" d="M 0 -58 Q 9 -9 58 0 Q 9 9 0 58 Q -9 9 -58 0 Q -9 -9 0 -58 Z"/>
+</svg>

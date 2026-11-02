@@ -281,11 +281,22 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             .into_iter()
             .map(|c| {
                 let lines = c.lines();
-                if brief {
+                // Parameters and slots (ADR-0042): none in an outline, names in the usual
+                // view, the typed schema in full detail.
+                let params = c.all_params();
+                let mut entry = if brief {
                     json!({ "name": c.name, "title": c.title, "lines": lines })
                 } else {
                     json!({ "name": c.name, "title": c.title, "description": c.description, "tags": c.tags, "lines": lines })
+                };
+                if !params.is_empty() && !brief {
+                    entry["params"] = if args.detail == Detail::Full {
+                        json!(params)
+                    } else {
+                        json!(params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>())
+                    };
                 }
+                entry
             })
             .collect();
         // Particle presets and the emitter's reference (ADR-0038).

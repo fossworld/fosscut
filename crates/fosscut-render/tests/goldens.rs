@@ -1775,3 +1775,61 @@ fn text_reveal_motions() {
         TEXT_SIZE,
     );
 }
+
+/// White titles on a dark canvas, each with a white light sweep across its middle: at the
+/// sweep's defaults the band cannot brighten the white letters, so it barely shows (only
+/// their antialiased edges catch it); with bloom 0.5 and 1 its light glows past the
+/// letters onto the canvas around the band, brighter with more bloom; at the bottom a warm
+/// sweep with full bloom, further along.
+#[test]
+fn light_sweep_bloom() {
+    use fosscut_model::ParamValue::{Name, Number};
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let rows: [(f64, &[(&str, fosscut_model::ParamValue)]); 4] = [
+        (-0.33, &[]),
+        (-0.11, &[("bloom", Number(0.5))]),
+        (0.11, &[("bloom", Number(1.0))]),
+        (
+            0.33,
+            &[
+                ("bloom", Number(1.0)),
+                ("position", Number(0.7)),
+                ("color", Name("#FFC060".into())),
+            ],
+        ),
+    ];
+    let mut layers = vec![Layer::new(source(1))];
+    for (y, values) in rows {
+        let mut values = values.to_vec();
+        values.push(("angle", Number(0.0)));
+        if !values.iter().any(|(k, _)| *k == "position") {
+            values.push(("position", Number(0.5)));
+        }
+        layers.push(Layer {
+            transform: Transform {
+                position: [0.0, y],
+                ..Transform::default()
+            },
+            effects: vec![planned("light.sweep", &values)],
+            ..Layer::text(text("SWEEP ON WHITE", |s| {
+                s.size = 0.12;
+                s.bold = true;
+            }))
+        });
+    }
+    let plan = RenderPlan {
+        canvas: (1920, 1080),
+        layers,
+        skipped: Vec::new(),
+    };
+    let mut frames = Frames::default().with(1, solid(64, 36, [40, 150, 122]));
+    check_at(
+        "light-sweep-bloom",
+        &mut renderer,
+        &plan,
+        &mut frames,
+        TEXT_SIZE,
+    );
+}

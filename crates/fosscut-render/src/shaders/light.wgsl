@@ -77,17 +77,12 @@ fn fs_light_add(@builtin(position) position: vec4f) -> @location(0) vec4f {
     return vec4f(picture.rgb + light, picture.a + coverage * (1.0 - picture.a));
 }
 
-// A band of light moving across the picture's visible pixels. p[0]: position (0 just
-// before the band enters, 1 just after it leaves), the direction it moves in radians
+// How much of a sweep's band lights the pixel at `position`, 0 to 1. p[0]: position (0
+// just before the band enters, 1 just after it leaves), the direction it moves in radians
 // clockwise from left to right, its width as a fraction of the distance it travels, and
-// the softness of its edges. p[1]: intensity, then the colour (linear). p[2]: where the
-// picture lies in a padded one, left, top, width and height in pixels.
-@fragment
-fn fs_light_sweep(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let texel = load(position);
-    if texel.a <= 0.0 {
-        return texel;
-    }
+// the softness of its edges. p[2]: where the picture lies in a padded one, left, top,
+// width and height in pixels.
+fn light_band(position: vec4f) -> f32 {
     let p = effect.p[0];
     let dir = vec2f(cos(p.y), sin(p.y));
     let content = effect.p[2];
@@ -104,6 +99,27 @@ fn fs_light_sweep(@builtin(position) position: vec4f) -> @location(0) vec4f {
     if half_width - inner > 1e-3 {
         profile = 1.0 - smoothstep(inner, half_width, distance);
     }
-    let light = effect.p[1].yzw * effect.p[1].x * profile;
+    return profile;
+}
+
+// A band of light moving across the picture's visible pixels (light_band). p[1]:
+// intensity, then the colour (linear).
+@fragment
+fn fs_light_sweep(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    if texel.a <= 0.0 {
+        return texel;
+    }
+    let light = effect.p[1].yzw * effect.p[1].x * light_band(position);
     return vec4f(texel.rgb + light * texel.a, texel.a);
+}
+
+// The band's light alone where it falls on the picture's visible pixels, as premultiplied
+// light: what a sweep's bloom blurs and adds around the picture (fs_light_add), so it shows
+// past opaque white pixels the band cannot brighten. Uniform as fs_light_sweep.
+@fragment
+fn fs_light_band(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let texel = load(position);
+    let profile = light_band(position) * texel.a;
+    return vec4f(effect.p[1].yzw * effect.p[1].x * profile, profile);
 }

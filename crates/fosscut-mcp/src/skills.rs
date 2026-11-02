@@ -50,6 +50,14 @@ pub const SKILLS: &[Skill] = &[
                 "references/patterns.md",
                 include_str!("../../../skills/motion-graphics/references/patterns.md"),
             ),
+            (
+                "references/quality.md",
+                include_str!("../../../skills/motion-graphics/references/quality.md"),
+            ),
+            (
+                "references/reference-ad.md",
+                include_str!("../../../skills/motion-graphics/references/reference-ad.md"),
+            ),
         ],
     },
     Skill {

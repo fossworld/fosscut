@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use super::browser::{Browser, Found};
 use super::cdp::{ORIGIN, decode_base64};
-use super::{Composition, WebError};
+use super::{Composition, WebError, WebRenderer};
 
 /// The script that gives the page FossCut's clock.
 const CLOCK: &str = include_str!("clock.js");
@@ -27,6 +27,7 @@ const LOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// A web composition's page in its own headless browser.
 pub struct WebDecoder {
     browser: Browser,
+    renderer: WebRenderer,
     session: String,
     url: String,
     composition: Composition,
@@ -38,11 +39,22 @@ pub struct WebDecoder {
 
 impl WebDecoder {
     /// Starts `browser` and loads the composition whose page is `entry` (its folder holds
-    /// the files it loads), at the size and rate of `composition`.
+    /// the files it loads), at the size and rate of `composition`, drawn by the renderer the
+    /// page asks for ([`WebRenderer::for_page`]).
     pub fn open(
         entry: &Path,
         composition: Composition,
         browser: &Found,
+    ) -> Result<WebDecoder, WebError> {
+        WebDecoder::open_with(entry, composition, browser, WebRenderer::for_page(entry))
+    }
+
+    /// [`WebDecoder::open`] with the renderer given.
+    pub fn open_with(
+        entry: &Path,
+        composition: Composition,
+        browser: &Found,
+        renderer: WebRenderer,
     ) -> Result<WebDecoder, WebError> {
         let folder = entry
             .parent()
@@ -52,7 +64,7 @@ impl WebDecoder {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "index.html".into());
-        let mut browser = Browser::start(browser)?;
+        let mut browser = Browser::start(browser, renderer)?;
         let failed = |e: super::cdp::CdpError| WebError::BrowserFailed { message: e.0 };
         let target = browser
             .cdp
@@ -120,6 +132,7 @@ impl WebDecoder {
         };
         let mut decoder = WebDecoder {
             browser,
+            renderer,
             session,
             url: format!("{ORIGIN}/{}", percent_encode(&name)),
             composition,
@@ -129,6 +142,11 @@ impl WebDecoder {
         };
         decoder.load()?;
         Ok(decoder)
+    }
+
+    /// The renderer that draws the page.
+    pub fn renderer(&self) -> WebRenderer {
+        self.renderer
     }
 
     /// Loads (or reloads) the page and waits for its fonts and images.
@@ -239,8 +257,9 @@ impl WebDecoder {
     }
 }
 
-/// How web frames are tagged: R'G'B' in sRGB, as CSS colours are, so a colour written in a
-/// page matches the same colour in a FossCut text or shape.
+/// How web frames are tagged: R'G'B' in sRGB, as the browser draws them. The renderer
+/// decodes sRGB-tagged sources as graphics, like hex colours (ADR-0041), so a colour written
+/// in a page matches the same colour in a FossCut text or shape and keeps its code values.
 fn color() -> ColorInfo {
     ColorInfo {
         matrix: Matrix::Bt709,

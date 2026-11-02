@@ -666,3 +666,90 @@ fn adjustment_layers_glow_what_is_below() {
     assert!(luma(&lit, 195, 90) > 40, "{}", luma(&lit, 195, 90));
     assert_eq!(luma(&lit, 160, 90), 255);
 }
+
+/// The white "Glow" title of [`titled`] with a sweep across its middle (`bloom` given).
+fn swept_title(bloom: f64) -> (Project, Id) {
+    let (mut project, timeline) = titled(ClipAnimations::default());
+    let title = &mut project.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0];
+    title.effects = vec![fosscut_model::Effect {
+        id: Id::new(IdKind::Effect, 4),
+        effect_type: "light.sweep".into(),
+        version: 1,
+        enabled: true,
+        params: [
+            ("angle".to_string(), n(0.0)),
+            ("bloom".to_string(), n(bloom)),
+        ]
+        .into(),
+        keyframes: Default::default(),
+    }];
+    assert!(fosscut_model::validate(&project).is_empty());
+    (project, timeline)
+}
+
+/// A sweep cannot brighten white letters; with bloom its light glows past them onto the
+/// dark canvas, only where the band is, and preview and export draw it alike.
+#[test]
+fn a_sweep_with_bloom_shows_on_white_text() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut provider = Frames::default();
+    let at = Rate::FPS_30.frames_to_flicks(10);
+    let mut shot = |bloom: Option<f64>| {
+        let (mut project, timeline) = swept_title(bloom.unwrap_or(0.0));
+        if bloom.is_none() {
+            project.timelines.get_mut(&timeline).unwrap().tracks[0].clips[0]
+                .effects
+                .clear();
+        }
+        ExportGraph::new(&project, &timeline)
+            .unwrap()
+            .render(&mut renderer, &project, &mut provider, at)
+            .unwrap()
+    };
+    let plain = shot(None);
+    let swept = shot(Some(0.0));
+    let bloomed = shot(Some(1.0));
+    // Pixels the title leaves dark that a sweep lights, and how far they spread.
+    let lit = |image: &Image| -> Vec<(u32, u32)> {
+        (0..image.height)
+            .flat_map(|y| (0..image.width).map(move |x| (x, y)))
+            .filter(|&(x, y)| luma(&plain, x, y) == 0 && luma(image, x, y) > 10)
+            .collect()
+    };
+    assert!(
+        lit(&swept).is_empty(),
+        "without bloom the light stays on the letters"
+    );
+    let around = lit(&bloomed);
+    assert!(
+        around.len() > 300,
+        "lit around the letters: {}",
+        around.len()
+    );
+    // The band is about a sixth of the title's width around its middle (x 320), and the
+    // bloom reaches 3.5 times 0.02 of the canvas height past it: nothing lights beyond.
+    let (left, right) = around
+        .iter()
+        .fold((u32::MAX, 0), |(l, r), &(x, _)| (l.min(x), r.max(x)));
+    assert!(
+        left > 250 && right < 390,
+        "only near the band: {left} to {right}"
+    );
+    assert!(
+        left < 300 && right > 340,
+        "on both sides of it: {left} to {right}"
+    );
+    // Preview and export agree.
+    let (project, timeline) = swept_title(1.0);
+    let small = PreviewGraph::new(&project, &timeline, (320, 320))
+        .unwrap()
+        .grab(&mut renderer, &project, &mut provider, at)
+        .unwrap();
+    let psnr = half(&bloomed).psnr(&small).unwrap();
+    eprintln!("sweep bloom parity: {psnr:.1} dB");
+    // As for the animated glow above: text rasterizes at each size (the plain title
+    // measures about 33 dB here too), while a misplaced or missing bloom costs far more.
+    assert!(psnr > 33.0, "PSNR {psnr:.1} dB");
+}

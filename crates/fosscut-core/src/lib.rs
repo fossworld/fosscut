@@ -22,6 +22,7 @@
 mod changes;
 mod command;
 mod commands;
+mod composition_params;
 mod envelope;
 mod error;
 mod history;
@@ -76,6 +77,10 @@ pub use commands::{
     TextTemplate,
 };
 pub use commands::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateApply};
+pub use composition_params::{
+    CANVAS_PARAMS, CompositionKit, CompositionParam, ParamType, SlotKind,
+    defaults as composition_param_defaults,
+};
 pub use envelope::{CommandCall, Request, Response};
 pub use error::{ApiError, ErrorCode, codes, error_catalogue};
 pub use history::{DocumentChange, EntryKind, HistoryOutput, LogEntry};

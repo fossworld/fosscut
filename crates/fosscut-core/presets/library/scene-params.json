@@ -1,0 +1,92 @@
+[
+  {
+    "name": "transparent",
+    "type": "bool",
+    "default": false,
+    "description": "Leave the background transparent, to lay the scene over other clips."
+  },
+  {
+    "name": "background",
+    "type": "color",
+    "default": "#000000",
+    "description": "The colour behind the scene when it is not transparent."
+  },
+  {
+    "name": "exposure",
+    "type": "number",
+    "min": 0.1,
+    "max": 4,
+    "default": 1,
+    "description": "Brightness before tone mapping."
+  },
+  {
+    "name": "tone_mapping",
+    "type": "choice",
+    "choices": ["aces", "agx", "neutral"],
+    "default": "aces",
+    "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least."
+  },
+  {
+    "name": "bloom",
+    "type": "group",
+    "description": "Glow around the brightest parts.",
+    "fields": [
+      { "name": "strength", "type": "number", "min": 0, "max": 4, "default": 1, "description": "How strong the glow is; 0 turns it off." },
+      { "name": "radius", "type": "number", "min": 0, "max": 1, "default": 0.6, "description": "How far the glow spreads." },
+      { "name": "threshold", "type": "number", "min": 0, "max": 8, "default": 0.9, "description": "Linear brightness above which parts glow." }
+    ]
+  },
+  {
+    "name": "depth_of_field",
+    "type": "group",
+    "description": "Blur in front of and behind the subject the scene keeps in focus.",
+    "fields": [
+      { "name": "aperture", "type": "number", "min": 0, "max": 1, "default": 0.4, "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off." },
+      { "name": "max_blur", "type": "number", "min": 0, "max": 0.05, "default": 0.012, "description": "The largest blur radius, as a fraction of the frame height." }
+    ]
+  },
+  {
+    "name": "motion_blur",
+    "type": "group",
+    "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+    "fields": [
+      { "name": "samples", "type": "number", "integer": true, "min": 1, "max": 32, "default": 8, "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count." },
+      { "name": "shutter", "type": "number", "min": 0, "max": 1, "default": 0.5, "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter." }
+    ]
+  },
+  {
+    "name": "width",
+    "type": "number",
+    "integer": true,
+    "min": 16,
+    "max": 4096,
+    "default": null,
+    "description": "Canvas width in pixels; the template's own when omitted."
+  },
+  {
+    "name": "height",
+    "type": "number",
+    "integer": true,
+    "min": 16,
+    "max": 4096,
+    "default": null,
+    "description": "Canvas height in pixels; the template's own when omitted."
+  },
+  {
+    "name": "duration",
+    "type": "number",
+    "min": 0.5,
+    "max": 60,
+    "default": null,
+    "description": "Length in seconds; the template's own when omitted."
+  },
+  {
+    "name": "fps",
+    "type": "number",
+    "integer": true,
+    "min": 1,
+    "max": 120,
+    "default": null,
+    "description": "Frames per second; the template's own when omitted."
+  }
+]

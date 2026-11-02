@@ -105,7 +105,7 @@ fn normal_matrix(m: &Mat4) -> Mat4 {
 }
 
 fn linear(hex: &str, scale: f64) -> [f32; 4] {
-    let [r, g, b, _] = crate::text::linear_color(hex);
+    let [r, g, b, _] = crate::color::hex_to_linear(hex);
     let s = scale as f32;
     [r * s, g * s, b * s, 1.0]
 }
@@ -321,7 +321,8 @@ impl ObjectPipelines {
 }
 
 /// An image of a model file as an sRGB texture with mipmaps made on the CPU (a box filter
-/// in linear light).
+/// in linear light). Its code values are graphics (ADR-0041): each is decoded to linear
+/// light as graphics and stored with the sRGB curve the texture format decodes.
 fn image_texture(device: &wgpu::Device, queue: &wgpu::Queue, image: &ModelImage) -> wgpu::Texture {
     let (mut w, mut h) = (image.width.max(1), image.height.max(1));
     let mips = (w.max(h) as f32).log2().floor() as u32 + 1;
@@ -339,24 +340,19 @@ fn image_texture(device: &wgpu::Device, queue: &wgpu::Queue, image: &ModelImage)
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let decode = |v: u8| {
-        let c = f32::from(v) / 255.0;
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    };
-    let encode = |l: f32| {
-        let c = if l <= 0.003_130_8 {
-            12.92 * l
-        } else {
-            1.055 * l.powf(1.0 / 2.4) - 0.055
-        };
-        (c.clamp(0.0, 1.0) * 255.0).round() as u8
-    };
+    let storage = crate::color::TransferFunction::Srgb;
+    let decode = |v: u8| storage.decode(f32::from(v) / 255.0);
+    let encode = |l: f32| (storage.encode(l).clamp(0.0, 1.0) * 255.0).round() as u8;
+    // Code value to stored value; rounding moves a code value by at most one.
+    let stored: [u8; 256] =
+        std::array::from_fn(|code| encode(crate::color::graphics_to_linear(code as f32 / 255.0)));
     let mut level: Vec<u8> = image.rgba.clone();
     level.resize((w * h * 4) as usize, 255);
+    for (i, v) in level.iter_mut().enumerate() {
+        if i % 4 != 3 {
+            *v = stored[usize::from(*v)];
+        }
+    }
     for mip in 0..mips {
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {

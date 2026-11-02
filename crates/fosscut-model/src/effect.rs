@@ -141,7 +141,7 @@ pub enum ParamKind {
     Curve,
     /// A media asset `{"asset": "asset_…"}` of the kind the parameter names.
     Asset,
-    /// An sRGB color `#RRGGBB`.
+    /// A color `#RRGGBB`, as in CSS; exports keep its code values (ADR-0041).
     Color,
 }
 
@@ -765,7 +765,7 @@ pub fn effect_types() -> Vec<EffectSpec> {
             version: 1,
             title: "Motion blur",
             category: EffectCategory::Motion,
-            summary: "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path. Reads neighbouring frames, so it costs more to render.",
+            summary: "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path; a clip placed in 3D also streaks as the camera moves. Reads neighbouring frames, so it costs more to render.",
             params: vec![
                 number(
                     "amount",

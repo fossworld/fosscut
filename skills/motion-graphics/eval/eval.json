@@ -1,6 +1,6 @@
 {
   "skill": "motion-graphics",
-  "about": "A short logo scene made the way SKILL.md teaches, through fosscut mcp, with nothing but FossCut's own primitives: a night floor, a logo arrow that draws on with a glow, a name blurring in letter by letter and a particle burst, built in place and turned into one compound clip; the scene placed in 3D under a camera that pushes in, an underline swoosh from the library drawing on above it; frames checked at the key moments, a refused patch on an animated camera field, and a verified export.",
+  "about": "A two-scene ad made the director's way SKILL.md teaches, through fosscut mcp with FossCut's own primitives, on a small vertical canvas so it renders quickly: music and its bars, the storyboard recorded as scene markers, a full-size style frame of each scene before its motion, the logo scene built and turned into a compound clip in 3D under a pushing camera with motion blur, its low-resolution preview exported, a kinetic-type scene whose white title gets a sweep with bloom, a push transition on the bar, a glow pass, a grade with grain and shake, sound on the hits, a contact sheet, the final size checked at 1080x1920 and a verified export. Approvals by the user are represented by the checks on each step's result.",
   "steps": [
     {
       "about": "A vertical project, small so the evaluation renders quickly.",
@@ -15,60 +15,75 @@
       }
     },
     {
-      "about": "Look up the commands the scene uses.",
+      "about": "Look up the commands the process uses.",
       "tool": "capabilities",
       "args": {
         "names": [
+          "marker.add",
           "shape.add",
           "text.add",
-          "particles.add",
           "animation.set",
           "effect.add",
           "clip.compound",
           "camera.add",
-          "keyframe.set"
+          "keyframe.set",
+          "transition.set",
+          "clips.paste",
+          "adjustment.add",
+          "look.apply"
         ]
       },
       "expect": {
         "commands": {
-          "$len": 8
+          "$len": 12
         }
       }
     },
     {
-      "about": "The library's swooshes for kinetic type.",
+      "about": "The scene kit: the app screen and the 3D templates are compositions.",
       "tool": "library",
       "args": {
         "action": "list",
-        "kind": "sticker",
-        "search": "swoosh"
+        "kind": "composition"
       },
       "expect": {
         "items": {
-          "$min_len": 2
+          "$min_len": 6
         }
       }
     },
     {
-      "about": "The device frames, each with its open screen and the canvas that fills it.",
+      "about": "Music first, so scenes can start on its bars.",
       "tool": "library",
       "args": {
-        "action": "list",
-        "kind": "device"
+        "action": "add",
+        "name": "upbeat-loop",
+        "start": "0s",
+        "duration": "3s",
+        "request_id": "music"
       },
       "expect": {
-        "items": {
-          "$len": 4
-        },
-        "items.0.name": "phone",
-        "items.0.screen.canvas": [
-          720,
-          1560
-        ]
+        "item.kind": "music"
+      },
+      "save": {
+        "music": "results.0.clip"
       }
     },
     {
-      "about": "Read before changing anything.",
+      "about": "Mark the bars of the music.",
+      "tool": "auto_edit",
+      "args": {
+        "action": "beat_markers",
+        "music": "${music}",
+        "every": 4,
+        "request_id": "bars"
+      },
+      "expect": {
+        "committed": true
+      }
+    },
+    {
+      "about": "Read before the storyboard.",
       "tool": "timeline_read",
       "args": {},
       "save": {
@@ -76,89 +91,54 @@
       }
     },
     {
-      "about": "Plan the scene's layers in place with a dry run: floor, arrow curve, arrow head, name, burst.",
+      "about": "The approved storyboard, recorded as one marker per scene at its start.",
       "tool": "edit",
       "args": {
         "commands": [
           {
-            "command": "shape.add",
+            "command": "marker.add",
             "args": {
-              "item": "ui-screen-dark",
-              "duration": "3s"
+              "at": "0s",
+              "name": "scene 1: logo draws on and glows",
+              "color": "#FF7A45"
             }
           },
           {
-            "command": "shape.add",
+            "command": "marker.add",
             "args": {
-              "d": "M 110 420 L 170 360 L 210 390 L 260 330",
-              "stroke": {
-                "color": "#FF7A45",
-                "width": 0.014,
-                "cap": "round",
-                "join": "round"
-              },
-              "duration": "3s"
-            }
-          },
-          {
-            "command": "shape.add",
-            "args": {
-              "d": "M 232 328 L 262 328 L 262 358",
-              "stroke": {
-                "color": "#FF7A45",
-                "width": 0.014,
-                "cap": "round",
-                "join": "round"
-              },
-              "start": "0.6s",
-              "duration": "2.4s"
-            }
-          },
-          {
-            "command": "text.add",
-            "args": {
-              "text": "Your brand",
-              "start": "0.7s",
-              "duration": "2.3s",
-              "style": {
-                "size": 0.075,
-                "bold": true
-              },
-              "transform": {
-                "position": [
-                  0,
-                  -0.08
-                ]
-              },
-              "reveal": {
-                "unit": "letter",
-                "motion": "blur",
-                "duration": "0.5s",
-                "overlap": 0.7
-              }
-            }
-          },
-          {
-            "command": "particles.add",
-            "args": {
-              "preset": "burst",
-              "start": "0.6s",
-              "duration": "2.4s"
+              "at": "1.5s",
+              "name": "scene 2: delivered, with a sweep",
+              "color": "#3D6BF5"
             }
           }
         ],
         "expected_revision": "${rev}",
-        "dry_run": true
+        "request_id": "storyboard",
+        "reason": "the storyboard"
       },
       "expect": {
-        "dry_run": true,
         "results": {
-          "$len": 5
+          "$len": 2
+        },
+        "results.0.name": "scene 1: logo draws on and glows",
+        "results.1.at.frames": 45
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "The storyboard and the bars are on the timeline.",
+      "tool": "timeline_read",
+      "args": {},
+      "expect": {
+        "markers": {
+          "$min_len": 3
         }
       }
     },
     {
-      "about": "Apply the layers as one step.",
+      "about": "Scene 1's hero moment at its final look, still without motion: floor, arrow curve, arrow head, name, sparks.",
       "tool": "edit",
       "args": {
         "commands": [
@@ -166,7 +146,7 @@
             "command": "shape.add",
             "args": {
               "item": "ui-screen-dark",
-              "duration": "3s"
+              "duration": "1.5s"
             }
           },
           {
@@ -179,7 +159,7 @@
                 "cap": "round",
                 "join": "round"
               },
-              "duration": "3s"
+              "duration": "1.5s"
             }
           },
           {
@@ -192,16 +172,16 @@
                 "cap": "round",
                 "join": "round"
               },
-              "start": "0.6s",
-              "duration": "2.4s"
+              "start": "0.5s",
+              "duration": "1s"
             }
           },
           {
             "command": "text.add",
             "args": {
               "text": "Your brand",
-              "start": "0.7s",
-              "duration": "2.3s",
+              "start": "0.6s",
+              "duration": "0.9s",
               "style": {
                 "size": 0.075,
                 "bold": true
@@ -211,12 +191,6 @@
                   0,
                   -0.08
                 ]
-              },
-              "reveal": {
-                "unit": "letter",
-                "motion": "blur",
-                "duration": "0.5s",
-                "overlap": 0.7
               }
             }
           },
@@ -224,14 +198,14 @@
             "command": "particles.add",
             "args": {
               "preset": "burst",
-              "start": "0.6s",
-              "duration": "2.4s"
+              "start": "0.5s",
+              "duration": "1s"
             }
           }
         ],
         "expected_revision": "${rev}",
-        "request_id": "logo-layers",
-        "reason": "the logo scene's layers"
+        "request_id": "scene-1-style",
+        "reason": "scene 1 style frame"
       },
       "expect": {
         "results": {
@@ -248,7 +222,24 @@
       }
     },
     {
-      "about": "The arrow draws on, curve then head, and both glow orange.",
+      "about": "Scene 1's style frame at full size, saved for the user to approve.",
+      "tool": "frame_grab",
+      "args": {
+        "time": "1.2s",
+        "width": 360,
+        "out": "style-1.png"
+      },
+      "expect_image": {
+        "width": 360,
+        "height": 640
+      },
+      "expect": {
+        "at.frames": 36,
+        "written": "style-1.png"
+      }
+    },
+    {
+      "about": "Approved: the arrow draws on, curve then head, glowing orange, and the name blurs in.",
       "tool": "edit",
       "args": {
         "commands": [
@@ -258,7 +249,7 @@
               "clip": "${curve}",
               "in": {
                 "preset": "draw_on",
-                "duration": "0.6s"
+                "duration": "0.5s"
               }
             }
           },
@@ -268,7 +259,17 @@
               "clip": "${head}",
               "in": {
                 "preset": "draw_on",
-                "duration": "0.2s"
+                "duration": "0.15s"
+              }
+            }
+          },
+          {
+            "command": "animation.set",
+            "args": {
+              "clip": "${title}",
+              "in": {
+                "preset": "blur_in",
+                "duration": "0.4s"
               }
             }
           },
@@ -300,17 +301,17 @@
           }
         ],
         "expected_revision": "${rev}",
-        "request_id": "logo-motion"
+        "request_id": "scene-1-motion"
       },
       "expect": {
-        "results.2.effects.0.type": "light.glow"
+        "results.3.effects.0.type": "light.glow"
       },
       "save": {
         "rev": "revision"
       }
     },
     {
-      "about": "Turn the scene's layers into one compound clip in their place.",
+      "about": "Scene 1 becomes one compound clip in place of its layers.",
       "tool": "edit",
       "args": {
         "commands": [
@@ -324,56 +325,24 @@
                 "${title}",
                 "${burst}"
               ],
-              "name": "Logo"
+              "name": "Scene 1 logo"
             }
           }
         ],
         "expected_revision": "${rev}",
-        "request_id": "logo-scene"
+        "request_id": "scene-1-compound"
       },
       "expect": {
-        "results.0.compound.duration.frames": 90
+        "results.0.compound.duration.frames": 45
       },
       "save": {
         "logo": "results.0.compound.clip",
-        "scene": "results.0.timeline",
+        "scenes": "results.0.compound.track",
         "rev": "revision"
       }
     },
     {
-      "about": "Inside the scene: its layers on their own tracks, three seconds long.",
-      "tool": "timeline_read",
-      "args": {
-        "timeline": "${scene}"
-      },
-      "expect": {
-        "duration.frames": 90,
-        "tracks": {
-          "$min_len": 4
-        }
-      }
-    },
-    {
-      "about": "An underline swoosh from the library over the scene, from 1.6 s.",
-      "tool": "library",
-      "args": {
-        "action": "add",
-        "name": "swoosh-underline",
-        "start": "1.6s",
-        "duration": "1.4s",
-        "expected_revision": "${rev}",
-        "request_id": "swoosh"
-      },
-      "expect": {
-        "item.kind": "sticker"
-      },
-      "save": {
-        "swoosh": "results.0.clip",
-        "rev": "revision"
-      }
-    },
-    {
-      "about": "Depth: the scene becomes a 3D layer under a camera; the swoosh sits under the name and draws on.",
+      "about": "Depth: the scene is a 3D layer under a camera, with motion blur so the camera's push streaks it.",
       "tool": "edit",
       "args": {
         "commands": [
@@ -387,45 +356,33 @@
             }
           },
           {
-            "command": "clip.set",
+            "command": "effect.add",
             "args": {
-              "clip": "${swoosh}",
-              "set": {
-                "transform.position": [
-                  0,
-                  -0.02
-                ],
-                "transform.scale": 0.5
-              }
-            }
-          },
-          {
-            "command": "animation.set",
-            "args": {
-              "clip": "${swoosh}",
-              "in": {
-                "preset": "draw_on",
-                "duration": "0.4s"
+              "clip": "${logo}",
+              "type": "motion.blur",
+              "params": {
+                "amount": 0.5
               }
             }
           },
           {
             "command": "camera.add",
             "args": {
-              "duration": "3s"
+              "start": "0s",
+              "duration": "1.5s"
             }
           }
         ],
         "expected_revision": "${rev}",
-        "request_id": "depth"
+        "request_id": "scene-1-depth"
       },
       "save": {
-        "camera": "results.3.clip",
+        "camera": "results.2.clip",
         "rev": "revision"
       }
     },
     {
-      "about": "The camera pushes in over the whole scene.",
+      "about": "The camera pushes in over the scene, easing in and out.",
       "tool": "edit",
       "args": {
         "commands": [
@@ -444,13 +401,13 @@
             "args": {
               "clip": "${camera}",
               "property": "camera.position_z",
-              "at": "2.9s",
+              "at": "1.4s",
               "value": 0.25
             }
           }
         ],
         "expected_revision": "${rev}",
-        "request_id": "push"
+        "request_id": "scene-1-push"
       },
       "save": {
         "rev": "revision"
@@ -476,71 +433,489 @@
       "expect_error": "fosscut.clip.property_animated"
     },
     {
-      "about": "Read again: three seconds, nothing else changed.",
-      "tool": "timeline_read",
-      "args": {},
-      "expect": {
-        "duration.frames": 90,
-        "revision": "${rev}"
+      "about": "Scene 1's preview: its range only, at a low resolution and frame rate.",
+      "tool": "export",
+      "args": {
+        "output": "scene-1-v1.mp4",
+        "range": {
+          "start": "0s",
+          "end": "1.5s"
+        },
+        "resolution": "180",
+        "fps": "15",
+        "expected_revision": "${rev}",
+        "request_id": "scene-1-v1"
+      },
+      "save": {
+        "job": "job"
       }
     },
     {
-      "about": "Check the arrow half drawn and glowing.",
+      "about": "The preview is ready to show the user: 1.5 seconds at 15 frames a second, 180x320.",
+      "tool": "job_status",
+      "args": {
+        "job": "${job}",
+        "wait_seconds": 60
+      },
+      "repeat_while": {
+        "state": "running"
+      },
+      "expect": {
+        "state": "succeeded",
+        "report.frames": 23,
+        "report.verified.video.rate": "15",
+        "report.verified.video.width": 180,
+        "report.verified.video.height": 320
+      }
+    },
+    {
+      "about": "Scene 2's hero moment: a dark floor and a white title, still.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "shape.add",
+            "args": {
+              "item": "ui-screen-dark",
+              "start": "1.5s",
+              "duration": "1.5s"
+            }
+          },
+          {
+            "command": "text.add",
+            "args": {
+              "text": "DELIVERED",
+              "start": "1.5s",
+              "duration": "1.5s",
+              "style": {
+                "size": 0.08,
+                "bold": true
+              }
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "scene-2-style"
+      },
+      "save": {
+        "floor2": "results.0.clip",
+        "word": "results.1.clip",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Scene 2's style frame at full size.",
       "tool": "frame_grab",
       "args": {
-        "time": "0.3s",
+        "time": "2.6s",
         "width": 360
       },
       "expect_image": {
         "width": 360,
         "height": 640
-      },
-      "expect": {
-        "at.frames": 9
       }
     },
     {
-      "about": "Check the end of the scene: name, swoosh, sparks, pushed in.",
-      "tool": "frame_grab",
+      "about": "An underline swoosh from the library under the word.",
+      "tool": "library",
       "args": {
-        "time": "2.5s",
-        "width": 360
-      },
-      "expect_image": {
-        "width": 360,
-        "height": 640
+        "action": "add",
+        "name": "swoosh-underline",
+        "start": "1.9s",
+        "duration": "1.1s",
+        "expected_revision": "${rev}",
+        "request_id": "swoosh"
       },
       "expect": {
-        "at.frames": 75
+        "item.kind": "sticker"
+      },
+      "save": {
+        "swoosh": "results.0.clip",
+        "rev": "revision"
       }
     },
     {
-      "about": "The whole piece at a glance.",
+      "about": "Approved: the word pops in with overshoot, the swoosh draws on, and a sweep with bloom crosses the white letters.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "animation.set",
+            "args": {
+              "clip": "${word}",
+              "in": {
+                "preset": "pop_in",
+                "duration": "0.4s"
+              }
+            }
+          },
+          {
+            "command": "clip.set",
+            "args": {
+              "clip": "${swoosh}",
+              "set": {
+                "transform.position": [
+                  0,
+                  0.06
+                ],
+                "transform.scale": 0.5
+              }
+            }
+          },
+          {
+            "command": "animation.set",
+            "args": {
+              "clip": "${swoosh}",
+              "in": {
+                "preset": "draw_on",
+                "duration": "0.35s"
+              }
+            }
+          },
+          {
+            "command": "effect.add",
+            "args": {
+              "clip": "${word}",
+              "type": "light.sweep",
+              "params": {
+                "position": 0,
+                "bloom": 0.8
+              }
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "scene-2-motion"
+      },
+      "expect": {
+        "results.3.effects.0.type": "light.sweep"
+      },
+      "save": {
+        "sweep": "results.3.effects.0.effect",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "The sweep crosses between two beats.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "keyframe.set",
+            "args": {
+              "clip": "${word}",
+              "property": "effects.${sweep}.position",
+              "at": "2.1s",
+              "value": 0,
+              "easing": "ease_in_out"
+            }
+          },
+          {
+            "command": "keyframe.set",
+            "args": {
+              "clip": "${word}",
+              "property": "effects.${sweep}.position",
+              "at": "2.8s",
+              "value": 1
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "scene-2-sweep"
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Scene 2 becomes one compound clip.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "clip.compound",
+            "args": {
+              "clips": [
+                "${floor2}",
+                "${word}",
+                "${swoosh}"
+              ],
+              "name": "Scene 2 delivered"
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "scene-2-compound"
+      },
+      "expect": {
+        "results.0.compound.duration.frames": 45
+      },
+      "save": {
+        "delivered": "results.0.compound.clip",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Finishing: both scenes on one track, joined by a push of 0.4 s centred on the bar where they meet.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "clip.move",
+            "args": {
+              "clip": "${delivered}",
+              "track": "${scenes}",
+              "start": "1.5s"
+            }
+          },
+          {
+            "command": "transition.set",
+            "args": {
+              "clip": "${logo}",
+              "type": "push",
+              "duration": "0.4s",
+              "params": {
+                "direction": "up"
+              }
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "join"
+      },
+      "save": {
+        "rev": "revision"
+      },
+      "expect": {
+        "results.0.track": "${scenes}"
+      }
+    },
+    {
+      "about": "Finishing: copy the logo scene for its glow pass.",
+      "tool": "query",
+      "args": {
+        "name": "clips.copy",
+        "args": {
+          "clips": [
+            "${logo}"
+          ]
+        }
+      },
+      "expect": {
+        "clips": {
+          "$len": 1
+        }
+      },
+      "save": {
+        "copied": "clips"
+      }
+    },
+    {
+      "about": "The copy goes on a new track above, at the scene's start.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "track.add",
+            "args": {
+              "kind": "video"
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "glow-track"
+      },
+      "save": {
+        "glow_track": "results.0.track",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Paste the copy onto it.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "clips.paste",
+            "args": {
+              "clips": "${copied}",
+              "at": "0s",
+              "track": "${glow_track}"
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "glow-copy"
+      },
+      "expect": {
+        "results.0.clips": {
+          "$len": 1
+        }
+      },
+      "save": {
+        "glow": "results.0.clips.0.clip",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "The glow pass: only the light of the bright parts, added over the scene.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "clip.set",
+            "args": {
+              "clip": "${glow}",
+              "set": {
+                "blend": "add"
+              }
+            }
+          },
+          {
+            "command": "effect.add",
+            "args": {
+              "clip": "${glow}",
+              "type": "light.glow",
+              "params": {
+                "glow_only": true,
+                "threshold": 0.5,
+                "radius": 0.05,
+                "intensity": 1.2,
+                "tint": 0.6,
+                "color": "#FF7A45"
+              }
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "glow-pass"
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Finishing: one adjustment clip with grain and a little camera shake, graded with a gentle look.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "adjustment.add",
+            "args": {
+              "start": "0s",
+              "duration": "3s",
+              "effects": [
+                {
+                  "type": "stylize.grain",
+                  "params": {
+                    "amount": 0.1
+                  }
+                },
+                {
+                  "type": "motion.shake",
+                  "params": {
+                    "amount": 0.004,
+                    "speed": 1
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "finish"
+      },
+      "save": {
+        "grade": "results.0.clip",
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "The look on the adjustment clip grades everything below it.",
+      "tool": "edit",
+      "args": {
+        "commands": [
+          {
+            "command": "look.apply",
+            "args": {
+              "clip": "${grade}",
+              "look": "vivid"
+            }
+          }
+        ],
+        "expected_revision": "${rev}",
+        "request_id": "grade"
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "Sound design: a whoosh just before the transition on the bar.",
+      "tool": "library",
+      "args": {
+        "action": "add",
+        "name": "whoosh",
+        "start": "1.2s",
+        "expected_revision": "${rev}",
+        "request_id": "whoosh"
+      },
+      "expect": {
+        "item.kind": "sound"
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "An impact as the logo lands.",
+      "tool": "library",
+      "args": {
+        "action": "add",
+        "name": "impact",
+        "start": "0.6s",
+        "expected_revision": "${rev}",
+        "request_id": "impact"
+      },
+      "expect": {
+        "item.kind": "sound"
+      },
+      "save": {
+        "rev": "revision"
+      }
+    },
+    {
+      "about": "The finished piece at a glance, saved for the user.",
       "tool": "contact_sheet",
       "args": {
-        "count": 4,
-        "width": 90
+        "count": 6,
+        "width": 60,
+        "out": "sheet.png"
       },
       "expect": {
         "tiles": {
-          "$len": 4
-        }
+          "$len": 6
+        },
+        "written": "sheet.png"
       }
     },
     {
-      "about": "Export dry run: what would be written.",
+      "about": "The final export at 1080x1920: what it would write.",
       "tool": "export",
       "args": {
         "output": "MotionAd.mp4",
+        "resolution": "1080p",
         "dry_run": true
       },
       "expect": {
         "dry_run": true,
-        "plan.frames": 90
+        "plan.frames": 90,
+        "plan.settings.video.width": 1080,
+        "plan.settings.video.height": 1920
       }
     },
     {
-      "about": "Export the checked revision as a job.",
+      "about": "Export the checked revision (at the small canvas size, so the evaluation stays quick).",
       "tool": "export",
       "args": {
         "output": "MotionAd.mp4",
@@ -552,7 +927,7 @@
       }
     },
     {
-      "about": "Wait for the job and verify the report.",
+      "about": "Wait for the job and verify the report: the full length, the canvas size, the music and the sounds.",
       "tool": "job_status",
       "args": {
         "job": "${job}",
@@ -565,7 +940,8 @@
         "state": "succeeded",
         "report.frames": 90,
         "report.verified.video.width": 360,
-        "report.verified.video.height": 640
+        "report.verified.video.height": 640,
+        "report.verified.audio.channels": 2
       }
     }
   ]

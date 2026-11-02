@@ -121,7 +121,7 @@ pub(crate) fn specs() -> Vec<EffectSpec> {
         spec(
             SWEEP,
             "Light sweep",
-            "A band of light that moves across the layer's visible pixels, such as a sheen over a logo on an end card: keyframe position from 0 to 1. Transparent parts stay transparent.",
+            "A band of light that moves across the layer's visible pixels, such as a sheen over a logo on an end card: keyframe position from 0 to 1. Transparent parts stay transparent unless bloom lets the band's light glow past the layer's edges, which makes the sweep show on white or very bright layers too.",
             vec![
                 number(
                     "position",
@@ -164,6 +164,14 @@ pub(crate) fn specs() -> Vec<EffectSpec> {
                     "how much light the band adds: 1 brings white parts to full brightness",
                 ),
                 color("color", "#FFFFFF", "the light's colour, #RRGGBB"),
+                number(
+                    "bloom",
+                    0.0,
+                    0.0,
+                    1.0,
+                    "",
+                    "how much of the band's light also glows past the layer's opaque pixels onto what is around and below it, so the sweep shows on white text or logos: 0 keeps the light on the layer's pixels, 1 a full glow",
+                ),
             ],
         ),
         spec(
@@ -252,14 +260,15 @@ mod tests {
                 "glow_only"
             ]
         );
+        let sweep = crate::effect_type(SWEEP).unwrap();
         assert_eq!(
-            crate::effect_type(SWEEP)
-                .unwrap()
-                .param("position")
-                .unwrap()
-                .default,
+            sweep.param("position").unwrap().default,
             ParamDefault::Number(0.5)
         );
+        // Without bloom the sweep keeps its light on the layer's pixels, as it always did.
+        let bloom = sweep.param("bloom").unwrap();
+        assert_eq!(bloom.default, ParamDefault::Number(0.0));
+        assert_eq!((bloom.min, bloom.max), (Some(0.0), Some(1.0)));
         let json = serde_json::to_value(crate::effect_type(STREAKS).unwrap()).unwrap();
         assert_eq!(json["category"], "light");
     }

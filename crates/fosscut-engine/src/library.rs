@@ -46,6 +46,9 @@ pub struct LibraryItem {
     /// A composition's lines, which `lines` replace in order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub lines: Vec<String>,
+    /// A composition's parameters and slots, which `params` and `media` set (ADR-0042).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<fosscut_core::CompositionParam>,
 }
 
 fn item(name: &str, kind: &'static str, title: &str, description: &str) -> LibraryItem {
@@ -60,6 +63,7 @@ fn item(name: &str, kind: &'static str, title: &str, description: &str) -> Libra
         commercial: true,
         screen: None,
         lines: Vec::new(),
+        params: Vec::new(),
     }
 }
 
@@ -134,6 +138,7 @@ pub fn catalog() -> Vec<LibraryItem> {
     for composition in fosscut_core::compositions() {
         items.push(LibraryItem {
             lines: composition.lines(),
+            params: composition.all_params(),
             tags: composition.tags,
             ..item(
                 &composition.name,
@@ -276,10 +281,45 @@ pub fn media_args(
     item: &LibraryItem,
     lines: &[String],
 ) -> Result<Value, EngineError> {
+    let input = CompositionInput {
+        lines: lines.to_vec(),
+        ..CompositionInput::default()
+    };
+    media_args_with(bundle, item, &input, None)
+}
+
+/// What a composition is added with besides its name (ADR-0042).
+#[derive(Clone, Debug, Default)]
+pub struct CompositionInput {
+    /// Lines in place of its placeholder lines, in order.
+    pub lines: Vec<String>,
+    /// Values of its parameters by name (an object); slots take asset ids, and composition
+    /// slots also library composition names.
+    pub params: Option<Value>,
+    /// Assets for the slots `params` leaves out, in the order the slots are declared.
+    pub media: Vec<String>,
+}
+
+/// [`media_args`] with a composition's parameters and slots; `project` is the project at
+/// `bundle`, needed when a slot names an asset.
+pub fn media_args_with(
+    bundle: &Path,
+    item: &LibraryItem,
+    input: &CompositionInput,
+    project: Option<&fosscut_model::Project>,
+) -> Result<Value, EngineError> {
+    if item.kind != "composition" && (input.params.is_some() || !input.media.is_empty()) {
+        return Err(EngineError::InvalidArguments {
+            message: format!(
+                "{} is a {}: only compositions take params, and only compositions and project templates take media",
+                item.name, item.kind
+            ),
+        });
+    }
     match item.kind {
         "sound" | "music" => sound_media(bundle, &item.name),
         "device" | "drawing" => drawing_media(bundle, &item.name),
-        "composition" => composition_media(bundle, &item.name, lines),
+        "composition" => composition_media_with(bundle, &item.name, input, project),
         other => Err(EngineError::InvalidArguments {
             message: format!(
                 "{} is a {other}, not media: add it with its command",
@@ -348,29 +388,366 @@ pub fn composition_media(
     name: &str,
     lines: &[String],
 ) -> Result<Value, EngineError> {
-    static SCRATCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let input = CompositionInput {
+        lines: lines.to_vec(),
+        ..CompositionInput::default()
+    };
+    composition_media_with(bundle, name, &input, None)
+}
+
+/// Writes web composition `name` into a folder of the bundle's library folder with
+/// `input`'s lines, its parameters as `params.json` and its slots' files (ADR-0042), and
+/// returns the `media.add` arguments that import it. The folder is `library/<name>/` while
+/// that is free or holds the same files, otherwise `library/<name>-<hash>/` after the
+/// content, so other parameters make another folder and asset, and a folder an asset uses
+/// never changes. `project` is the project at `bundle`, for slots that name assets.
+pub fn composition_media_with(
+    bundle: &Path,
+    name: &str,
+    input: &CompositionInput,
+    project: Option<&fosscut_model::Project>,
+) -> Result<Value, EngineError> {
     let composition = fosscut_core::composition(name).map_err(failed)?;
-    let html = composition.html(lines);
-    let relative = place(bundle, name, "/index.html", html.as_bytes());
-    let page = bundle.join(&relative);
-    write_once(&page, html.as_bytes())?;
-    let folder = page.parent().unwrap_or(bundle);
-    // Measured against a scratch bundle, which takes the copy media_add_args makes.
-    let scratch = std::env::temp_dir().join(format!(
-        "fosscut-library-{}-{}",
-        std::process::id(),
-        SCRATCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let measured = crate::web::media_add_args(
-        folder,
-        Some(name),
-        &scratch,
-        &crate::web::CompositionOptions::default(),
+    let params = composition
+        .resolve_params(input.params.as_ref(), &input.media)
+        .map_err(failed)?;
+    let files = composition_files(bundle, &composition, &input.lines, &params, project)?;
+    let folder = place_folder(bundle, name, &files)?;
+    let relative = format!(
+        "{FOLDER}{}/index.html",
+        folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
     );
-    let _ = std::fs::remove_dir_all(&scratch);
-    let mut args = measured.map_err(failed)?;
-    args["path"] = json!({ "relative": relative });
-    Ok(args)
+    crate::web::media_add_args_in_place(&folder, name, &relative).map_err(failed)
+}
+
+/// One file of a composition folder: bytes, or a file of the project to copy.
+enum Source {
+    Bytes(std::borrow::Cow<'static, [u8]>),
+    File(std::path::PathBuf),
+}
+
+impl Source {
+    fn bytes(bytes: Vec<u8>) -> Source {
+        Source::Bytes(std::borrow::Cow::Owned(bytes))
+    }
+}
+
+/// The files of a composition folder by their paths in it.
+type Files = std::collections::BTreeMap<String, Source>;
+
+fn invalid_params(composition: &str, message: String) -> EngineError {
+    EngineError::Failed {
+        code: fosscut_core::codes::LIBRARY_INVALID_PARAMS.to_string(),
+        message: format!("{composition}: {message}"),
+    }
+}
+
+/// The files of `composition`'s folder: its page with `lines` and its canvas values, its
+/// own and its kit's files, and when it has parameters `params.json` with every value and
+/// the slots' files under `media/`. A slot's value in `params.json` is `null` (the page's
+/// own) or `{"src", "kind", "name"}` with, for compositions, their `width`, `height`, `fps`
+/// and `duration`.
+fn composition_files(
+    bundle: &Path,
+    composition: &fosscut_core::LibraryComposition,
+    lines: &[String],
+    params: &serde_json::Map<String, Value>,
+    project: Option<&fosscut_model::Project>,
+) -> Result<Files, EngineError> {
+    let mut files = Files::new();
+    files.insert(
+        "index.html".into(),
+        Source::bytes(composition.html_with(lines, params).into_bytes()),
+    );
+    for (path, bytes) in composition.files() {
+        files.insert(path, Source::Bytes(std::borrow::Cow::Borrowed(bytes)));
+    }
+    let declared = composition.all_params();
+    if declared.is_empty() {
+        return Ok(files);
+    }
+    let mut written = params.clone();
+    for param in declared
+        .iter()
+        .filter(|p| p.kind == fosscut_core::ParamType::Slot)
+    {
+        let value = match params.get(&param.name) {
+            Some(Value::String(text)) if text.starts_with("asset_") => {
+                slot_asset(bundle, &composition.name, param, text, project, &mut files)?
+            }
+            Some(Value::String(name)) => slot_composition(param, name, &mut files)?,
+            _ => Value::Null,
+        };
+        written.insert(param.name.clone(), value);
+    }
+    let json = serde_json::to_vec_pretty(&Value::Object(written)).unwrap_or_default();
+    files.insert("params.json".into(), Source::bytes(json));
+    Ok(files)
+}
+
+/// Copies the file of asset `id` (a folder for web compositions and `.gltf` models) into
+/// `files` for slot `param`, and gives the slot's value.
+fn slot_asset(
+    bundle: &Path,
+    composition: &str,
+    param: &fosscut_core::CompositionParam,
+    id: &str,
+    project: Option<&fosscut_model::Project>,
+    files: &mut Files,
+) -> Result<Value, EngineError> {
+    use fosscut_core::SlotKind;
+    use fosscut_model::AssetKind;
+    let project = project.ok_or_else(|| EngineError::InvalidArguments {
+        message: format!(
+            "{} takes asset {id}: add the composition to a project",
+            param.name
+        ),
+    })?;
+    let parsed = fosscut_model::Id::parse(id)
+        .map_err(|e| invalid_params(composition, format!("{}: {e}", param.name)))?;
+    let asset = project.media.get(&parsed).ok_or_else(|| {
+        invalid_params(
+            composition,
+            format!("{}: the project has no asset {id}", param.name),
+        )
+    })?;
+    let kind = match asset.kind {
+        AssetKind::Image => Some(SlotKind::Image),
+        AssetKind::Video => Some(SlotKind::Video),
+        AssetKind::Vector => Some(SlotKind::Svg),
+        AssetKind::Model => Some(SlotKind::Model),
+        AssetKind::Web => Some(SlotKind::Composition),
+        _ => None,
+    };
+    let Some(kind) = kind.filter(|k| param.accepts.contains(k)) else {
+        return Err(invalid_params(
+            composition,
+            format!(
+                "{} takes {}, and {id} is {} asset",
+                param.name,
+                param
+                    .accepts
+                    .iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" or "),
+                match asset.kind {
+                    AssetKind::Image => "an image",
+                    AssetKind::Audio => "an audio",
+                    AssetKind::Video => "a video",
+                    AssetKind::Lut => "a LUT",
+                    AssetKind::Font => "a font",
+                    AssetKind::Vector => "an SVG",
+                    AssetKind::Web => "a web composition",
+                    AssetKind::Model => "a model",
+                }
+            ),
+        ));
+    };
+    let path = crate::import::asset_file(project, bundle, &parsed).map_err(failed)?;
+    let file = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let whole_folder =
+        kind == SlotKind::Composition || (kind == SlotKind::Model && extension == "gltf");
+    let src = if whole_folder {
+        let folder = path.parent().unwrap_or(bundle);
+        for relative in folder_files(folder)? {
+            let from = relative
+                .split('/')
+                .fold(folder.to_path_buf(), |p, part| p.join(part));
+            files.insert(
+                format!("media/{}/{relative}", param.name),
+                Source::File(from),
+            );
+        }
+        format!("media/{}/{file}", param.name)
+    } else {
+        let src = format!("media/{}.{extension}", param.name);
+        files.insert(src.clone(), Source::File(path.clone()));
+        src
+    };
+    let mut value = json!({ "src": src, "kind": kind.as_str(), "name": asset.name });
+    if kind == SlotKind::Composition
+        && let Some(found) = crate::web::Composition::of(asset)
+    {
+        canvas_into(&mut value, &found);
+    }
+    Ok(value)
+}
+
+/// Writes library composition `name` into `files` under `media/<slot>/` for slot `param`,
+/// with its default parameters, and gives the slot's value.
+fn slot_composition(
+    param: &fosscut_core::CompositionParam,
+    name: &str,
+    files: &mut Files,
+) -> Result<Value, EngineError> {
+    let other = fosscut_core::composition(name).map_err(failed)?;
+    let defaults = other.resolve_params(None, &[]).map_err(failed)?;
+    let html = other.html_with(&[], &defaults);
+    let canvas = crate::web::parse_meta(&html)
+        .and_then(|options| options.resolve())
+        .map_err(EngineError::from)?;
+    for (path, source) in composition_files(Path::new(""), &other, &[], &defaults, None)? {
+        files.insert(format!("media/{}/{path}", param.name), source);
+    }
+    let mut value = json!({
+        "src": format!("media/{}/index.html", param.name),
+        "kind": "composition",
+        "name": name,
+    });
+    canvas_into(&mut value, &canvas);
+    Ok(value)
+}
+
+fn canvas_into(value: &mut Value, canvas: &crate::web::Composition) {
+    value["width"] = json!(canvas.width);
+    value["height"] = json!(canvas.height);
+    value["fps"] = json!(f64::from(canvas.rate.num()) / f64::from(canvas.rate.den()));
+    value["duration"] = json!(canvas.duration.as_seconds_f64());
+}
+
+/// The files under `folder` (relative paths with `/`), skipping hidden entries and
+/// `node_modules` as composition imports do.
+fn folder_files(folder: &Path) -> Result<Vec<String>, EngineError> {
+    fn walk(dir: &Path, prefix: &str, out: &mut Vec<String>) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || name == "node_modules" {
+                continue;
+            }
+            let relative = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, &relative, out)?;
+            } else if path.is_file() {
+                out.push(relative);
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(folder, "", &mut out).map_err(|e| EngineError::InvalidArguments {
+        message: format!("cannot read {}: {e}", folder.display()),
+    })?;
+    out.sort();
+    Ok(out)
+}
+
+/// The content identity `files` will have as a composition folder (as
+/// `fosscut_engine::web` measures folders): the total size, and a BLAKE3 hash of every
+/// file's path, size and bytes in path order.
+fn files_identity(files: &Files) -> Result<fosscut_model::ContentIdentity, EngineError> {
+    let mut hasher = blake3::Hasher::new();
+    let mut total = 0u64;
+    for (path, source) in files {
+        hasher.update(path.as_bytes());
+        hasher.update(&[0]);
+        let size = match source {
+            Source::Bytes(bytes) => {
+                hasher.update(&(bytes.len() as u64).to_le_bytes());
+                hasher.update(bytes);
+                bytes.len() as u64
+            }
+            Source::File(file) => {
+                let unreadable = |e: std::io::Error| EngineError::InvalidArguments {
+                    message: format!("cannot read {}: {e}", file.display()),
+                };
+                let mut reader = std::fs::File::open(file).map_err(unreadable)?;
+                let size = reader.metadata().map_err(unreadable)?.len();
+                hasher.update(&size.to_le_bytes());
+                std::io::copy(&mut reader, &mut hasher).map_err(unreadable)?;
+                size
+            }
+        };
+        total += size;
+    }
+    Ok(fosscut_model::ContentIdentity {
+        size: total,
+        sample_blake3: hasher.finalize().to_hex().to_string(),
+    })
+}
+
+/// The folder in the bundle's library folder that holds `files` for composition `name`,
+/// written there unless it holds them already: `library/<name>/` while that is free or
+/// the same, otherwise `library/<name>-<first 8 hex of the content hash>/`.
+fn place_folder(
+    bundle: &Path,
+    name: &str,
+    files: &Files,
+) -> Result<std::path::PathBuf, EngineError> {
+    let identity = files_identity(files)?;
+    let library = bundle.join(FOLDER.trim_end_matches('/'));
+    let plain = library.join(name);
+    if !plain.exists() {
+        write_folder(&plain, files)?;
+        return Ok(plain);
+    }
+    if crate::web::folder_identity(&plain).as_ref() == Some(&identity) {
+        return Ok(plain);
+    }
+    let hashed = library.join(format!("{name}-{}", &identity.sample_blake3[..8]));
+    if crate::web::folder_identity(&hashed).as_ref() != Some(&identity) {
+        write_folder(&hashed, files)?;
+    }
+    Ok(hashed)
+}
+
+/// Writes `files` into `folder`: into a hidden folder beside it first, which then takes its
+/// place, so the folder is never seen half written.
+fn write_folder(folder: &Path, files: &Files) -> Result<(), EngineError> {
+    let fail = |e: std::io::Error| EngineError::InvalidArguments {
+        message: format!("cannot write {}: {e}", folder.display()),
+    };
+    let parent = folder.parent().unwrap_or(folder);
+    std::fs::create_dir_all(parent).map_err(fail)?;
+    let staging = parent.join(format!(
+        ".{}.partial",
+        folder
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    ));
+    let _ = std::fs::remove_dir_all(&staging);
+    let written = (|| {
+        for (path, source) in files {
+            let target = path
+                .split('/')
+                .fold(staging.clone(), |p, part| p.join(part));
+            if let Some(dir) = target.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            match source {
+                Source::Bytes(bytes) => std::fs::write(&target, bytes)?,
+                Source::File(from) => {
+                    std::fs::copy(from, &target)?;
+                }
+            }
+        }
+        if folder.exists() {
+            std::fs::remove_dir_all(folder)?;
+        }
+        std::fs::rename(&staging, folder)
+    })();
+    if let Err(error) = written {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(fail(error));
+    }
+    Ok(())
 }
 
 /// Where the open screen of device `item` lies on `timeline` of `project` (the primary
@@ -654,7 +1031,7 @@ mod tests {
 
         let shop = find("shop-app", None).unwrap();
         assert_eq!(shop.kind, "composition");
-        assert_eq!(shop.lines[0], "running shoes");
+        assert_eq!(shop.lines[0], "your product");
         let first = media_args(&bundle, &shop, &[]).unwrap();
         assert_eq!(first["kind"], "web");
         assert_eq!(
@@ -670,7 +1047,7 @@ mod tests {
         assert!(relative.starts_with("library/shop-app-") && relative.ends_with("/index.html"));
         assert_ne!(lamps["identity"], first["identity"]);
         let page = std::fs::read_to_string(bundle.join(&relative)).unwrap();
-        assert!(page.contains("\"desk lamps\",\"Trail Runner\""));
+        assert!(page.contains("\"desk lamps\",\"Product name\""));
         std::fs::remove_dir_all(&bundle).unwrap();
     }
 
@@ -703,5 +1080,225 @@ mod tests {
         );
         assert!(screen_report(&find("street-map", None).unwrap(), &project, None).is_none());
         assert!(screen_report(&laptop, &project, Some("timeline_0099")).is_none());
+    }
+
+    fn asset(number: u64, kind: fosscut_model::AssetKind, file: &Path) -> fosscut_model::Asset {
+        fosscut_model::Asset {
+            id: fosscut_model::Id::new(fosscut_model::IdKind::Asset, number),
+            kind,
+            name: file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            path: fosscut_model::PathHints {
+                relative: None,
+                absolute: Some(file.display().to_string()),
+            },
+            identity: None,
+            info: fosscut_model::MediaInfo::default(),
+            folder: None,
+        }
+    }
+
+    fn code(error: EngineError) -> String {
+        fosscut_core::ApiError::from(error).code
+    }
+
+    #[test]
+    fn compositions_take_params_and_copy_their_slots_into_their_own_folder() {
+        use fosscut_model::AssetKind;
+        let dir =
+            std::env::temp_dir().join(format!("fosscut-library-params-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let bundle = dir.join("Ad.fosscut");
+        std::fs::create_dir_all(&bundle).unwrap();
+        let logo = dir.join("logo.png");
+        std::fs::write(&logo, b"picture bytes").unwrap();
+        let tone = dir.join("tone.wav");
+        std::fs::write(&tone, b"sound bytes").unwrap();
+        let promo = dir.join("promo");
+        std::fs::create_dir_all(promo.join("lib")).unwrap();
+        std::fs::write(
+            promo.join("index.html"),
+            r#"<meta name="fosscut:composition" content="width=400,height=800,duration=3">"#,
+        )
+        .unwrap();
+        std::fs::write(promo.join("lib/app.js"), "1").unwrap();
+        let mut project = fosscut_model::Project::new(
+            fosscut_model::Id::new(fosscut_model::IdKind::Project, 1),
+            "Ad",
+            fosscut_model::TimelineFormat {
+                width: 1080,
+                height: 1920,
+                rate: fosscut_time::Rate::FPS_30,
+                sample_rate: 48_000,
+            },
+        );
+        let mut web = asset(4, AssetKind::Web, &promo.join("index.html"));
+        web.info.duration = Some(fosscut_time::Flicks::from_seconds(3).unwrap());
+        web.info.video = Some(fosscut_model::VideoInfo {
+            width: 400,
+            height: 800,
+            rate: Some(fosscut_time::Rate::FPS_30),
+            codec: Some("html".into()),
+            rotation: 0,
+        });
+        project.media.assets.extend([
+            asset(1, AssetKind::Image, &logo),
+            asset(2, AssetKind::Audio, &tone),
+            web,
+        ]);
+        let read = |relative: &Value| -> (std::path::PathBuf, Value) {
+            let page = bundle.join(relative.as_str().unwrap());
+            let folder = page.parent().unwrap().to_path_buf();
+            let params =
+                serde_json::from_slice(&std::fs::read(folder.join("params.json")).unwrap())
+                    .unwrap();
+            (folder, params)
+        };
+
+        let parcel = find("parcel-drop-3d", None).unwrap();
+        assert!(parcel.params.iter().any(|p| p.name == "logo"));
+        assert!(parcel.params.iter().any(|p| p.name == "motion_blur"));
+        let plain = media_args_with(&bundle, &parcel, &CompositionInput::default(), None).unwrap();
+        assert_eq!(plain["kind"], "web");
+        assert_eq!(
+            plain["path"]["relative"],
+            "library/parcel-drop-3d/index.html"
+        );
+        assert_eq!(plain["info"]["video"]["width"], 1080);
+        let (folder, params) = read(&plain["path"]["relative"]);
+        assert_eq!(params["logo"], Value::Null);
+        assert_eq!(params["box_color"], "#F07A2B");
+        assert_eq!(
+            params["motion_blur"],
+            json!({ "samples": 16, "shutter": 0.5 }),
+            "the fast drop takes more samples"
+        );
+        for file in [
+            "scene.js",
+            "kit/stage.js",
+            "vendor/three/LICENSE",
+            "vendor/three/three.module.min.js",
+        ] {
+            assert!(folder.join(file).is_file(), "{file}");
+        }
+        assert_eq!(
+            plain["identity"],
+            json!(crate::web::folder_identity(&folder).unwrap()),
+            "the asset's identity is the folder's"
+        );
+        // The same parameters give the same folder and asset.
+        assert_eq!(
+            media_args_with(&bundle, &parcel, &CompositionInput::default(), None).unwrap(),
+            plain
+        );
+
+        // Other parameters and a slot make another folder, with the slot's file in it.
+        let input = CompositionInput {
+            params: Some(json!({ "box_color": "#3366ff", "width": 540, "height": 960 })),
+            media: vec!["asset_0001".into()],
+            ..CompositionInput::default()
+        };
+        let custom = media_args_with(&bundle, &parcel, &input, Some(&project)).unwrap();
+        assert_ne!(custom["identity"], plain["identity"]);
+        let relative = custom["path"]["relative"].as_str().unwrap().to_string();
+        assert!(
+            relative.starts_with("library/parcel-drop-3d-") && relative.ends_with("/index.html")
+        );
+        assert_eq!(
+            custom["info"]["video"]["width"], 540,
+            "the canvas follows width and height"
+        );
+        assert_eq!(custom["info"]["video"]["height"], 960);
+        let (folder, params) = read(&custom["path"]["relative"]);
+        assert_eq!(params["box_color"], "#3366FF");
+        assert_eq!(params["width"], 540);
+        assert_eq!(
+            params["logo"],
+            json!({ "src": "media/logo.png", "kind": "image", "name": "logo.png" })
+        );
+        assert_eq!(
+            std::fs::read(folder.join("media/logo.png")).unwrap(),
+            b"picture bytes"
+        );
+        let again = media_args_with(&bundle, &parcel, &input, Some(&project)).unwrap();
+        assert_eq!(again, custom);
+
+        // Slots refuse other kinds of media, unknown assets and a missing project.
+        let with = |params: Value| CompositionInput {
+            params: Some(params),
+            ..CompositionInput::default()
+        };
+        let audio = media_args_with(
+            &bundle,
+            &parcel,
+            &with(json!({ "logo": "asset_0002" })),
+            Some(&project),
+        );
+        let message = format!("{:?}", audio.as_ref().unwrap_err());
+        assert!(message.contains("takes image or svg"), "{message}");
+        assert_eq!(code(audio.unwrap_err()), "fosscut.library.invalid_params");
+        let missing = media_args_with(
+            &bundle,
+            &parcel,
+            &with(json!({ "logo": "asset_0099" })),
+            Some(&project),
+        );
+        assert_eq!(code(missing.unwrap_err()), "fosscut.library.invalid_params");
+        assert!(
+            media_args_with(
+                &bundle,
+                &parcel,
+                &with(json!({ "logo": "asset_0001" })),
+                None
+            )
+            .is_err()
+        );
+        let wrong = media_args_with(&bundle, &parcel, &with(json!({ "sparks": 1.5 })), None);
+        assert_eq!(code(wrong.unwrap_err()), "fosscut.library.invalid_params");
+
+        // The phone's screen is the shop-app composition by default, copied in whole; a web
+        // asset fills it with its folder.
+        let phone = find("phone-3d", None).unwrap();
+        let shown = media_args_with(&bundle, &phone, &CompositionInput::default(), None).unwrap();
+        let (folder, params) = read(&shown["path"]["relative"]);
+        assert_eq!(
+            params["screen"],
+            json!({ "src": "media/screen/index.html", "kind": "composition", "name": "shop-app",
+                    "width": 720, "height": 1560, "fps": 30.0, "duration": 9.0 })
+        );
+        assert_eq!(
+            std::fs::read_to_string(folder.join("media/screen/index.html")).unwrap(),
+            fosscut_core::composition("shop-app").unwrap().html(&[])
+        );
+        let own = media_args_with(
+            &bundle,
+            &phone,
+            &with(json!({ "screen": "asset_0004" })),
+            Some(&project),
+        )
+        .unwrap();
+        let (folder, params) = read(&own["path"]["relative"]);
+        assert_eq!(params["screen"]["src"], "media/screen/index.html");
+        assert_eq!(params["screen"]["width"], 400);
+        assert_eq!(params["screen"]["duration"], 3.0);
+        assert!(folder.join("media/screen/lib/app.js").is_file());
+
+        // Only compositions take parameters.
+        let sound = &search(Some("sound"), None)[0];
+        assert!(media_args_with(&bundle, sound, &with(json!({})), None).is_err());
+
+        // A folder an asset uses is never rewritten: a changed one is left alone and the
+        // composition goes beside it under its content's hash.
+        std::fs::write(bundle.join("library/parcel-drop-3d/params.json"), "{}").unwrap();
+        let moved = media_args_with(&bundle, &parcel, &CompositionInput::default(), None).unwrap();
+        assert_eq!(moved["identity"], plain["identity"]);
+        assert_ne!(moved["path"], plain["path"]);
+        assert_eq!(
+            std::fs::read_to_string(bundle.join("library/parcel-drop-3d/params.json")).unwrap(),
+            "{}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

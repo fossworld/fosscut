@@ -322,21 +322,47 @@ impl Cdp {
         let params = &event["params"];
         let request = params["requestId"].as_str().unwrap_or_default().to_string();
         let url = params["request"]["url"].as_str().unwrap_or_default();
+        // Media elements ask for byte ranges and cannot seek without them.
+        let range = params["request"]["headers"]
+            .as_object()
+            .and_then(|headers| {
+                headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("range"))
+                    .and_then(|(_, value)| value.as_str())
+            });
         let file = self.root.as_deref().and_then(|root| local_file(root, url));
-        let reply = match file.and_then(|path| std::fs::read(&path).ok().map(|b| (path, b))) {
-            Some((path, body)) => (
-                "Fetch.fulfillRequest",
-                json!({
-                    "requestId": request,
-                    "responseCode": 200,
-                    "responseHeaders": [
-                        { "name": "Content-Type", "value": content_type(&path) },
-                        { "name": "Access-Control-Allow-Origin", "value": "*" },
-                        { "name": "Cache-Control", "value": "no-store" },
-                    ],
-                    "body": encode_base64(&body),
-                }),
-            ),
+        let reply = match file.and_then(|path| read_part(&path, range).ok().map(|p| (path, p))) {
+            Some((path, part)) => {
+                let mut headers = vec![
+                    json!({ "name": "Content-Type", "value": content_type(&path) }),
+                    json!({ "name": "Access-Control-Allow-Origin", "value": "*" }),
+                    json!({ "name": "Cache-Control", "value": "no-store" }),
+                    json!({ "name": "Accept-Ranges", "value": "bytes" }),
+                ];
+                let code = match part.range {
+                    Some(Some((first, last))) => {
+                        let value = format!("bytes {first}-{last}/{}", part.length);
+                        headers.push(json!({ "name": "Content-Range", "value": value }));
+                        206
+                    }
+                    Some(None) => {
+                        let value = format!("bytes */{}", part.length);
+                        headers.push(json!({ "name": "Content-Range", "value": value }));
+                        416
+                    }
+                    None => 200,
+                };
+                (
+                    "Fetch.fulfillRequest",
+                    json!({
+                        "requestId": request,
+                        "responseCode": code,
+                        "responseHeaders": headers,
+                        "body": encode_base64(&part.body),
+                    }),
+                )
+            }
             None => (
                 "Fetch.failRequest",
                 json!({ "requestId": request, "errorReason": "BlockedByClient" }),
@@ -344,6 +370,68 @@ impl Cdp {
         };
         self.send(session.as_deref(), reply.0, reply.1).map(|_| ())
     }
+}
+
+/// What a request gets from a file: its bytes, the file's length, and for a range request
+/// the inclusive byte range served (`Some(None)` when the range lies outside the file).
+struct Part {
+    body: Vec<u8>,
+    length: u64,
+    range: Option<Option<(u64, u64)>>,
+}
+
+/// Reads `path` whole, or the part a `Range` header asks for.
+fn read_part(path: &Path, range: Option<&str>) -> std::io::Result<Part> {
+    use std::io::{Read, Seek, SeekFrom};
+    let Some(header) = range else {
+        let body = std::fs::read(path)?;
+        let length = body.len() as u64;
+        return Ok(Part {
+            body,
+            length,
+            range: None,
+        });
+    };
+    let mut file = std::fs::File::open(path)?;
+    let length = file.metadata()?.len();
+    let Some((first, last)) = byte_range(header, length) else {
+        return Ok(Part {
+            body: Vec::new(),
+            length,
+            range: Some(None),
+        });
+    };
+    file.seek(SeekFrom::Start(first))?;
+    let mut body = Vec::new();
+    file.take(last - first + 1).read_to_end(&mut body)?;
+    Ok(Part {
+        body,
+        length,
+        range: Some(Some((first, last))),
+    })
+}
+
+/// The inclusive byte range a single-range `Range` header (`bytes=first-last`,
+/// `bytes=first-` or `bytes=-suffix`) asks of a file `length` bytes long; `None` when it
+/// cannot be satisfied or is not understood.
+pub(crate) fn byte_range(header: &str, length: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?;
+    if spec.contains(',') || length == 0 {
+        return None;
+    }
+    let (first, last) = spec.split_once('-')?;
+    let (first, last) = (first.trim(), last.trim());
+    if first.is_empty() {
+        let suffix: u64 = last.parse().ok()?;
+        return (suffix > 0).then(|| (length.saturating_sub(suffix), length - 1));
+    }
+    let first: u64 = first.parse().ok()?;
+    let last = if last.is_empty() {
+        length - 1
+    } else {
+        last.parse::<u64>().ok()?.min(length - 1)
+    };
+    (first <= last).then_some((first, last))
 }
 
 /// The file in `root` that `url` names on the composition's origin; `None` for any other
@@ -410,6 +498,9 @@ pub(crate) fn content_type(path: &Path) -> &'static str {
         "ttf" => "font/ttf",
         "otf" => "font/otf",
         "wasm" => "application/wasm",
+        "glb" => "model/gltf-binary",
+        "gltf" => "model/gltf+json",
+        "bin" => "application/octet-stream",
         "mp4" | "m4v" => "video/mp4",
         "webm" => "video/webm",
         "mp3" => "audio/mpeg",
@@ -510,6 +601,40 @@ mod tests {
             "text/javascript; charset=utf-8"
         );
         assert_eq!(content_type(Path::new("a.woff2")), "font/woff2");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn byte_ranges_follow_the_range_header() {
+        assert_eq!(byte_range("bytes=0-99", 1000), Some((0, 99)));
+        assert_eq!(byte_range("bytes=500-", 1000), Some((500, 999)));
+        assert_eq!(byte_range("bytes=-100", 1000), Some((900, 999)));
+        assert_eq!(byte_range("bytes=-5000", 1000), Some((0, 999)));
+        assert_eq!(byte_range("bytes=900-5000", 1000), Some((900, 999)));
+        assert_eq!(byte_range(" bytes=0-0 ", 1), Some((0, 0)));
+        assert_eq!(byte_range("bytes=1000-", 1000), None, "past the end");
+        assert_eq!(byte_range("bytes=50-10", 1000), None);
+        assert_eq!(byte_range("bytes=0-1,5-9", 1000), None, "one range only");
+        assert_eq!(byte_range("bytes=-0", 1000), None);
+        assert_eq!(byte_range("items=0-9", 1000), None);
+        assert_eq!(byte_range("bytes=0-", 0), None);
+
+        let root = std::env::temp_dir().join(format!("fosscut-cdp-range-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("clip.webm");
+        std::fs::write(&file, b"0123456789").unwrap();
+        let whole = read_part(&file, None).unwrap();
+        assert_eq!(
+            (whole.body.as_slice(), whole.length, whole.range),
+            (&b"0123456789"[..], 10, None)
+        );
+        let part = read_part(&file, Some("bytes=3-5")).unwrap();
+        assert_eq!(
+            (part.body.as_slice(), part.length, part.range),
+            (&b"345"[..], 10, Some(Some((3, 5))))
+        );
+        let outside = read_part(&file, Some("bytes=20-")).unwrap();
+        assert_eq!((outside.body.len(), outside.range), (0, Some(None)));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

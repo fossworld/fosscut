@@ -1,12 +1,13 @@
 //! Light effects on the GPU ([`crate::light`]): a layer's effects with its picture padded
-//! so light spreads past its edges, and the passes of `light.glow` and `light.streaks`.
+//! so light spreads past its edges, and the passes of `light.glow`, `light.streaks` and
+//! `light.sweep` with its bloom.
 
 use crate::FrameProvider;
 use crate::RenderError;
 use crate::effects::PlannedEffect;
 use crate::light::{
     Light, Padding, after_padding, annotate, glow_sigmas, pack_add, pack_bright, pack_pad,
-    pack_streaks, padding,
+    pack_streaks, pack_sweep, pack_sweep_bloom, padding, sweep_bloom, sweep_bloom_sigmas,
 };
 use crate::plan::{Layer, SourceRef};
 use crate::space::LayerSpace;
@@ -154,8 +155,9 @@ impl Renderer {
         texture
     }
 
-    /// Runs `light.glow` or `light.streaks` on `current` into `target`: the bright pass,
-    /// then the blurs or the streak passes, then the light added to the picture.
+    /// Runs `light.glow`, `light.streaks` or `light.sweep` on `current` into `target`: for a
+    /// glow or streaks, the bright pass, then the blurs or the streak passes, then the light
+    /// added to the picture; for a sweep, [`Renderer::sweep_pass`].
     pub(super) fn light_pass(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -165,6 +167,10 @@ impl Renderer {
         kind: Light,
         target: &wgpu::TextureView,
     ) {
+        if kind == Light::Sweep {
+            self.sweep_pass(encoder, layer, current, effect, target);
+            return;
+        }
         let size = (current.width(), current.height());
         let mips = mip_count(size);
         let input = current.create_view(&Default::default());
@@ -240,6 +246,83 @@ impl Renderer {
                     target,
                 );
             }
+            // Drawn by sweep_pass above.
+            Light::Sweep => {}
         }
+    }
+
+    /// Runs `light.sweep` on `current` into `target`: the band added to the picture's
+    /// visible pixels and, with a bloom, the band's light alone blurred at two radii (as a
+    /// glow's is) and added over the swept picture, so it spreads past opaque pixels onto
+    /// what lies around and below them.
+    fn sweep_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        layer: usize,
+        current: &wgpu::Texture,
+        effect: &PlannedEffect,
+        target: &wgpu::TextureView,
+    ) {
+        let size = (current.width(), current.height());
+        let input = current.create_view(&Default::default());
+        let params = pack_sweep(effect, size);
+        if sweep_bloom(effect) <= 0.0 {
+            self.effect_pass(
+                encoder,
+                "fs_light_sweep",
+                &input,
+                None,
+                None,
+                None,
+                &params,
+                target,
+            );
+            return;
+        }
+        let mips = mip_count(size);
+        let band = self.texture(
+            Slot::Light { layer, kind: 1 },
+            size,
+            CANVAS_FORMAT,
+            mips,
+            usage(),
+        );
+        self.effect_pass(
+            encoder,
+            "fs_light_band",
+            &input,
+            None,
+            None,
+            None,
+            &params,
+            &first_level(&band),
+        );
+        self.generate_mips(encoder, &band, mips);
+        let (wide, core) = sweep_bloom_sigmas(effect, size);
+        let halo = self.canvas(Slot::Light { layer, kind: 2 }, size);
+        self.blur_into(encoder, layer, &band, wide, &halo);
+        let inner = self.canvas(Slot::Light { layer, kind: 3 }, size);
+        self.blur_into(encoder, layer + CORE, &band, core, &inner);
+        let swept = self.canvas(Slot::Light { layer, kind: 4 }, size);
+        self.effect_pass(
+            encoder,
+            "fs_light_sweep",
+            &input,
+            None,
+            None,
+            None,
+            &params,
+            &swept,
+        );
+        self.effect_pass(
+            encoder,
+            "fs_light_add",
+            &swept,
+            Some(&halo),
+            None,
+            Some(&inner),
+            &pack_sweep_bloom(effect),
+            target,
+        );
     }
 }

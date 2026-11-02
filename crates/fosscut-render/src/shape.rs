@@ -5,9 +5,10 @@
 
 use fosscut_model::{Id, IdKind, Mask, MaskShape, Paint, ShapeContent, trim_path};
 
+use crate::color::hex_to_linear;
 use crate::mask::coverage_exact;
 use crate::raster::{outline, over};
-use crate::text::{TextEngine, TextLayer, TextRaster, linear_color};
+use crate::text::{TextEngine, TextLayer, TextRaster};
 
 /// Paints `paint` over `pixels` (a `width` wide raster) by `coverage`; a gradient runs
 /// across the shape's box, `box_size` pixels large at `pad` pixels from the raster's
@@ -20,11 +21,11 @@ fn paint_over(
     pad: u32,
     box_size: (f32, f32),
 ) {
-    let start = linear_color(paint.color.as_str());
+    let start = hex_to_linear(paint.color.as_str());
     let end = paint
         .gradient
         .as_ref()
-        .map(|g| (linear_color(g.to.as_str()), g));
+        .map(|g| (hex_to_linear(g.to.as_str()), g));
     let (fw, fh) = box_size;
     for (index, (pixel, &c)) in pixels.iter_mut().zip(coverage).enumerate() {
         if c <= 0.0 {
@@ -130,7 +131,7 @@ pub fn rasterize_shape(
             }
         }
         let band = outline(&outside, pw, ph, width);
-        let color = linear_color(shape.outline.color.as_str());
+        let color = hex_to_linear(shape.outline.color.as_str());
         for y in 0..rh as usize {
             for x in 0..rw as usize {
                 let index = y * rw as usize + x;

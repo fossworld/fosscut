@@ -684,3 +684,143 @@ fn motion_blur_samples_3d_placements() {
     let psnr = sharp.psnr(&streaked).unwrap();
     assert!(psnr < 35.0, "the blur shows: {psnr:.1} dB");
 }
+
+/// A camera that orbits fast around the canvas centre: 10 degrees a frame over the first
+/// six frames, so the card 0.2 of the width behind it swings sideways.
+fn swinging_camera() -> Clip {
+    let mut camera = Clip::new(
+        Id::new(IdKind::Clip, 40),
+        Flicks::ZERO,
+        Rate::FPS_30.frames_to_flicks(60),
+        ClipContent::Camera(Box::default()),
+    );
+    camera.keyframes.insert(
+        "camera.orbit".into(),
+        vec![
+            Keyframe {
+                interpolation: Interpolation::Linear,
+                ..key(0, KeyValue::Pair([0.0, 0.0]))
+            },
+            key(6, KeyValue::Pair([60.0, 0.0])),
+        ],
+    );
+    camera
+}
+
+/// The space project with `camera`, and a motion blur with a full-frame shutter on the 3D
+/// card (which holds still) and on the 2D card in the corner when `blur` is set.
+fn blurred_project(camera: Clip, blur: bool) -> (Project, Id) {
+    let (mut project, timeline) = space_project(true, camera);
+    if blur {
+        let tracks = &mut project.timelines.get_mut(&timeline).unwrap().tracks;
+        for (track, id) in [(1, 50), (2, 51)] {
+            tracks[track].clips[0].effects.push(fosscut_model::Effect {
+                id: Id::new(IdKind::Effect, id),
+                effect_type: "motion.blur".into(),
+                version: 1,
+                enabled: true,
+                params: [("amount".to_string(), fosscut_model::ParamValue::Number(1.0))].into(),
+                keyframes: Default::default(),
+            });
+        }
+    }
+    (project, timeline)
+}
+
+/// The largest difference between horizontal neighbours in a window: how steep its
+/// sharpest edge is.
+fn steepest(image: &Image, x0: u32, y0: u32, w: u32, h: u32) -> f64 {
+    let mut most = 0.0f64;
+    for y in y0..y0 + h {
+        for x in x0..x0 + w {
+            let (a, b) = (rgb(image, x, y), rgb(image, x + 1, y));
+            let step: f64 = (0..3)
+                .map(|c| (f64::from(a[c]) - f64::from(b[c])).abs())
+                .sum();
+            most = most.max(step);
+        }
+    }
+    most
+}
+
+#[test]
+fn motion_blur_samples_the_camera_moving_past_a_still_3d_layer() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let mut frames = frames();
+    let at = Rate::FPS_30.frames_to_flicks(3);
+    let mut shot = |camera: Clip, blur: bool| {
+        let (project, timeline) = blurred_project(camera, blur);
+        let plan = plan_frame(&project, &timeline, at).unwrap();
+        let card = plan.layers[1].clone();
+        (render(&mut renderer, &plan, &mut frames), card)
+    };
+    let (sharp, _) = shot(swinging_camera(), false);
+    let (streaked, card) = shot(swinging_camera(), true);
+    // The card holds still, yet it is drawn at every moment of the shutter through the
+    // camera of that moment.
+    let space = card.space.as_ref().unwrap();
+    assert_eq!(card.shutter.len(), 12, "the default samples");
+    assert!(card.shutter.iter().all(|t| *t == card.transform));
+    assert_eq!(space.shutter.len(), 12);
+    // Orbiting to the right, the eye moves right at every moment.
+    let eyes: Vec<f64> = space.shutter.iter().map(|c| c.eye[0]).collect();
+    assert!(eyes.windows(2).all(|w| w[0] < w[1]), "{eyes:?}");
+    let psnr = sharp.psnr(&streaked).unwrap();
+    assert!(
+        psnr < 35.0,
+        "the camera's move streaks the card: {psnr:.1} dB"
+    );
+    // The streak runs across the card: its middle edge, between the quadrants, softens.
+    let middle = Camera::from_content(
+        CANVAS,
+        &CameraContent {
+            orbit: [30.0, 0.0],
+            ..CameraContent::default()
+        },
+    )
+    .to_canvas([0.0, -64.0, 0.2 * 1280.0])
+    .unwrap();
+    let (x, y) = ((middle[0] / 4.0) as u32 - 6, (middle[1] / 4.0) as u32);
+    let ratio = steepest(&streaked, x, y, 12, 4) / steepest(&sharp, x, y, 12, 4);
+    assert!(ratio < 0.5, "the middle edge is blurred: {ratio:.2}");
+    // The 2D card in the corner does not see the camera, so its blur changes nothing.
+    for (x, y) in [(288, 18), (300, 24)] {
+        let (a, b) = (rgb(&sharp, x, y), rgb(&streaked, x, y));
+        assert!((0..3).all(|c| a[c].abs_diff(b[c]) <= 1), "2D at {x},{y}");
+    }
+    // With the camera holding still, the same blur leaves the still card sharp (its
+    // pictures do not move either, so only rounding may differ).
+    let mut parked = swinging_camera();
+    parked.keyframes.clear();
+    let (still, _) = shot(parked.clone(), false);
+    let (unblurred, card) = shot(parked, true);
+    assert!(card.shutter.is_empty());
+    let psnr = still.psnr(&unblurred).unwrap();
+    assert!(psnr > 50.0, "nothing streaks: {psnr:.1} dB");
+}
+
+#[test]
+fn preview_matches_export_for_camera_motion_blur() {
+    let Some(mut renderer) = renderer() else {
+        return;
+    };
+    let (project, timeline) = blurred_project(swinging_camera(), true);
+    let export = ExportGraph::new(&project, &timeline).unwrap();
+    let preview = PreviewGraph::new(&project, &timeline, (640, 640)).unwrap();
+    let mut provider = frames();
+    for frame in [1, 3, 5] {
+        let time = Rate::FPS_30.frames_to_flicks(frame);
+        let full = export
+            .render(&mut renderer, &project, &mut provider, time)
+            .unwrap();
+        let small = preview
+            .grab(&mut renderer, &project, &mut provider, time)
+            .unwrap();
+        // As in parity.rs: the same streak at both sizes, compared at the preview's size.
+        let psnr = half(&full).psnr(&small).unwrap();
+        eprintln!("camera motion blur parity at frame {frame}: {psnr:.1} dB");
+        assert!(psnr > 38.0, "frame {frame}: PSNR {psnr:.1} dB");
+    }
+}

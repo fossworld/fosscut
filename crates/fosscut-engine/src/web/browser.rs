@@ -1,9 +1,8 @@
 //! Finding and starting a headless browser for web compositions (ADR-0039).
 //!
-//! FossCut never ships a browser. It uses the one named by `FOSSCUT_BROWSER`, then the
-//! `chrome-headless-shell` model when the user installed it (`fosscut models install
-//! chrome-headless-shell`), then Google Chrome, Chromium, Microsoft Edge or Brave where
-//! they are usually installed. Each browser runs with a fresh profile in a temporary
+//! FossCut never ships or downloads a browser. It uses the one named by `FOSSCUT_BROWSER`,
+//! then Google Chrome, Chromium, Microsoft Edge or Brave where they are usually installed.
+//! Each browser runs with a fresh profile in a temporary
 //! folder, its DevTools endpoint on the loopback interface only, and no network: host
 //! names do not resolve, and the page's own requests are answered from its folder.
 
@@ -21,8 +20,9 @@ use super::cdp::Cdp;
 /// The environment variable naming the browser to use.
 pub const BROWSER_VARIABLE: &str = "FOSSCUT_BROWSER";
 
-/// The model that installs Chrome for Testing's headless shell.
-pub const HEADLESS_SHELL: &str = "chrome-headless-shell";
+/// The file name of Chrome's headless shell, which needs no `--headless` switch, for a
+/// user who names one with `FOSSCUT_BROWSER`.
+const HEADLESS_SHELL: &str = "chrome-headless-shell";
 
 /// How long a browser may take to open its DevTools endpoint.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
@@ -32,26 +32,21 @@ const START_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Found {
     /// Its executable.
     pub path: PathBuf,
-    /// Where it was found: `variable`, `model` or `installed`.
+    /// Where it was found: `variable` or `installed`.
     pub source: &'static str,
-    /// True for Chrome for Testing's headless shell, which needs no `--headless` switch.
+    /// True for Chrome's headless shell, which needs no `--headless` switch.
     pub shell: bool,
 }
 
 /// The browser to use, or `None` when none is found. See the module documentation for
 /// the order.
 pub fn find() -> Option<Found> {
-    find_in(
-        std::env::var_os(BROWSER_VARIABLE),
-        &crate::models_dir(),
-        &installed_candidates(),
-    )
+    find_in(std::env::var_os(BROWSER_VARIABLE), &installed_candidates())
 }
 
-/// [`find`] with the variable's value, the models folder and the usual places given.
+/// [`find`] with the variable's value and the usual places given.
 pub(crate) fn find_in(
     variable: Option<std::ffi::OsString>,
-    models: &Path,
     candidates: &[PathBuf],
 ) -> Option<Found> {
     if let Some(path) = variable.filter(|v| !v.is_empty()).map(PathBuf::from) {
@@ -60,14 +55,6 @@ pub(crate) fn find_in(
             path,
             source: "variable",
             shell,
-        });
-    }
-    let shell = shell_path(models);
-    if shell.is_file() {
-        return Some(Found {
-            path: shell,
-            source: "model",
-            shell: true,
         });
     }
     candidates.iter().find(|p| p.is_file()).map(|path| Found {
@@ -80,16 +67,6 @@ pub(crate) fn find_in(
 fn is_shell(path: &Path) -> bool {
     path.file_stem()
         .is_some_and(|name| name.to_string_lossy().starts_with(HEADLESS_SHELL))
-}
-
-/// Where the installed headless shell's executable is in the models folder `models`.
-pub fn shell_path(models: &Path) -> PathBuf {
-    let name = if cfg!(windows) {
-        "chrome-headless-shell.exe"
-    } else {
-        "chrome-headless-shell"
-    };
-    models.join(HEADLESS_SHELL).join(name)
 }
 
 /// The places browsers are usually installed on this system, most suitable first.
@@ -161,8 +138,8 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
-    /// Starts `found` with a fresh profile and connects to it.
-    pub(crate) fn start(found: &Found) -> Result<Browser, WebError> {
+    /// Starts `found` with a fresh profile, drawing with `renderer`, and connects to it.
+    pub(crate) fn start(found: &Found, renderer: super::WebRenderer) -> Result<Browser, WebError> {
         static COUNT: AtomicU64 = AtomicU64::new(0);
         let profile = std::env::temp_dir().join(format!(
             "fosscut-browser-{}-{}",
@@ -178,7 +155,7 @@ impl Browser {
                 message: format!("cannot create the browser log: {e}"),
             }
         })?;
-        let args = arguments(found, &profile);
+        let args = arguments(found, &profile, renderer);
         let mut command = if cfg!(unix) {
             // `$@` is the browser and its arguments. A background job's standard input is
             // /dev/null unless redirected, so the pipe is passed to `cat` as descriptor 3.
@@ -313,9 +290,10 @@ fn stop(child: &mut Child, watchdog: Option<ChildStdin>, profile: &Path) {
 }
 
 /// The browser's command line: headless, its own profile, an ephemeral loopback DevTools
-/// port, sRGB output at a device scale of 1, software rendering, and no network, sync,
-/// extensions, first-run pages or keychain prompts.
-fn arguments(found: &Found, profile: &Path) -> Vec<String> {
+/// port, sRGB output at a device scale of 1, software rendering (or Metal for compositions
+/// that ask for the GPU, [`super::WebRenderer`]), and no network, sync, extensions,
+/// first-run pages or keychain prompts.
+fn arguments(found: &Found, profile: &Path, renderer: super::WebRenderer) -> Vec<String> {
     let mut args = Vec::new();
     if !found.shell {
         args.push("--headless=new".to_string());
@@ -347,12 +325,11 @@ fn arguments(found: &Found, profile: &Path) -> Vec<String> {
             "--disable-lcd-text",
             "--use-mock-keychain",
             "--password-store=basic",
-            "--use-angle=swiftshader",
-            "--enable-unsafe-swiftshader",
             "--host-resolver-rules=MAP * ~NOTFOUND",
         ]
         .map(String::from),
     );
+    args.extend(renderer.browser_switches().iter().map(|s| s.to_string()));
     args.push(format!("--user-data-dir={}", profile.display()));
     args.push("about:blank".to_string());
     args
@@ -363,40 +340,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_variable_comes_first_then_the_model_then_installed_browsers() {
+    fn the_variable_comes_first_then_installed_browsers() {
         let dir = std::env::temp_dir().join(format!("fosscut-find-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("apps")).unwrap();
         let chrome = dir.join("apps").join("chrome");
         std::fs::write(&chrome, "").unwrap();
-        let models = dir.join("models");
         let candidates = vec![dir.join("apps").join("missing"), chrome.clone()];
 
-        let found = find_in(None, &models, &candidates).unwrap();
+        let found = find_in(None, &candidates).unwrap();
         assert_eq!(
             (found.path, found.source, found.shell),
             (chrome.clone(), "installed", false)
         );
-        assert_eq!(find_in(None, &models, &[]), None);
+        assert_eq!(find_in(None, &[]), None);
 
-        let shell = shell_path(&models);
-        std::fs::create_dir_all(shell.parent().unwrap()).unwrap();
-        std::fs::write(&shell, "").unwrap();
-        let found = find_in(None, &models, &candidates).unwrap();
-        assert_eq!(
-            (found.path, found.source, found.shell),
-            (shell, "model", true)
-        );
-
-        let named = find_in(
-            Some("/opt/x/chrome-headless-shell".into()),
-            &models,
-            &candidates,
-        )
-        .unwrap();
+        // A headless shell the user downloaded runs when the variable names it.
+        let named = find_in(Some("/opt/x/chrome-headless-shell".into()), &candidates).unwrap();
         assert_eq!((named.source, named.shell), ("variable", true));
-        let named = find_in(Some("".into()), &models, &[]).unwrap();
-        assert_eq!(named.source, "model", "an empty variable is ignored");
+        let named = find_in(Some("".into()), &candidates).unwrap();
+        assert_eq!(named.source, "installed", "an empty variable is ignored");
+        assert_eq!(named.path, chrome);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -407,7 +371,11 @@ mod tests {
             source: "installed",
             shell: false,
         };
-        let args = arguments(&found, Path::new("/tmp/p"));
+        let args = arguments(
+            &found,
+            Path::new("/tmp/p"),
+            super::super::WebRenderer::Software,
+        );
         assert_eq!(args[0], "--headless=new");
         assert!(args.contains(&"--host-resolver-rules=MAP * ~NOTFOUND".to_string()));
         assert!(args.contains(&"--user-data-dir=/tmp/p".to_string()));
@@ -416,9 +384,13 @@ mod tests {
             ..found
         };
         assert!(
-            !arguments(&shell, Path::new("/tmp/p"))
-                .iter()
-                .any(|a| a.starts_with("--headless"))
+            !arguments(
+                &shell,
+                Path::new("/tmp/p"),
+                super::super::WebRenderer::Software
+            )
+            .iter()
+            .any(|a| a.starts_with("--headless"))
         );
     }
 }

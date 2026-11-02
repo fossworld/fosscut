@@ -38,7 +38,7 @@ Every skill needs `eval/eval.json` with:
   - `expect`: values at dotted paths of the result (`results.0.left.end.frames`), equal or matching `{"$len": n}`, `{"$min_len": n}` or `{"$one_of": [...]}`;
   - `expect_error`: the error code a step must fail with (`expect` then checks the error);
   - `expect_image`: the size of the PNG a frame or contact sheet returns;
-  - `save`: values to reuse later as `"${name}"` (ids, revisions, job ids);
+  - `save`: values to reuse later as `"${name}"` (ids, revisions, job ids), a saved string also inside a longer one (`"effects.${sweep}.position"`);
   - `repeat_while`: polling, for `job_status`.
 
 `crates/fosscut-cli/tests/skills.rs` replays every evaluation through `fosscut mcp` in CI, and checks each `SKILL.md` (frontmatter name and description, tool names that exist). `skills/fosscut-basics/eval/eval.json` is the model to copy. Also add the skill to `SKILLS` in `crates/fosscut-mcp/src/skills.rs`, which builds it into `fosscut skills install` and the MCP prompts; a test fails until you do. Before changing a skill's behaviour, also run it with at least one real agent (Claude Code or Codex) and record the outcome in the PR.

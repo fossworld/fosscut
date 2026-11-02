@@ -249,7 +249,7 @@ fn capabilities_list_the_drawings_and_compositions() {
     );
     let compositions = brief["library"]["compositions"].as_array().unwrap();
     assert_eq!(compositions[0]["name"], "shop-app");
-    assert_eq!(compositions[0]["lines"][0], "running shoes");
+    assert_eq!(compositions[0]["lines"][0], "your product");
     let full = session
         .query("capabilities", json!({ "detail": "full" }))
         .unwrap();
@@ -264,4 +264,68 @@ fn capabilities_list_the_drawings_and_compositions() {
     assert!(laptop["description"].as_str().unwrap().contains("16:9"));
     let visuals = full["library"]["visuals"].as_array().unwrap();
     assert!(visuals.iter().any(|v| v["name"] == "ui-toast"));
+}
+
+#[test]
+fn new_words_on_a_part_keep_its_look() {
+    let mut session = vertical();
+    let item = fosscut_core::visual("ui-notification").unwrap();
+    let look = serde_json::to_value(item.content.label.as_ref().unwrap()).unwrap();
+    assert_eq!(look["spans"][0]["color"], "#7B8494", "a grey second line");
+
+    // New words through shape.add keep the bold title, its size and the grey message line.
+    let placed = run(
+        &mut session,
+        "shape.add",
+        json!({ "item": "ui-notification", "label": { "text": "Delivered\nLeft at your door" } }),
+    );
+    let clip = placed.results[0]["clip"].clone();
+    let label = &clip_content(&session, &clip)["label"];
+    assert_eq!(label["text"], "Delivered\nLeft at your door");
+    assert_eq!(label["style"], look["style"]);
+    assert_eq!(
+        label["spans"],
+        json!([{ "start": 10, "end": 27, "bold": false, "color": "#7B8494" }]),
+        "the span follows the second line"
+    );
+
+    // A label patch with a style changes only what it names.
+    run(
+        &mut session,
+        "shape.set",
+        json!({ "clip": clip, "set": { "label": { "text": "Out for delivery\nArriving at 4 pm", "style": { "color": "#FF7A1A" } } } }),
+    );
+    let label = &clip_content(&session, &clip)["label"];
+    assert_eq!(label["style"]["color"], "#FF7A1A");
+    assert_eq!(label["style"]["bold"], true);
+    assert_eq!(label["style"]["size"], look["style"]["size"]);
+    assert_eq!(label["spans"][0]["start"], 17);
+    assert_eq!(label["spans"][0]["end"], 33);
+
+    // One line where there were two: the second line's span has nowhere to go.
+    run(
+        &mut session,
+        "shape.set",
+        json!({ "clip": clip, "set": { "label": { "text": "Delivered" } } }),
+    );
+    let label = &clip_content(&session, &clip)["label"];
+    assert_eq!(label["text"], "Delivered");
+    assert!(label.get("spans").is_none(), "{label}");
+    assert_eq!(label["style"]["bold"], true);
+
+    // A shape without a label takes the label as given.
+    let plain = run(
+        &mut session,
+        "shape.add",
+        json!({ "shape": "rectangle", "start": "2s", "label": { "text": "SALE" } }),
+    );
+    let label = &clip_content(&session, &plain.results[0]["clip"])["label"];
+    assert_eq!(label["text"], "SALE");
+    // And removing a label still works.
+    run(
+        &mut session,
+        "shape.set",
+        json!({ "clip": clip, "set": { "label": null } }),
+    );
+    assert!(clip_content(&session, &clip).get("label").is_none());
 }

@@ -264,7 +264,7 @@
         "params_schema": {
           "$defs": {
             "Color": {
-              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
               "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
               "type": "string"
             }
@@ -334,7 +334,7 @@
         "params_schema": {
           "$defs": {
             "Color": {
-              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
               "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
               "type": "string"
             }
@@ -360,7 +360,7 @@
         "params_schema": {
           "$defs": {
             "Color": {
-              "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+              "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
               "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
               "type": "string"
             }
@@ -2655,7 +2655,7 @@
             "type": "object"
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -3361,7 +3361,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -3449,7 +3449,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -7179,7 +7179,7 @@
             "type": "object"
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -16581,7 +16581,7 @@
       "output_schema": {
         "$defs": {
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -18200,7 +18200,7 @@
             "type": "object"
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -18603,7 +18603,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -19662,7 +19662,7 @@
               }
             ],
             "default": null,
-            "description": "Text on it, as a text clip's content (`{\"text\": \"NEW\", \"style\": {...}}`)."
+            "description": "Text on it, as a text clip's content (`{\"text\": \"NEW\", \"style\": {...}}`). On a\nlibrary item it changes the item's label like a merge patch: `{\"text\": \"SALE\"}`\nkeeps the item's look."
           },
           "label_at": {
             "default": null,
@@ -19964,7 +19964,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -21036,7 +21036,7 @@
       "input_schema": {
         "$defs": {
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -21715,7 +21715,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -22029,7 +22029,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -22278,7 +22278,7 @@
       "input_schema": {
         "$defs": {
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -22696,7 +22696,7 @@
           },
           "text": {
             "default": null,
-            "description": "New text; spans that no longer fit are dropped.",
+            "description": "New text in the same look; a span over whole lines moves to the same lines, others\nstay where they still fit.",
             "type": [
               "string",
               "null"
@@ -22733,7 +22733,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -25248,7 +25248,7 @@
             ]
           },
           "Color": {
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
             "type": "string"
           },
@@ -27581,7 +27581,7 @@
           "name": "samples"
         }
       ],
-      "summary": "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path. Reads neighbouring frames, so it costs more to render.",
+      "summary": "Blurs what moves along its motion, as a camera shutter open for part of each frame does: the picture along the optical flow to the neighbouring source frames, and the whole clip along its own animated movement, so a fast title or sticker streaks along its path; a clip placed in 3D also streaks as the camera moves. Reads neighbouring frames, so it costs more to render.",
       "title": "Motion blur",
       "type": "motion.blur",
       "version": 1
@@ -28401,9 +28401,18 @@
           "kind": "color",
           "meaning": "the light's colour, #RRGGBB",
           "name": "color"
+        },
+        {
+          "animatable": true,
+          "default": 0.0,
+          "kind": "number",
+          "max": 1.0,
+          "meaning": "how much of the band's light also glows past the layer's opaque pixels onto what is around and below it, so the sweep shows on white text or logos: 0 keeps the light on the layer's pixels, 1 a full glow",
+          "min": 0.0,
+          "name": "bloom"
         }
       ],
-      "summary": "A band of light that moves across the layer's visible pixels, such as a sheen over a logo on an end card: keyframe position from 0 to 1. Transparent parts stay transparent.",
+      "summary": "A band of light that moves across the layer's visible pixels, such as a sheen over a logo on an end card: keyframe position from 0 to 1. Transparent parts stay transparent unless bloom lets the band's light glow past the layer's edges, which makes the sweep show on white or very bright layers too.",
       "title": "Light sweep",
       "type": "light.sweep",
       "version": 1
@@ -28719,6 +28728,11 @@
       "meaning": "No library item has this name."
     },
     {
+      "code": "fosscut.library.invalid_params",
+      "hint": "library list with kind composition shows each composition's params with their types, ranges, defaults and the media its slots accept.",
+      "meaning": "A library composition's parameters or slots do not fit what it declares: an unknown name, a value of the wrong type or out of range, or a slot given the wrong kind of asset."
+    },
+    {
       "code": "fosscut.multicam.invalid",
       "hint": "Give two or more video assets to multicam.create; switch angles of a multicam clip by number from 1 or by track id.",
       "meaning": "A multicam request does not fit its clips or angles."
@@ -28843,11 +28857,11 @@
   "library": {
     "compositions": [
       {
-        "description": "A generic shopping app on a phone screen, 720x1560 for 9 seconds: the search bar types a query with a blinking caret, four product cards rise in one after another, the first is tapped, its page slides in with name, price, rating and a button, the button is pressed and a toast with a check mark confirms it. Lines: the query, the product's name, its price, the button and the toast. Put it below the phone device frame; it renders in a headless browser.",
+        "description": "A generic shopping app on a phone screen, 720x1560 for 9 seconds: the search bar types a query with a blinking caret, four product cards rise in one after another, the first is tapped, its page slides in with name, price, rating and a button, the button is pressed and a toast with a check mark confirms it. Lines: the query, the product's name, its price, the button and the toast; the defaults are placeholders (\"Product name\", \"$49\"), so set them for the user's product. Put it below the phone device frame; it renders in a headless browser.",
         "lines": [
-          "running shoes",
-          "Trail Runner",
-          "$89",
+          "your product",
+          "Product name",
+          "$49",
           "Add to cart",
           "Added to cart"
         ],
@@ -28866,6 +28880,1462 @@
           "mockup"
         ],
         "title": "Shop app screen"
+      },
+      {
+        "description": "A dark city seen from above at a tilt, 1080x1920 for 7 seconds, rendered with Three.js: blocks of lit buildings from a seed, a glowing route drawn on along the streets with a dot riding its head, and a map pin that drops in at its end, while the camera tilts down, turns and pushes in. route lists street crossings (x, y) from the middle of the grid; turns follow the streets. Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+        "lines": [],
+        "name": "route-map-3d",
+        "params": [
+          {
+            "default": 7,
+            "description": "Picks the buildings: the same seed gives the same city.",
+            "integer": true,
+            "max": 1000000.0,
+            "min": 0.0,
+            "name": "seed",
+            "type": "number"
+          },
+          {
+            "default": 20,
+            "description": "City blocks along each side of the grid.",
+            "integer": true,
+            "max": 40.0,
+            "min": 4.0,
+            "name": "blocks",
+            "type": "number"
+          },
+          {
+            "default": [
+              [
+                -4,
+                -6
+              ],
+              [
+                -4,
+                -2
+              ],
+              [
+                1,
+                -2
+              ],
+              [
+                1,
+                2
+              ],
+              [
+                4,
+                2
+              ],
+              [
+                4,
+                6
+              ]
+            ],
+            "description": "Street crossings the route passes, as [x, y] pairs counted in blocks from the middle; between two crossings it runs along x, then y.",
+            "max": 20.0,
+            "max_length": 32,
+            "min": -20.0,
+            "name": "route",
+            "type": "points"
+          },
+          {
+            "default": "#0A0E16",
+            "description": "The ground between the blocks.",
+            "name": "ground_color",
+            "type": "color"
+          },
+          {
+            "default": "#283550",
+            "description": "The buildings.",
+            "name": "block_color",
+            "type": "color"
+          },
+          {
+            "default": "#34507A",
+            "description": "The faint lines along the streets.",
+            "name": "street_color",
+            "type": "color"
+          },
+          {
+            "default": "#FFC27A",
+            "description": "The lit windows.",
+            "name": "window_color",
+            "type": "color"
+          },
+          {
+            "default": "#FF7A2F",
+            "description": "The route's glow.",
+            "name": "route_color",
+            "type": "color"
+          },
+          {
+            "default": "#FFF3E6",
+            "description": "The dot at the route's head.",
+            "name": "dot_color",
+            "type": "color"
+          },
+          {
+            "default": "#FF7A2F",
+            "description": "The pin at the route's end.",
+            "name": "pin_color",
+            "type": "color"
+          },
+          {
+            "default": 2.4,
+            "description": "The tallest buildings, in block widths; buildings along the route stay low.",
+            "max": 8.0,
+            "min": 0.2,
+            "name": "max_height",
+            "type": "number"
+          },
+          {
+            "default": 0.6,
+            "description": "When the route starts drawing, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "draw_start",
+            "type": "number"
+          },
+          {
+            "default": 4.2,
+            "description": "How long the route takes to draw, in seconds.",
+            "max": 60.0,
+            "min": 0.1,
+            "name": "draw_duration",
+            "type": "number"
+          },
+          {
+            "default": 0.15,
+            "description": "Seconds between the route's arrival and the pin's drop.",
+            "max": 10.0,
+            "min": 0.0,
+            "name": "pin_delay",
+            "type": "number"
+          },
+          {
+            "default": 72,
+            "description": "The camera's angle above the ground at the start, in degrees.",
+            "max": 90.0,
+            "min": 10.0,
+            "name": "tilt_from",
+            "type": "number"
+          },
+          {
+            "default": 52,
+            "description": "The camera's angle above the ground at the end, in degrees.",
+            "max": 90.0,
+            "min": 10.0,
+            "name": "tilt_to",
+            "type": "number"
+          },
+          {
+            "default": 0.26,
+            "description": "How much closer the camera ends, as a fraction of its distance.",
+            "max": 0.8,
+            "min": 0.0,
+            "name": "push",
+            "type": "number"
+          },
+          {
+            "default": 20,
+            "description": "How far the camera turns around the route over the composition, in degrees.",
+            "max": 180.0,
+            "min": -180.0,
+            "name": "turn",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Leave the background transparent, to lay the scene over other clips.",
+            "name": "transparent",
+            "type": "bool"
+          },
+          {
+            "default": "#06080D",
+            "description": "The colour behind the scene when it is not transparent.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "Brightness before tone mapping.",
+            "max": 4.0,
+            "min": 0.1,
+            "name": "exposure",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "aces",
+              "agx",
+              "neutral"
+            ],
+            "default": "aces",
+            "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least.",
+            "name": "tone_mapping",
+            "type": "choice"
+          },
+          {
+            "default": {
+              "radius": 0.6,
+              "strength": 1.2,
+              "threshold": 0.9
+            },
+            "description": "Glow around the brightest parts.",
+            "fields": [
+              {
+                "default": 1.2,
+                "description": "How strong the glow is; 0 turns it off.",
+                "max": 4.0,
+                "min": 0.0,
+                "name": "strength",
+                "type": "number"
+              },
+              {
+                "default": 0.6,
+                "description": "How far the glow spreads.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "radius",
+                "type": "number"
+              },
+              {
+                "default": 0.9,
+                "description": "Linear brightness above which parts glow.",
+                "max": 8.0,
+                "min": 0.0,
+                "name": "threshold",
+                "type": "number"
+              }
+            ],
+            "name": "bloom",
+            "type": "group"
+          },
+          {
+            "default": {
+              "aperture": 0.5,
+              "max_blur": 0.012
+            },
+            "description": "Blur in front of and behind the subject the scene keeps in focus.",
+            "fields": [
+              {
+                "default": 0.5,
+                "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "aperture",
+                "type": "number"
+              },
+              {
+                "default": 0.012,
+                "description": "The largest blur radius, as a fraction of the frame height.",
+                "max": 0.05,
+                "min": 0.0,
+                "name": "max_blur",
+                "type": "number"
+              }
+            ],
+            "name": "depth_of_field",
+            "type": "group"
+          },
+          {
+            "default": {
+              "samples": 8,
+              "shutter": 0.5
+            },
+            "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+            "fields": [
+              {
+                "default": 8,
+                "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
+                "integer": true,
+                "max": 32.0,
+                "min": 1.0,
+                "name": "samples",
+                "type": "number"
+              },
+              {
+                "default": 0.5,
+                "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "shutter",
+                "type": "number"
+              }
+            ],
+            "name": "motion_blur",
+            "type": "group"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; the template's own when omitted.",
+            "max": 60.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "map",
+          "route",
+          "city",
+          "3d",
+          "delivery",
+          "navigation",
+          "glow",
+          "pin",
+          "tracking",
+          "threejs"
+        ],
+        "title": "3D route map"
+      },
+      {
+        "description": "A cardboard parcel with a logo printed on its front drops onto a floor, 1080x1920 for 4 seconds, rendered with Three.js: it falls with a little spin, squashes on impact, bounces and settles, with a soft contact shadow, a dust ring, a burst of sparks and a small camera shake. logo takes an image or SVG asset (FossCut's own mark when empty). Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+        "lines": [],
+        "name": "parcel-drop-3d",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "svg"
+            ],
+            "default": null,
+            "description": "An image or SVG asset printed on the box's front; FossCut's own mark when empty.",
+            "name": "logo",
+            "type": "slot"
+          },
+          {
+            "default": "#F07A2B",
+            "description": "The cardboard.",
+            "name": "box_color",
+            "type": "color"
+          },
+          {
+            "default": "#F2D3A0",
+            "description": "The tape across the top.",
+            "name": "tape_color",
+            "type": "color"
+          },
+          {
+            "default": "#2A2F3A",
+            "description": "The floor.",
+            "name": "floor_color",
+            "type": "color"
+          },
+          {
+            "default": "#FFB347",
+            "description": "The sparks on landing.",
+            "name": "spark_color",
+            "type": "color"
+          },
+          {
+            "default": 1.6,
+            "description": "The box's width.",
+            "max": 5.0,
+            "min": 0.2,
+            "name": "box_width",
+            "type": "number"
+          },
+          {
+            "default": 1.15,
+            "description": "The box's height.",
+            "max": 5.0,
+            "min": 0.2,
+            "name": "box_height",
+            "type": "number"
+          },
+          {
+            "default": 1.25,
+            "description": "The box's depth.",
+            "max": 5.0,
+            "min": 0.2,
+            "name": "box_depth",
+            "type": "number"
+          },
+          {
+            "default": 0.35,
+            "description": "When the box starts falling, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "drop_at",
+            "type": "number"
+          },
+          {
+            "default": 0.5,
+            "description": "How long the fall takes, in seconds.",
+            "max": 5.0,
+            "min": 0.1,
+            "name": "fall",
+            "type": "number"
+          },
+          {
+            "default": 5,
+            "description": "How high above the floor the box starts, in box heights.",
+            "max": 20.0,
+            "min": 0.5,
+            "name": "drop_height",
+            "type": "number"
+          },
+          {
+            "default": 14,
+            "description": "How far the box turns while falling, in degrees.",
+            "max": 180.0,
+            "min": -180.0,
+            "name": "spin",
+            "type": "number"
+          },
+          {
+            "default": 64,
+            "description": "How many sparks fly on landing.",
+            "integer": true,
+            "max": 400.0,
+            "min": 0.0,
+            "name": "sparks",
+            "type": "number"
+          },
+          {
+            "default": 0.35,
+            "description": "How hard the camera shakes on landing.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "shake",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Leave the background transparent, to lay the scene over other clips.",
+            "name": "transparent",
+            "type": "bool"
+          },
+          {
+            "default": "#1B1F27",
+            "description": "The colour behind the scene when it is not transparent.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "Brightness before tone mapping.",
+            "max": 4.0,
+            "min": 0.1,
+            "name": "exposure",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "aces",
+              "agx",
+              "neutral"
+            ],
+            "default": "aces",
+            "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least.",
+            "name": "tone_mapping",
+            "type": "choice"
+          },
+          {
+            "default": {
+              "radius": 0.55,
+              "strength": 1.0,
+              "threshold": 0.9
+            },
+            "description": "Glow around the brightest parts.",
+            "fields": [
+              {
+                "default": 1.0,
+                "description": "How strong the glow is; 0 turns it off.",
+                "max": 4.0,
+                "min": 0.0,
+                "name": "strength",
+                "type": "number"
+              },
+              {
+                "default": 0.55,
+                "description": "How far the glow spreads.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "radius",
+                "type": "number"
+              },
+              {
+                "default": 0.9,
+                "description": "Linear brightness above which parts glow.",
+                "max": 8.0,
+                "min": 0.0,
+                "name": "threshold",
+                "type": "number"
+              }
+            ],
+            "name": "bloom",
+            "type": "group"
+          },
+          {
+            "default": {
+              "aperture": 0.35,
+              "max_blur": 0.012
+            },
+            "description": "Blur in front of and behind the subject the scene keeps in focus.",
+            "fields": [
+              {
+                "default": 0.35,
+                "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "aperture",
+                "type": "number"
+              },
+              {
+                "default": 0.012,
+                "description": "The largest blur radius, as a fraction of the frame height.",
+                "max": 0.05,
+                "min": 0.0,
+                "name": "max_blur",
+                "type": "number"
+              }
+            ],
+            "name": "depth_of_field",
+            "type": "group"
+          },
+          {
+            "default": {
+              "samples": 16,
+              "shutter": 0.5
+            },
+            "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+            "fields": [
+              {
+                "default": 16,
+                "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
+                "integer": true,
+                "max": 32.0,
+                "min": 1.0,
+                "name": "samples",
+                "type": "number"
+              },
+              {
+                "default": 0.5,
+                "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "shutter",
+                "type": "number"
+              }
+            ],
+            "name": "motion_blur",
+            "type": "group"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; the template's own when omitted.",
+            "max": 60.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "parcel",
+          "box",
+          "package",
+          "delivery",
+          "shipping",
+          "drop",
+          "logo",
+          "3d",
+          "sparks",
+          "threejs"
+        ],
+        "title": "3D parcel drop"
+      },
+      {
+        "description": "A modern generic phone in 3D with rounded corners, a metal frame and a rim glow, 1080x1920 for 6 seconds, rendered with Three.js: it rises into view, turns towards the camera and the camera pushes in. Its screen shows a live web composition (the shop-app screen by default, playing on its own clock from screen_start), or an image or video asset. Bloom, depth of field and motion blur on the phone; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+        "lines": [],
+        "name": "phone-3d",
+        "params": [
+          {
+            "accepts": [
+              "composition",
+              "image",
+              "video"
+            ],
+            "default": "shop-app",
+            "description": "What the screen shows: a library composition by name (such as shop-app), or a web composition, image or video asset; web compositions play live at their own size.",
+            "name": "screen",
+            "type": "slot"
+          },
+          {
+            "default": 0,
+            "description": "The screen's own time when the phone composition starts, in seconds.",
+            "max": 600.0,
+            "min": 0.0,
+            "name": "screen_start",
+            "type": "number"
+          },
+          {
+            "default": "#22252B",
+            "description": "The back and the glass around the screen.",
+            "name": "body_color",
+            "type": "color"
+          },
+          {
+            "default": "#A7AFBA",
+            "description": "The metal frame.",
+            "name": "frame_color",
+            "type": "color"
+          },
+          {
+            "default": "#5B8CFF",
+            "description": "The rim light and glow behind the phone.",
+            "name": "glow_color",
+            "type": "color"
+          },
+          {
+            "default": 1.2,
+            "description": "How strong the glow behind the phone is; 0 turns it off.",
+            "max": 4.0,
+            "min": 0.0,
+            "name": "glow",
+            "type": "number"
+          },
+          {
+            "default": 0,
+            "description": "When the phone starts rising, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "rise_at",
+            "type": "number"
+          },
+          {
+            "default": 1.3,
+            "description": "How long the rise takes, in seconds.",
+            "max": 10.0,
+            "min": 0.1,
+            "name": "rise_duration",
+            "type": "number"
+          },
+          {
+            "default": 0.7,
+            "description": "When the phone starts turning towards the camera, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "turn_at",
+            "type": "number"
+          },
+          {
+            "default": 1.8,
+            "description": "How long the turn takes, in seconds.",
+            "max": 10.0,
+            "min": 0.1,
+            "name": "turn_duration",
+            "type": "number"
+          },
+          {
+            "default": 2.2,
+            "description": "When the camera starts pushing in, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "push_at",
+            "type": "number"
+          },
+          {
+            "default": 3.3,
+            "description": "How long the push takes, in seconds.",
+            "max": 30.0,
+            "min": 0.1,
+            "name": "push_duration",
+            "type": "number"
+          },
+          {
+            "default": -32,
+            "description": "How far the phone is turned away at the start, in degrees.",
+            "max": 180.0,
+            "min": -180.0,
+            "name": "start_angle",
+            "type": "number"
+          },
+          {
+            "default": 16,
+            "description": "How far the phone leans back at the start, in degrees.",
+            "max": 80.0,
+            "min": -80.0,
+            "name": "tilt",
+            "type": "number"
+          },
+          {
+            "default": 0.15,
+            "description": "How much closer the camera ends, as a fraction of its distance.",
+            "max": 0.8,
+            "min": 0.0,
+            "name": "push",
+            "type": "number"
+          },
+          {
+            "default": 0.3,
+            "description": "A gentle hover once it is up; 0 holds it still.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "float",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Leave the background transparent, to lay the scene over other clips.",
+            "name": "transparent",
+            "type": "bool"
+          },
+          {
+            "default": "#0B0E14",
+            "description": "The colour behind the scene when it is not transparent.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "Brightness before tone mapping.",
+            "max": 4.0,
+            "min": 0.1,
+            "name": "exposure",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "aces",
+              "agx",
+              "neutral"
+            ],
+            "default": "aces",
+            "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least.",
+            "name": "tone_mapping",
+            "type": "choice"
+          },
+          {
+            "default": {
+              "radius": 0.65,
+              "strength": 1.0,
+              "threshold": 0.9
+            },
+            "description": "Glow around the brightest parts.",
+            "fields": [
+              {
+                "default": 1.0,
+                "description": "How strong the glow is; 0 turns it off.",
+                "max": 4.0,
+                "min": 0.0,
+                "name": "strength",
+                "type": "number"
+              },
+              {
+                "default": 0.65,
+                "description": "How far the glow spreads.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "radius",
+                "type": "number"
+              },
+              {
+                "default": 0.9,
+                "description": "Linear brightness above which parts glow.",
+                "max": 8.0,
+                "min": 0.0,
+                "name": "threshold",
+                "type": "number"
+              }
+            ],
+            "name": "bloom",
+            "type": "group"
+          },
+          {
+            "default": {
+              "aperture": 0.25,
+              "max_blur": 0.01
+            },
+            "description": "Blur in front of and behind the subject the scene keeps in focus.",
+            "fields": [
+              {
+                "default": 0.25,
+                "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "aperture",
+                "type": "number"
+              },
+              {
+                "default": 0.01,
+                "description": "The largest blur radius, as a fraction of the frame height.",
+                "max": 0.05,
+                "min": 0.0,
+                "name": "max_blur",
+                "type": "number"
+              }
+            ],
+            "name": "depth_of_field",
+            "type": "group"
+          },
+          {
+            "default": {
+              "samples": 8,
+              "shutter": 0.5
+            },
+            "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+            "fields": [
+              {
+                "default": 8,
+                "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
+                "integer": true,
+                "max": 32.0,
+                "min": 1.0,
+                "name": "samples",
+                "type": "number"
+              },
+              {
+                "default": 0.5,
+                "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "shutter",
+                "type": "number"
+              }
+            ],
+            "name": "motion_blur",
+            "type": "group"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; the template's own when omitted.",
+            "max": 60.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "phone",
+          "device",
+          "mockup",
+          "app",
+          "screen",
+          "3d",
+          "ui",
+          "rise",
+          "turn",
+          "threejs"
+        ],
+        "title": "3D phone with a live screen"
+      },
+      {
+        "description": "A logo extruded into a solid with bevelled edges, 1080x1920 for 4 seconds, rendered with Three.js: it swings in from the side, settles with a little overshoot, and a band of light sweeps across its face before it turns slowly. logo takes an SVG asset with filled shapes (FossCut's own mark when empty). Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+        "lines": [],
+        "name": "logo-extrude-3d",
+        "params": [
+          {
+            "accepts": [
+              "svg"
+            ],
+            "default": null,
+            "description": "An SVG asset whose filled shapes are extruded; FossCut's own mark when empty.",
+            "name": "logo",
+            "type": "slot"
+          },
+          {
+            "default": "#F4F6FA",
+            "description": "The logo's front.",
+            "name": "face_color",
+            "type": "color"
+          },
+          {
+            "default": "#FF7A2F",
+            "description": "The logo's sides and bevel.",
+            "name": "side_color",
+            "type": "color"
+          },
+          {
+            "default": "#FFFFFF",
+            "description": "The band of light that sweeps across it.",
+            "name": "sweep_color",
+            "type": "color"
+          },
+          {
+            "default": 0.22,
+            "description": "How deep the extrusion is, as a fraction of the logo's width.",
+            "max": 2.0,
+            "min": 0.01,
+            "name": "depth",
+            "type": "number"
+          },
+          {
+            "default": 0.015,
+            "description": "How large the rounded bevel is, as a fraction of the logo's width.",
+            "max": 0.2,
+            "min": 0.0,
+            "name": "bevel",
+            "type": "number"
+          },
+          {
+            "default": 0.3,
+            "description": "How metallic the logo looks.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "metalness",
+            "type": "number"
+          },
+          {
+            "default": 0.25,
+            "description": "How rough its surface is: 0 is a mirror.",
+            "max": 1.0,
+            "min": 0.0,
+            "name": "roughness",
+            "type": "number"
+          },
+          {
+            "default": 0.2,
+            "description": "When the logo starts swinging in, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "in_at",
+            "type": "number"
+          },
+          {
+            "default": 1.3,
+            "description": "How long it takes to settle, in seconds.",
+            "max": 10.0,
+            "min": 0.1,
+            "name": "in_duration",
+            "type": "number"
+          },
+          {
+            "default": 1.6,
+            "description": "When the light starts sweeping across, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "sweep_at",
+            "type": "number"
+          },
+          {
+            "default": 1.1,
+            "description": "How long the sweep takes, in seconds.",
+            "max": 10.0,
+            "min": 0.1,
+            "name": "sweep_duration",
+            "type": "number"
+          },
+          {
+            "default": 75,
+            "description": "How far the logo is turned when it starts swinging in, in degrees.",
+            "max": 360.0,
+            "min": -360.0,
+            "name": "spin",
+            "type": "number"
+          },
+          {
+            "default": 6,
+            "description": "How fast it turns once settled, in degrees per second.",
+            "max": 90.0,
+            "min": -90.0,
+            "name": "idle",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Leave the background transparent, to lay the scene over other clips.",
+            "name": "transparent",
+            "type": "bool"
+          },
+          {
+            "default": "#0A0C12",
+            "description": "The colour behind the scene when it is not transparent.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "Brightness before tone mapping.",
+            "max": 4.0,
+            "min": 0.1,
+            "name": "exposure",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "aces",
+              "agx",
+              "neutral"
+            ],
+            "default": "aces",
+            "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least.",
+            "name": "tone_mapping",
+            "type": "choice"
+          },
+          {
+            "default": {
+              "radius": 0.6,
+              "strength": 1.2,
+              "threshold": 0.9
+            },
+            "description": "Glow around the brightest parts.",
+            "fields": [
+              {
+                "default": 1.2,
+                "description": "How strong the glow is; 0 turns it off.",
+                "max": 4.0,
+                "min": 0.0,
+                "name": "strength",
+                "type": "number"
+              },
+              {
+                "default": 0.6,
+                "description": "How far the glow spreads.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "radius",
+                "type": "number"
+              },
+              {
+                "default": 0.9,
+                "description": "Linear brightness above which parts glow.",
+                "max": 8.0,
+                "min": 0.0,
+                "name": "threshold",
+                "type": "number"
+              }
+            ],
+            "name": "bloom",
+            "type": "group"
+          },
+          {
+            "default": {
+              "aperture": 0.3,
+              "max_blur": 0.01
+            },
+            "description": "Blur in front of and behind the subject the scene keeps in focus.",
+            "fields": [
+              {
+                "default": 0.3,
+                "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "aperture",
+                "type": "number"
+              },
+              {
+                "default": 0.01,
+                "description": "The largest blur radius, as a fraction of the frame height.",
+                "max": 0.05,
+                "min": 0.0,
+                "name": "max_blur",
+                "type": "number"
+              }
+            ],
+            "name": "depth_of_field",
+            "type": "group"
+          },
+          {
+            "default": {
+              "samples": 8,
+              "shutter": 0.5
+            },
+            "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+            "fields": [
+              {
+                "default": 8,
+                "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
+                "integer": true,
+                "max": 32.0,
+                "min": 1.0,
+                "name": "samples",
+                "type": "number"
+              },
+              {
+                "default": 0.5,
+                "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "shutter",
+                "type": "number"
+              }
+            ],
+            "name": "motion_blur",
+            "type": "group"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; the template's own when omitted.",
+            "max": 60.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "logo",
+          "brand",
+          "extrude",
+          "3d",
+          "title",
+          "sweep",
+          "shine",
+          "reveal",
+          "intro",
+          "threejs"
+        ],
+        "title": "3D extruded logo"
+      },
+      {
+        "description": "A product turning on a lit podium, 1080x1920 for 6 seconds, rendered with Three.js: the product rises onto the podium, the turntable spins, a ring of light glows round the podium's edge, the floor and podium top reflect it, and the camera pushes in. product takes an image asset (shown as a card) or a glTF model asset; a FossCut-made bottle when empty. Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+        "lines": [],
+        "name": "product-podium-3d",
+        "params": [
+          {
+            "accepts": [
+              "image",
+              "model"
+            ],
+            "default": null,
+            "description": "An image asset shown as a standing card, or a glTF model asset (.glb, or .gltf with its files); a FossCut-made bottle when empty.",
+            "name": "product",
+            "type": "slot"
+          },
+          {
+            "default": "#E8B4A0",
+            "description": "The colour of the built-in bottle.",
+            "name": "product_color",
+            "type": "color"
+          },
+          {
+            "default": "#ECEAF2",
+            "description": "The podium.",
+            "name": "podium_color",
+            "type": "color"
+          },
+          {
+            "default": "#7A5CFF",
+            "description": "The ring of light round the podium.",
+            "name": "accent_color",
+            "type": "color"
+          },
+          {
+            "default": "#16141D",
+            "description": "The floor.",
+            "name": "floor_color",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "The product's size on the podium.",
+            "max": 4.0,
+            "min": 0.2,
+            "name": "product_scale",
+            "type": "number"
+          },
+          {
+            "default": 28,
+            "description": "How fast the turntable spins, in degrees per second.",
+            "max": 360.0,
+            "min": -360.0,
+            "name": "turn",
+            "type": "number"
+          },
+          {
+            "default": 0.2,
+            "description": "When the product starts rising onto the podium, in seconds.",
+            "max": 60.0,
+            "min": 0.0,
+            "name": "in_at",
+            "type": "number"
+          },
+          {
+            "default": 1.2,
+            "description": "How long it takes to rise, in seconds.",
+            "max": 10.0,
+            "min": 0.1,
+            "name": "in_duration",
+            "type": "number"
+          },
+          {
+            "default": 0.18,
+            "description": "How much closer the camera ends, as a fraction of its distance.",
+            "max": 0.8,
+            "min": 0.0,
+            "name": "push",
+            "type": "number"
+          },
+          {
+            "default": false,
+            "description": "Leave the background transparent, to lay the scene over other clips.",
+            "name": "transparent",
+            "type": "bool"
+          },
+          {
+            "default": "#121019",
+            "description": "The colour behind the scene when it is not transparent.",
+            "name": "background",
+            "type": "color"
+          },
+          {
+            "default": 1,
+            "description": "Brightness before tone mapping.",
+            "max": 4.0,
+            "min": 0.1,
+            "name": "exposure",
+            "type": "number"
+          },
+          {
+            "choices": [
+              "aces",
+              "agx",
+              "neutral"
+            ],
+            "default": "aces",
+            "description": "How bright light is fitted into the picture: aces is filmic and punchy, agx keeps highlights' colours, neutral changes colours least.",
+            "name": "tone_mapping",
+            "type": "choice"
+          },
+          {
+            "default": {
+              "radius": 0.6,
+              "strength": 0.9,
+              "threshold": 0.9
+            },
+            "description": "Glow around the brightest parts.",
+            "fields": [
+              {
+                "default": 0.9,
+                "description": "How strong the glow is; 0 turns it off.",
+                "max": 4.0,
+                "min": 0.0,
+                "name": "strength",
+                "type": "number"
+              },
+              {
+                "default": 0.6,
+                "description": "How far the glow spreads.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "radius",
+                "type": "number"
+              },
+              {
+                "default": 0.9,
+                "description": "Linear brightness above which parts glow.",
+                "max": 8.0,
+                "min": 0.0,
+                "name": "threshold",
+                "type": "number"
+              }
+            ],
+            "name": "bloom",
+            "type": "group"
+          },
+          {
+            "default": {
+              "aperture": 0.35,
+              "max_blur": 0.01
+            },
+            "description": "Blur in front of and behind the subject the scene keeps in focus.",
+            "fields": [
+              {
+                "default": 0.35,
+                "description": "Blur strength away from the focus: at 1, things twice as far as the focus get the largest blur; 0 turns it off.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "aperture",
+                "type": "number"
+              },
+              {
+                "default": 0.01,
+                "description": "The largest blur radius, as a fraction of the frame height.",
+                "max": 0.05,
+                "min": 0.0,
+                "name": "max_blur",
+                "type": "number"
+              }
+            ],
+            "name": "depth_of_field",
+            "type": "group"
+          },
+          {
+            "default": {
+              "samples": 8,
+              "shutter": 0.5
+            },
+            "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
+            "fields": [
+              {
+                "default": 8,
+                "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
+                "integer": true,
+                "max": 32.0,
+                "min": 1.0,
+                "name": "samples",
+                "type": "number"
+              },
+              {
+                "default": 0.5,
+                "description": "The fraction of a frame the shutter is open: 0.5 is a 180 degree shutter.",
+                "max": 1.0,
+                "min": 0.0,
+                "name": "shutter",
+                "type": "number"
+              }
+            ],
+            "name": "motion_blur",
+            "type": "group"
+          },
+          {
+            "default": null,
+            "description": "Canvas width in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "width",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Canvas height in pixels; the template's own when omitted.",
+            "integer": true,
+            "max": 4096.0,
+            "min": 16.0,
+            "name": "height",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Length in seconds; the template's own when omitted.",
+            "max": 60.0,
+            "min": 0.5,
+            "name": "duration",
+            "type": "number"
+          },
+          {
+            "default": null,
+            "description": "Frames per second; the template's own when omitted.",
+            "integer": true,
+            "max": 120.0,
+            "min": 1.0,
+            "name": "fps",
+            "type": "number"
+          }
+        ],
+        "tags": [
+          "product",
+          "podium",
+          "turntable",
+          "showcase",
+          "pedestal",
+          "3d",
+          "ecommerce",
+          "reveal",
+          "glow",
+          "threejs"
+        ],
+        "title": "3D product on a podium"
       }
     ],
     "drawings": [
@@ -34211,7 +35681,7 @@
     "content_schema": {
       "$defs": {
         "Color": {
-          "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+          "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
           "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "type": "string"
         },
@@ -34874,7 +36344,7 @@
           "type": "object"
         },
         "Color": {
-          "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+          "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
           "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "type": "string"
         },
@@ -36378,7 +37848,7 @@
           ]
         },
         "Color": {
-          "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+          "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
           "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
           "type": "string"
         },

@@ -2,8 +2,764 @@
   {
     "name": "shop-app",
     "title": "Shop app screen",
-    "description": "A generic shopping app on a phone screen, 720x1560 for 9 seconds: the search bar types a query with a blinking caret, four product cards rise in one after another, the first is tapped, its page slides in with name, price, rating and a button, the button is pressed and a toast with a check mark confirms it. Lines: the query, the product's name, its price, the button and the toast. Put it below the phone device frame; it renders in a headless browser.",
+    "description": "A generic shopping app on a phone screen, 720x1560 for 9 seconds: the search bar types a query with a blinking caret, four product cards rise in one after another, the first is tapped, its page slides in with name, price, rating and a button, the button is pressed and a toast with a check mark confirms it. Lines: the query, the product's name, its price, the button and the toast; the defaults are placeholders (\"Product name\", \"$49\"), so set them for the user's product. Put it below the phone device frame; it renders in a headless browser.",
     "tags": ["app", "phone", "shop", "store", "search", "typing", "cards", "cart", "toast", "ui", "mockup"],
     "folder": "shop-app"
+  },
+  {
+    "name": "route-map-3d",
+    "title": "3D route map",
+    "description": "A dark city seen from above at a tilt, 1080x1920 for 7 seconds, rendered with Three.js: blocks of lit buildings from a seed, a glowing route drawn on along the streets with a dot riding its head, and a map pin that drops in at its end, while the camera tilts down, turns and pushes in. route lists street crossings (x, y) from the middle of the grid; turns follow the streets. Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+    "tags": [
+      "map",
+      "route",
+      "city",
+      "3d",
+      "delivery",
+      "navigation",
+      "glow",
+      "pin",
+      "tracking",
+      "threejs"
+    ],
+    "folder": "route-map-3d",
+    "kit": "three",
+    "params": [
+      {
+        "name": "seed",
+        "type": "number",
+        "integer": true,
+        "min": 0,
+        "max": 1000000,
+        "default": 7,
+        "description": "Picks the buildings: the same seed gives the same city."
+      },
+      {
+        "name": "blocks",
+        "type": "number",
+        "integer": true,
+        "min": 4,
+        "max": 40,
+        "default": 20,
+        "description": "City blocks along each side of the grid."
+      },
+      {
+        "name": "route",
+        "type": "points",
+        "min": -20,
+        "max": 20,
+        "max_length": 32,
+        "default": [
+          [
+            -4,
+            -6
+          ],
+          [
+            -4,
+            -2
+          ],
+          [
+            1,
+            -2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            4,
+            2
+          ],
+          [
+            4,
+            6
+          ]
+        ],
+        "description": "Street crossings the route passes, as [x, y] pairs counted in blocks from the middle; between two crossings it runs along x, then y."
+      },
+      {
+        "name": "ground_color",
+        "type": "color",
+        "default": "#0A0E16",
+        "description": "The ground between the blocks."
+      },
+      {
+        "name": "block_color",
+        "type": "color",
+        "default": "#283550",
+        "description": "The buildings."
+      },
+      {
+        "name": "street_color",
+        "type": "color",
+        "default": "#34507A",
+        "description": "The faint lines along the streets."
+      },
+      {
+        "name": "window_color",
+        "type": "color",
+        "default": "#FFC27A",
+        "description": "The lit windows."
+      },
+      {
+        "name": "route_color",
+        "type": "color",
+        "default": "#FF7A2F",
+        "description": "The route's glow."
+      },
+      {
+        "name": "dot_color",
+        "type": "color",
+        "default": "#FFF3E6",
+        "description": "The dot at the route's head."
+      },
+      {
+        "name": "pin_color",
+        "type": "color",
+        "default": "#FF7A2F",
+        "description": "The pin at the route's end."
+      },
+      {
+        "name": "max_height",
+        "type": "number",
+        "min": 0.2,
+        "max": 8,
+        "default": 2.4,
+        "description": "The tallest buildings, in block widths; buildings along the route stay low."
+      },
+      {
+        "name": "draw_start",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0.6,
+        "description": "When the route starts drawing, in seconds."
+      },
+      {
+        "name": "draw_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 60,
+        "default": 4.2,
+        "description": "How long the route takes to draw, in seconds."
+      },
+      {
+        "name": "pin_delay",
+        "type": "number",
+        "min": 0,
+        "max": 10,
+        "default": 0.15,
+        "description": "Seconds between the route's arrival and the pin's drop."
+      },
+      {
+        "name": "tilt_from",
+        "type": "number",
+        "min": 10,
+        "max": 90,
+        "default": 72,
+        "description": "The camera's angle above the ground at the start, in degrees."
+      },
+      {
+        "name": "tilt_to",
+        "type": "number",
+        "min": 10,
+        "max": 90,
+        "default": 52,
+        "description": "The camera's angle above the ground at the end, in degrees."
+      },
+      {
+        "name": "push",
+        "type": "number",
+        "min": 0,
+        "max": 0.8,
+        "default": 0.26,
+        "description": "How much closer the camera ends, as a fraction of its distance."
+      },
+      {
+        "name": "turn",
+        "type": "number",
+        "min": -180,
+        "max": 180,
+        "default": 20,
+        "description": "How far the camera turns around the route over the composition, in degrees."
+      }
+    ],
+    "defaults": {
+      "background": "#06080D",
+      "bloom": {
+        "strength": 1.2,
+        "radius": 0.6,
+        "threshold": 0.9
+      },
+      "depth_of_field": {
+        "aperture": 0.5,
+        "max_blur": 0.012
+      },
+      "motion_blur": {
+        "samples": 8,
+        "shutter": 0.5
+      }
+    }
+  },
+  {
+    "name": "parcel-drop-3d",
+    "title": "3D parcel drop",
+    "description": "A cardboard parcel with a logo printed on its front drops onto a floor, 1080x1920 for 4 seconds, rendered with Three.js: it falls with a little spin, squashes on impact, bounces and settles, with a soft contact shadow, a dust ring, a burst of sparks and a small camera shake. logo takes an image or SVG asset (FossCut's own mark when empty). Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+    "tags": [
+      "parcel",
+      "box",
+      "package",
+      "delivery",
+      "shipping",
+      "drop",
+      "logo",
+      "3d",
+      "sparks",
+      "threejs"
+    ],
+    "folder": "parcel-drop-3d",
+    "kit": "three",
+    "params": [
+      {
+        "name": "logo",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "svg"
+        ],
+        "default": null,
+        "description": "An image or SVG asset printed on the box's front; FossCut's own mark when empty."
+      },
+      {
+        "name": "box_color",
+        "type": "color",
+        "default": "#F07A2B",
+        "description": "The cardboard."
+      },
+      {
+        "name": "tape_color",
+        "type": "color",
+        "default": "#F2D3A0",
+        "description": "The tape across the top."
+      },
+      {
+        "name": "floor_color",
+        "type": "color",
+        "default": "#2A2F3A",
+        "description": "The floor."
+      },
+      {
+        "name": "spark_color",
+        "type": "color",
+        "default": "#FFB347",
+        "description": "The sparks on landing."
+      },
+      {
+        "name": "box_width",
+        "type": "number",
+        "min": 0.2,
+        "max": 5,
+        "default": 1.6,
+        "description": "The box's width."
+      },
+      {
+        "name": "box_height",
+        "type": "number",
+        "min": 0.2,
+        "max": 5,
+        "default": 1.15,
+        "description": "The box's height."
+      },
+      {
+        "name": "box_depth",
+        "type": "number",
+        "min": 0.2,
+        "max": 5,
+        "default": 1.25,
+        "description": "The box's depth."
+      },
+      {
+        "name": "drop_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0.35,
+        "description": "When the box starts falling, in seconds."
+      },
+      {
+        "name": "fall",
+        "type": "number",
+        "min": 0.1,
+        "max": 5,
+        "default": 0.5,
+        "description": "How long the fall takes, in seconds."
+      },
+      {
+        "name": "drop_height",
+        "type": "number",
+        "min": 0.5,
+        "max": 20,
+        "default": 5,
+        "description": "How high above the floor the box starts, in box heights."
+      },
+      {
+        "name": "spin",
+        "type": "number",
+        "min": -180,
+        "max": 180,
+        "default": 14,
+        "description": "How far the box turns while falling, in degrees."
+      },
+      {
+        "name": "sparks",
+        "type": "number",
+        "integer": true,
+        "min": 0,
+        "max": 400,
+        "default": 64,
+        "description": "How many sparks fly on landing."
+      },
+      {
+        "name": "shake",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.35,
+        "description": "How hard the camera shakes on landing."
+      }
+    ],
+    "defaults": {
+      "background": "#1B1F27",
+      "bloom": {
+        "strength": 1.0,
+        "radius": 0.55,
+        "threshold": 0.9
+      },
+      "depth_of_field": {
+        "aperture": 0.35,
+        "max_blur": 0.012
+      },
+      "motion_blur": {
+        "samples": 16,
+        "shutter": 0.5
+      }
+    }
+  },
+  {
+    "name": "phone-3d",
+    "title": "3D phone with a live screen",
+    "description": "A modern generic phone in 3D with rounded corners, a metal frame and a rim glow, 1080x1920 for 6 seconds, rendered with Three.js: it rises into view, turns towards the camera and the camera pushes in. Its screen shows a live web composition (the shop-app screen by default, playing on its own clock from screen_start), or an image or video asset. Bloom, depth of field and motion blur on the phone; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+    "tags": [
+      "phone",
+      "device",
+      "mockup",
+      "app",
+      "screen",
+      "3d",
+      "ui",
+      "rise",
+      "turn",
+      "threejs"
+    ],
+    "folder": "phone-3d",
+    "kit": "three",
+    "params": [
+      {
+        "name": "screen",
+        "type": "slot",
+        "accepts": [
+          "composition",
+          "image",
+          "video"
+        ],
+        "default": "shop-app",
+        "description": "What the screen shows: a library composition by name (such as shop-app), or a web composition, image or video asset; web compositions play live at their own size."
+      },
+      {
+        "name": "screen_start",
+        "type": "number",
+        "min": 0,
+        "max": 600,
+        "default": 0,
+        "description": "The screen's own time when the phone composition starts, in seconds."
+      },
+      {
+        "name": "body_color",
+        "type": "color",
+        "default": "#22252B",
+        "description": "The back and the glass around the screen."
+      },
+      {
+        "name": "frame_color",
+        "type": "color",
+        "default": "#A7AFBA",
+        "description": "The metal frame."
+      },
+      {
+        "name": "glow_color",
+        "type": "color",
+        "default": "#5B8CFF",
+        "description": "The rim light and glow behind the phone."
+      },
+      {
+        "name": "glow",
+        "type": "number",
+        "min": 0,
+        "max": 4,
+        "default": 1.2,
+        "description": "How strong the glow behind the phone is; 0 turns it off."
+      },
+      {
+        "name": "rise_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0,
+        "description": "When the phone starts rising, in seconds."
+      },
+      {
+        "name": "rise_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 10,
+        "default": 1.3,
+        "description": "How long the rise takes, in seconds."
+      },
+      {
+        "name": "turn_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0.7,
+        "description": "When the phone starts turning towards the camera, in seconds."
+      },
+      {
+        "name": "turn_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 10,
+        "default": 1.8,
+        "description": "How long the turn takes, in seconds."
+      },
+      {
+        "name": "push_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 2.2,
+        "description": "When the camera starts pushing in, in seconds."
+      },
+      {
+        "name": "push_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 30,
+        "default": 3.3,
+        "description": "How long the push takes, in seconds."
+      },
+      {
+        "name": "start_angle",
+        "type": "number",
+        "min": -180,
+        "max": 180,
+        "default": -32,
+        "description": "How far the phone is turned away at the start, in degrees."
+      },
+      {
+        "name": "tilt",
+        "type": "number",
+        "min": -80,
+        "max": 80,
+        "default": 16,
+        "description": "How far the phone leans back at the start, in degrees."
+      },
+      {
+        "name": "push",
+        "type": "number",
+        "min": 0,
+        "max": 0.8,
+        "default": 0.15,
+        "description": "How much closer the camera ends, as a fraction of its distance."
+      },
+      {
+        "name": "float",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.3,
+        "description": "A gentle hover once it is up; 0 holds it still."
+      }
+    ],
+    "defaults": {
+      "background": "#0B0E14",
+      "bloom": {
+        "strength": 1.0,
+        "radius": 0.65,
+        "threshold": 0.9
+      },
+      "depth_of_field": {
+        "aperture": 0.25,
+        "max_blur": 0.01
+      },
+      "motion_blur": {
+        "samples": 8,
+        "shutter": 0.5
+      }
+    }
+  },
+  {
+    "name": "logo-extrude-3d",
+    "title": "3D extruded logo",
+    "description": "A logo extruded into a solid with bevelled edges, 1080x1920 for 4 seconds, rendered with Three.js: it swings in from the side, settles with a little overshoot, and a band of light sweeps across its face before it turns slowly. logo takes an SVG asset with filled shapes (FossCut's own mark when empty). Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+    "tags": [
+      "logo",
+      "brand",
+      "extrude",
+      "3d",
+      "title",
+      "sweep",
+      "shine",
+      "reveal",
+      "intro",
+      "threejs"
+    ],
+    "folder": "logo-extrude-3d",
+    "kit": "three",
+    "params": [
+      {
+        "name": "logo",
+        "type": "slot",
+        "accepts": [
+          "svg"
+        ],
+        "default": null,
+        "description": "An SVG asset whose filled shapes are extruded; FossCut's own mark when empty."
+      },
+      {
+        "name": "face_color",
+        "type": "color",
+        "default": "#F4F6FA",
+        "description": "The logo's front."
+      },
+      {
+        "name": "side_color",
+        "type": "color",
+        "default": "#FF7A2F",
+        "description": "The logo's sides and bevel."
+      },
+      {
+        "name": "sweep_color",
+        "type": "color",
+        "default": "#FFFFFF",
+        "description": "The band of light that sweeps across it."
+      },
+      {
+        "name": "depth",
+        "type": "number",
+        "min": 0.01,
+        "max": 2,
+        "default": 0.22,
+        "description": "How deep the extrusion is, as a fraction of the logo's width."
+      },
+      {
+        "name": "bevel",
+        "type": "number",
+        "min": 0,
+        "max": 0.2,
+        "default": 0.015,
+        "description": "How large the rounded bevel is, as a fraction of the logo's width."
+      },
+      {
+        "name": "metalness",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.3,
+        "description": "How metallic the logo looks."
+      },
+      {
+        "name": "roughness",
+        "type": "number",
+        "min": 0,
+        "max": 1,
+        "default": 0.25,
+        "description": "How rough its surface is: 0 is a mirror."
+      },
+      {
+        "name": "in_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0.2,
+        "description": "When the logo starts swinging in, in seconds."
+      },
+      {
+        "name": "in_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 10,
+        "default": 1.3,
+        "description": "How long it takes to settle, in seconds."
+      },
+      {
+        "name": "sweep_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 1.6,
+        "description": "When the light starts sweeping across, in seconds."
+      },
+      {
+        "name": "sweep_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 10,
+        "default": 1.1,
+        "description": "How long the sweep takes, in seconds."
+      },
+      {
+        "name": "spin",
+        "type": "number",
+        "min": -360,
+        "max": 360,
+        "default": 75,
+        "description": "How far the logo is turned when it starts swinging in, in degrees."
+      },
+      {
+        "name": "idle",
+        "type": "number",
+        "min": -90,
+        "max": 90,
+        "default": 6,
+        "description": "How fast it turns once settled, in degrees per second."
+      }
+    ],
+    "defaults": {
+      "background": "#0A0C12",
+      "bloom": {
+        "strength": 1.2,
+        "radius": 0.6,
+        "threshold": 0.9
+      },
+      "depth_of_field": {
+        "aperture": 0.3,
+        "max_blur": 0.01
+      },
+      "motion_blur": {
+        "samples": 8,
+        "shutter": 0.5
+      }
+    }
+  },
+  {
+    "name": "product-podium-3d",
+    "title": "3D product on a podium",
+    "description": "A product turning on a lit podium, 1080x1920 for 6 seconds, rendered with Three.js: the product rises onto the podium, the turntable spins, a ring of light glows round the podium's edge, the floor and podium top reflect it, and the camera pushes in. product takes an image asset (shown as a card) or a glTF model asset; a FossCut-made bottle when empty. Bloom, depth of field and motion blur; transparent: true lays it over other clips. Needs the GPU renderer (macOS).",
+    "tags": [
+      "product",
+      "podium",
+      "turntable",
+      "showcase",
+      "pedestal",
+      "3d",
+      "ecommerce",
+      "reveal",
+      "glow",
+      "threejs"
+    ],
+    "folder": "product-podium-3d",
+    "kit": "three",
+    "params": [
+      {
+        "name": "product",
+        "type": "slot",
+        "accepts": [
+          "image",
+          "model"
+        ],
+        "default": null,
+        "description": "An image asset shown as a standing card, or a glTF model asset (.glb, or .gltf with its files); a FossCut-made bottle when empty."
+      },
+      {
+        "name": "product_color",
+        "type": "color",
+        "default": "#E8B4A0",
+        "description": "The colour of the built-in bottle."
+      },
+      {
+        "name": "podium_color",
+        "type": "color",
+        "default": "#ECEAF2",
+        "description": "The podium."
+      },
+      {
+        "name": "accent_color",
+        "type": "color",
+        "default": "#7A5CFF",
+        "description": "The ring of light round the podium."
+      },
+      {
+        "name": "floor_color",
+        "type": "color",
+        "default": "#16141D",
+        "description": "The floor."
+      },
+      {
+        "name": "product_scale",
+        "type": "number",
+        "min": 0.2,
+        "max": 4,
+        "default": 1,
+        "description": "The product's size on the podium."
+      },
+      {
+        "name": "turn",
+        "type": "number",
+        "min": -360,
+        "max": 360,
+        "default": 28,
+        "description": "How fast the turntable spins, in degrees per second."
+      },
+      {
+        "name": "in_at",
+        "type": "number",
+        "min": 0,
+        "max": 60,
+        "default": 0.2,
+        "description": "When the product starts rising onto the podium, in seconds."
+      },
+      {
+        "name": "in_duration",
+        "type": "number",
+        "min": 0.1,
+        "max": 10,
+        "default": 1.2,
+        "description": "How long it takes to rise, in seconds."
+      },
+      {
+        "name": "push",
+        "type": "number",
+        "min": 0,
+        "max": 0.8,
+        "default": 0.18,
+        "description": "How much closer the camera ends, as a fraction of its distance."
+      }
+    ],
+    "defaults": {
+      "background": "#121019",
+      "bloom": {
+        "strength": 0.9,
+        "radius": 0.6,
+        "threshold": 0.9
+      },
+      "depth_of_field": {
+        "aperture": 0.35,
+        "max_blur": 0.01
+      },
+      "motion_blur": {
+        "samples": 8,
+        "shutter": 0.5
+      }
+    }
   }
 ]

@@ -184,6 +184,8 @@ pub mod codes {
     pub const VECTOR_INVALID: &str = "fosscut.vector.invalid";
     /// No library item has this name.
     pub const LIBRARY_UNKNOWN_ITEM: &str = "fosscut.library.unknown_item";
+    /// A library composition's parameters or slots do not fit what it declares (ADR-0042).
+    pub const LIBRARY_INVALID_PARAMS: &str = "fosscut.library.invalid_params";
     /// No project template has this name.
     pub const TEMPLATE_UNKNOWN: &str = "fosscut.template.unknown";
     /// A multicam request does not fit its clips or angles.
@@ -472,6 +474,11 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
             LIBRARY_UNKNOWN_ITEM,
             "No library item has this name.",
             "capabilities lists the shapes, stickers and backgrounds under library; fosscut library list shows the sounds too.",
+        ),
+        entry(
+            LIBRARY_INVALID_PARAMS,
+            "A library composition's parameters or slots do not fit what it declares: an unknown name, a value of the wrong type or out of range, or a slot given the wrong kind of asset.",
+            "library list with kind composition shows each composition's params with their types, ranges, defaults and the media its slots accept.",
         ),
         entry(
             MULTICAM_INVALID,

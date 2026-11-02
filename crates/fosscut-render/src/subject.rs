@@ -32,7 +32,7 @@ use std::sync::Arc;
 use fosscut_model::ParamValue;
 use fosscut_time::Flicks;
 
-use crate::color::TransferFunction;
+use crate::color::graphics_to_linear;
 use crate::effects::{PlannedEffect, SLOTS, hex_rgb};
 use crate::plan::SourceRef;
 use crate::{FrameProvider, RenderError};
@@ -168,13 +168,13 @@ pub(crate) enum Aux {
     },
 }
 
-/// The sRGB colour `name` (`#RRGGBB`) in linear light.
+/// The colour `name` (`#RRGGBB`) in linear light, decoded as graphics (ADR-0041).
 fn linear(effect: &PlannedEffect, name: &str, fallback: &str) -> [f32; 3] {
     let hex = match effect.values.get(name) {
         Some(ParamValue::Name(hex)) => hex.as_str(),
         _ => fallback,
     };
-    hex_rgb(hex).map(|c| TransferFunction::Srgb.decode(c))
+    hex_rgb(hex).map(graphics_to_linear)
 }
 
 fn choice<'a>(effect: &'a PlannedEffect, name: &str) -> &'a str {

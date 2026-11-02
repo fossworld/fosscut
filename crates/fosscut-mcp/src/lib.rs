@@ -144,6 +144,37 @@ fn failure(error: &ApiError) -> CallToolResult {
 }
 
 /// A tool result with a PNG image followed by its JSON description.
+/// Writes `png` to `out` for the user, refusing another extension and, without
+/// `allow_destructive`, an existing file (ADR-0006, item 6); gives the path written.
+fn save_png(out: &str, png: &[u8], allow_destructive: bool) -> Result<String, ApiError> {
+    let path = PathBuf::from(out);
+    let is_png = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("png"));
+    if !is_png {
+        return Err(ApiError::new(
+            codes::INVALID_ARGUMENTS,
+            format!("out: {out} must name a .png file"),
+        ));
+    }
+    if path.exists() && !allow_destructive {
+        return Err(ApiError::new(
+            codes::GUARD_DESTRUCTIVE,
+            format!("{} already exists", path.display()),
+        )
+        .with_hint("Choose another name, or ask the user and pass allow_destructive.")
+        .with_details(json!({ "path": path.display().to_string() })));
+    }
+    std::fs::write(&path, png).map_err(|e| {
+        ApiError::new(
+            "fosscut.media.write_failed",
+            format!("cannot write {}: {e}", path.display()),
+        )
+    })?;
+    Ok(path.display().to_string())
+}
+
 fn image_reply(result: Result<(Vec<u8>, Value), ApiError>) -> Result<CallToolResult, ErrorData> {
     Ok(match result {
         Ok((png, value)) => CallToolResult::success(vec![
@@ -1320,7 +1351,7 @@ impl FosscutServer {
 
     /// Lists and adds library items.
     #[tool(
-        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
+        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen, and Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
     )]
     async fn library(
         &self,
@@ -1360,7 +1391,20 @@ impl FosscutServer {
                 let (command, call_args) = if library::imports_media(&item) {
                     // The import is the first write and takes the revision check; placing
                     // follows on the revision it made.
-                    let media_add = library::media_args(&bundle, &item, &args.lines)?;
+                    // Slots that name assets need the project (ADR-0042).
+                    let project = (args.params.is_some() || !args.media.is_empty())
+                        .then(|| state.projects.snapshot(&bundle))
+                        .transpose()?;
+                    let media_add = library::media_args_with(
+                        &bundle,
+                        &item,
+                        &library::CompositionInput {
+                            lines: args.lines.clone(),
+                            params: args.params.clone(),
+                            media: args.media.clone(),
+                        },
+                        project.as_ref(),
+                    )?;
                     let mut import = Request::single("media.add", media_add);
                     import.expected_revision = args.expected_revision;
                     import.dry_run = args.dry_run;
@@ -1588,8 +1632,8 @@ impl FosscutServer {
 
     /// Renders one frame.
     #[tool(
-        description = "Render the frame of the timeline at a time as a PNG image, exactly as the export will show it (default 640 pixels wide). Use it to check titles, placement and cuts. Returns the image and the frame's time in every unit.",
-        annotations(read_only_hint = true)
+        description = "Render the frame of the timeline at a time as a PNG image, exactly as the export will show it (default 640 pixels wide). Use it to check titles, placement and cuts. Returns the image and the frame's time in every unit; with out it also writes the PNG to that file for the user, such as a style frame.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn frame_grab(&self, params: Parameters<FrameArgs>) -> Result<CallToolResult, ErrorData> {
         let args = params.0;
@@ -1618,12 +1662,15 @@ impl FosscutServer {
                 .map_err(ApiError::from)
             })?;
             let png = fosscut_engine::frame::png(&still.image)?;
-            let value = json!({
+            let mut value = json!({
                 "timeline": timeline,
                 "at": still.at,
                 "width": still.image.width,
                 "height": still.image.height,
             });
+            if let Some(out) = &args.out {
+                value["written"] = json!(save_png(out, &png, args.allow_destructive)?);
+            }
             Ok((png, value))
         })
         .await;
@@ -1632,8 +1679,8 @@ impl FosscutServer {
 
     /// Renders a contact sheet.
     #[tool(
-        description = "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position.",
-        annotations(read_only_hint = true)
+        description = "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position; with out it also writes the PNG to that file for the user.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn contact_sheet(
         &self,
@@ -1662,13 +1709,16 @@ impl FosscutServer {
                 .map_err(ApiError::from)
             })?;
             let png = fosscut_engine::frame::png(&sheet.image)?;
-            let value = json!({
+            let mut value = json!({
                 "timeline": timeline,
                 "width": sheet.image.width,
                 "height": sheet.image.height,
                 "columns": sheet.columns,
                 "tiles": sheet.tiles,
             });
+            if let Some(out) = &args.out {
+                value["written"] = json!(save_png(out, &png, args.allow_destructive)?);
+            }
             Ok((png, value))
         })
         .await;

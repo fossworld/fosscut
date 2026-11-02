@@ -376,6 +376,9 @@ struct PreviewMedia {
     opened: HashMap<Id, Opened>,
     /// Content identities by asset, recorded or measured once; `None` when unknown.
     identities: HashMap<Id, Option<ContentIdentity>>,
+    /// How each web composition is drawn (ADR-0039, ADR-0042), found once; it is part of
+    /// their frames' cache keys, since software and GPU rendering differ slightly.
+    web_renderers: HashMap<Id, crate::web::WebRenderer>,
     /// The cached mattes and poses subject effects read.
     subjects: Subjects,
     /// Assets of the last planned frame whose subject effects lack their analysis.
@@ -392,6 +395,7 @@ impl Default for PreviewMedia {
             decoders,
             opened: HashMap::new(),
             identities: HashMap::new(),
+            web_renderers: HashMap::new(),
             subjects: Subjects::default(),
             unanalyzed: HashSet::new(),
         }
@@ -575,10 +579,33 @@ impl PreviewMedia {
             .describe(asset)
             .map(|s| format!(":{s}"))
             .unwrap_or_default();
+        let renderer = self
+            .web_renderer(project, bundle, asset)
+            .map(|r| format!(":web-{}", r.as_str()))
+            .unwrap_or_default();
         Some(format!(
-            "{}:{}:{decoded}{analyses}",
+            "{}:{}:{decoded}{analyses}{renderer}",
             identity.sample_blake3, identity.size
         ))
+    }
+
+    /// The renderer that draws `asset` when it is a web composition.
+    fn web_renderer(
+        &mut self,
+        project: &Project,
+        bundle: &Path,
+        asset: &Id,
+    ) -> Option<crate::web::WebRenderer> {
+        if project.media.get(asset)?.kind != fosscut_model::AssetKind::Web {
+            return None;
+        }
+        if let Some(found) = self.web_renderers.get(asset) {
+            return Some(*found);
+        }
+        let path = crate::cache::source_of(project, bundle, asset).ok()?.0;
+        let renderer = crate::web::WebRenderer::for_page(&path);
+        self.web_renderers.insert(asset.clone(), renderer);
+        Some(renderer)
     }
 
     /// Corrects the placement of layers shown from proxies, whose size may differ from the
@@ -1258,5 +1285,63 @@ mod tests {
             0,
             "a frame larger than the budget is not kept"
         );
+    }
+
+    #[test]
+    fn web_compositions_key_their_frames_by_their_renderer() {
+        let dir = std::env::temp_dir().join(format!("fosscut-preview-web-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let page = dir.join("index.html");
+        std::fs::write(&page, r#"<meta name="fosscut:renderer" content="gpu">"#).unwrap();
+        let mut project = Project::new(
+            Id::new(IdKind::Project, 1),
+            "Keys",
+            fosscut_model::TimelineFormat {
+                width: 64,
+                height: 64,
+                rate: fosscut_time::Rate::FPS_30,
+                sample_rate: 48_000,
+            },
+        );
+        let identity = ContentIdentity {
+            size: 1,
+            sample_blake3: "ab".repeat(32),
+        };
+        for (number, kind) in [
+            (1, fosscut_model::AssetKind::Web),
+            (2, fosscut_model::AssetKind::Image),
+        ] {
+            project.media.assets.push(fosscut_model::Asset {
+                id: Id::new(IdKind::Asset, number),
+                kind,
+                name: "page".into(),
+                path: fosscut_model::PathHints {
+                    relative: None,
+                    absolute: Some(page.display().to_string()),
+                },
+                identity: Some(identity.clone()),
+                info: fosscut_model::MediaInfo::default(),
+                folder: None,
+            });
+        }
+        let mut media = PreviewMedia::default();
+        let web = media
+            .describe(&project, &dir, &Id::new(IdKind::Asset, 1))
+            .unwrap();
+        let expected = crate::web::WebRenderer::for_page(&page);
+        assert!(
+            web.ends_with(&format!(":web-{}", expected.as_str())),
+            "{web}"
+        );
+        let image = media
+            .describe(&project, &dir, &Id::new(IdKind::Asset, 2))
+            .unwrap();
+        assert!(!image.contains(":web-"), "{image}");
+        assert_eq!(
+            web.replace(&format!(":web-{}", expected.as_str()), ""),
+            image
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -206,7 +206,7 @@ impl VectorImage {
             (f64::from(height) / h.max(1e-9)) as f32,
         );
         resvg::render(&self.tree, transform, &mut pixmap.as_mut());
-        let decode = srgb_table();
+        let decode = decode_table();
         let pixels = pixmap
             .data()
             .as_chunks::<4>()
@@ -217,7 +217,8 @@ impl VectorImage {
                 if alpha <= 0.0 {
                     return [0.0; 4];
                 }
-                // Straight sRGB from the premultiplied bytes, to linear light, premultiplied.
+                // Straight code values from the premultiplied bytes, decoded as graphics
+                // (ADR-0041) to linear light, premultiplied.
                 let channel = |v: u8| {
                     let straight = (f32::from(v) / 255.0 / alpha).clamp(0.0, 1.0);
                     decode[(straight * 4095.0).round() as usize] * alpha
@@ -234,17 +235,10 @@ impl VectorImage {
     }
 }
 
-/// sRGB-encoded values from 0 to 1 in 4096 steps, decoded to linear light.
-fn srgb_table() -> Vec<f32> {
+/// Code values from 0 to 1 in 4096 steps, decoded to linear light as graphics (ADR-0041).
+fn decode_table() -> Vec<f32> {
     (0..4096)
-        .map(|i| {
-            let v = i as f32 / 4095.0;
-            if v <= 0.04045 {
-                v / 12.92
-            } else {
-                ((v + 0.055) / 1.055).powf(2.4)
-            }
-        })
+        .map(|i| crate::color::graphics_to_linear(i as f32 / 4095.0))
         .collect()
 }
 

@@ -81,10 +81,7 @@ fn rgba_frames_blend_by_their_alpha_over_lower_layers() {
         );
         assert_eq!(pixel(&image, 5), [255, 0, 0], "{transfer:?}: opaque red");
         // Half of white in linear light over black, encoded as sRGB for the output.
-        let decode = match transfer {
-            Transfer::Srgb => TransferFunction::Srgb,
-            _ => TransferFunction::Bt709,
-        };
+        let decode = TransferFunction::for_source(transfer).unwrap();
         let linear = decode.decode(1.0) * 128.0 / 255.0;
         let expected = (TransferFunction::Srgb.encode(linear) * 255.0).round() as i32;
         let half = pixel(&image, 12);
@@ -98,11 +95,12 @@ fn rgba_frames_blend_by_their_alpha_over_lower_layers() {
 }
 
 #[test]
-fn rgba_frames_keep_their_code_values_through_a_matching_transfer() {
+fn rgba_frames_tagged_srgb_keep_their_code_values_as_graphics() {
     let Some(mut renderer) = renderer() else {
         return;
     };
-    // An opaque sRGB orange stays the same orange in an sRGB output.
+    // An opaque orange tagged sRGB, as web frames and PNGs with an sRGB chunk are, is
+    // graphics (ADR-0041): it stays the same orange in the BT.709 output exports use.
     let mut data = Vec::new();
     for _ in 0..SIZE.0 * SIZE.1 {
         data.extend_from_slice(&[255, 122, 69, 255]);
@@ -116,7 +114,7 @@ fn rgba_frames_keep_their_code_values_through_a_matching_transfer() {
         skipped: Vec::new(),
     };
     let image = renderer
-        .render_image(&plan, &mut frames, SIZE, TransferFunction::Srgb)
+        .render_image(&plan, &mut frames, SIZE, TransferFunction::Bt709)
         .unwrap();
     let orange = pixel(&image, 8);
     for (got, want) in orange.iter().zip([255u8, 122, 69]) {
