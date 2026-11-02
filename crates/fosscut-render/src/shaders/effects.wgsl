@@ -324,10 +324,10 @@ fn cbcr(c: vec3f) -> vec2f {
     return vec2f((c.b - y) / 1.8556, (c.r - y) / 1.5748);
 }
 
-// Removes the key color (p[1].rgb, sRGB-encoded): pixels whose chroma is within the
-// similarity of the key's become transparent, softly over the smoothness, and the key's
-// chroma is taken out of what stays by the spill amount. p[0]: similarity, smoothness,
-// spill.
+// Removes the key color (p[1].rgb, in the sRGB-encoded working space of to_display):
+// pixels whose chroma is within the similarity of the key's become transparent, softly
+// over the smoothness, and the key's chroma is taken out of what stays by the spill
+// amount. p[0]: similarity, smoothness, spill.
 @fragment
 fn fs_chroma(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = load(position);
@@ -571,7 +571,8 @@ fn turn(v: vec2f, degrees: f32, aspect: f32) -> vec2f {
 }
 
 // p[0]: case (0 dissolve, 1 dip, 2 wipe, 3 slide, 4 push, 5 zoom, 6 blur, 7 iris, 8 clock,
-// 9 spin), progress, softness, direction (0 left, 1 right, 2 up, 3 down); p[1]: dip color.
+// 9 spin), progress, softness, direction (0 left, 1 right, 2 up, 3 down); p[1]: dip color
+// in linear light.
 @fragment
 fn fs_transition(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let p = effect.p[0];
@@ -594,7 +595,7 @@ fn fs_transition(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let b = incoming_at(uv, 0.0);
     switch kind {
         case 1u: {
-            let color = vec4f(decode_transfer(effect.p[1].rgb, 1u), 1.0);
+            let color = vec4f(effect.p[1].rgb, 1.0);
             if t < 0.5 {
                 return mix(a, color, t * 2.0);
             }

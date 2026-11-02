@@ -99,8 +99,8 @@ fn planar_full_range_and_srgb_sources_are_handled() {
         "planar gray",
     );
 
-    // An sRGB-tagged source is decoded with the sRGB curve, so mid gray comes out darker
-    // in the BT.709 output.
+    // An sRGB-tagged source is graphics (ADR-0041): decoded with the output transfer's
+    // inverse, so mid gray keeps its code value in the BT.709 output.
     let srgb = ColorInfo {
         range: Range::Full,
         transfer: Transfer::Srgb,
@@ -114,7 +114,12 @@ fn planar_full_range_and_srgb_sources_are_handled() {
         1,
         "sRGB gray",
     );
-    assert!(image.pixel(32, 18)[0] < 128);
+    assert_near(
+        image.pixel(32, 18),
+        [128, 128, 128],
+        1,
+        "sRGB gray keeps its code value",
+    );
 }
 
 #[test]

@@ -12,7 +12,7 @@
   product's name, price and button; 6.3 s: the button is pressed; 6.7 s: a toast with a
   check mark confirms it. Every frame is a function of time, through window.fosscut.seek.
 -->
-<script id="fosscut-lines" type="application/json">["running shoes","Trail Runner","$89","Add to cart","Added to cart"]</script>
+<script id="fosscut-lines" type="application/json">["your product","Product name","$49","Add to cart","Added to cart"]</script>
 <style>
   :root {
     --ink: #151A23; --muted: #7B8494; --line: #DCE1E8; --page: #F4F6FA;
@@ -105,8 +105,8 @@
     <div id="field"><span id="placeholder">Search</span><span id="typed"></span><span id="caret"></span></div>
   </div>
   <div id="browse">
-    <div id="chips" class="abs"><div class="chip on">All</div><div class="chip">Running</div><div class="chip">Trail</div><div class="chip">Walking</div></div>
-    <div id="promo" class="abs"><b>Spring sale</b><span>Up to 30% off fresh pairs</span><div class="pill">Shop now</div>
+    <div id="chips" class="abs"><div class="chip on">All</div><div class="chip">New</div><div class="chip">Popular</div><div class="chip">Sale</div></div>
+    <div id="promo" class="abs"><b>Spring sale</b><span>Up to 30% off new arrivals</span><div class="pill">Shop now</div>
       <svg width="300" height="150" viewBox="0 0 200 100" style="color:#FFB72B"><use href="#shoe"/></svg></div>
   </div>
   <div id="results">
@@ -127,7 +127,7 @@
   <div id="p-price" class="abs"></div>
   <div id="p-rating" class="abs"><span class="stars" id="p-stars"></span><span>4.8 (1,204)</span></div>
   <div id="sizes" class="abs"><div class="size">40</div><div class="size">41</div><div class="size on">42</div><div class="size">43</div><div class="size">44</div></div>
-  <div id="p-copy" class="abs">Light, springy and made for long days on any trail, with a grippy sole and a breathable knit.</div>
+  <div id="p-copy" class="abs">Well made, easy to love and ready for every day. Free delivery and free returns.</div>
   <div id="buy" class="abs"><span id="buy-label"></span><div id="buy-ripple" class="abs"></div></div>
 </div>
 
@@ -139,7 +139,7 @@
 <script>
 (() => {
   'use strict';
-  const defaults = ["running shoes", "Trail Runner", "$89", "Add to cart", "Added to cart"];
+  const defaults = ["your product", "Product name", "$49", "Add to cart", "Added to cart"];
   let lines = defaults;
   try {
     const given = JSON.parse(document.getElementById('fosscut-lines').textContent);
@@ -159,9 +159,9 @@
   // The product grid: the first card is the product the page shows.
   const products = [
     { name, price, color: '#3D6BF5', tile: 'linear-gradient(160deg, #E6EDFF 0%, #C3D2FF 100%)' },
-    { name: 'Road Racer', price: '$74', color: '#FF5A3C', tile: 'linear-gradient(160deg, #FFE9DE 0%, #FFC7AE 100%)' },
-    { name: 'City Walker', price: '$96', color: '#19B46B', tile: 'linear-gradient(160deg, #E0F6EA 0%, #B6E8CD 100%)' },
-    { name: 'Court Classic', price: '$65', color: '#1C2230', tile: 'linear-gradient(160deg, #EEF0F4 0%, #D0D6DF 100%)' },
+    { name: 'Classic Edition', price: '$74', color: '#FF5A3C', tile: 'linear-gradient(160deg, #FFE9DE 0%, #FFC7AE 100%)' },
+    { name: 'Everyday Pick', price: '$96', color: '#19B46B', tile: 'linear-gradient(160deg, #E0F6EA 0%, #B6E8CD 100%)' },
+    { name: 'Studio Series', price: '$65', color: '#1C2230', tile: 'linear-gradient(160deg, #EEF0F4 0%, #D0D6DF 100%)' },
   ];
   const grid = $('grid');
   const cards = products.map((p, i) => {

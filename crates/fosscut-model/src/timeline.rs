@@ -794,7 +794,8 @@ fn default_canvas_blur() -> f64 {
     0.05
 }
 
-/// An sRGB colour as `#RRGGBB` or `#RRGGBBAA`.
+/// A colour as `#RRGGBB` or `#RRGGBBAA`: code values, as in CSS and design tools, which
+/// exports keep (ADR-0041).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct Color(String);
@@ -846,7 +847,7 @@ impl JsonSchema for Color {
         schemars::json_schema!({
             "type": "string",
             "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
-            "description": "sRGB colour #RRGGBB or #RRGGBBAA."
+            "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values."
         })
     }
 }

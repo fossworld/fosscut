@@ -13,7 +13,8 @@ pub const KINDS: [&str; 10] = [
 ];
 
 /// The uniform of the transition pass. `p[0]`: case, progress, softness, direction (0 left,
-/// 1 right, 2 up, 3 down); `p[1]`: the dip color, sRGB-encoded.
+/// 1 right, 2 up, 3 down); `p[1]`: the dip color in linear light, decoded as graphics
+/// (ADR-0041).
 pub fn pack(transition: &TransitionLayer) -> [[f32; 4]; SLOTS] {
     let mut p = [[0.0f32; 4]; SLOTS];
     let kind = KINDS
@@ -35,7 +36,7 @@ pub fn pack(transition: &TransitionLayer) -> [[f32; 4]; SLOTS] {
         _ => 0.1,
     };
     p[0] = [kind as f32, transition.progress as f32, softness, direction];
-    let color = hex_rgb(name("color").unwrap_or("#000000"));
+    let color = hex_rgb(name("color").unwrap_or("#000000")).map(crate::color::graphics_to_linear);
     p[1] = [color[0], color[1], color[2], 1.0];
     p
 }
@@ -75,6 +76,15 @@ mod tests {
             .collect();
         let p = pack(&transition);
         assert_eq!((p[0][0], p[1]), (1.0, [1.0, 1.0, 1.0, 1.0]));
+        // The dip colour is linear light that the BT.709 output turns back into its code
+        // values (ADR-0041).
+        transition.params = [("color".to_string(), ParamValue::Name("#2E3B57".into()))]
+            .into_iter()
+            .collect();
+        let p = pack(&transition);
+        let codes = [p[1][0], p[1][1], p[1][2]]
+            .map(|l| (crate::color::TransferFunction::Bt709.encode(l) * 255.0).round() as u8);
+        assert_eq!(codes, [46, 59, 87]);
         transition.kind = "unknown".into();
         assert_eq!(pack(&transition)[0][0], 0.0, "unknown types dissolve");
     }

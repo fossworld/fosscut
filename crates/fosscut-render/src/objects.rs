@@ -928,11 +928,11 @@ pub enum Texture {
 impl Shading {
     /// A built-in material, with the layer's texture list to find its texture in.
     pub fn of(material: &Material, layer: &ObjectLayer, emissive_strength: f64) -> Shading {
-        let [r, g, b, _] = crate::text::linear_color(material.color.as_str());
+        let [r, g, b, _] = crate::color::hex_to_linear(material.color.as_str());
         let emissive = material
             .emissive
             .as_ref()
-            .map(|c| crate::text::linear_color(c.as_str()))
+            .map(|c| crate::color::hex_to_linear(c.as_str()))
             .map_or([0.0; 3], |[r, g, b, _]| {
                 let strength = (material.emissive_strength * emissive_strength) as f32;
                 [r * strength, g * strength, b * strength]
@@ -988,7 +988,8 @@ pub fn shadings(layer: &ObjectLayer, model: Option<&ModelData>) -> Vec<Shading> 
     }
 }
 
-/// A decoded image of a model file: RGBA, 8 bits per channel, sRGB, straight alpha.
+/// A decoded image of a model file: RGBA, 8 bits per channel, code values that decode as
+/// graphics (ADR-0041), straight alpha.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelImage {
     /// Width in pixels.
@@ -1065,12 +1066,9 @@ fn rgba8(image: &gltf::image::Data) -> ModelImage {
     let p = &image.pixels;
     let float = |bytes: &[u8]| -> u8 {
         let v = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        // Linear float images are written as sRGB 8-bit, like the PNGs and JPEGs.
-        let encoded = if v <= 0.003_130_8 {
-            12.92 * v
-        } else {
-            1.055 * v.powf(1.0 / 2.4) - 0.055
-        };
+        // Linear float images become 8-bit code values like the PNGs and JPEGs, encoded so
+        // that decoding them as graphics (ADR-0041) gives their light back.
+        let encoded = crate::color::graphics_from_linear(v);
         (encoded.clamp(0.0, 1.0) * 255.0).round() as u8
     };
     let mut rgba = Vec::with_capacity(pixels * 4);

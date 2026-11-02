@@ -31,7 +31,7 @@ use thiserror::Error;
 
 use crate::EngineError;
 
-pub use browser::{BROWSER_VARIABLE, Found, HEADLESS_SHELL, find as find_browser};
+pub use browser::{BROWSER_VARIABLE, Found, find as find_browser};
 pub use decoder::WebDecoder;
 
 /// The `name` of the meta tag that describes a composition, for example
@@ -39,6 +39,100 @@ pub use decoder::WebDecoder;
 /// `fps` is a whole number or a fraction such as `30000/1001`; `duration` is in seconds, or
 /// with a unit (`6s`, `180f`).
 pub const META_NAME: &str = "fosscut:composition";
+
+/// The `name` of the meta tag by which a composition asks to be drawn on the GPU:
+/// `<meta name="fosscut:renderer" content="gpu">` ([`WebRenderer`]).
+pub const RENDERER_META: &str = "fosscut:renderer";
+
+/// The environment variable that overrides the renderer of every composition: `software` or
+/// `gpu`.
+pub const RENDERER_VARIABLE: &str = "FOSSCUT_WEB_RENDERER";
+
+/// How the browser draws a composition's WebGL and compositing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WebRenderer {
+    /// SwiftShader through ANGLE where the browser has it (Linux and Windows), software
+    /// compositing otherwise: the default. Chrome on macOS offers WebGL only on the GPU, so
+    /// there a page in this mode has no WebGL.
+    Software,
+    /// The GPU through ANGLE's Metal backend, in a browser of its own: for pages that ask
+    /// for it with [`RENDERER_META`], such as the Three.js scene templates. Only on macOS;
+    /// elsewhere such pages are drawn in software.
+    Gpu,
+}
+
+impl WebRenderer {
+    /// `software` or `gpu`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WebRenderer::Software => "software",
+            WebRenderer::Gpu => "gpu",
+        }
+    }
+
+    /// The renderer `html` asks for in its first `fosscut:renderer` meta tag; software when
+    /// it asks for none or for anything but `gpu`.
+    pub fn requested(html: &str) -> WebRenderer {
+        let lower = html.to_ascii_lowercase();
+        let mut from = 0;
+        while let Some(found) = lower[from..].find("<meta") {
+            let start = from + found;
+            let end = lower[start..].find('>').map_or(lower.len(), |e| start + e);
+            let tag = &html[start..end];
+            from = end;
+            if attribute(tag, "name").is_some_and(|n| n.eq_ignore_ascii_case(RENDERER_META)) {
+                let gpu =
+                    attribute(tag, "content").is_some_and(|c| c.trim().eq_ignore_ascii_case("gpu"));
+                return if gpu {
+                    WebRenderer::Gpu
+                } else {
+                    WebRenderer::Software
+                };
+            }
+        }
+        WebRenderer::Software
+    }
+
+    /// The renderer that draws the page `entry`: what the page asks for, unless
+    /// [`RENDERER_VARIABLE`] names one, and software where GPU rendering is not offered
+    /// (anywhere but macOS).
+    pub fn for_page(entry: &Path) -> WebRenderer {
+        let html = std::fs::read_to_string(entry).unwrap_or_default();
+        WebRenderer::choose(
+            WebRenderer::requested(&html),
+            std::env::var(RENDERER_VARIABLE).ok().as_deref(),
+            cfg!(target_os = "macos"),
+        )
+    }
+
+    /// The renderer used for a page that asks for `requested`, given the variable's value
+    /// and whether this platform offers GPU rendering.
+    pub fn choose(
+        requested: WebRenderer,
+        variable: Option<&str>,
+        gpu_offered: bool,
+    ) -> WebRenderer {
+        let wanted = match variable.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+            Some("gpu") => WebRenderer::Gpu,
+            Some("software") => WebRenderer::Software,
+            _ => requested,
+        };
+        if gpu_offered {
+            wanted
+        } else {
+            WebRenderer::Software
+        }
+    }
+
+    /// The browser switches that select this renderer.
+    pub(crate) fn browser_switches(self) -> &'static [&'static str] {
+        match self {
+            WebRenderer::Software => &["--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+            WebRenderer::Gpu => &["--use-angle=metal", "--ignore-gpu-blocklist"],
+        }
+    }
+}
 
 /// The bundle folder compositions are copied into.
 pub const WEB_DIR: &str = "web";
@@ -162,7 +256,7 @@ impl WebError {
     pub fn hint(&self) -> Option<String> {
         let text = match self {
             WebError::BrowserMissing { .. } => format!(
-                "Install Google Chrome, Chromium, Microsoft Edge or Brave, or set {BROWSER_VARIABLE} to one. Or ask the user before installing Chrome for Testing's headless shell, since it downloads: models install {HEADLESS_SHELL} (fosscut models install {HEADLESS_SHELL})."
+                "Ask the user to install Google Chrome, Chromium, Microsoft Edge or Brave, or set {BROWSER_VARIABLE} to one. FossCut does not download a browser."
             ),
             WebError::BrowserFailed { .. } => format!(
                 "Check that the browser starts on its own, or point {BROWSER_VARIABLE} at another one."
@@ -227,7 +321,7 @@ pub fn error_catalogue() -> Vec<ErrorCode> {
         entry(
             "fosscut.web.browser_missing",
             "No Chrome, Chromium, Edge or Brave was found to render web compositions.",
-            "Install one, set FOSSCUT_BROWSER, or ask the user before models install chrome-headless-shell.",
+            "Ask the user to install one, or set FOSSCUT_BROWSER to one; FossCut does not download a browser.",
         ),
         entry(
             "fosscut.web.browser_failed",
@@ -611,6 +705,47 @@ pub fn media_add_args(
     }))
 }
 
+/// The arguments of a `media.add` command that imports the composition folder `folder`
+/// where it is, at `relative` in the bundle (its page's path), named `name`: measured like
+/// [`media_add_args`] measures a folder, without copying it.
+pub(crate) fn media_add_args_in_place(
+    folder: &Path,
+    name: &str,
+    relative: &str,
+) -> Result<Value, ApiError> {
+    let (root, entry, files) = collect(folder)?;
+    let html =
+        std::fs::read_to_string(root.join(&entry)).map_err(|e| WebError::NotComposition {
+            path: folder.display().to_string(),
+            message: format!("cannot read {entry}: {e}"),
+        })?;
+    let composition = parse_meta(&html)?.resolve()?;
+    let references = remote_references(&html);
+    if !references.is_empty() {
+        return Err(WebError::RemoteReference { references }.into());
+    }
+    let identity = identity(&root, &files)?;
+    let info = MediaInfo {
+        duration: Some(composition.duration),
+        container: Some("html".into()),
+        video: Some(VideoInfo {
+            width: composition.width,
+            height: composition.height,
+            rate: Some(composition.rate),
+            codec: Some("html".into()),
+            rotation: 0,
+        }),
+        ..MediaInfo::default()
+    };
+    Ok(json!({
+        "name": name,
+        "kind": AssetKind::Web,
+        "path": { "relative": relative },
+        "identity": identity,
+        "info": info,
+    }))
+}
+
 /// The folder to copy, the page's file name in it, and every file to copy (relative paths
 /// with `/`, sorted).
 fn collect(source: &Path) -> Result<(PathBuf, String, Vec<String>), WebError> {
@@ -680,6 +815,13 @@ fn walk(
         }
     }
     Ok(())
+}
+
+/// The content identity of the composition folder `folder` as [`media_add_args`] measures
+/// it, or `None` when it is not a readable composition folder.
+pub(crate) fn folder_identity(folder: &Path) -> Option<ContentIdentity> {
+    let (root, _, files) = collect(folder).ok()?;
+    identity(&root, &files).ok()
 }
 
 /// The composition's content identity: its total size, and a BLAKE3 hash of every file's
@@ -783,9 +925,6 @@ pub(crate) fn open_decoder(
 fn tried_places() -> Vec<String> {
     vec![
         format!("${BROWSER_VARIABLE}"),
-        browser::shell_path(&crate::models_dir())
-            .display()
-            .to_string(),
         "Google Chrome, Chromium, Microsoft Edge and Brave in their usual places".into(),
     ]
 }
@@ -796,6 +935,13 @@ pub fn status() -> Value {
     json!({
         "browser": browser::find(),
         "meta_tag": META_NAME,
+        "renderer": {
+            "default": WebRenderer::Software,
+            "gpu": cfg!(target_os = "macos"),
+            "meta_tag": RENDERER_META,
+            "variable": RENDERER_VARIABLE,
+            "note": "Pages draw in software by default (no WebGL with Chrome on macOS); a page with <meta name=\"fosscut:renderer\" content=\"gpu\"> draws on the GPU (Metal, macOS only) in a browser of its own, as the Three.js scene templates do.",
+        },
         "remotion": "fosscut web remotion <project> <composition> --yes renders the user's own Remotion project after confirmation",
     })
 }
@@ -1005,5 +1151,43 @@ mod tests {
         let remote = media_add_args(&dir.join("remote.html"), None, &bundle, &options).unwrap_err();
         assert_eq!(remote.code, "fosscut.web.remote_reference");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pages_ask_for_the_gpu_and_the_variable_overrides_them() {
+        use WebRenderer::{Gpu, Software};
+        let page = r#"<meta charset="utf-8"><META name="fosscut:renderer" content=" GPU ">"#;
+        assert_eq!(WebRenderer::requested(page), Gpu);
+        assert_eq!(
+            WebRenderer::requested("<meta name='fosscut:renderer' content='software'>"),
+            Software
+        );
+        assert_eq!(WebRenderer::requested("<p>no tag</p>"), Software);
+        assert_eq!(WebRenderer::choose(Gpu, None, true), Gpu);
+        assert_eq!(WebRenderer::choose(Gpu, Some("software"), true), Software);
+        assert_eq!(WebRenderer::choose(Software, Some(" gpu "), true), Gpu);
+        assert_eq!(
+            WebRenderer::choose(Gpu, Some("fast"), true),
+            Gpu,
+            "unknown values are ignored"
+        );
+        assert_eq!(
+            WebRenderer::choose(Gpu, None, false),
+            Software,
+            "the GPU only on macOS"
+        );
+        assert!(
+            Software
+                .browser_switches()
+                .contains(&"--use-angle=swiftshader")
+        );
+        assert!(Gpu.browser_switches().contains(&"--use-angle=metal"));
+        assert!(
+            !Gpu.browser_switches()
+                .iter()
+                .any(|s| s.contains("swiftshader"))
+        );
+        assert_eq!(serde_json::to_value(Gpu).unwrap(), "gpu");
+        assert_eq!(status()["renderer"]["meta_tag"], RENDERER_META);
     }
 }

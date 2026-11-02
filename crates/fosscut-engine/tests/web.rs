@@ -229,6 +229,56 @@ fn fonts_load_before_the_first_frame() {
 }
 
 #[test]
+fn videos_in_a_page_show_the_compositions_time() {
+    let Some(found) = browser() else {
+        return;
+    };
+    let ffmpeg = Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    assert!(
+        ffmpeg || !required("FOSSCUT_REQUIRE_FFMPEG"),
+        "FOSSCUT_REQUIRE_FFMPEG is set but ffmpeg is missing"
+    );
+    if !ffmpeg {
+        return;
+    }
+    let entry = page(
+        "video",
+        "",
+        "<video src=\"clip.webm\" style=\"position:absolute;left:0;top:0;width:64px;height:64px\"></video>",
+    );
+    // Red for the first second, blue for the second; VP8 in WebM plays in every browser. Noise
+    // at a high bit rate makes it about 4 MB, which the browser only plays with byte ranges.
+    let status = Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+        .arg("color=c=red:s=640x640:r=30:d=2,noise=alls=40:allf=t,drawbox=x=0:y=0:w=640:h=640:color=blue@0.85:t=fill:enable='gte(t,1)'")
+        .args(["-c:v", "libvpx", "-b:v", "20M", "-minrate", "20M", "-maxrate", "20M", "-g", "10", "-pix_fmt", "yuv420p"])
+        .arg(entry.with_file_name("clip.webm"))
+        .status()
+        .unwrap();
+    assert!(status.success(), "ffmpeg could not make the clip");
+    let mut decoder = WebDecoder::open(&entry, composition(64, 64, 2), &found).unwrap();
+    let colour = |decoder: &mut WebDecoder, frame: i64| {
+        let [r, g, b, a] = pixel(&decoder.frame_at(at(frame)).unwrap(), 32, 32);
+        assert!(a > 250, "frame {frame} shows the video: {:?}", [r, g, b, a]);
+        if r > 180 && b < 80 {
+            "red"
+        } else if b > 180 && r < 80 {
+            "blue"
+        } else {
+            "neither"
+        }
+    };
+    // The video seeks forwards and back with the composition, from its first frame on.
+    assert_eq!(colour(&mut decoder, 0), "red");
+    assert_eq!(colour(&mut decoder, 45), "blue", "1.5 s in");
+    assert_eq!(colour(&mut decoder, 10), "red", "back to 0.33 s");
+    assert_eq!(colour(&mut decoder, 50), "blue", "forwards to 1.67 s");
+}
+
+#[test]
 fn the_same_frame_renders_the_same_in_another_browser() {
     let Some(found) = browser() else {
         return;

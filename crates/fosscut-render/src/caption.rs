@@ -12,8 +12,9 @@ use fosscut_model::{
 };
 use fosscut_time::Flicks;
 
+use crate::color::hex_to_linear;
 use crate::raster::{outline, over, rounded_rect};
-use crate::text::{DEFAULT_FAMILY, LINE_HEIGHT, TextEngine, TextLayer, TextRaster, linear_color};
+use crate::text::{DEFAULT_FAMILY, LINE_HEIGHT, TextEngine, TextLayer, TextRaster};
 
 /// A caption page at one moment: what the plan hands the renderer.
 #[derive(Clone, Debug, PartialEq)]
@@ -91,7 +92,7 @@ pub fn spoken_word(content: &CaptionContent, time: Flicks) -> Option<usize> {
 pub fn evaluate(layer: &CaptionLayer) -> PageLook {
     let style = &layer.style;
     let t = layer.time;
-    let base = linear_color(style.color.as_str());
+    let base = hex_to_linear(style.color.as_str());
     let spoken = spoken_word(&layer.content, t);
     let mut page = PageLook {
         alpha: 1.0,
@@ -137,13 +138,13 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
             }
             Animator::WordHighlight(a) => {
                 if let Some(look) = spoken.and_then(|i| page.words.get_mut(i)) {
-                    look.color = linear_color(a.params.color.as_str());
+                    look.color = hex_to_linear(a.params.color.as_str());
                     look.scale *= a.params.scale as f32;
                     look.box_color = a
                         .params
                         .box_color
                         .as_ref()
-                        .map(|c| linear_color(c.as_str()));
+                        .map(|c| hex_to_linear(c.as_str()));
                 }
             }
             Animator::WordPop(a) => {
@@ -157,7 +158,7 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
                 }
             }
             Animator::WordKaraoke(a) => {
-                let color = linear_color(a.params.color.as_str());
+                let color = hex_to_linear(a.params.color.as_str());
                 for (look, word) in page.words.iter_mut().zip(&words) {
                     let reached = if t < word.start {
                         0.0
@@ -170,7 +171,7 @@ pub fn evaluate(layer: &CaptionLayer) -> PageLook {
             Animator::WordEmphasis(a) => {
                 for (look, word) in page.words.iter_mut().zip(&words) {
                     if word.emphasis {
-                        look.color = linear_color(a.params.color.as_str());
+                        look.color = hex_to_linear(a.params.color.as_str());
                         look.scale *= a.params.scale as f32;
                     }
                 }
@@ -408,7 +409,7 @@ impl TextEngine {
         // Line boxes behind the words shown so far, fading with them. Each is drawn into
         // a mask first, so translucent colours do not double up where boxes touch.
         if style.background.enabled {
-            let color = linear_color(style.background.color.as_str());
+            let color = hex_to_linear(style.background.color.as_str());
             let mut mask = vec![0.0f32; pixels.len()];
             for line in &lines {
                 let shown: Vec<usize> = line
@@ -444,7 +445,7 @@ impl TextEngine {
             }
         }
 
-        let stroke_color = linear_color(style.stroke.color.as_str());
+        let stroke_color = hex_to_linear(style.stroke.color.as_str());
         for (word_index, text, _) in lines.iter().flatten() {
             let Some(look) = look.words.get(*word_index) else {
                 continue;
@@ -690,7 +691,7 @@ mod tests {
     }
 
     fn yellow() -> [f32; 4] {
-        linear_color("#FFE14D")
+        hex_to_linear("#FFE14D")
     }
 
     #[test]
@@ -727,7 +728,7 @@ mod tests {
 
     #[test]
     fn animators_follow_word_times() {
-        let white = linear_color("#FFFFFF");
+        let white = hex_to_linear("#FFFFFF");
 
         // Page fade: half in after 60 of 120 ms, half out 60 ms before the end.
         let fade = |t| evaluate(&layer(vec![Animator::PageFade(Animated::default())], t)).alpha;
@@ -793,7 +794,7 @@ mod tests {
         assert_eq!(both.words[1].color, yellow());
         assert!((both.words[1].scale - 1.8).abs() < 1e-6, "scales multiply");
         let only = evaluate(&layer(vec![emphasis], 0));
-        assert_eq!(only.words[1].color, linear_color("#FF0000"));
+        assert_eq!(only.words[1].color, hex_to_linear("#FF0000"));
 
         // Disabled animators do nothing.
         let off = evaluate(&layer(

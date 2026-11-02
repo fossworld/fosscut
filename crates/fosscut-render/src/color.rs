@@ -6,6 +6,10 @@
 //! and encoded with the output transfer function. Decoding with the inverse OETF (rather
 //! than a display EOTF) makes an untouched pixel round-trip exactly, which is what an
 //! editor needs; display rendering intent belongs to the output transform.
+//!
+//! Graphics are display-referred (ADR-0041): hex colours, web composition frames and
+//! pictures tagged sRGB are decoded with [`GRAPHICS_TRANSFER`], the inverse of the output
+//! transfer, so their code values come out of an export unchanged.
 
 use fosscut_media::{ColorInfo, Matrix, Range, Transfer};
 
@@ -70,12 +74,14 @@ pub enum TransferFunction {
 }
 
 impl TransferFunction {
-    /// The function for a stream's transfer tag. HDR transfers need the HDR pipeline,
-    /// which does not exist yet.
+    /// The function a stream with this transfer tag is decoded with. Sources tagged sRGB
+    /// (web composition frames, pictures with an sRGB chunk, screen recordings) are
+    /// graphics and decode with [`GRAPHICS_TRANSFER`] (ADR-0041). HDR transfers need the
+    /// HDR pipeline, which does not exist yet.
     pub fn for_source(transfer: Transfer) -> Result<TransferFunction, RenderError> {
         match transfer {
             Transfer::Bt709 | Transfer::Unspecified => Ok(TransferFunction::Bt709),
-            Transfer::Srgb => Ok(TransferFunction::Srgb),
+            Transfer::Srgb => Ok(GRAPHICS_TRANSFER),
             Transfer::Linear => Ok(TransferFunction::Linear),
             Transfer::Pq | Transfer::Hlg => Err(RenderError::UnsupportedColor {
                 message: format!(
@@ -126,6 +132,45 @@ impl TransferFunction {
             TransferFunction::Linear => l,
         }
     }
+}
+
+/// The transfer function graphics are decoded with (ADR-0041): the inverse of the output
+/// transfer, so colours given as code values (hex colours, SVG drawings, web composition
+/// frames, pictures tagged sRGB) come out of an output with the same code values. Every
+/// output FossCut writes today (exports, frame grabs, the preview) is SDR encoded with
+/// BT.709. HDR outputs will need a reference white for graphics instead.
+pub const GRAPHICS_TRANSFER: TransferFunction = TransferFunction::Bt709;
+
+/// A graphics code value from 0 to 1, such as a channel of a hex colour or a pixel of an
+/// SVG drawing, in linear light (ADR-0041).
+pub fn graphics_to_linear(v: f32) -> f32 {
+    GRAPHICS_TRANSFER.decode(v)
+}
+
+/// The graphics code value from 0 to 1 that [`graphics_to_linear`] turns into linear
+/// light `l`.
+pub fn graphics_from_linear(l: f32) -> f32 {
+    GRAPHICS_TRANSFER.encode(l)
+}
+
+/// A `#RRGGBB` or `#RRGGBBAA` colour as linear-light RGB and straight alpha (ADR-0041): its
+/// channels are the code values an export keeps. Alpha is 1 without `AA`; a channel that
+/// does not parse reads as full.
+pub fn hex_to_linear(hex: &str) -> [f32; 4] {
+    let digits = hex.trim_start_matches('#');
+    let channel = |i: usize| {
+        digits
+            .get(i..i + 2)
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+            .map_or(1.0, |v| f32::from(v) / 255.0)
+    };
+    let alpha = if digits.len() >= 8 { channel(6) } else { 1.0 };
+    [
+        graphics_to_linear(channel(0)),
+        graphics_to_linear(channel(2)),
+        graphics_to_linear(channel(4)),
+        alpha,
+    ]
 }
 
 /// Converts one 8-bit Y'CbCr sample to linear RGB on the CPU, exactly as the shaders do.
@@ -241,6 +286,40 @@ mod tests {
         }
         assert!((TransferFunction::Srgb.decode(0.5) - 0.214_041).abs() < 1e-5);
         assert!((TransferFunction::Bt709.decode(0.5) - 0.259_589).abs() < 1e-5);
+    }
+
+    #[test]
+    fn graphics_keep_their_code_values_in_the_output() {
+        let output = TransferFunction::Bt709;
+        for code in 0..=255u8 {
+            let v = f32::from(code) / 255.0;
+            let out = output.encode(graphics_to_linear(v)) * 255.0;
+            assert!((out - f32::from(code)).abs() < 0.01, "{code}: {out}");
+            assert!((graphics_from_linear(graphics_to_linear(v)) - v).abs() < 1e-5);
+        }
+        // A dark brand colour: decoded as sRGB it came out as (30, 43, 72).
+        let [r, g, b, a] = hex_to_linear("#2E3B57");
+        let codes = [r, g, b].map(|l| (output.encode(l) * 255.0).round() as u8);
+        assert_eq!((codes, a), ([46, 59, 87], 1.0));
+        // Sources tagged sRGB are graphics too.
+        assert_eq!(
+            TransferFunction::for_source(Transfer::Srgb).unwrap(),
+            GRAPHICS_TRANSFER
+        );
+    }
+
+    #[test]
+    fn hex_colours_decode_to_linear_light_with_alpha() {
+        assert_eq!(hex_to_linear("#FFFFFF"), [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(hex_to_linear("#000000"), [0.0, 0.0, 0.0, 1.0]);
+        let mid = hex_to_linear("#808080");
+        // ((128 / 255 + 0.099) / 1.099) ^ (1 / 0.45), not the 0.2158 of the sRGB curve.
+        assert!((mid[0] - 0.261_482).abs() < 1e-5, "{mid:?}");
+        let translucent = hex_to_linear("#FF000080");
+        assert_eq!(translucent[..3], [1.0, 0.0, 0.0]);
+        assert!((translucent[3] - 128.0 / 255.0).abs() < 1e-6);
+        assert_eq!(hex_to_linear("bad")[3], 1.0);
+        assert_eq!(hex_to_linear("#12")[1..], [1.0, 1.0, 1.0]);
     }
 
     #[test]

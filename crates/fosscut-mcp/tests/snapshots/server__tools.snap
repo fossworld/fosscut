@@ -1507,7 +1507,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first).",
+    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen, and Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first).",
     "input": {
       "$defs": {
         "LibraryAction": {
@@ -1643,7 +1643,7 @@ expression: listing
         },
         "media": {
           "default": [],
-          "description": "add: assets for a template's slots.",
+          "description": "add: assets for a template's slots, or a composition's slots in the order they are\ndeclared.",
           "items": {
             "type": "string"
           },
@@ -1655,6 +1655,9 @@ expression: listing
             "string",
             "null"
           ]
+        },
+        "params": {
+          "description": "add: a composition's parameters by name, as `library list` shows them: colours\n(`#RRGGBB`), texts, numbers, true or false, choices, point lists, groups (objects),\nand slots, which take an asset id (composition slots also a library composition's\nname). Other parameters make another copy of the composition."
         },
         "project": {
           "description": "Path of a `.fosscut` bundle; the open project when omitted.",

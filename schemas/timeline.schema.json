@@ -1226,7 +1226,7 @@
       "type": "object"
     },
     "Color": {
-      "description": "sRGB colour #RRGGBB or #RRGGBBAA.",
+      "description": "Colour #RRGGBB or #RRGGBBAA, as in CSS; exports keep these code values.",
       "pattern": "^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$",
       "type": "string"
     },

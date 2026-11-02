@@ -577,8 +577,7 @@ async fn models_install_only_with_confirmation() {
     let client = connect_with_models(None, folder.clone()).await;
     let listed = ok(&client, "models", json!({})).await;
     let models = listed["models"].as_array().unwrap();
-    // Ten analysis and voice models and runtimes, and the headless browser (ADR-0039).
-    assert_eq!(models.len(), 11);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
     assert!(
         models
@@ -1083,6 +1082,59 @@ async fn the_library_lists_without_a_project_and_places_sounds_on_free_tracks() 
     )
     .await;
     assert_eq!(badge["item"]["kind"], "sticker");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[tokio::test]
+async fn the_library_adds_scene_templates_with_their_params() {
+    let client = connect(None).await;
+    let listed = ok(
+        &client,
+        "library",
+        json!({ "action": "list", "kind": "composition", "search": "parcel" }),
+    )
+    .await;
+    let parcel = &listed["items"][0];
+    assert_eq!(parcel["name"], "parcel-drop-3d");
+    let params = parcel["params"].as_array().unwrap();
+    assert!(
+        params
+            .iter()
+            .any(|p| p["name"] == "logo" && p["type"] == "slot")
+    );
+    assert!(
+        params
+            .iter()
+            .any(|p| p["name"] == "motion_blur" && p["type"] == "group")
+    );
+    let dir = workspace("library-scenes");
+    ok(
+        &client,
+        "project_new",
+        json!({ "path": dir.join("Scenes.fosscut").display().to_string() }),
+    )
+    .await;
+    let added = ok(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "parcel-drop-3d",
+                "params": { "box_color": "#123456", "duration": 2 } }),
+    )
+    .await;
+    assert_eq!(added["item"]["name"], "parcel-drop-3d");
+    let written: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(dir.join("Scenes.fosscut/library/parcel-drop-3d/params.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(written["box_color"], "#123456");
+    assert_eq!(written["duration"], 2.0);
+    let bad = fails(
+        &client,
+        "library",
+        json!({ "action": "add", "name": "parcel-drop-3d", "params": { "box_color": 5 } }),
+    )
+    .await;
+    assert_eq!(bad["code"], "fosscut.library.invalid_params");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

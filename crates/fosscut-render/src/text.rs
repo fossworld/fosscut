@@ -13,6 +13,7 @@ use cosmic_text::{
 use fosscut_model::{Align, BUNDLED_FONT, RevealLook, RevealMotion, RevealUnit, TextContent};
 use fosscut_time::Flicks;
 
+use crate::color::hex_to_linear;
 use crate::raster::{blur, outline, over, rounded_rect};
 
 /// The bundled font family (SIL Open Font License; see `assets/fonts/inter/README.md`).
@@ -306,7 +307,7 @@ impl TextEngine {
         let base = CharLook {
             font: style.family().to_string(),
             size,
-            color: linear_color(style.color.as_str()),
+            color: hex_to_linear(style.color.as_str()),
             bold: style.bold,
             italic: style.italic,
             underline: style.underline,
@@ -329,7 +330,7 @@ impl TextEngine {
                     look.size = (size as f32 * per_canvas_height).max(1.0);
                 }
                 if let Some(color) = &span.color {
-                    look.color = linear_color(color.as_str());
+                    look.color = hex_to_linear(color.as_str());
                 }
                 look.bold = span.bold.unwrap_or(look.bold);
                 look.italic = span.italic.unwrap_or(look.italic);
@@ -644,7 +645,7 @@ impl TextEngine {
                     *cell = cell.max(coverage * alpha);
                 }
             }
-            let color = linear_color(style.background.color.as_str());
+            let color = hex_to_linear(style.background.color.as_str());
             for (pixel, &coverage) in pixels.iter_mut().zip(&mask) {
                 over(pixel, color, coverage);
             }
@@ -656,7 +657,7 @@ impl TextEngine {
             .map(|g| (stroke > 0.0).then(|| outline(&g.ink, wu, hu, stroke)))
             .collect();
         if style.shadow.enabled {
-            let color = linear_color(style.shadow.color.as_str());
+            let color = hex_to_linear(style.shadow.color.as_str());
             let (dx, dy) = (
                 em(style.shadow.offset[0]).round() as i32,
                 em(style.shadow.offset[1]).round() as i32,
@@ -679,7 +680,7 @@ impl TextEngine {
             }
         }
         if style.glow.enabled {
-            let color = linear_color(style.glow.color.as_str());
+            let color = hex_to_linear(style.glow.color.as_str());
             for (group, outlined) in groups.values().zip(&outlines) {
                 let mut glow = outlined.clone().unwrap_or_else(|| group.ink.clone());
                 blur(&mut glow, wu, hu, glow_sigma);
@@ -689,7 +690,7 @@ impl TextEngine {
                 }
             }
         }
-        let stroke_color = linear_color(style.stroke.color.as_str());
+        let stroke_color = hex_to_linear(style.stroke.color.as_str());
         for (group, outlined) in groups.values().zip(&outlines) {
             if let Some(outlined) = outlined {
                 for (pixel, &coverage) in pixels.iter_mut().zip(outlined) {
@@ -808,26 +809,6 @@ fn line_boxes_height(buffer: &Buffer) -> f32 {
         height = height.max(run.line_top + run.line_height);
     }
     if glyphs { height } else { 0.0 }
-}
-
-/// A `#RRGGBB` or `#RRGGBBAA` color as linear-light RGB and alpha: the hex value is sRGB,
-/// as on the web and in design tools.
-pub fn linear_color(hex: &str) -> [f32; 4] {
-    let digits = hex.trim_start_matches('#');
-    let channel = |i: usize| {
-        digits
-            .get(i..i + 2)
-            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
-            .map_or(1.0, |v| f32::from(v) / 255.0)
-    };
-    let decode = |v: f32| crate::color::TransferFunction::Srgb.decode(v);
-    let alpha = if digits.len() >= 8 { channel(6) } else { 1.0 };
-    [
-        decode(channel(0)),
-        decode(channel(2)),
-        decode(channel(4)),
-        alpha,
-    ]
 }
 
 #[cfg(test)]
@@ -950,18 +931,6 @@ mod tests {
         // The box sits on the raster; advance boxes may overhang the ink crop slightly.
         let [x, y, w, h] = full.layout_box;
         assert!(x < full.width as f32 && x + w > 0.0 && y >= 0.0 && y + h <= full.height as f32);
-    }
-
-    #[test]
-    fn colors_are_srgb_hex_decoded_to_linear() {
-        assert_eq!(linear_color("#FFFFFF"), [1.0, 1.0, 1.0, 1.0]);
-        assert_eq!(linear_color("#000000"), [0.0, 0.0, 0.0, 1.0]);
-        let mid = linear_color("#808080");
-        assert!((mid[0] - 0.2158605).abs() < 1e-5, "{mid:?}");
-        let translucent = linear_color("#FF000080");
-        assert_eq!(translucent[1], 0.0);
-        assert!((translucent[3] - 128.0 / 255.0).abs() < 1e-6);
-        assert_eq!(linear_color("bad")[3], 1.0);
     }
 
     fn styled_text(text: &str, edit: impl FnOnce(&mut TextContent)) -> TextLayer {

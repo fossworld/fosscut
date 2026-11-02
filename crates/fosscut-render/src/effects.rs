@@ -132,7 +132,7 @@ pub fn pass_for(effect_type: &str) -> Option<Pass> {
         "color.deflicker" => Pass::Temporal(Temporal::Deflicker),
         "light.glow" => Pass::Light(crate::light::Light::Glow),
         "light.streaks" => Pass::Light(crate::light::Light::Streaks),
-        "light.sweep" => Pass::Pixel("fs_light_sweep"),
+        "light.sweep" => Pass::Light(crate::light::Light::Sweep),
         crate::light::ANIMATION_BLUR => Pass::Blur,
         _ => return None,
     })
@@ -362,13 +362,17 @@ pub fn pack(effect: &PlannedEffect, size: (u32, u32), lut_size: u32) -> [[f32; 4
         "motion.flash" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
         "motion.rainbow" => p[0] = [n("amount"), n("speed"), effect.time as f32, 0.0],
         "motion.zoom_pulse" => p[0] = [n("amount"), n("rate"), effect.time as f32, 0.0],
-        "light.sweep" => p = crate::light::pack_sweep(effect, size),
         "key.chroma" => {
             p[0] = [n("similarity"), n("smoothness"), n("spill"), 0.0];
+            // The key is a code value, as in a frame grab (ADR-0041): decoded as graphics,
+            // then encoded into the sRGB working space the pixels are compared in.
             let color = match effect.values.get("color") {
                 Some(ParamValue::Name(hex)) => hex_rgb(hex),
                 _ => [0.0, 1.0, 0.0],
-            };
+            }
+            .map(|c| {
+                crate::color::TransferFunction::Srgb.encode(crate::color::graphics_to_linear(c))
+            });
             p[1] = [color[0], color[1], color[2], 0.0];
         }
         _ => {}
@@ -376,7 +380,8 @@ pub fn pack(effect: &PlannedEffect, size: (u32, u32), lut_size: u32) -> [[f32; 4
     p
 }
 
-/// The sRGB-encoded channels of `#RRGGBB`, 0 to 1; black when malformed.
+/// The code values of `#RRGGBB`, 0 to 1; black when malformed. Decode them with
+/// [`crate::color::graphics_to_linear`] (ADR-0041).
 pub fn hex_rgb(hex: &str) -> [f32; 3] {
     let digits = hex.trim_start_matches('#');
     let channel = |i: usize| {
@@ -560,6 +565,19 @@ mod tests {
             pack(&planned("color.nope", &[]), (1, 1), 0),
             [[0.0; 4]; SLOTS]
         );
+        // A chroma key is a code value, as a frame grab shows it (ADR-0041): packed in the
+        // sRGB working space, it is what a BT.709 pixel with those code values becomes there.
+        let key = planned(
+            "key.chroma",
+            &[("color", ParamValue::Name("#2E3B57".into()))],
+        );
+        let packed = pack(&key, (1, 1), 0)[1];
+        let srgb = crate::color::TransferFunction::Srgb;
+        let bt709 = crate::color::TransferFunction::Bt709;
+        for (got, code) in packed.iter().zip([46.0f32, 59.0, 87.0]) {
+            let want = srgb.encode(bt709.decode(code / 255.0));
+            assert!((got - want).abs() < 1e-6, "{packed:?}");
+        }
         let curves = curves_table(&planned("color.curves", &[]));
         assert_eq!(curves.len(), 256);
         assert_eq!(curves[255], [1.0; 4]);

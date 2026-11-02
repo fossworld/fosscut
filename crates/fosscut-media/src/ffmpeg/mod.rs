@@ -426,7 +426,8 @@ impl FfmpegVideoDecoder {
                 if is_rgb(other) {
                     // swscale writes R'G'B' pictures (PNG, for one) into Y'CbCr with its
                     // default BT.601 matrix in limited range. Their primaries and transfer
-                    // stay as tagged, so an untagged picture keeps its code values.
+                    // stay as tagged: an untagged picture keeps its code values, and the
+                    // renderer decodes one tagged sRGB as graphics, so it does too (ADR-0041).
                     color.matrix = Matrix::Bt601;
                     color.range = Range::Limited;
                 }

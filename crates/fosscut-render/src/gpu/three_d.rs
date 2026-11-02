@@ -236,9 +236,10 @@ impl Renderer {
         canvas: (u32, u32),
     ) -> &wgpu::Sampler {
         let slanted = layer.space.as_ref().is_some_and(|space| {
-            std::iter::once(&layer.transform)
-                .chain(&layer.shutter)
-                .any(|t| foreshortened(quad, canvas, t, layer.crop, &space.camera))
+            foreshortened(quad, canvas, &layer.transform, layer.crop, &space.camera)
+                || layer.shutter.iter().enumerate().any(|(index, t)| {
+                    foreshortened(quad, canvas, t, layer.crop, space.camera_for(index))
+                })
         });
         if slanted {
             &self.projected.sampler

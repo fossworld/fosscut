@@ -1,72 +1,83 @@
 ---
 name: motion-graphics
-description: Make motion-graphics videos with FossCut, such as app and product ads, logo reveals, kinetic type, animated map routes and end cards: storyboard the brief into short scenes, build each scene as a compound clip from draw-on paths, light effects, text reveals, 3D layers with a camera, particles, 3D objects, device frames, the UI kit and web compositions, time it to music, check frames and export. Use when the user asks for a motion-graphics ad, an animated logo, an app or product promo, kinetic typography, a route on a map or an animated end card.
+description: Make motion-graphics ads and promos with FossCut the way a motion designer works with a client: agree a storyboard of scenes, show a style frame of each scene, build and preview the scenes one by one for approval, then finish them (glow passes, motion blur, grade, grain, camera shake, transitions and sound on the beats) and export at 1080x1920. Use when the user asks for a motion-graphics ad, an app or product promo, an animated logo, kinetic typography, a route on a map or an animated end card.
 ---
 
 # Motion graphics
 
-Follow the safe editing loop of the `fosscut-basics` skill: read, plan with a dry run, apply with `expected_revision` and a `request_id`, check with `frame_grab` and `contact_sheet`, export, report. This skill adds how to turn a brief into scenes and which of FossCut's primitives draws each idea. Worked patterns with exact arguments are in `references/patterns.md`; the UI kit, device frames and their screens are in `references/library.md`. Read them before building the scenes they cover.
+Follow the safe editing loop of the `fosscut-basics` skill: read, plan with a dry run, apply with `expected_revision` and a `request_id`, check, export, report. This skill adds a director's process with four approvals by the user: the storyboard, a style frame per scene, a preview per scene, and the finished cut. Never build a whole ad in one run: what nobody approved usually has to be rebuilt.
+
+Read `references/quality.md` before the storyboard (timing, easing, type, colour, safe areas, readable phone screens). For an app, delivery or product ad, `references/reference-ad.md` is a worked plan of a 12-second ad to adapt. `references/patterns.md` has exact arguments for each kind of scene and for the finishing passes, and `references/library.md` lists the 3D templates, the UI kit, the device frames and the app screen.
 
 ## What a good result looks like
 
-- One idea per scene, readable at a glance: scenes of 1 to 3 seconds, the whole piece usually 6 to 20 seconds, at the size the user needs (1080x1920 for vertical platforms, 1920x1080 for landscape).
-- Everything moves for a reason: it enters, acts and leaves with easing, and scenes change on beats of the music.
-- Text stays long enough to read (about 0.3 s per word plus half a second) and inside the safe area: the middle 80% of the width, and clear of the top and bottom 15% on vertical video.
-- The frame at the key moment of every scene has been looked at, and the export report matches the request.
+- The user approved the storyboard, every style frame and every scene preview before the final export.
+- One idea per scene, 1 to 3 seconds each, scenes changing on bars of the music; every move eases, and the hero moment of each scene holds long enough to read.
+- Everything that moves has motion blur; light has its own glow pass; the whole piece shares one light grade, a little grain and a little camera shake; sound hits the beats.
+- Text and UI read on a phone: inside the safe area, large enough, with strong contrast.
+- The export report shows 1080x1920 at 30 fps for the agreed length, and the user has the file and a contact sheet.
 
-## 1. Storyboard the brief
+## 1. Brief and storyboard (approval 1)
 
-Before touching the project, write the scenes as a numbered list: the idea in one sentence, the length, what moves, the primitive (table below), the words on screen, and the beat it starts on. Show it to the user when there are more than three scenes, and keep each scene to one idea. A 15-second ad for a delivery app could be: a logo whose arrow draws on and glows (2 s); a phone rising while its search bar types and product cards fly out in 3D (3.5 s); a product page with an order toast (2 s); a tilted city map where a route draws and a dot follows it to an "Arriving today" card (3 s); a box landing with a delivered notification (2 s); kinetic type with an underline swoosh (1.5 s); an end card with a light sweep (1 s).
+1. **Brief.** Settle the product, the one message, the call to action, the length (6 to 20 seconds), the size (1080x1920 unless asked otherwise), the brand's colours and fonts, the logo (an `.svg` imports as shapes), and the feel of the music. Ask for what is missing in one message.
+2. **Project and music.** `project_new` at 1080x1920. Put the music in first (`library` with kind music, or the user's track through `media_import`), then `auto_edit` with action `beat_markers` and `every` 4: scenes start on these bars, key moves land on beats.
+3. **Storyboard.** Write the scenes as a table: number, intent (what the viewer must get, in one sentence), start and length, the beat it starts on, the hero moment (the one frame that sells it), what moves, the primitive (section 3), and the words on screen.
+4. **Record it.** One `edit` with a `marker.add` per scene at its start, named `scene N: intent`, for example `{"at": "2s", "name": "scene 2: phone rises, app search types", "color": "#3D6BF5"}`. `timeline_read` lists them under `markers`.
+5. **Show the storyboard and wait.** Change it until the user approves. Do not build before.
 
-## 2. Pick the primitive for each idea
+## 2. Style frames (approval 2)
 
-| Idea | Primitive | How |
-|---|---|---|
-| Lines, logos, underlines and routes that draw themselves | Vector path with a stroke | `edit` with `shape.add` (`d` as SVG path data in canvas pixels, `stroke`, `fill` null for a line), then `animation.set` with `{"in": {"preset": "draw_on"}}` or keyframes on `shape.trim_end`; a logo file: `media_import` the `.svg`, then `vector.explode` to animate its parts |
-| Something riding a line: a courier dot, a plane | Path following | `clip.follow` (`path`, `orient`), keyframes on `follow.progress` from 0 to 1 |
-| Light: a halo, a sheen across a card, streaks | Light effects | `effect.add` of `light.glow`, `light.sweep` (keyframe `effects.<id>.position` from 0 to 1) or `light.streaks` |
-| Type that arrives with energy | Text reveals and staggers | `text.add` with `reveal` (`unit`, `motion` such as blur, pop, zoom, drop or collapse, `overlap`, `easing`, `order`); the `kinetic-type` title template; `clips.stagger` for several clips one after another |
-| Depth: cards in space, a tilted map, a turning phone | 3D layers and a camera | `clip.set` with `transform.three_d` true, `transform.position_z`, `transform.rotation_x`, `transform.rotation_y`; `camera.add`, keyframes on `camera.position_z` (push in) or `camera.orbit`, and its depth of field; 3D presets such as `{"in": {"preset": "fly_in_3d"}}` |
-| Sparks, embers, dust, snow, confetti, bokeh, a burst | Particles | `particles.add` with a preset (`library` with `kind` particles lists them), bursts on beats |
-| A product as an object: a box, city blocks, a podium | 3D objects | `model.add` with a preset from `capabilities` under `library.models` |
-| An app: a phone, its screen, buttons, cards, toasts | Device frames, the UI kit, web compositions | `library` add `phone` (its result's `screen` says where the open screen is), `shop-app` with `lines` for a complete animated app screen, `ui-*` stickers for single parts; your own HTML page through `media_import` |
-| A background | Library backgrounds | `shape.add` with an `item` such as `ui-screen-dark`, or a gradient |
+For each scene, build only its hero moment at its place on the timeline: background, colours, type, the main object, already at the final look and position, without motion. `frame_grab` at that time with `width` 1080 (full size) and send it to the user with the scene's name. Ask for approval or comments, revise and grab again. Settle palette, type scale, contrast and framing here: they are cheap to change now and expensive after the motion is built.
 
-Before using a command for the first time, ask `capabilities` with its name for the exact arguments.
+## 3. Build each scene (approval 3, per scene)
 
-## 3. Build each scene as a compound clip
+Build one scene at a time, in storyboard order, from its approved style frame:
 
-1. **Build the scene in place** on the main timeline over its time: background at the bottom, then the subject, text, and light and particles on top. Check it with `frame_grab`.
-2. **Make it one clip.** `edit` with `clip.compound` (`clips`: every clip of the scene, `name`) puts one compound clip in their place. Its result's `timeline` is the scene's own timeline: read it with `timeline_read` and its `timeline`, and add to it later with the commands' `timeline` argument or the `library` tool's `timeline`.
-3. **A scene with other proportions** (a 16:9 map in a vertical ad, a native 720x1560 phone screen): `timeline.add` a work timeline of that size, build there with `timeline`, and `clip.compound` its clips there. The compound timeline it makes can be placed anywhere with `clip.add` and `compound`, fitted to the canvas like a video of that size.
-4. **Move scenes as wholes.** Animate the scene clip (rise, push, 3D turn) instead of every layer inside it. A device and its screen belong in one scene: screen content below, frame above, placed with the `screen` numbers the library returns.
-5. **Reuse and join.** `clip.add` with `compound` shows a scene again (the logo on the end card). Join scenes with short transitions (`transition.set`: push, zoom, blur or a dip, 6 to 12 frames) or hard cuts on a beat.
+1. **Pick the primitive for each idea.** Before using a command the first time, ask `capabilities` for its arguments.
 
-## 4. Time it to music
+   | Idea | Primitive |
+   |---|---|
+   | A 3D city with a route, a parcel dropping, a phone turning with a live app, a logo extruded in 3D, a product on a podium | The 3D templates (`library` add `route-map-3d`, `parcel-drop-3d`, `phone-3d`, `logo-extrude-3d`, `product-podium-3d` with `params` and `media`): FossCut's own Three.js scenes with bloom, depth of field and motion blur; `references/library.md` lists their parameters |
+   | An app screen: search, cards, product page, button, toast | `shop-app` with `lines` (its defaults are placeholders: always set them), inside `phone-3d` or the flat `phone` frame; push in on the part that matters, or lift it out at a readable size with the UI kit (`ui-*` stickers) |
+   | Lines, underlines, routes and logos that draw themselves | `shape.add` paths with a `stroke`, `animation.set` with `{"in": {"preset": "draw_on"}}`; `vector.explode` for the user's SVG logo |
+   | Type with energy | `text.add` with a `reveal`, the `kinetic-type` title, `clips.stagger` |
+   | Halos, sheens, streaks, sparks | `light.glow`, `light.sweep` (with `bloom` on white type), `light.streaks`; `particles.add` with a burst on the beat |
+   | Depth and camera moves over flat layers | `transform.three_d`, `camera.add` with keyframes on `camera.position_z` or `camera.orbit` |
 
-- Put the music in first: a `library` music loop (kind music) or the user's track through `media_import`.
-- Mark its beats with `auto_edit` and action `beat_markers` (`every` 4 for bars), then start scenes on bars and key moves (a card landing, a draw-on finishing) on beats.
-- Add small sounds from the `library` on the moves: a whoosh just before a scene change, a pop for each card, a ding for a toast. Keep them under the music.
+2. **Build in place, then make it one clip.** Lay the scene's layers over its time on the main timeline (background at the bottom, light and particles on top), then `edit` with `clip.compound` (`clips`, and `name` "Scene N"). Animate the scene clip as a whole for a push, a rise or a 3D turn.
+3. **Motion.** Entrances overshoot a little and settle, the hero moment holds, and the scene hands over to the next on its last beat (`references/quality.md`). Add `motion.blur` (`{"amount": 0.5}`) to every clip that moves, inside the scene and on the scene clip when it moves; 3D layers under a moving camera streak with it too.
+4. **Preview.** `export` the scene alone: `range` from its marker to the next, `resolution` "360" and `fps` "15", a versioned file name such as `scene-2-v1.mp4`, then `job_status` until it succeeds. Give the user the file and a `frame_grab` of the hero moment, wait for approval, revise, and export the next version (`scene-2-v2.mp4`).
 
-## 5. Check
+## 4. Finish the whole piece (approval 4)
 
-`frame_grab` at the key moment of every scene: when a draw-on finishes, when the text has fully arrived, mid camera move, the toast fully in. Then `contact_sheet` over the whole piece. Look for: text inside the safe area and readable over its background; nothing cut by the frame's edge; glows not clipped by a too-small shape; particles not covering words; 3D layers in the right order; screen content lined up with the device's screen. Fix and grab again before exporting.
+In this order, then preview the whole piece at `resolution` "360" for the last approval (`references/patterns.md` has the arguments):
 
-## 6. Export and report
+1. **Joins.** `transition.set` of 0.3 to 0.6 seconds centred on the bar where scenes meet (push, zoom or blur), or a hard cut exactly on a beat. A transition joins clips that touch on one track: `clip.move` a scene clip onto the previous scene's track first.
+2. **Glow passes.** For scenes with light (lines, routes, logo strokes, sparks, neon type): copy the scene clip onto a new track above it at the same time (`query` with `clips.copy`, `track.add`, `clips.paste`), then give the copy `{"blend": "add"}` and a `light.glow` with `{"glow_only": true, "threshold": 0.5}`. Its `opacity` keyframes make the light pulse on hits.
+3. **Motion blur check.** `frame_grab` in the middle of the fastest moves: a soft streak, never a sharp double image.
+4. **Grade, grain and shake.** One `adjustment.add` over the whole piece with `look.apply` of a gentle look (or the user's LUT with `color.lut`), `stylize.grain` (amount 0.08 to 0.15) and `motion.shake` (amount 0.003 to 0.006, speed 1); end it before an end card that must stay still.
+5. **Sound design on the beats.** The music bed, a `whoosh` 2 to 4 frames before each transition, an `impact` or `drum-hit` on each hero landing, `pop` or `click` on taps, `ding` or `notification` on toasts, a `riser` into the end card; sounds under the music, then `audio_normalize` to -14 LUFS.
 
-`export` with `expected_revision`, then `job_status` until it succeeds; compare the report with the request (size, frame rate, length). Tell the user the scenes, what each shows, what you checked, and that `undo` reverses each step.
+## 5. Final export and delivery
+
+`export` at 1080x1920 and 30 fps (`resolution` "1080p" when the project is smaller) with `expected_revision` and a `cover` on the end card, `job_status` until it succeeds, and compare the report with the brief. Send the file, a `contact_sheet` of 12 frames, the scenes with what changed at each approval, and a note that `undo` reverses each step.
+
+## When the user is not there to approve
+
+If the user asked you to go ahead without stopping, still make every step's result (markers, style frames, previews) and judge each against `references/quality.md` before moving on; list them in the report so the user can review them afterwards.
 
 ## When something fails
 
 | Problem | What to do |
 |---|---|
-| `fosscut.shape.invalid` | Path data, stroke width or trims out of range; the message names the field. Path data is in canvas pixels of the timeline it goes on. |
-| A draw-on shows nothing | The shape has no stroke, or its trims already hide it; give it a `stroke` and leave its trims at 0 and 1 for the preset. |
-| `fosscut.follow.invalid` | The path must be a shape clip on the same timeline that follows nothing itself. |
-| `fosscut.camera.invalid` or `fosscut.particles.invalid` | A value is out of range; the message names it; `capabilities` lists the ranges. |
-| `fosscut.clip.property_animated` | That setting has keyframes: change it with `keyframe.set` instead of a patch. |
-| 3D layers drawn in the wrong order | Layers sort as wholes by depth; give overlapping cards different `transform.position_z`, and keep text a 2D layer above them. |
-| `fosscut.web.browser_missing` | Compositions need a browser. Offer to install the `chrome-headless-shell` model with `models` (it downloads, so ask the user), or build the screen from the UI kit instead. |
-| `fosscut.web.remote_reference` | The page loads something from the network; put the file in its folder. |
+| `fosscut.web.browser_missing` | The 3D templates and `shop-app` need Google Chrome, Chromium, Microsoft Edge or Brave installed. Ask the user to install one, or build the scene from native layers (`references/patterns.md`). |
+| A 3D template renders slowly | Preview at `resolution` "360" and `fps` "15"; it renders full size only for the final export. |
+| A 3D template cannot render on this machine | The templates need the graphics card renderer (macOS for now): build the scene from native layers and 3D layers instead. |
+| `fosscut.web.remote_reference` | A page loads something from the network; put the file in its folder. |
+| `fosscut.shape.invalid` | Path data, stroke width or trims out of range; path data is in canvas pixels of the timeline it goes on. |
+| A draw-on shows nothing | The shape has no `stroke`, or its trims already hide it. |
+| `fosscut.clip.property_animated` | That setting has keyframes: change it with `keyframe.set`. |
+| 3D layers drawn in the wrong order | Layers sort as wholes by depth: give overlapping cards different `transform.position_z`, and keep text a 2D layer above them. |
+| A sweep does not show on white type | Give the `light.sweep` a `bloom` of 0.6 to 1, or a coloured light. |
 | `fosscut.library.unknown_item` | Check the name with `library` and action list. |
 | `fosscut.revision.conflict` | Read again, re-plan, apply with the new revision. |

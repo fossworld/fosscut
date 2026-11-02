@@ -1320,7 +1320,7 @@ impl FosscutServer {
 
     /// Lists and adds library items.
     #[tool(
-        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
+        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen, and Three.js scene templates: route-map-3d, parcel-drop-3d, phone-3d, logo-extrude-3d, product-podium-3d), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines, and params and media for their parameters and slots as list shows them) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
     )]
     async fn library(
         &self,
@@ -1360,7 +1360,20 @@ impl FosscutServer {
                 let (command, call_args) = if library::imports_media(&item) {
                     // The import is the first write and takes the revision check; placing
                     // follows on the revision it made.
-                    let media_add = library::media_args(&bundle, &item, &args.lines)?;
+                    // Slots that name assets need the project (ADR-0042).
+                    let project = (args.params.is_some() || !args.media.is_empty())
+                        .then(|| state.projects.snapshot(&bundle))
+                        .transpose()?;
+                    let media_add = library::media_args_with(
+                        &bundle,
+                        &item,
+                        &library::CompositionInput {
+                            lines: args.lines.clone(),
+                            params: args.params.clone(),
+                            media: args.media.clone(),
+                        },
+                        project.as_ref(),
+                    )?;
                     let mut import = Request::single("media.add", media_add);
                     import.expected_revision = args.expected_revision;
                     import.dry_run = args.dry_run;

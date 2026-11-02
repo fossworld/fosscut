@@ -1940,6 +1940,7 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
             clip,
             lines,
             media,
+            params,
         } => {
             let item = library::find(name, kind.as_deref()).map_err(|e| engine_error(&e))?;
             if library::imports_media(&item) {
@@ -1947,8 +1948,18 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
                 // frames, drawings and web compositions.
                 let path = bundle::bundle_path(cli.project.as_deref())?;
                 let lines: Vec<String> = lines.iter().map(|l| l.replace("\\n", "\n")).collect();
-                let media_add =
-                    library::media_args(&path, &item, &lines).map_err(|e| engine_error(&e))?;
+                let params = json_input(params, "params")?;
+                // Slots that name assets need the project (ADR-0042).
+                let project = (params.is_some() || !media.is_empty())
+                    .then(|| bundle::snapshot(&path))
+                    .transpose()?;
+                let input = library::CompositionInput {
+                    lines,
+                    params,
+                    media: media.clone(),
+                };
+                let media_add = library::media_args_with(&path, &item, &input, project.as_ref())
+                    .map_err(|e| engine_error(&e))?;
                 // The import is the first write and takes the revision check and dry run;
                 // placing follows on the revision it made.
                 let mut import = Request::single("media.add", media_add);

@@ -1301,7 +1301,8 @@ impl Renderer {
         let flat = fosscut_model::Transform::default();
         let space = layer.space.as_ref().filter(|_| !drawn);
         // Layers placed in 3D are projected through their camera (ADR-0037).
-        let place = |transform: &fosscut_model::Transform| {
+        let place = |transform: &fosscut_model::Transform,
+                     space: Option<&crate::space::LayerSpace>| {
             let transform = if drawn { &flat } else { transform };
             match (&padding, space) {
                 (Some(padding), space) => {
@@ -1313,12 +1314,28 @@ impl Renderer {
                 (None, None) => buffer(quad.vertices(plan.canvas, transform, layer.crop)),
             }
         };
-        let vertex_buffer = place(&layer.transform);
-        // A motion blur's shutter: the layer at each placement while it is open.
+        let vertex_buffer = place(&layer.transform, space);
+        // A motion blur's shutter: the layer at each placement while it is open, seen
+        // through the camera of that moment when the camera moves too.
         let path = if drawn {
             Vec::new()
         } else {
-            layer.shutter.iter().map(place).collect()
+            layer
+                .shutter
+                .iter()
+                .enumerate()
+                .map(|(index, transform)| match space {
+                    Some(space) if !space.shutter.is_empty() => {
+                        let moment = crate::space::LayerSpace {
+                            camera: space.camera_for(index).clone(),
+                            shutter: Vec::new(),
+                            ..space.clone()
+                        };
+                        place(transform, Some(&moment))
+                    }
+                    _ => place(transform, space),
+                })
+                .collect()
         };
         Ok(Some(Draw {
             bind_group,

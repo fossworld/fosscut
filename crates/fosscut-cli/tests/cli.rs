@@ -1136,8 +1136,7 @@ fn models_from_the_command_line() {
     let dir = workspace("models");
     let listed = ok(&dir, &["models", "list"]);
     let models = listed["models"].as_array().unwrap();
-    // Ten analysis and voice models and runtimes, and the headless browser (ADR-0039).
-    assert_eq!(models.len(), 11);
+    assert_eq!(models.len(), 10);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
     assert!(Path::new(listed["dir"].as_str().unwrap()).ends_with("cache/models"));
 

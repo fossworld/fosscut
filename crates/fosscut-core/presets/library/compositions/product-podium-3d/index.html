@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=1080, height=1920, fps=30, duration=6">
+<meta name="fosscut:renderer" content="gpu">
+<title>3D product on a podium</title>
+<!--
+  Made by FossCut for its library: a product (a picture on a card, a glTF model, or a
+  bottle made in code) rises onto a lit podium and turns with it, reflected in the podium
+  and the floor, with a ring of light round the podium. Three.js (MIT) renders it;
+  window.fosscut.seek(t) draws the frame for time t, with bloom, depth of field and motion
+  blur. Parameters come from params.json. Free to use, also commercially.
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+</style>
+<script type="importmap">{"imports": {"three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/"}}</script>
+<script type="module" src="./scene.js"></script>
+</head>
+<body></body>
+</html>

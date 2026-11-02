@@ -501,9 +501,15 @@ pub struct LibraryArgs {
     /// add: lines for titles, templates and compositions; the text of a text style's clip.
     #[serde(default)]
     pub lines: Vec<String>,
-    /// add: assets for a template's slots.
+    /// add: assets for a template's slots, or a composition's slots in the order they are
+    /// declared.
     #[serde(default)]
     pub media: Vec<String>,
+    /// add: a composition's parameters by name, as `library list` shows them: colours
+    /// (`#RRGGBB`), texts, numbers, true or false, choices, point lists, groups (objects),
+    /// and slots, which take an asset id (composition slots also a library composition's
+    /// name). Other parameters make another copy of the composition.
+    pub params: Option<serde_json::Value>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would change without committing it.

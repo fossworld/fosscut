@@ -152,13 +152,15 @@ fn colors_and_opacity_are_exact_in_linear_light() {
         )),
         [255, 0, 0, 255]
     );
-    // sRGB #808080 is 0.2159 linear, which the BT.709 output encodes as code 123.
+    // Hex colours are graphics (ADR-0041): #808080 keeps code 128 in the BT.709 output.
+    // Decoded as sRGB (0.2159 linear) it came out as 115.
     let gray = brightest(&render(
         &mut renderer,
         vec![colored("#808080")],
         &mut frames,
     ));
-    let want = code(TransferFunction::Srgb.decode(128.0 / 255.0));
+    let want = code(fosscut_render::color::graphics_to_linear(128.0 / 255.0));
+    assert_eq!(want, 128);
     assert!(
         gray[0].abs_diff(want) <= 1 && gray[0] == gray[2],
         "{gray:?} vs {want}"

@@ -31,8 +31,8 @@ use fosscut_model::{
 };
 use fosscut_time::{FLICKS_PER_SECOND, Flicks};
 
+use crate::color::hex_to_linear;
 use crate::plan::SourceRef;
-use crate::text::linear_color;
 
 /// The most sprites drawn for one particle layer, counting each of motion blur's shutter
 /// samples: with more particles, fewer samples are taken.
@@ -306,7 +306,7 @@ impl<'a> Emission<'a> {
             colors: content
                 .colors
                 .iter()
-                .map(|c| linear_color(c.as_str()))
+                .map(|c| hex_to_linear(c.as_str()))
                 .collect(),
         }
     }

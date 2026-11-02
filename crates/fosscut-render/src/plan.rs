@@ -266,7 +266,7 @@ impl RenderPlan {
 /// The version of [`RenderPlan::cache_key_bytes`]: bump it whenever planning, the
 /// compositor, an effect or a shader changes the pixels a plan renders, or the encoding
 /// changes, so frames cached by an older renderer are never shown again (ADR-0032, item 4).
-pub const CACHE_KEY_VERSION: u32 = 3;
+pub const CACHE_KEY_VERSION: u32 = 4;
 
 impl RenderPlan {
     /// A stable encoding of everything in this plan that affects its pixels when rendered at
@@ -487,7 +487,19 @@ impl KeyBytes {
             scene,
             depth,
             defocus,
+            shutter,
         } = space;
+        self.camera(camera);
+        self.bool(*scene);
+        self.f64(*depth);
+        self.f64(*defocus);
+        self.len(shutter.len());
+        for camera in shutter {
+            self.camera(camera);
+        }
+    }
+
+    fn camera(&mut self, camera: &crate::space::Camera) {
         let crate::space::Camera {
             canvas,
             eye,
@@ -514,9 +526,6 @@ impl KeyBytes {
                 }
             }
         }
-        self.bool(*scene);
-        self.f64(*depth);
-        self.f64(*defocus);
     }
 
     fn layer_source(&mut self, source: &LayerSource) {
@@ -858,18 +867,27 @@ fn shutter_path(
     samples: usize,
     main: &Transform,
 ) -> Vec<Transform> {
-    let samples = samples.max(1);
-    let path: Vec<Transform> = (0..samples)
-        .map(|i| {
-            let share = (i as f64 + 0.5) / samples as f64 - 0.5;
-            placement(offset + Flicks::new((share * open).round() as i64))
-        })
+    let path: Vec<Transform> = shutter_moments(offset, open, samples)
+        .into_iter()
+        .map(placement)
         .collect();
     if path.iter().all(|t| t == main) {
         Vec::new()
     } else {
         path
     }
+}
+
+/// `samples` moments spread evenly over a shutter open for `open` flicks around `time`,
+/// each in the middle of its share of the opening, earliest first.
+fn shutter_moments(time: Flicks, open: f64, samples: usize) -> Vec<Flicks> {
+    let samples = samples.max(1);
+    (0..samples)
+        .map(|i| {
+            let share = (i as f64 + 0.5) / samples as f64 - 0.5;
+            time + Flicks::new((share * open).round() as i64)
+        })
+        .collect()
 }
 
 /// The source frames up to `reach` away from the one shown at `time` in a `rate` source of
@@ -1038,7 +1056,13 @@ fn plan_tracks(
         }
     }
     // Spatial layers see the timeline's camera, and 3D runs draw farthest first (ADR-0037).
-    crate::space::place_layers(&mut plan, &crate::space::camera_at(doc, time));
+    // A 3D layer's motion blur also samples the camera while its shutter is open.
+    let frame = doc.format.rate.frame_duration().get() as f64;
+    let during = |amount: f64, samples: usize| {
+        let moments = shutter_moments(time, frame * amount, samples);
+        crate::space::camera_during(doc, time, &moments)
+    };
+    crate::space::place_layers_during(&mut plan, &crate::space::camera_at(doc, time), &during);
     Ok(plan)
 }
 
@@ -1693,6 +1717,104 @@ mod tests {
                 .unwrap()
                 .cache_key_bytes((640, 360)),
             plan_frame(&closed, &timeline, frames(1))
+                .unwrap()
+                .cache_key_bytes((640, 360)),
+        );
+    }
+
+    #[test]
+    fn motion_blur_samples_the_camera_of_3d_layers() {
+        let (mut project, timeline) = project();
+        // A camera from frame 30 that pushes in over its first second, then holds.
+        let mut camera = clip(&mut project, 30, 60, ClipContent::Camera(Box::default()));
+        let key = |frame: i64, z: f64| fosscut_model::Keyframe {
+            time: frames(frame),
+            value: fosscut_model::KeyValue::Number(z),
+            interpolation: fosscut_model::Interpolation::Linear,
+        };
+        camera
+            .keyframes
+            .insert("camera.position_z".into(), vec![key(0, 0.0), key(30, 0.6)]);
+        let track = project.allocate_id(fosscut_model::IdKind::Track);
+        let doc = project.timelines.get_mut(&timeline).unwrap();
+        doc.tracks.push(Track {
+            id: track,
+            kind: TrackKind::Video,
+            name: None,
+            muted: false,
+            hidden: false,
+            locked: false,
+            caption_style: None,
+            clips: vec![camera],
+        });
+        // The title holds still in 3D, with a half-frame shutter of four samples.
+        let title = &mut doc.tracks[2].clips[0];
+        title.transform.three_d = true;
+        title.effects = vec![fosscut_model::Effect {
+            id: Id::new(fosscut_model::IdKind::Effect, 9),
+            effect_type: "motion.blur".into(),
+            version: 1,
+            enabled: true,
+            params: [
+                ("amount".to_string(), fosscut_model::ParamValue::Number(0.5)),
+                (
+                    "samples".to_string(),
+                    fosscut_model::ParamValue::Number(4.0),
+                ),
+            ]
+            .into(),
+            keyframes: Default::default(),
+        }];
+        let title = |project: &Project, n: i64| {
+            plan_frame(project, &timeline, frames(n))
+                .unwrap()
+                .layers
+                .into_iter()
+                .find(|l| matches!(l.source, LayerSource::Text(_)))
+                .unwrap()
+        };
+        // While the camera pushes in, the still title is drawn four times, through four
+        // cameras moving forward, the frame's own camera between the middle two.
+        let moving = title(&project, 45);
+        let space = moving.space.as_ref().unwrap();
+        assert_eq!(moving.shutter, vec![moving.transform.clone(); 4]);
+        let eyes: Vec<f64> = space.shutter.iter().map(|c| c.eye[2]).collect();
+        assert_eq!(eyes.len(), 4);
+        assert!(eyes.windows(2).all(|w| w[0] < w[1]), "{eyes:?}");
+        assert!(eyes[1] < space.camera.eye[2] && space.camera.eye[2] < eyes[2]);
+        // A frame of the push moves the camera 0.02 of the width: 38.4 pixels, half of it
+        // while the shutter is open, sampled at the middle of each quarter.
+        assert!((eyes[3] - eyes[0] - 0.75 * 19.2).abs() < 1e-4, "{eyes:?}");
+        assert_eq!(space.camera_for(3), &space.shutter[3]);
+        // At the camera's first frame the earlier half of the shutter holds its start:
+        // nothing before the camera clip streaks in.
+        let first = title(&project, 30);
+        let space = first.space.as_ref().unwrap();
+        assert_eq!(space.shutter[0], space.camera);
+        assert_eq!(space.shutter[1], space.camera);
+        assert_ne!(space.shutter[3], space.camera);
+        // Once the camera holds still, so does the title.
+        let held = title(&project, 70);
+        assert!(held.shutter.is_empty() && held.space.unwrap().shutter.is_empty());
+        // A 2D title does not see the camera, and without motion blur nothing streaks.
+        let mut flat = project.clone();
+        flat.timelines.get_mut(&timeline).unwrap().tracks[2].clips[0]
+            .transform
+            .three_d = false;
+        let layer = title(&flat, 45);
+        assert!(layer.shutter.is_empty() && layer.space.is_none());
+        let mut sharp = project.clone();
+        sharp.timelines.get_mut(&timeline).unwrap().tracks[2].clips[0].effects[0]
+            .params
+            .insert("amount".into(), fosscut_model::ParamValue::Number(0.0));
+        let layer = title(&sharp, 45);
+        assert!(layer.shutter.is_empty() && layer.space.unwrap().shutter.is_empty());
+        // The streak is part of what a frame shows.
+        assert_ne!(
+            plan_frame(&project, &timeline, frames(45))
+                .unwrap()
+                .cache_key_bytes((640, 360)),
+            plan_frame(&sharp, &timeline, frames(45))
                 .unwrap()
                 .cache_key_bytes((640, 360)),
         );

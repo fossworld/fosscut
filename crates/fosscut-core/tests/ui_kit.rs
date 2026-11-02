@@ -249,7 +249,7 @@ fn capabilities_list_the_drawings_and_compositions() {
     );
     let compositions = brief["library"]["compositions"].as_array().unwrap();
     assert_eq!(compositions[0]["name"], "shop-app");
-    assert_eq!(compositions[0]["lines"][0], "running shoes");
+    assert_eq!(compositions[0]["lines"][0], "your product");
     let full = session
         .query("capabilities", json!({ "detail": "full" }))
         .unwrap();

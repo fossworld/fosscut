@@ -16,7 +16,9 @@
 //!   weights multiply, since `exp(-a) * exp(-b) = exp(-(a + b))`, cover the whole length
 //!   with few samples.
 //! - **Sweep** adds a band of light whose profile is a smoothstep, moving along a direction
-//!   from just outside the layer's picture to just outside its other side.
+//!   from just outside the layer's picture to just outside its other side. Its bloom is the
+//!   band's light alone, blurred and added as a glow's is, so it spreads past the opaque
+//!   pixels and shows on white, where the band itself cannot brighten anything.
 //!
 //! Lengths are fractions of the frame (the canvas) measured at the layer's own size, so a
 //! glow looks the same on a title, a logo or a video, and grows and shrinks with the
@@ -35,15 +37,19 @@ pub enum Light {
     /// `light.streaks`: bright pass, a fine and a coarse directional pass, then the light
     /// added.
     Streaks,
+    /// `light.sweep`: the band added to the picture; with `bloom`, also the band's light
+    /// alone, blurred like a glow and added around the picture.
+    Sweep,
 }
 
 /// Entry points of `shaders/light.wgsl`, for building pipelines.
-pub const ENTRIES: [&str; 5] = [
+pub const ENTRIES: [&str; 6] = [
     "fs_light_pad",
     "fs_light_bright",
     "fs_light_streak",
     "fs_light_add",
     "fs_light_sweep",
+    "fs_light_band",
 ];
 
 /// The planned type of an animation's blur (`blur_in`, `blur_out`): a Gaussian blur whose
@@ -67,6 +73,11 @@ const STREAK_FAINTEST: f64 = 1e-3;
 const GLOW_REACH: f64 = 3.5;
 /// The wide halo of a glow is this many times its core.
 const GLOW_CORE: f32 = 4.0;
+/// How far a sweep's bloom spreads (one standard deviation of its halo), as a fraction of
+/// the canvas height at the layer's own size, like a glow's radius.
+const SWEEP_BLOOM_RADIUS: f64 = 0.02;
+/// How bright a sweep's bloom is at `bloom` 1, as a glow's intensity.
+const SWEEP_BLOOM_GAIN: f64 = 1.5;
 /// A padded picture holds at most this many pixels (4096 by 2048), so huge glows on large
 /// pictures stay within memory; a picture already larger is not padded.
 const MAX_PADDED_PIXELS: f64 = 8_388_608.0;
@@ -160,6 +171,10 @@ pub fn reach(effect: &PlannedEffect, size: (u32, u32)) -> [f64; 2] {
             let length = number(effect, "length") * unit_w * streak_reach(effect);
             let (sin, cos) = number(effect, "angle").to_radians().sin_cos();
             [length * cos.abs(), length * sin.abs()]
+        }
+        "light.sweep" if sweep_bloom(effect) > 0.0 => {
+            let r = GLOW_REACH * SWEEP_BLOOM_RADIUS * unit_h;
+            [r, r]
         }
         ANIMATION_BLUR => {
             // A fraction of the picture's height, as blur.gaussian measures.
@@ -334,16 +349,13 @@ pub fn pack_pad(padding: &Padding) -> [[f32; 4]; SLOTS] {
     p
 }
 
-/// A `#RRGGBB` parameter as linear-light RGB; white when missing.
+/// A `#RRGGBB` parameter as linear-light RGB, decoded as graphics (ADR-0041); white when
+/// missing.
 fn linear(effect: &PlannedEffect, name: &str) -> [f32; 3] {
     match effect.values.get(name) {
-        Some(ParamValue::Name(hex)) => crate::effects::hex_rgb(hex).map(|c| {
-            if c <= 0.04045 {
-                c / 12.92
-            } else {
-                ((c + 0.055) / 1.055).powf(2.4)
-            }
-        }),
+        Some(ParamValue::Name(hex)) => {
+            crate::effects::hex_rgb(hex).map(crate::color::graphics_to_linear)
+        }
         _ => [1.0; 3],
     }
 }
@@ -366,6 +378,36 @@ pub fn pack_bright(effect: &PlannedEffect) -> [[f32; 4]; SLOTS] {
 pub fn glow_sigmas(effect: &PlannedEffect, size: (u32, u32)) -> (f32, f32) {
     let wide = (number(effect, "radius") * canvas_pixels(effect, size)[1]) as f32;
     (wide, wide / GLOW_CORE)
+}
+
+/// How strongly a sweep's light glows past the picture's opaque pixels: its `bloom`, 0
+/// when the band adds no light.
+pub fn sweep_bloom(effect: &PlannedEffect) -> f64 {
+    if number(effect, "intensity") > 0.0 {
+        number(effect, "bloom").clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+/// The two blur radii of a sweep's bloom in pixels, wide and core, on a picture `size`
+/// large.
+pub fn sweep_bloom_sigmas(effect: &PlannedEffect, size: (u32, u32)) -> (f32, f32) {
+    let wide = (SWEEP_BLOOM_RADIUS * canvas_pixels(effect, size)[1]) as f32;
+    (wide, wide / GLOW_CORE)
+}
+
+/// The uniform of `fs_light_add` for a sweep's bloom: its halo and core in equal parts, at
+/// the bloom's strength.
+pub fn pack_sweep_bloom(effect: &PlannedEffect) -> [[f32; 4]; SLOTS] {
+    let mut p = [[0.0f32; 4]; SLOTS];
+    p[0] = [
+        0.5,
+        0.5,
+        (sweep_bloom(effect) * SWEEP_BLOOM_GAIN) as f32,
+        0.0,
+    ];
+    p
 }
 
 /// The uniform of `fs_light_add`: weights of its two lights, the intensity, and whether
@@ -688,7 +730,8 @@ mod tests {
         let bright = pack_bright(&glow);
         assert_eq!(bright[0][..2], [0.6, 1.0]);
         assert_eq!(bright[1][0], 1.0, "orange is full red");
-        assert!((bright[1][1] - 0.2158).abs() < 1e-3, "and decoded green");
+        // 0x80 decoded as graphics (ADR-0041): BT.709's inverse, not the sRGB curve's 0.2158.
+        assert!((bright[1][1] - 0.2615).abs() < 1e-3, "and decoded green");
         assert_eq!(pack_add(&glow, [0.5, 0.5])[0], [0.5, 0.5, 2.0, 1.0]);
         let annotated =
             annotate(std::slice::from_ref(&glow), (1920, 1080), 1.0, (300, 100)).unwrap();
@@ -745,5 +788,31 @@ mod tests {
         assert!(!effects[1].values.contains_key("angle"));
         assert!((fitted_scale((1920, 1080), (960, 540), 0) - 0.5).abs() < 1e-9);
         assert!((fitted_scale((1080, 1920), (1920, 1080), 90) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_sweep_with_bloom_spreads_past_the_picture() {
+        let n = ParamValue::Number;
+        // Without bloom (the default) a sweep stays on the picture: no padding.
+        let plain = planned("light.sweep", &[]);
+        assert_eq!(sweep_bloom(&plain), 0.0);
+        assert!(padding(std::slice::from_ref(&plain), (400, 100), 8192).is_none());
+        // With bloom it reaches as far as a glow of its radius, 0.02 of the canvas height.
+        let bloom = planned("light.sweep", &[("bloom", n(0.8))]);
+        let annotated = annotate(std::slice::from_ref(&bloom), (1920, 1080), 1.0, (400, 100))
+            .unwrap()
+            .remove(0);
+        let [x, y] = reach(&annotated, (400, 100));
+        assert!((x - 3.5 * 0.02 * 1080.0).abs() < 1e-9 && x == y);
+        let (wide, core) = sweep_bloom_sigmas(&annotated, (400, 100));
+        assert!((wide - 0.02 * 1080.0).abs() < 1e-3 && (core - wide / 4.0).abs() < 1e-6);
+        let pad = padding(std::slice::from_ref(&annotated), (400, 100), 8192).unwrap();
+        assert_eq!((pad.at, pad.x, pad.y), (0, 76, 76));
+        // Its light adds over the picture like a glow's, halo and core in equal parts.
+        assert_eq!(pack_sweep_bloom(&bloom)[0], [0.5, 0.5, 1.2, 0.0]);
+        // A band that adds no light has no bloom either.
+        let dark = planned("light.sweep", &[("bloom", n(1.0)), ("intensity", n(0.0))]);
+        assert_eq!(sweep_bloom(&dark), 0.0);
+        assert_eq!(reach(&dark, (400, 100)), [0.0, 0.0]);
     }
 }

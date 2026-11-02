@@ -21,6 +21,8 @@
   const EPOCH = 946684800000;
   // Longest wait for fonts, images, media seeks and a seek hook, in milliseconds.
   const PATIENCE = 15000;
+  // Longest wait for a loaded video's first picture to be shown, in milliseconds.
+  const PICTURE_WAIT = 500;
 
   let now = 0;
   let frame = -1;
@@ -206,22 +208,54 @@
       image.addEventListener('error', resolve, { once: true });
     });
   }));
-  const media = () => Promise.all([...document.querySelectorAll('video, audio')].map((element) => {
+  // Media without a picture yet is waited for, so the first frames show it at its time too.
+  const loadedData = (element) => new Promise((resolve) => {
+    element.addEventListener('loadeddata', resolve, { once: true });
+    element.addEventListener('error', resolve, { once: true });
+    element.preload = 'auto';
+  });
+  // A video's first picture reaches the screen a little after its data loads, so each
+  // video is waited for until one is shown (or briefly, when it was shown already).
+  const shown = new WeakSet();
+  const firstPicture = (element) => new Promise((resolve) => {
+    if (!(element instanceof HTMLVideoElement) || shown.has(element)
+      || typeof element.requestVideoFrameCallback !== 'function') {
+      resolve();
+      return;
+    }
+    element.requestVideoFrameCallback(() => {
+      shown.add(element);
+      resolve();
+    });
+    realSetTimeout(() => {
+      shown.add(element);
+      resolve();
+    }, PICTURE_WAIT);
+  });
+  const media = () => Promise.all([...document.querySelectorAll('video, audio')].map(async (element) => {
     element.muted = true;
     element.pause();
-    if (!(element.duration > 0)) {
-      return null;
+    // A new element may not have chosen its source yet.
+    const source = element.currentSrc || element.getAttribute('src') || element.querySelector('source[src]');
+    if (!source || element.error) {
+      return;
     }
-    let target = now / 1000;
-    target = element.loop ? target % element.duration : Math.min(target, element.duration);
-    if (Math.abs(element.currentTime - target) < 0.0005) {
-      return null;
+    const picture = firstPicture(element);
+    if (element.readyState < 2) {
+      await loadedData(element);
     }
-    return new Promise((resolve) => {
-      element.addEventListener('seeked', resolve, { once: true });
-      element.addEventListener('error', resolve, { once: true });
-      element.currentTime = target;
-    });
+    if (element.duration > 0) {
+      let target = now / 1000;
+      target = element.loop ? target % element.duration : Math.min(target, element.duration);
+      if (Math.abs(element.currentTime - target) >= 0.0005) {
+        await new Promise((resolve) => {
+          element.addEventListener('seeked', resolve, { once: true });
+          element.addEventListener('error', resolve, { once: true });
+          element.currentTime = target;
+        });
+      }
+    }
+    await picture;
   }));
   const loaded = async () => {
     // Reading layout makes the page ask for the fonts it uses.

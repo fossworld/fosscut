@@ -21,7 +21,9 @@
 //! camera, other spatial layers the default camera on their own. Each run of consecutive
 //! 3D layers in a plan is drawn farthest first by [`LayerSpace::depth`], keeping track
 //! order between equal depths; any other layer between them ends the run, as in classic
-//! motion-design tools. Layers are flat, so intersecting layers are not split.
+//! motion-design tools. Layers are flat, so intersecting layers are not split. A 3D layer
+//! with a motion blur is drawn at each moment of its shutter through the camera of that
+//! moment ([`LayerSpace::shutter`]), so a camera move streaks it as its own move does.
 //!
 //! # Other layer kinds
 //!
@@ -33,7 +35,7 @@
 //! canvas-sized texture that is composited like any layer. [`camera_at`] gives the camera
 //! of a timeline at a time for anything that needs it outside a plan.
 
-use fosscut_model::{CameraContent, ClipContent, Project, Timeline, TrackKind, Transform};
+use fosscut_model::{CameraContent, Clip, ClipContent, Project, Timeline, TrackKind, Transform};
 use fosscut_time::Flicks;
 
 use crate::plan::{Layer, LayerSource, RenderPlan};
@@ -348,6 +350,18 @@ pub struct LayerSpace {
     pub depth: f64,
     /// The depth of field's blur radius as a fraction of the canvas width; 0 when sharp.
     pub defocus: f64,
+    /// The camera at each placement of the layer's motion-blur shutter
+    /// ([`Layer::shutter`], one camera per placement) when the camera moves while the
+    /// shutter is open, so a still layer streaks under a moving camera; empty when it
+    /// holds still and every placement is seen through `camera`.
+    pub shutter: Vec<Camera>,
+}
+
+impl LayerSpace {
+    /// The camera the layer's `index`th shutter placement is seen through.
+    pub fn camera_for(&self, index: usize) -> &Camera {
+        self.shutter.get(index).unwrap_or(&self.camera)
+    }
 }
 
 /// The model matrix of a layer placed by `transform` on a `canvas`: from the layer's own
@@ -390,10 +404,9 @@ pub fn position_point(canvas: (u32, u32), transform: &Transform) -> Vec3 {
     ]
 }
 
-/// The camera of `timeline` at `time`: the enabled camera clip covering `time` on the
-/// highest visible video track, or the default camera of its canvas when there is none.
-pub fn camera_at(timeline: &Timeline, time: Flicks) -> Camera {
-    let canvas = (timeline.format.width, timeline.format.height);
+/// The enabled camera clip covering `time` on the highest visible video track of
+/// `timeline`, if any.
+fn camera_clip(timeline: &Timeline, time: Flicks) -> Option<&Clip> {
     timeline
         .tracks
         .iter()
@@ -407,11 +420,44 @@ pub fn camera_at(timeline: &Timeline, time: Flicks) -> Camera {
             })
         })
         .next_back()
+}
+
+/// The camera of `timeline` at `time`: the enabled camera clip covering `time` on the
+/// highest visible video track, or the default camera of its canvas when there is none.
+pub fn camera_at(timeline: &Timeline, time: Flicks) -> Camera {
+    let canvas = (timeline.format.width, timeline.format.height);
+    camera_clip(timeline, time)
         .and_then(|clip| clip.camera_at(time - clip.start))
         .map_or_else(
             || Camera::default_for(canvas),
             |content| Camera::from_content(canvas, &content),
         )
+}
+
+/// The camera of `timeline` at each of `moments` around the frame at `time`, for motion
+/// blur: the camera clip that is the view at `time`, held at its first and last instants,
+/// so a cut to another camera never streaks. Empty when that camera is the same at every
+/// moment (or there is no camera clip), so the frame's own camera serves every moment.
+pub fn camera_during(timeline: &Timeline, time: Flicks, moments: &[Flicks]) -> Vec<Camera> {
+    let Some(clip) = camera_clip(timeline, time) else {
+        return Vec::new();
+    };
+    let canvas = (timeline.format.width, timeline.format.height);
+    let last = clip.end() - Flicks::new(1);
+    let at = |t: Flicks| {
+        clip.camera_at(t.max(clip.start).min(last) - clip.start)
+            .map_or_else(
+                || Camera::default_for(canvas),
+                |content| Camera::from_content(canvas, &content),
+            )
+    };
+    let main = at(time);
+    let cameras: Vec<Camera> = moments.iter().map(|t| at(*t)).collect();
+    if cameras.iter().all(|camera| *camera == main) {
+        Vec::new()
+    } else {
+        cameras
+    }
 }
 
 /// The camera of the timeline `timeline` of `project` at `time`; `None` for an unknown
@@ -429,18 +475,38 @@ pub fn project_camera_at(
 /// their depth and depth-of-field blur; then orders each run of 3D layers by depth. The
 /// planner calls it with the timeline's camera; plans built by hand can call it too.
 pub fn place_layers(plan: &mut RenderPlan, camera: &Camera) {
+    place_layers_during(plan, camera, &|_, _| Vec::new());
+}
+
+/// [`place_layers`] with the camera's own motion in motion blur: for a 3D layer with a
+/// `motion.blur`, `during(amount, samples)` gives the camera at each of the `samples`
+/// moments of a shutter open `amount` of a frame (as [`camera_during`] does), or nothing
+/// when it holds still. The layer is then drawn at each moment through that moment's
+/// camera, so it streaks under a moving camera even when it holds still itself. 3D
+/// objects are not sampled yet (ADR-0040).
+pub fn place_layers_during(
+    plan: &mut RenderPlan,
+    camera: &Camera,
+    during: &dyn Fn(f64, usize) -> Vec<Camera>,
+) {
     let flat = Camera::default_for(plan.canvas);
     for layer in &mut plan.layers {
-        place_layer(layer, plan.canvas, camera, &flat);
+        place_layer(layer, plan.canvas, camera, &flat, during);
     }
     order_by_depth(&mut plan.layers);
 }
 
-fn place_layer(layer: &mut Layer, canvas: (u32, u32), camera: &Camera, flat: &Camera) {
+fn place_layer(
+    layer: &mut Layer,
+    canvas: (u32, u32),
+    camera: &Camera,
+    flat: &Camera,
+    during: &dyn Fn(f64, usize) -> Vec<Camera>,
+) {
     match &mut layer.source {
         LayerSource::Transition(transition) => {
-            place_layer(&mut transition.outgoing, canvas, camera, flat);
-            place_layer(&mut transition.incoming, canvas, camera, flat);
+            place_layer(&mut transition.outgoing, canvas, camera, flat, during);
+            place_layer(&mut transition.incoming, canvas, camera, flat, during);
             return;
         }
         LayerSource::Adjustment => return,
@@ -458,11 +524,27 @@ fn place_layer(layer: &mut Layer, canvas: (u32, u32), camera: &Camera, flat: &Ca
     } else {
         0.0
     };
+    // The camera's own motion while the shutter is open: a still layer gets a shutter of
+    // its one placement, seen through each moment's camera.
+    let mut shutter = Vec::new();
+    if scene
+        && !matches!(layer.source, LayerSource::Model(_))
+        && let Some((amount, samples)) = crate::effects::motion_blur(&layer.effects)
+    {
+        let cameras = during(amount, samples);
+        if !cameras.is_empty() && layer.shutter.is_empty() {
+            layer.shutter = vec![layer.transform.clone(); cameras.len()];
+        }
+        if !cameras.is_empty() && layer.shutter.len() == cameras.len() {
+            shutter = cameras;
+        }
+    }
     layer.space = Some(LayerSpace {
         camera: camera.clone(),
         scene,
         depth,
         defocus,
+        shutter,
     });
 }
 

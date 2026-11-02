@@ -355,9 +355,17 @@ fn goldens(update: bool) -> Result<(), String> {
         command.env("FOSSCUT_UPDATE_GOLDENS", "1");
     }
     run(command)?;
+    // The Three.js scene templates' golden frames, drawn by SwiftShader in a browser
+    // (ADR-0042); they are skipped without a browser.
+    let mut scenes = cargo(&["test", "-p", "fosscut-engine", "--test", "scenes", "golden"]);
+    if update {
+        scenes.env("FOSSCUT_UPDATE_GOLDENS", "1");
+    }
+    run(scenes)?;
     if update {
         println!(
-            "goldens rewritten in crates/fosscut-render/tests/goldens/; open every changed \
+            "goldens rewritten in crates/fosscut-render/tests/goldens/ and \
+             crates/fosscut-engine/tests/goldens/scenes/; open every changed \
              PNG and describe the visual change in the pull request"
         );
     }

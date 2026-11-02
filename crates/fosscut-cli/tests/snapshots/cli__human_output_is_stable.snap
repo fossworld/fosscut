@@ -240,7 +240,6 @@ models (fosscut models install <name>):
   kokoro-82m               110.6 MB  en           not installed
   opus-mt-hu-en            120.0 MB  hu>en        not installed
   opus-mt-en-hu            120.0 MB  en>hu        not installed
-  chrome-headless-shell    104.0 MB  none         not installed
 export presets:
   mp4-h264       H.264 and AAC in MP4: plays everywhere (hardware encoder)
   mp4-hevc       HEVC and AAC in MP4: smaller files (hardware encoder)

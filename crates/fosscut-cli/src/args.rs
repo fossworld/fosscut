@@ -1522,6 +1522,8 @@ pub enum TextCommand {
 }
 
 /// `fosscut library ...`
+// Parsed once per run, so the size of `Add` beside `List` costs nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 pub enum LibraryCommand {
     /// List the library, or search it.
@@ -1563,9 +1565,15 @@ pub enum LibraryCommand {
         /// Lines for titles, templates and compositions (repeat the option).
         #[arg(long = "line")]
         lines: Vec<String>,
-        /// Assets for a template's slots (repeat the option).
+        /// Assets for a template's slots, or a composition's slots in the order they are
+        /// declared (repeat the option).
         #[arg(long = "media")]
         media: Vec<String>,
+        /// A composition's parameters as a JSON object, for example
+        /// '{"route_color": "#FF7A2F", "logo": "asset_0003"}'; `library list --kind
+        /// composition` shows them.
+        #[arg(long)]
+        params: Option<String>,
     },
 }
 

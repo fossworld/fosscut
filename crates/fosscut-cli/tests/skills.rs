@@ -14,7 +14,8 @@
 //!   - `expect_error`: the error code the call must fail with (`expect` then checks the
 //!     error object);
 //!   - `expect_image`: the `width` and `height` of the PNG image the call returns first;
-//!   - `save`: names for values at dotted paths, used later as `"${name}"`;
+//!   - `save`: names for values at dotted paths, used later as `"${name}"` (a saved string
+//!     also inside a longer one, as in `"effects.${sweep}.position"`);
 //!   - `repeat_while`: call again (up to 20 times) while these paths hold these values.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -54,15 +55,35 @@ fn at<'a>(value: &'a Value, path: &str) -> &'a Value {
         })
 }
 
-/// Replaces every string `"${name}"` in `value` with the saved value of that name.
+/// Replaces every string `"${name}"` in `value` with the saved value of that name, and
+/// `${name}` inside a longer string (`"effects.${sweep}.position"`) with the saved string.
 fn substitute(value: &Value, saved: &HashMap<String, Value>) -> Value {
+    let lookup = |name: &str| {
+        saved
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| panic!("${{{name}}} is used before it is saved"))
+    };
     match value {
         Value::String(text) => match text.strip_prefix("${").and_then(|t| t.strip_suffix('}')) {
-            Some(name) => saved
-                .get(name)
-                .cloned()
-                .unwrap_or_else(|| panic!("${{{name}}} is used before it is saved")),
-            None => value.clone(),
+            Some(name) if !name.contains('}') => lookup(name),
+            _ => {
+                let mut out = String::new();
+                let mut rest = text.as_str();
+                while let Some((before, after)) = rest.split_once("${") {
+                    let (name, tail) = after
+                        .split_once('}')
+                        .unwrap_or_else(|| panic!("unclosed ${{ in {text}"));
+                    let Value::String(found) = lookup(name) else {
+                        panic!("${{{name}}} inside {text} must be a string");
+                    };
+                    out.push_str(before);
+                    out.push_str(&found);
+                    rest = tail;
+                }
+                out.push_str(rest);
+                Value::String(out)
+            }
         },
         Value::Array(items) => Value::Array(items.iter().map(|v| substitute(v, saved)).collect()),
         Value::Object(map) => Value::Object(
@@ -315,14 +336,25 @@ fn paths_substitutions_and_matchers_work() {
         serde_json::json!({ "results": [{ "clip": "clip_0003", "n": 3 }], "tiles": [1, 2] });
     assert_eq!(at(&result, "results.0.clip"), "clip_0003");
     assert!(at(&result, "results.1.clip").is_null());
-    let saved = HashMap::from([("rev".to_string(), serde_json::json!(4))]);
+    let saved = HashMap::from([
+        ("rev".to_string(), serde_json::json!(4)),
+        ("sweep".to_string(), serde_json::json!("effect_0007")),
+    ]);
     let args = substitute(
-        &serde_json::json!({ "expected_revision": "${rev}", "keep": "$rev" }),
+        &serde_json::json!({
+            "expected_revision": "${rev}",
+            "keep": "$rev",
+            "property": "effects.${sweep}.position"
+        }),
         &saved,
     );
     assert_eq!(
         args,
-        serde_json::json!({ "expected_revision": 4, "keep": "$rev" })
+        serde_json::json!({
+            "expected_revision": 4,
+            "keep": "$rev",
+            "property": "effects.effect_0007.position"
+        })
     );
     assert!(satisfies(
         &result["tiles"],
