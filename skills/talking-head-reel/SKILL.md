@@ -33,6 +33,7 @@ Settle in one message, or take sensible defaults when the user is not there to a
    - **Landscape footage for a vertical reel** (a webcam or a laptop recording): make the project 1080x1920, place the footage, `media_analyze` with `["pose"]`, then `auto_edit` with action `reframe` on its clip, so a 9:16 crop follows the speaker without bars.
    - The head then sits high in the frame with little room above it, so put visuals over the body instead: `transform.position` [0, 0.3] or lower at scale 0.8 to 0.9, below the captions. Or make the beat a split screen.
    - An upscaled landscape image is soft: keep punch-ins at 1.15 or less.
+   - Where the speaker shows something to the camera (a phone, a product), a crop that follows the face can leave it out. `clip.split` that beat, then `reframe` the piece with a `region` around both the face and the object, or make the beat a split screen with the landscape footage fitted to the width.
 2. **Separate microphone:** `media_import` it, then `auto_edit` with action `sync_audio`, `camera` the footage's asset and `recording` the microphone's. It places the recording under every camera clip, mutes the camera and groups each pair; a `fosscut.audio.sync_uncertain` error means the two do not match well: ask the user.
 3. `media_analyze` with `["transcript"]` on the asset whose sound you keep (the recording when there is one), and `job_status` while it runs. Ask before installing a speech model with `models`.
 
