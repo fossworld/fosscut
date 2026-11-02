@@ -68,7 +68,8 @@ export interface TrashEntry {
 /** One asset of `media.list`. */
 export interface AssetView {
   id: string;
-  kind: "video" | "audio" | "image" | "lut" | "font";
+  /** `vector` is an SVG drawing (ADR-0036), `web` a web composition (ADR-0039), `model` a 3D model. */
+  kind: "video" | "audio" | "image" | "lut" | "font" | "vector" | "web" | "model";
   name: string;
   duration?: Moment | null;
   video?: { width: number; height: number } | null;
@@ -81,6 +82,8 @@ export interface AssetView {
   missing?: boolean;
   /** A font asset's families, for text styles. */
   families?: string[];
+  /** A vector drawing's view box and how many paths it draws, each a shape when exploded. */
+  vector?: { view_box: [number, number, number, number]; paths: number } | null;
 }
 
 /** `media.list`. */
@@ -107,6 +110,16 @@ export interface Transform {
   rotation?: number;
   flip_horizontal?: boolean;
   flip_vertical?: boolean;
+  /** Placed in the timeline's 3D scene, seen through its camera (ADR-0037). */
+  three_d?: boolean;
+  /** Depth as a fraction of the canvas width; positive is away from the viewer. */
+  position_z?: number;
+  /** Degrees it tilts around its horizontal axis; positive tips the top away. */
+  rotation_x?: number;
+  /** Degrees it turns around its vertical axis; positive turns the right edge away. */
+  rotation_y?: number;
+  /** The pivot of rotation and scale, as fractions of the picture from its centre. */
+  anchor?: [number, number];
 }
 
 /** Edges removed from the picture, as fractions of its size; 0 when omitted. */
@@ -186,22 +199,136 @@ export interface ClipView {
   source_used?: Moment;
   /** The transition into the next clip on the track. */
   transition?: { type: string; duration: Moment; params?: Record<string, unknown> };
-  /** How the clip moves in, out and while it shows; durations in flicks. */
+  /** How the clip moves in, out and while it shows; durations and delays in flicks. */
   animations?: {
-    in?: { preset: string; duration: number };
-    out?: { preset: string; duration: number };
-    combo?: { preset: string; duration: number };
+    in?: AnimationView;
+    out?: AnimationView;
+    combo?: AnimationView;
   };
   /** A shape clip's outline (ADR-0028); its label's words are in `text`. */
   shape?: ShapeKind;
-  /** A shape clip's whole shape (detail full). */
-  content?: ShapeContentView;
+  /**
+   * The whole content (detail full): a shape clip's shape, a particle clip's emitter
+   * (ADR-0038) or a 3D object clip's object. Read it through the panel of its kind.
+   */
+  content?: ShapeContentView | ParticleContentView | ModelContentView;
+  /** The shape clip whose path this clip follows (ADR-0036). */
+  follow?: FollowView;
+  /** A camera clip's camera (ADR-0037, detail full). */
+  camera?: CameraView;
+  /** A particle clip's sprite kind and rate, at every detail. */
+  sprite?: SpriteKind;
+  rate?: number;
+  /** A 3D object clip's kind of object (`box`, `sphere`, `asset` and so on). */
+  object?: string;
   /** What fills the canvas around a video or image clip's picture. */
   canvas?: CanvasFill;
 }
 
+/** One of a clip's animations: a preset, how long it takes and how long it waits, in flicks. */
+export interface AnimationView {
+  preset: string;
+  duration: number;
+  delay?: number;
+}
+
+/** Where a clip rides along a shape clip's path (ADR-0036). */
+export interface FollowView {
+  /** The shape clip. */
+  clip: string;
+  /** How far along, as a fraction of the path's length. */
+  progress?: number;
+  /** Turns with the path's direction. */
+  orient?: boolean;
+  /** Added to the point on the path, as fractions of the canvas. */
+  offset?: [number, number];
+}
+
+/** A camera clip's camera as the engine stores it: sparse, omitted fields at their defaults. */
+export interface CameraView {
+  field_of_view?: number;
+  position?: [number, number];
+  position_z?: number;
+  point_of_interest?: [number, number];
+  point_of_interest_z?: number;
+  orbit?: [number, number];
+  roll?: number;
+  depth_of_field?: boolean;
+  focus_offset?: number;
+  aperture?: number;
+  max_blur?: number;
+}
+
+/** The kinds of particle sprite. */
+export type SpriteKind = "dot" | "spark" | "star" | "ring" | "square" | "image";
+
+/** A particle emitter as the engine stores it (ADR-0038): sparse, omitted fields at their defaults. */
+export interface ParticleContentView {
+  emitter?: {
+    shape?: "point" | "line" | "circle" | "rectangle";
+    position?: [number, number];
+    size?: [number, number];
+    angle?: number;
+    edge?: boolean;
+  };
+  rate?: number;
+  bursts?: { at: number; count: number }[];
+  prewarm?: number;
+  offset?: number;
+  life?: number;
+  life_variance?: number;
+  speed?: number;
+  speed_variance?: number;
+  direction?: number;
+  spread?: number;
+  aim?: "direction" | "outward" | "inward" | "converge";
+  gravity?: number;
+  wind?: number;
+  drag?: number;
+  turbulence?: number;
+  turbulence_scale?: number;
+  rotation?: number;
+  rotation_variance?: number;
+  spin?: number;
+  spin_variance?: number;
+  size?: number;
+  size_variance?: number;
+  size_over_life?: number[];
+  opacity?: number;
+  opacity_over_life?: number[];
+  colors?: string[];
+  color_by?: "life" | "random";
+  blend?: "add" | "normal";
+  sprite?: { kind?: SpriteKind; softness?: number; stretch?: number; points?: number; aspect?: number; flip?: number; asset?: string };
+  seed?: number;
+}
+
+/** A 3D object clip's object as the engine stores it (ADR-0040); read by its panel. */
+export interface ModelContentView {
+  object?: { kind?: string } & Record<string, unknown>;
+  material?: Record<string, unknown>;
+  light?: Record<string, unknown>;
+  [field: string]: unknown;
+}
+
 /** The outlines a shape clip can have. */
 export type ShapeKind = "rectangle" | "ellipse" | "star" | "heart" | "path";
+
+/** How a stroke ends and turns at corners. */
+export type LineCap = "butt" | "round" | "square";
+export type LineJoin = "miter" | "round" | "bevel";
+
+/** A shape's stroke (ADR-0036): widths and dashes are fractions of the canvas height. */
+export interface ShapeStrokeView {
+  color?: string;
+  gradient?: { to: string; angle?: number; radial?: boolean };
+  width?: number;
+  cap?: LineCap;
+  join?: LineJoin;
+  miter_limit?: number;
+  dashes?: number[];
+  dash_offset?: number;
+}
 
 /**
  * A shape clip's shape as the engine stores it: sparse, so omitted fields are at their
@@ -213,11 +340,23 @@ export interface ShapeContentView {
   /** Corner rounding of a rectangle, 0 to 1. */
   roundness?: number;
   points?: PathPointView[];
+  /** False leaves a path open: a line (ADR-0036). */
+  closed?: boolean;
+  /** More subpaths of a path, in the same box. */
+  contours?: { points: PathPointView[]; closed?: boolean }[];
+  fill_rule?: "even_odd" | "nonzero";
+  /** Null for no fill, as lines have; white when omitted. */
   fill?: {
     color?: string;
     /** A gradient to a second colour; `angle` in degrees, 0 left to right, 90 top to bottom. */
     gradient?: { to: string; angle?: number; radial?: boolean };
-  };
+  } | null;
+  /** A stroke centred on its edge, or along an open path. */
+  stroke?: ShapeStrokeView;
+  /** The visible part of the outline, 0 to 1 of its length; `trim_offset` wraps it round. */
+  trim_start?: number;
+  trim_end?: number;
+  trim_offset?: number;
   /** An outline inside the edge; `width` is a fraction of the shorter side. */
   outline?: { enabled: boolean; color?: string; width?: number };
   /** Text on it, styled as a text clip's. */
@@ -236,6 +375,7 @@ export type LibraryKind =
   | "text_style"
   | "caption_style"
   | "look"
+  | "particles"
   | "sound"
   | "music";
 
@@ -363,6 +503,8 @@ export interface JobStatus {
   error?: ApiError;
   /** The asset an analysis reads. */
   asset?: string;
+  /** A Remotion render once it succeeded: the file and the asset it became (ADR-0039). */
+  remotion?: { output: string; composition: string; command: string[]; asset?: string };
 }
 
 /** What a capture device records, and what a recording records from. */
@@ -544,6 +686,14 @@ export interface VoicePreset {
 export interface Catalog {
   /** Voice filter presets; empty when the engine lists none. */
   voice_presets?: VoicePreset[];
+  /** What particle emitters can be (ADR-0038), when the engine says. */
+  particles?: { emitters?: string[]; aims?: string[]; sprites?: string[]; blends?: string[]; color_by?: string[] };
+  /** Particle presets, from the library's listing in `capabilities`. */
+  library?: {
+    particles?: { name: string; title: string; description?: string; tags?: string[] }[];
+    /** 3D object presets (ADR-0040), added with `model.add`. */
+    models?: { name: string; title: string; description?: string; tags?: string[] }[];
+  };
   effects: EffectSpec[];
   looks: LookView[];
   transitions: TransitionSpec[];
@@ -590,7 +740,20 @@ export interface TextSpanView {
 }
 
 export type RevealUnit = "letter" | "word" | "line";
-export type RevealMotion = "appear" | "fade" | "rise";
+export type RevealMotion =
+  | "appear"
+  | "fade"
+  | "rise"
+  | "blur"
+  | "pop"
+  | "zoom"
+  | "slide_left"
+  | "slide_right"
+  | "drop"
+  | "collapse";
+/** How each part of a reveal eases; a Bezier curve as `{ bezier: [x1, y1, x2, y2] }`. */
+export type RevealEasing = "linear" | "ease_in" | "ease_out" | "ease_in_out" | "back" | "bounce" | "elastic" | { bezier: [number, number, number, number] };
+export type RevealOrder = "forward" | "backward" | "center" | "edges" | "random";
 
 /** How a text appears, as `timeline.read` reports it. */
 export interface TextRevealView {
@@ -598,6 +761,13 @@ export interface TextRevealView {
   motion?: RevealMotion;
   duration: Moment;
   exit?: boolean;
+  /** How much each part's motion overlaps the next one's, 0 to 1 (0.5 when omitted). */
+  overlap?: number;
+  /** The easing; each motion's own when omitted. */
+  easing?: RevealEasing;
+  order?: RevealOrder;
+  /** How it leaves, when it exits; its entrance motion when omitted. */
+  exit_motion?: RevealMotion;
 }
 
 /** A built-in text style. */
@@ -1219,4 +1389,46 @@ export interface ShortRequest {
 export interface ShortResult {
   short: { timeline: string; clip: string; name: string; start: number; duration: number; centred: string | null; caption_words: number };
   response: EditResponse | null;
+}
+
+// ---- Web compositions and Remotion (ADR-0039) ----
+
+/** A page or folder chosen to import as a web composition, with what its meta tag says. */
+export interface WebPage {
+  path: string;
+  name: string;
+  width: number | null;
+  height: number | null;
+  fps: string | null;
+  duration_seconds: number | null;
+  /** Why the meta tag could not be read. */
+  problem: string | null;
+  /** Network addresses the page loads, which keep it from importing. */
+  remote: string[];
+  /** The browser that will render it; null when this computer has none. */
+  browser: string | null;
+}
+
+/** What to import as a web composition: the values override its meta tag. */
+export interface WebImportRequest {
+  path: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  fps?: string;
+  duration_seconds?: number;
+}
+
+export interface WebImported {
+  asset: string;
+  revision: number;
+}
+
+/** A render of the user's own Remotion project; nothing runs until `confirmed`. */
+export interface RemotionChoice {
+  project: string;
+  composition: string;
+  props?: unknown;
+  entry?: string;
+  confirmed: boolean;
 }

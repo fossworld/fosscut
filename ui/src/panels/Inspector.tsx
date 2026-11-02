@@ -6,6 +6,7 @@ import {
   ArrowUpToLine,
   AudioLines,
   Blend,
+  Box,
   ChevronLeft,
   ChevronRight,
   FlipHorizontal2,
@@ -22,6 +23,7 @@ import {
   SquareDashedMousePointer,
   Subtitles,
   Type,
+  Video,
   Wand2,
   Waves,
 } from "lucide-react";
@@ -38,12 +40,14 @@ import { hint } from "../shortcuts";
 import { findClip } from "../timeline/geometry";
 import { formatTime, parseRate } from "../transport/time";
 import { Glyph, IconButton, Tabs, cx } from "../ui/controls";
-import { kindIcon } from "../ui/kinds";
+import { clipName, kindIcon } from "../ui/kinds";
 import { Activity } from "./Activity";
+import { Camera } from "./Camera";
 import { CanvasFill } from "./CanvasFill";
 import { hasCanvas } from "./canvasRequest";
 import { CaptionTools } from "./CaptionTools";
 import { Effects } from "./Effects";
+import { Follow, canFollow } from "./Follow";
 import { targetsOf } from "./effectFields";
 import {
   type Field,
@@ -59,11 +63,14 @@ import {
   toggleKey,
 } from "./fields";
 import { type InspectorTab, basicTabName, fieldsIn, inspectorTabs, shownTab, sliderRange } from "./inspectorTabs";
+import { KeyedNumber } from "./Keyed";
 import { LibraryItems } from "./Library";
 import { Masks } from "./Masks";
 import { Measured } from "./Measured";
 import { Motion } from "./Motion";
+import { Model } from "./Model";
 import { Multicam } from "./Multicam";
+import { Particles } from "./Particles";
 import { Shape } from "./Shape";
 import { Beats, Reframe, Shorts, VoicePresets } from "./Smart";
 import { Speed } from "./Speed";
@@ -71,7 +78,7 @@ import { Subject } from "./Subject";
 import { TextContent, TextReveal, TextStyleFields } from "./Text";
 
 /** The kinds of clip the inspector names; others show the engine's kind. */
-const KINDS = new Set(["video", "audio", "image", "text", "caption", "adjustment", "shape", "timeline"]);
+const KINDS = new Set(["video", "audio", "image", "text", "caption", "adjustment", "shape", "timeline", "camera", "particles", "model"]);
 
 /** What the clip is, in the interface's language. */
 function kindName(clip: ClipView): string {
@@ -95,6 +102,9 @@ const TAB_ICONS: Record<InspectorTab, LucideIcon> = {
   subject: PersonStanding,
   tools: Wand2,
   shorts: Sparkles,
+  camera: Video,
+  particles: Sparkles,
+  model: Box,
 };
 
 const BLENDS = [
@@ -118,28 +128,7 @@ const CHANNELS = ["stereo", "left", "right", "mono"];
 
 const EASING_NAMES = ["custom", ...Object.keys(EASINGS)];
 
-/** A diamond that adds or removes the property's keyframe at the playhead. */
-function KeyButton({ field, onToggle }: { field: Field; onToggle: () => void }) {
-  if (!field.animatable) return <span className="key-space" />;
-  const state = field.keyed ? "on" : field.animated ? "animated" : "off";
-  const title = field.keyed
-    ? t("inspector.key.remove")
-    : field.animated
-      ? t("inspector.key.add")
-      : t("inspector.key.animate");
-  return (
-    <button type="button" className={`key ${state}`} title={title} aria-label={title} onClick={onToggle}>
-      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-        <path d="M5 0.8 9.2 5 5 9.2 0.8 5z" />
-      </svg>
-    </button>
-  );
-}
-
-/**
- * One numeric property: its name, a slider over the range people use, the value to type,
- * its unit, and the keyframe diamond. Dragging shows the value and commits once, on release.
- */
+/** One numeric property of the inspector's fields, as a keyed number. */
 function NumberField({
   field,
   onCommit,
@@ -149,54 +138,7 @@ function NumberField({
   onCommit: (value: number) => void;
   onToggle: () => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const [sliding, setSliding] = useState<number | null>(null);
-  const commit = () => {
-    if (draft !== null && draft.trim() !== "" && Number.isFinite(Number(draft))) onCommit(Number(draft));
-    setDraft(null);
-  };
-  const release = () => {
-    if (sliding !== null && sliding !== field.value) onCommit(sliding);
-    setSliding(null);
-  };
-  const [low, high] = sliderRange(field);
-  const shown = sliding ?? field.value;
-  return (
-    <div className={cx("field-row", field.animated && "animated")}>
-      <span className="field-label">{field.label}</span>
-      <input
-        type="range"
-        className="slider"
-        min={low}
-        max={high}
-        step={field.step}
-        value={Math.min(high, Math.max(low, shown))}
-        aria-label={field.label}
-        onChange={(event) => setSliding(Number(event.target.value))}
-        onPointerUp={release}
-        onKeyUp={release}
-        onBlur={release}
-      />
-      <span className="number">
-        <input
-          type="number"
-          step={field.step}
-          min={field.min}
-          max={field.max}
-          aria-label={field.label}
-          value={draft ?? String(sliding ?? field.value)}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit();
-            if (event.key === "Escape") setDraft(null);
-          }}
-        />
-        <span className="unit">{field.unit}</span>
-      </span>
-      <KeyButton field={field} onToggle={onToggle} />
-    </div>
-  );
+  return <KeyedNumber spec={{ ...field, range: sliderRange(field) }} onCommit={onCommit} onToggle={onToggle} />;
 }
 
 function Choice({
@@ -317,6 +259,7 @@ function Placement({
   const transform = clip.transform ?? {};
   const fields = fieldsFor(clip, viewing);
   const placement = fieldsIn(fields, "placement");
+  const space = fieldsIn(fields, "space");
   const crop = fieldsIn(fields, "crop");
   const align = (title: MessageKey, icon: LucideIcon, place: { horizontal?: string; vertical?: string }) => (
     <IconButton icon={icon} size="sm" label={t(title)} onClick={() => void editor.align(clip.id, place)} />
@@ -381,6 +324,22 @@ function Placement({
           />
         )}
       </section>
+      {space.length > 0 && (
+        <section className="effects" data-part="space">
+          <h2>
+            <span>{t("space.title")}</span>
+            <Glyph icon={Box} size="sm" />
+          </h2>
+          {clip.kind !== "model" && (
+            <label className="toggle" title={t("space.threeD.help")}>
+              <input type="checkbox" checked={transform.three_d === true} onChange={(event) => set({ "transform.three_d": event.target.checked })} />
+              <span>{t("space.threeD")}</span>
+            </label>
+          )}
+          <FieldList editor={editor} clip={clip} fields={space} viewing={viewing} />
+          {clip.kind !== "model" && <p className="hint">{transform.three_d ? t("space.threeD.on") : t("space.threeD.off")}</p>}
+        </section>
+      )}
       {crop.length > 0 && (
         <section className="effects" data-part="crop">
           <h2>{t("inspector.group.crop")}</h2>
@@ -392,10 +351,22 @@ function Placement({
   );
 }
 
-/** Groups, compound clips and multicam angles: what the clip is part of. */
-function Structure({ editor, clip }: { editor: Editor; clip: ClipView }) {
+/** Groups, compound clips, multicam angles and drawings: what the clip is part of or made of. */
+function Structure({ editor, clip, state }: { editor: Editor; clip: ClipView; state?: EditorState }) {
+  const drawing = clip.kind === "image" && state?.media.some((a) => a.id === clip.asset && a.kind === "vector");
   return (
     <>
+      {drawing && clip.asset && (
+        <div className="options">
+          <div className="buttons">
+            <span className="muted">{t("vector.drawing")}</span>
+            <span className="spacer" />
+            <button title={t("vector.explode.help")} onClick={() => void editor.explodeDrawing(clip.asset!)}>
+              {t("vector.explode")}
+            </button>
+          </div>
+        </div>
+      )}
       {clip.kind === "timeline" && clip.timeline && (
         <div className="options">
           <div className="buttons">
@@ -546,7 +517,32 @@ export function ClipInspector({ editor, state, clip }: { editor: Editor; state: 
         <>
           <Keyframes editor={editor} clip={clip} playhead={playhead} />
           <Placement editor={editor} clip={clip} viewing={viewing} separate={separate} onSeparate={setSeparate} />
-          <Structure editor={editor} clip={clip} />
+          {timeline && canFollow(clip, timeline) && <Follow editor={editor} clip={clip} timeline={timeline} playhead={playhead} />}
+          <Structure editor={editor} clip={clip} state={state} />
+        </>
+      );
+      break;
+    case "camera":
+      body = (
+        <>
+          <Keyframes editor={editor} clip={clip} playhead={playhead} />
+          <Camera editor={editor} clip={clip} playhead={playhead} />
+        </>
+      );
+      break;
+    case "particles":
+      body = (
+        <>
+          <Keyframes editor={editor} clip={clip} playhead={playhead} />
+          <Particles key={`particles:${clip.id}`} editor={editor} state={state} clip={clip} />
+        </>
+      );
+      break;
+    case "model":
+      body = (
+        <>
+          <Keyframes editor={editor} clip={clip} playhead={playhead} />
+          <Model key={`model:${clip.id}`} editor={editor} state={state} clip={clip} />
         </>
       );
       break;
@@ -564,7 +560,12 @@ export function ClipInspector({ editor, state, clip }: { editor: Editor; state: 
       );
       break;
     case "shape":
-      body = <Shape key={`shape:${clip.id}`} editor={editor} clip={clip} />;
+      body = (
+        <>
+          <Keyframes editor={editor} clip={clip} playhead={playhead} />
+          <Shape key={`shape:${clip.id}`} editor={editor} clip={clip} playhead={playhead} />
+        </>
+      );
       break;
     case "captions":
       body = (
@@ -636,8 +637,8 @@ export function ClipInspector({ editor, state, clip }: { editor: Editor; state: 
           <Glyph icon={kindIcon(clip.kind)} size="sm" />
         </span>
         <div className="inspector-title">
-          <p className="name" title={clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.id}>
-            {clip.text ?? clip.asset_name ?? clip.timeline_name ?? clip.id}
+          <p className="name" title={clipName(clip)}>
+            {clipName(clip)}
           </p>
           <p className="kind">
             {kindName(clip)}

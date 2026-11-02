@@ -888,9 +888,13 @@ fn add_from_library(workspace: &Workspace, add: &LibraryAdd) -> Answer<Response>
     let reason = format!("Add {} from the library", item.title);
     let start = add.start_flicks.map(|flicks| json!({ "flicks": flicks }));
     let track = given(add.track.as_deref()).map(str::to_string);
-    // The revision on screen guards the first write; a sound's placement follows its import.
-    let mut request = if matches!(item.kind, "sound" | "music") {
-        let mut import = Request::single("media.add", library::sound_media(&bundle, &item.name)?);
+    // The revision on screen guards the first write; media items (sounds, music, device
+    // frames, drawings and web compositions) are placed once they are imported.
+    let mut request = if library::imports_media(&item) {
+        let mut import = Request::single(
+            "media.add",
+            library::media_args(&bundle, &item, &add.lines)?,
+        );
         import.expected_revision = add.expected_revision;
         import.reason = Some(reason.clone());
         let imported = workspace.execute(import)?;
@@ -903,7 +907,7 @@ fn add_from_library(workspace: &Workspace, add: &LibraryAdd) -> Answer<Response>
         let mut placed = json!({ "asset": asset });
         match (start, track) {
             (Some(start), None) => {
-                // A free audio track, so a sound never lands on another.
+                // A free track of its kind, so it never lands on another clip.
                 placed["start"] = start;
                 placed["free_track"] = json!(true);
             }
@@ -922,6 +926,8 @@ fn add_from_library(workspace: &Workspace, add: &LibraryAdd) -> Answer<Response>
             start,
             duration: None,
             track,
+            // The window adds to the timeline it shows, the primary one.
+            timeline: None,
             clip: given(add.clip.as_deref()).map(str::to_string),
             lines: add.lines.clone(),
             media: add.media.clone(),
@@ -1365,6 +1371,81 @@ pub async fn media_import(
         crate::media::import(&workspace, &files).map(Some)
     })
     .await
+}
+
+// ---- Web compositions and Remotion (ADR-0039) ----
+
+/// Asks for a web composition to import: a folder with an `index.html` when `folder`,
+/// else an `.html` page. Answers what it is and what its meta tag says (`None` when the
+/// user cancels), for the window to ask for what the tag leaves out before `web_import`.
+#[tauri::command]
+pub async fn web_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    folder: bool,
+) -> Answer<Option<crate::web::WebPage>> {
+    let workspace = Arc::clone(&state.workspace);
+    let language = state.preferences.current().language;
+    blocking(move || {
+        // Refused before the dialog asks for anything.
+        open_project(&workspace)?;
+        let pick = app
+            .dialog()
+            .file()
+            .set_title(word(&language, Word::ImportComposition));
+        let picked = if folder {
+            pick.blocking_pick_folder()
+        } else {
+            pick.add_filter(word(&language, Word::WebFiles), &["html", "htm"])
+                .blocking_pick_file()
+        };
+        let Some(picked) = picked else {
+            return Ok(None);
+        };
+        let path = picked.into_path().map_err(|e| invalid(e.to_string()))?;
+        crate::web::inspect(&path).map(Some)
+    })
+    .await
+}
+
+/// Copies a web composition into the open project's bundle and adds it as the user's one
+/// undoable edit, with the size, frame rate and length given overriding its meta tag.
+#[tauri::command]
+pub async fn web_import(
+    state: State<'_, AppState>,
+    request: crate::web::WebImport,
+) -> Answer<crate::web::WebImported> {
+    let workspace = Arc::clone(&state.workspace);
+    blocking(move || crate::web::import(&workspace, &request)).await
+}
+
+/// Starts rendering a composition of the user's own Remotion project into the open
+/// project in the background, imported once it is done. Without `confirmed` it refuses
+/// with `fosscut.web.confirmation_required`, whose details carry the licence note and the
+/// command for the window to show first.
+#[tauri::command]
+pub async fn remotion_start(
+    state: State<'_, AppState>,
+    choice: crate::web::RemotionChoice,
+) -> Answer<JobStatus> {
+    let workspace = Arc::clone(&state.workspace);
+    let jobs = Arc::clone(&state.jobs);
+    blocking(move || crate::web::start(&workspace, &jobs, &choice, None)).await
+}
+
+/// A Remotion render's state, the frames done of the total, and once it succeeded the file
+/// and the asset it became.
+#[tauri::command]
+pub fn remotion_status(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    Ok(state.jobs.status(&job, Duration::ZERO)?)
+}
+
+/// Stops a Remotion render (Remotion's whole process group ends and no file is kept), and
+/// answers once it stopped, or after a moment.
+#[tauri::command]
+pub async fn remotion_cancel(state: State<'_, AppState>, job: String) -> Answer<JobStatus> {
+    let jobs = Arc::clone(&state.jobs);
+    blocking(move || Ok(jobs.cancel(&job, CANCEL_WAIT)?)).await
 }
 
 // ---- Edits planned from analyses ----
@@ -2096,6 +2177,38 @@ mod tests {
                 .all(|i| i["bpm"].is_number() && i["seconds"].is_number())
         );
         assert_eq!(library_items(Some("nothing"), None), json!([]));
+    }
+
+    #[test]
+    fn drawings_particles_and_3d_objects_from_the_library_are_placed_at_the_playhead() {
+        let (workspace, runtime, work) = workspace("libmotion");
+        open_new(&workspace, &work, 1920, 1080);
+        let at = |kind: &str, name: &str| LibraryAdd {
+            kind: Some(kind.into()),
+            start_flicks: Some(SECOND),
+            ..add(name)
+        };
+        let phone = add_from_library(&workspace, &at("device", "phone")).unwrap();
+        let sparks = add_from_library(&workspace, &at("particles", "sparks")).unwrap();
+        let podium = add_from_library(&workspace, &at("model", "podium")).unwrap();
+        let now = clips(&workspace);
+        let kind = |response: &Response| clip(&now, &response.results[0]["clip"])["kind"].clone();
+        assert_eq!(
+            kind(&phone),
+            "image",
+            "a device frame is a drawing shown as an image"
+        );
+        assert_eq!(kind(&sparks), "particles");
+        assert_eq!(kind(&podium), "model");
+        for response in [&phone, &sparks, &podium] {
+            assert_eq!(
+                clip(&now, &response.results[0]["clip"])["start"]["flicks"],
+                SECOND
+            );
+        }
+        let media = workspace.query("media.list", Value::Null).unwrap();
+        assert_eq!(media["assets"][0]["kind"], "vector", "{media}");
+        done(workspace, runtime, work);
     }
 
     #[test]

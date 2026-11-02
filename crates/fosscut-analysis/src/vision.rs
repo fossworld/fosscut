@@ -41,6 +41,33 @@ impl Rgb {
         }
     }
 
+    /// An R'G'B'A `frame` averaged over `factor` by `factor` blocks into `width` by
+    /// `height` pixels, ignoring alpha.
+    fn from_rgba(frame: &VideoFrame, factor: usize, width: usize, height: usize) -> Rgb {
+        let plane = &frame.planes[0];
+        let mut data = Vec::with_capacity(width * height * 3);
+        let block = (factor * factor) as f32;
+        for by in 0..height {
+            for bx in 0..width {
+                let mut sum = [0.0f32; 3];
+                for y in by * factor..(by + 1) * factor {
+                    let row = plane.row(y.min(plane.rows.saturating_sub(1)));
+                    for x in bx * factor..(bx + 1) * factor {
+                        for (c, total) in sum.iter_mut().enumerate() {
+                            *total += row.get(x * 4 + c).map_or(0.0, |&v| f32::from(v));
+                        }
+                    }
+                }
+                data.extend(sum.map(|total| (total / block).round().clamp(0.0, 255.0) as u8));
+            }
+        }
+        Rgb {
+            width: width as u32,
+            height: height as u32,
+            data,
+        }
+    }
+
     /// `frame` converted to RGB with its own matrix and range, averaged over square blocks of
     /// the whole number of pixels that keeps its longer side from `max_side` up to twice
     /// that (no averaging when it is already shorter). Chroma is sampled at the centre of
@@ -55,6 +82,9 @@ impl Rgb {
             Matrix::Bt2020Ncl => (0.2627, 0.0593),
             _ => (0.2126, 0.0722),
         };
+        if frame.format == PixelFormat::Rgba {
+            return Rgb::from_rgba(frame, factor, width, height);
+        }
         let full = frame.color.range == Range::Full;
         let identity = frame.color.matrix == Matrix::Identity;
         let luma = frame.planes.first();
@@ -88,6 +118,8 @@ impl Rgb {
                         byte(frame.planes.get(1), cx, cy),
                         byte(frame.planes.get(2), cx, cy),
                     ),
+                    // Read above, before any Y'CbCr is looked at.
+                    PixelFormat::Rgba => (128.0, 128.0),
                 };
                 let (y, u, v) = if full {
                     (y_code / 255.0, (cb - 128.0) / 255.0, (cr - 128.0) / 255.0)

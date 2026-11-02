@@ -20,7 +20,7 @@ export interface Palette {
 }
 
 /** The kinds of clip with colours of their own; others use `other`. */
-export const CLIP_KINDS = ["video", "image", "audio", "text", "caption", "shape", "adjustment", "timeline", "other"] as const;
+export const CLIP_KINDS = ["video", "image", "audio", "text", "caption", "shape", "adjustment", "timeline", "camera", "particles", "model", "other"] as const;
 
 /** The dark theme's colours: what the canvas draws with before the page's styles are read. */
 export const DARK: Palette = {
@@ -45,6 +45,9 @@ export const DARK: Palette = {
     shape: { fill: "#ad3459", tone: "#ffa3bd" },
     adjustment: { fill: "#5c43be", tone: "#c7b8ff" },
     timeline: { fill: "#46529e", tone: "#b7c0ff" },
+    camera: { fill: "#2f3540", tone: "#ffd27a" },
+    particles: { fill: "#8c3fa8", tone: "#f0b8ff" },
+    model: { fill: "#2f7a73", tone: "#9eeee4" },
     other: { fill: "#4c4e57", tone: "#c9cad1" },
   },
   clipLabel: "#ffffff",

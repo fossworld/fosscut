@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="fosscut:composition" content="width=720, height=1560, fps=30, duration=9">
+<title>Shop app screen</title>
+<!--
+  Made by FossCut for its library: a generic shopping app on a phone screen, 720 x 1560
+  (the phone frame's screen at twice its size), 9 seconds. Free to use, also commercially.
+  0.6 s: the search bar types the first line with a caret; 2.3 s: four product cards rise
+  in one after another; 4.3 s: the first card is tapped; 4.6 s: its page slides in with the
+  product's name, price and button; 6.3 s: the button is pressed; 6.7 s: a toast with a
+  check mark confirms it. Every frame is a function of time, through window.fosscut.seek.
+-->
+<script id="fosscut-lines" type="application/json">["running shoes","Trail Runner","$89","Add to cart","Added to cart"]</script>
+<style>
+  :root {
+    --ink: #151A23; --muted: #7B8494; --line: #DCE1E8; --page: #F4F6FA;
+    --accent: #3D6BF5; --accent-dark: #2D55D1; --dark: #1C2230; --check: #2BD47D; --gold: #FFB72B;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 720px; height: 1560px; overflow: hidden; background: var(--page); }
+  body { font-family: system-ui, sans-serif; color: var(--ink); position: relative; }
+  .abs { position: absolute; }
+  #status { left: 0; top: 0; width: 720px; height: 92px; }
+  #clock { left: 56px; top: 30px; font-size: 30px; font-weight: 600; }
+  #signal { right: 120px; top: 38px; display: flex; gap: 5px; align-items: flex-end; }
+  #signal i { display: block; width: 7px; background: var(--ink); border-radius: 2px; }
+  #battery { right: 52px; top: 36px; width: 52px; height: 26px; border: 3px solid var(--ink); border-radius: 8px; padding: 3px; }
+  #battery::after { content: ""; display: block; width: 70%; height: 100%; background: var(--ink); border-radius: 3px; }
+  #home-title { left: 40px; top: 128px; font-size: 58px; font-weight: 800; letter-spacing: -1px; }
+  #home-sub { left: 40px; top: 204px; font-size: 28px; color: var(--muted); }
+  #search { left: 40px; top: 262px; width: 640px; height: 100px; border-radius: 50px; background: #fff;
+            box-shadow: 0 6px 24px rgba(21, 26, 35, 0.08); border: 2px solid var(--line); display: flex; align-items: center; padding-left: 34px; }
+  #search svg { flex: none; }
+  #field { margin-left: 22px; font-size: 32px; display: flex; align-items: center; height: 100%; white-space: pre; }
+  #placeholder { color: var(--muted); }
+  #typed { color: var(--ink); font-weight: 500; }
+  #caret { display: inline-block; width: 4px; height: 44px; margin-left: 3px; background: var(--accent); border-radius: 2px; }
+  #chips { left: 40px; top: 396px; display: flex; gap: 16px; }
+  .chip { height: 64px; padding: 0 30px; border-radius: 32px; background: #fff; border: 2px solid var(--line); font-size: 26px; font-weight: 600; display: flex; align-items: center; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  #promo { left: 40px; top: 492px; width: 640px; height: 300px; border-radius: 36px; overflow: hidden;
+           background: linear-gradient(135deg, #3D6BF5 0%, #7A5CF5 100%); color: #fff; padding: 44px; }
+  #promo b { display: block; font-size: 48px; font-weight: 800; }
+  #promo span { display: block; font-size: 28px; opacity: 0.85; margin-top: 10px; }
+  #promo .pill { display: inline-block; margin-top: 34px; background: #fff; color: var(--accent); font-weight: 700; font-size: 24px; padding: 14px 28px; border-radius: 26px; }
+  #promo svg { position: absolute; right: -30px; bottom: -6px; }
+  #results-head { left: 40px; top: 400px; font-size: 30px; font-weight: 700; }
+  #results-count { right: 40px; top: 404px; font-size: 26px; color: var(--muted); }
+  .card { width: 304px; height: 428px; border-radius: 32px; background: #fff; box-shadow: 0 8px 28px rgba(21, 26, 35, 0.07); overflow: hidden; }
+  .card .img { height: 240px; display: flex; align-items: center; justify-content: center; }
+  .card .name { margin: 22px 24px 0; font-size: 27px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .row { margin: 12px 24px 0; display: flex; align-items: center; justify-content: space-between; }
+  .card .price { font-size: 32px; font-weight: 800; color: var(--accent); }
+  .stars { display: flex; gap: 3px; }
+  #ripple { width: 40px; height: 40px; border-radius: 50%; background: rgba(61, 107, 245, 0.25); }
+  #page { left: 0; top: 0; width: 720px; height: 1560px; background: #fff; }
+  #page-top { left: 0; top: 92px; width: 720px; height: 100px; }
+  #back { left: 40px; top: 18px; width: 64px; height: 64px; border-radius: 32px; background: var(--page); display: flex; align-items: center; justify-content: center; }
+  #cart { right: 40px; top: 18px; width: 64px; height: 64px; border-radius: 32px; background: var(--page); display: flex; align-items: center; justify-content: center; }
+  #badge { right: -6px; top: -6px; width: 30px; height: 30px; border-radius: 15px; background: #FF5A3C; color: #fff; font-size: 18px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+  #hero { left: 40px; top: 210px; width: 640px; height: 600px; border-radius: 44px; display: flex; align-items: center; justify-content: center;
+          background: linear-gradient(160deg, #E6EDFF 0%, #C3D2FF 100%); }
+  #p-name { left: 40px; top: 852px; font-size: 52px; font-weight: 800; letter-spacing: -0.5px; }
+  #p-rating { left: 40px; top: 932px; display: flex; align-items: center; gap: 14px; font-size: 26px; color: var(--muted); }
+  #p-price { right: 40px; top: 856px; font-size: 52px; font-weight: 800; color: var(--accent); }
+  #sizes { left: 40px; top: 1010px; display: flex; gap: 14px; }
+  .size { width: 92px; height: 72px; border-radius: 20px; border: 2px solid var(--line); font-size: 26px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .size.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #p-copy { left: 40px; top: 1116px; width: 640px; font-size: 26px; line-height: 1.5; color: var(--muted); }
+  #buy { left: 40px; top: 1384px; width: 640px; height: 112px; border-radius: 56px; background: var(--accent); color: #fff;
+         font-size: 34px; font-weight: 800; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #buy-ripple { width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, 0.35); }
+  #toast { left: 60px; top: 1236px; width: 600px; height: 112px; border-radius: 56px; background: var(--dark); color: #fff;
+           display: flex; align-items: center; padding-left: 36px; font-size: 30px; font-weight: 700; box-shadow: 0 14px 40px rgba(21, 26, 35, 0.3); }
+  #toast svg { flex: none; margin-right: 22px; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <path id="star" d="M 12 1.5 L 15.1 8.3 L 22.5 9.1 L 17 14.1 L 18.5 21.4 L 12 17.7 L 5.5 21.4 L 7 14.1 L 1.5 9.1 L 8.9 8.3 Z"/>
+    <g id="shoe">
+      <path d="M 8 78 C 8 70 16 66 28 66 L 172 66 C 188 66 196 72 196 80 C 196 88 188 93 172 93 L 26 93 C 15 93 8 87 8 78 Z" fill="#FFFFFF"/>
+      <path d="M 8 84 C 30 86 160 86 196 82 C 196 88 188 93 172 93 L 26 93 C 15 93 9 89 8 84 Z" fill="#000" fill-opacity="0.12"/>
+      <path d="M 22 68 C 24 46 36 30 58 25 L 82 20 C 92 18 99 23 105 32 L 120 50 C 133 58 152 60 171 62 C 184 63 191 66 191 71 L 22 71 Z" fill="currentColor"/>
+      <path d="M 120 50 C 133 58 152 60 171 62 C 184 63 191 66 191 71 L 150 71 C 146 62 134 56 120 50 Z" fill="#fff" fill-opacity="0.28"/>
+      <path d="M 22 68 C 23 54 28 42 38 34 L 46 52 C 40 58 36 64 36 71 L 22 71 Z" fill="#000" fill-opacity="0.18"/>
+      <path d="M 82 30 L 94 26 M 89 38 L 101 33 M 96 46 L 108 40" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+    </g>
+  </defs>
+</svg>
+
+<div id="home">
+  <div id="status" class="abs">
+    <div id="clock" class="abs">10:08</div>
+    <div id="signal" class="abs"><i style="height:10px"></i><i style="height:15px"></i><i style="height:20px"></i><i style="height:25px"></i></div>
+    <div id="battery" class="abs"></div>
+  </div>
+  <div id="home-title" class="abs">Discover</div>
+  <div id="home-sub" class="abs">New arrivals every day</div>
+  <div id="search" class="abs">
+    <svg width="40" height="40" viewBox="0 0 40 40"><circle cx="17" cy="17" r="11" fill="none" stroke="#7B8494" stroke-width="4"/><path d="M 25.5 25.5 L 35 35" stroke="#7B8494" stroke-width="4" stroke-linecap="round"/></svg>
+    <div id="field"><span id="placeholder">Search</span><span id="typed"></span><span id="caret"></span></div>
+  </div>
+  <div id="browse">
+    <div id="chips" class="abs"><div class="chip on">All</div><div class="chip">Running</div><div class="chip">Trail</div><div class="chip">Walking</div></div>
+    <div id="promo" class="abs"><b>Spring sale</b><span>Up to 30% off fresh pairs</span><div class="pill">Shop now</div>
+      <svg width="300" height="150" viewBox="0 0 200 100" style="color:#FFB72B"><use href="#shoe"/></svg></div>
+  </div>
+  <div id="results">
+    <div id="results-head" class="abs"></div>
+    <div id="results-count" class="abs">24 items</div>
+  </div>
+  <div id="grid"></div>
+  <div id="ripple" class="abs"></div>
+</div>
+
+<div id="page" class="abs">
+  <div id="page-top" class="abs">
+    <div id="back" class="abs"><svg width="28" height="28" viewBox="0 0 28 28"><path d="M 18 5 L 9 14 L 18 23" fill="none" stroke="#151A23" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div id="cart" class="abs"><svg width="32" height="32" viewBox="0 0 32 32"><path d="M 7 11 L 25 11 L 23.5 27 L 8.5 27 Z" fill="none" stroke="#151A23" stroke-width="3" stroke-linejoin="round"/><path d="M 11.5 11 A 4.5 4.5 0 0 1 20.5 11" fill="none" stroke="#151A23" stroke-width="3"/></svg><div id="badge" class="abs">1</div></div>
+  </div>
+  <div id="hero" class="abs"><svg width="560" height="280" viewBox="0 0 200 100" style="color:#3D6BF5"><use href="#shoe"/></svg></div>
+  <div id="p-name" class="abs"></div>
+  <div id="p-price" class="abs"></div>
+  <div id="p-rating" class="abs"><span class="stars" id="p-stars"></span><span>4.8 (1,204)</span></div>
+  <div id="sizes" class="abs"><div class="size">40</div><div class="size">41</div><div class="size on">42</div><div class="size">43</div><div class="size">44</div></div>
+  <div id="p-copy" class="abs">Light, springy and made for long days on any trail, with a grippy sole and a breathable knit.</div>
+  <div id="buy" class="abs"><span id="buy-label"></span><div id="buy-ripple" class="abs"></div></div>
+</div>
+
+<div id="toast" class="abs">
+  <svg width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="20" fill="none" stroke="#2BD47D" stroke-width="3.5" opacity="0.35"/><path id="tick" d="M 12 23 L 19 30 L 32 15" fill="none" stroke="#2BD47D" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/></svg>
+  <span id="toast-text"></span>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const defaults = ["running shoes", "Trail Runner", "$89", "Add to cart", "Added to cart"];
+  let lines = defaults;
+  try {
+    const given = JSON.parse(document.getElementById('fosscut-lines').textContent);
+    lines = defaults.map((d, i) => (typeof given[i] === 'string' && given[i].length ? given[i] : d));
+  } catch (e) { lines = defaults; }
+  const [query, name, price, button, toastText] = lines;
+
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const seg = (t, a, b) => clamp((t - a) / (b - a));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const back = (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+  const stars = (count, px) => Array.from({ length: count }, () =>
+    `<svg width="${px}" height="${px}" viewBox="0 0 24 24"><use href="#star" fill="#FFB72B"/></svg>`).join('');
+
+  // The product grid: the first card is the product the page shows.
+  const products = [
+    { name, price, color: '#3D6BF5', tile: 'linear-gradient(160deg, #E6EDFF 0%, #C3D2FF 100%)' },
+    { name: 'Road Racer', price: '$74', color: '#FF5A3C', tile: 'linear-gradient(160deg, #FFE9DE 0%, #FFC7AE 100%)' },
+    { name: 'City Walker', price: '$96', color: '#19B46B', tile: 'linear-gradient(160deg, #E0F6EA 0%, #B6E8CD 100%)' },
+    { name: 'Court Classic', price: '$65', color: '#1C2230', tile: 'linear-gradient(160deg, #EEF0F4 0%, #D0D6DF 100%)' },
+  ];
+  const grid = $('grid');
+  const cards = products.map((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'card abs';
+    card.style.left = `${40 + (i % 2) * 336}px`;
+    card.style.top = `${470 + Math.floor(i / 2) * 460}px`;
+    card.innerHTML = `<div class="img" style="background:${p.tile}"><svg width="260" height="130" viewBox="0 0 200 100" style="color:${p.color}"><use href="#shoe"/></svg></div>` +
+      `<div class="name"></div><div class="row"><span class="price"></span><span class="stars">${stars(5, 20)}</span></div>`;
+    card.querySelector('.name').textContent = p.name;
+    card.querySelector('.price').textContent = p.price;
+    grid.appendChild(card);
+    return card;
+  });
+  $('results-head').textContent = `Results for “${query}”`;
+  $('p-name').textContent = name;
+  $('p-price').textContent = price;
+  $('p-stars').innerHTML = stars(5, 28);
+  $('buy-label').textContent = button;
+  $('toast-text').textContent = toastText;
+
+  const TYPE_START = 0.6;
+  const PER_LETTER = Math.min(0.09, 1.4 / Math.max(1, query.length));
+  const TYPED = TYPE_START + PER_LETTER * query.length;
+
+  function render(t) {
+    // Typing, with a caret that stays lit while typing and blinks while waiting.
+    const letters = t < TYPE_START ? 0 : Math.min(query.length, Math.floor((t - TYPE_START) / PER_LETTER) + 1);
+    $('typed').textContent = query.slice(0, letters);
+    $('placeholder').style.display = letters > 0 ? 'none' : '';
+    const typing = t >= TYPE_START - 0.05 && t < TYPED + 0.4;
+    const blink = (Math.floor(t * 2) % 2) === 0;
+    $('caret').style.opacity = (typing || blink) && t < 2.5 ? 1 : 0;
+
+    // The home page's browse section leaves; results arrive.
+    const leave = easeInOut(seg(t, TYPED + 0.25, TYPED + 0.6));
+    const browse = $('browse');
+    browse.style.opacity = 1 - leave;
+    browse.style.transform = `translateY(${-40 * leave}px)`;
+    const head = easeOut(seg(t, TYPED + 0.45, TYPED + 0.8));
+    const results = $('results');
+    results.style.opacity = head;
+    results.style.transform = `translateY(${24 * (1 - head)}px)`;
+    const gridStart = Math.max(2.3, TYPED + 0.55);
+    cards.forEach((card, i) => {
+      const k = back(seg(t, gridStart + i * 0.16, gridStart + i * 0.16 + 0.55));
+      const fade = seg(t, gridStart + i * 0.16, gridStart + i * 0.16 + 0.3);
+      let scale = 0.86 + 0.14 * k;
+      if (i === 0) {
+        const press = seg(t, 4.3, 4.42) * (1 - seg(t, 4.42, 4.6));
+        scale -= 0.04 * press;
+      }
+      card.style.opacity = fade;
+      card.style.transform = `translateY(${60 * (1 - k)}px) scale(${scale})`;
+    });
+
+    // The tap on the first card.
+    const tap = seg(t, 4.3, 4.75);
+    const ripple = $('ripple');
+    ripple.style.left = '172px';
+    ripple.style.top = '660px';
+    ripple.style.opacity = tap > 0 && tap < 1 ? 0.9 * (1 - tap) : 0;
+    ripple.style.transform = `scale(${1 + 9 * easeOut(tap)})`;
+
+    // The product page slides in from the right.
+    const slide = easeOut(seg(t, 4.6, 5.15));
+    const page = $('page');
+    page.style.transform = `translateX(${720 * (1 - slide)}px)`;
+    page.style.visibility = slide > 0 ? 'visible' : 'hidden';
+    $('home').style.transform = `translateX(${-180 * slide}px)`;
+    const heroIn = easeOut(seg(t, 4.85, 5.5));
+    $('hero').style.transform = `scale(${0.92 + 0.08 * heroIn})`;
+    const hero = $('hero').querySelector('svg');
+    hero.style.transform = `translateY(${30 * (1 - heroIn)}px) rotate(${-8 * (1 - heroIn) + 2 * Math.sin(Math.max(0, t - 5.5) * 1.6)}deg)`;
+
+    // Pressing the button, then the cart badge and the toast.
+    const press = seg(t, 6.3, 6.42) * (1 - seg(t, 6.42, 6.6));
+    const buy = $('buy');
+    buy.style.transform = `scale(${1 - 0.04 * press})`;
+    buy.style.background = press > 0 ? '#2D55D1' : '';
+    const wave = seg(t, 6.3, 6.9);
+    const buyRipple = $('buy-ripple');
+    buyRipple.style.left = '300px';
+    buyRipple.style.top = '36px';
+    buyRipple.style.opacity = wave > 0 && wave < 1 ? 1 - wave : 0;
+    buyRipple.style.transform = `scale(${1 + 18 * easeOut(wave)})`;
+    const badge = seg(t, 6.75, 7.1);
+    $('badge').style.transform = `scale(${badge > 0 ? back(badge) : 0})`;
+    const toastIn = back(seg(t, 6.7, 7.15));
+    const toast = $('toast');
+    toast.style.opacity = seg(t, 6.7, 6.9);
+    toast.style.transform = `translateY(${28 * (1 - toastIn)}px) scale(${0.9 + 0.1 * toastIn})`;
+    $('tick').style.strokeDasharray = '1';
+    $('tick').style.strokeDashoffset = String(1 - easeOut(seg(t, 7.0, 7.45)));
+  }
+
+  // Outside FossCut the page plays in a loop for a person looking at it, until something
+  // seeks it.
+  let looping = !window.__fosscut;
+  window.fosscut = { seek(seconds) { looping = false; render(seconds); } };
+  render(0);
+  if (looping) {
+    const begin = performance.now();
+    const loop = (now) => {
+      if (looping) {
+        render(((now - begin) / 1000) % 9);
+        requestAnimationFrame(loop);
+      }
+    };
+    requestAnimationFrame(loop);
+  }
+})();
+</script>
+</body>
+</html>

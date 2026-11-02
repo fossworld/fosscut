@@ -176,6 +176,16 @@ pub fn operations() -> Vec<OperationInfo> {
             "fosscut models install <name> --yes [--from <file>]",
         ),
         (
+            "web.import",
+            "Import a web composition (a folder with an index.html, or one .html file) as a web asset that video clips show: copied into the bundle and rendered frame by frame in a headless browser with FossCut's clock (ADR-0039). Size, frame rate and duration come from the arguments or the page's fosscut:composition meta tag.",
+            "fosscut web import <folder|file.html> [--width N --height N --fps RATE --duration TIME] [--name NAME]",
+        ),
+        (
+            "web.remotion",
+            "Render a composition of the user's own Remotion project with its installed Remotion (never installed by FossCut) into the bundle's renders folder as ProRes 4444 with alpha, then import it; needs the user's confirmation of Remotion's licence.",
+            "fosscut web remotion <project> <composition> [--props JSON] [--entry PATH] --yes",
+        ),
+        (
             "frame.grab",
             "Render one frame of a timeline as a PNG image, exactly as an export shows it.",
             "fosscut frame <time> --out <file.png> [--width N] [--timeline ID]",
@@ -222,6 +232,7 @@ pub fn capabilities(
     value["analyzers"] = json!(fosscut_analysis::analyzers());
     value["models"] = json!(fosscut_analysis::models::list(&crate::models_dir()));
     value["export_presets"] = json!(presets());
+    value["web"] = crate::web::status();
     if let Some(errors) = value.get_mut("errors").and_then(Value::as_array_mut) {
         errors.extend(
             engine_error_catalogue()

@@ -1480,7 +1480,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "The state of a job from export, media_analyze or record (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis or the recording; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
+    "description": "The state of a job from export, media_analyze, record or a Remotion render of media_import (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis, the recording or the render with its asset; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
@@ -1507,7 +1507,7 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project: sounds and music are imported and placed at start, shapes, stickers and backgrounds drawn, titles and templates added with lines and media, styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (sounds are imported in a step of their own first).",
+    "description": "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first).",
     "input": {
       "$defs": {
         "LibraryAction": {
@@ -1627,7 +1627,7 @@ expression: listing
           ]
         },
         "kind": {
-          "description": "Only, or the item's, kind: shape, sticker, background, template, title,\ntext_style, caption_style, look, sound or music.",
+          "description": "Only, or the item's, kind: shape, sticker, background, template, title,\ntext_style, caption_style, look, particles, model (3D objects), device, drawing,\ncomposition, sound or music.",
           "type": [
             "string",
             "null"
@@ -1635,7 +1635,7 @@ expression: listing
         },
         "lines": {
           "default": [],
-          "description": "add: lines for titles and templates; the text of a text style's clip.",
+          "description": "add: lines for titles, templates and compositions; the text of a text style's clip.",
           "items": {
             "type": "string"
           },
@@ -1694,6 +1694,13 @@ expression: listing
             }
           ],
           "description": "add: where it starts."
+        },
+        "timeline": {
+          "description": "add: the timeline, such as a scene's compound timeline; the primary timeline when\nomitted.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "track": {
           "description": "add: the track.",
@@ -2066,10 +2073,163 @@ expression: listing
     "read_only": true
   },
   {
-    "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files).",
+    "description": "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. An .svg file imports as a vector drawing that clip.add shows sharp at any size, and vector.explode (through edit, given only the asset) splits into shape clips. A .glb file, or a .gltf file with the buffers and images beside it, imports as a 3D model (copied into the bundle) that model.add shows as a lit 3D object (through edit, object {\"kind\": \"asset\", \"asset\": id}). Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files). A folder with an index.html, or an .html file, imports as a web composition that video clips show, rendered in a headless browser: animate with CSS, Web Animations, GSAP or requestAnimationFrame (they follow FossCut's clock), or define window.fosscut.seek(seconds); load files from the folder only; size, fps and duration from the page's fosscut:composition meta tag or composition. With remotion and the user's Remotion project folder as the one file, renders that composition with the project's own Remotion as a job and imports it; ask the user first (confirm), since Remotion's licence applies.",
     "input": {
+      "$defs": {
+        "CompositionOptions": {
+          "additionalProperties": false,
+          "description": "A composition's values as given by a caller or a meta tag; missing ones come from the\nother source.",
+          "properties": {
+            "duration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/TimeInput"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Length, for example `{\"seconds\": 6}` or `{\"frames\": 180}` (`6s` or `180f` on the\ncommand line)."
+            },
+            "fps": {
+              "default": null,
+              "description": "Frames per second: a whole number or a fraction such as `30000/1001`; 30 when\nneither given nor in the page.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "height": {
+              "default": null,
+              "description": "Canvas height in pixels.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "width": {
+              "default": null,
+              "description": "Canvas width in pixels.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "RemotionArgs": {
+          "additionalProperties": false,
+          "description": "A Remotion render for `media_import` (ADR-0039).",
+          "properties": {
+            "composition": {
+              "description": "The composition id.",
+              "type": "string"
+            },
+            "confirm": {
+              "default": false,
+              "description": "True once the user agreed to run their Remotion under its licence.",
+              "type": "boolean"
+            },
+            "entry": {
+              "default": null,
+              "description": "The entry point relative to the project, such as `src/index.ts`; Remotion's usual\nplaces when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "props": {
+              "default": null,
+              "description": "Input props for the composition."
+            }
+          },
+          "required": [
+            "composition"
+          ],
+          "type": "object"
+        },
+        "TimeInput": {
+          "description": "A time with an explicit unit. Frame and timecode values use the timeline frame rate. Bare numbers are rejected.",
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "frames": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "frames"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "seconds": {
+                  "description": "Decimal seconds, for example \"3.9333\"",
+                  "type": [
+                    "string",
+                    "number"
+                  ]
+                }
+              },
+              "required": [
+                "seconds"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "timecode": {
+                  "description": "HH:MM:SS:FF, or HH:MM:SS;FF for drop-frame",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "timecode"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "flicks": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "flicks"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Shorthand: 118f, 3.9333s, 00:00:03:28 or 2775360000fl",
+              "type": "string"
+            }
+          ]
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "composition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompositionOptions"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For web compositions: width, height, fps and duration, for values the page's\n`<meta name=\"fosscut:composition\" content=\"width=1080, height=1920, fps=30,\nduration=6\">` tag does not give."
+        },
         "dry_run": {
           "default": false,
           "description": "Report what would be added without changing the project.",
@@ -2085,7 +2245,7 @@ expression: listing
           ]
         },
         "files": {
-          "description": "Media files to import: video, audio or images. All are added in one revision.",
+          "description": "Media files to import: video, audio or images, or web compositions (a folder with an\nindex.html, or an .html file). All are added in one revision.",
           "items": {
             "type": "string"
           },
@@ -2112,6 +2272,17 @@ expression: listing
             "string",
             "null"
           ]
+        },
+        "remotion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemotionArgs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Render a composition of the user's own Remotion project (the one folder in files)\nand import the file, as a background job (follow it with job_status). Only after the\nuser agreed to Remotion's licence: without confirm it fails with the note to tell\nthem."
         },
         "request_id": {
           "description": "Retry key: repeating it with the same files returns the first result.",

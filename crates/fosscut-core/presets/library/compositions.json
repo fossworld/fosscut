@@ -1,0 +1,9 @@
+[
+  {
+    "name": "shop-app",
+    "title": "Shop app screen",
+    "description": "A generic shopping app on a phone screen, 720x1560 for 9 seconds: the search bar types a query with a blinking caret, four product cards rise in one after another, the first is tapped, its page slides in with name, price, rating and a button, the button is pressed and a toast with a check mark confirms it. Lines: the query, the product's name, its price, the button and the toast. Put it below the phone device frame; it renders in a headless browser.",
+    "tags": ["app", "phone", "shop", "store", "search", "typing", "cards", "cart", "toast", "ui", "mockup"],
+    "folder": "shop-app"
+  }
+]

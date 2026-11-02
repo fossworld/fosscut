@@ -7,8 +7,8 @@ use std::time::Instant;
 
 use fosscut_audio::{AudioError, AudioSource, mix, samples_in};
 use fosscut_media::ffmpeg::{
-    FfmpegAudioDecoder, FfmpegVideoDecoder, FfmpegWriter, audio_encoder, encoder_capabilities,
-    probe_output, video_encoder,
+    FfmpegAudioDecoder, FfmpegWriter, audio_encoder, encoder_capabilities, probe_output,
+    video_encoder,
 };
 use fosscut_media::{
     AudioBuffer, Container, DecoderOptions, OutputReport, OutputSettings, RgbaFrame,
@@ -363,6 +363,20 @@ pub fn export(
     let mut frames = DecoderFrames::new();
     let mut audio = DecoderAudio::default();
     for (asset, path) in &checked.media {
+        // 3D models are loaded whole for their objects (ADR-0040).
+        if project.media.get(asset).map(|a| a.kind) == Some(fosscut_model::AssetKind::Model) {
+            if request.settings.video.is_some() {
+                let model = crate::model::load(asset, path)?;
+                frames.insert_model(asset.clone(), std::sync::Arc::new(model));
+            }
+            continue;
+        }
+        // Vector drawings are drawn at the output's size, not decoded (ADR-0036).
+        if request.settings.video.is_some()
+            && crate::vector::open_drawing(project, &request.bundle, asset, &mut frames)?
+        {
+            continue;
+        }
         let has_video = project
             .media
             .get(asset)
@@ -373,8 +387,8 @@ pub fn export(
             let options = DecoderOptions {
                 hardware: crate::hardware::hardware_decoding(),
             };
-            let decoder = FfmpegVideoDecoder::open(path, options)?;
-            frames.insert(asset.clone(), Box::new(decoder));
+            let decoder = crate::web::open_decoder(project, asset, path, options)?;
+            frames.insert(asset.clone(), decoder);
         }
         audio.paths.insert(asset.clone(), path.clone());
     }
@@ -924,6 +938,16 @@ fn assets_in(project: &Project, timeline: &Id) -> Vec<Id> {
         for clip in clips {
             if let Some(asset) = clip.content.asset() {
                 assets.push(asset.clone());
+            }
+            // A particle sprite's image (ADR-0038).
+            if let fosscut_model::ClipContent::Particles { particles } = &clip.content
+                && let Some(asset) = particles.sprite_asset()
+            {
+                assets.push(asset.clone());
+            }
+            // A 3D object's printed pictures (ADR-0040); its model is its asset.
+            if let fosscut_model::ClipContent::Model { model } = &clip.content {
+                assets.extend(model.texture_assets().into_iter().cloned());
             }
             if let Some(nested) = clip.content.nested()
                 && !seen.contains(nested)

@@ -417,3 +417,39 @@ fn sound_effects_go_on_clips_with_sound_and_pages_take_translations() {
     );
     assert_eq!(error.code, codes::MODEL_INVALID);
 }
+
+#[test]
+fn capabilities_list_every_reveal_motion_and_only_those() {
+    let session = new_session();
+    let caps = session.query("capabilities", json!({})).unwrap();
+    let reveal = &caps["text"]["reveal"];
+    let names = |key: &str| -> Vec<String> {
+        reveal[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    };
+    // Every listed motion is one the model reads, and every motion the model has is listed:
+    // the schema's enum is the full set.
+    let schema = serde_json::to_value(schemars::schema_for!(fosscut_model::RevealMotion)).unwrap();
+    let mut known: Vec<String> = schema["enum"]
+        .as_array()
+        .or_else(|| schema["oneOf"].as_array())
+        .unwrap()
+        .iter()
+        .filter_map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .or_else(|| v["const"].as_str().map(str::to_string))
+        })
+        .collect();
+    let mut listed = names("motions");
+    known.sort();
+    listed.sort();
+    assert_eq!(listed, known);
+    for order in names("orders") {
+        serde_json::from_value::<fosscut_model::RevealOrder>(json!(order)).unwrap();
+    }
+}

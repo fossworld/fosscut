@@ -229,7 +229,10 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             "templates": templates,
             "reveal": {
                 "units": ["letter", "word", "line"],
-                "motions": ["appear", "fade", "rise"],
+                "motions": ["appear", "fade", "rise", "blur", "pop", "zoom", "slide_left", "slide_right", "drop", "collapse"],
+                "easings": ["linear", "ease_in", "ease_out", "ease_in_out", "back", "bounce", "elastic", "bezier"],
+                "orders": ["forward", "backward", "center", "edges", "random"],
+                "fields": "unit, motion, exit_motion, overlap (0 to 1), easing, order",
             },
             "cases": ["as_written", "upper", "lower", "title"],
         });
@@ -262,6 +265,37 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
             "templates": project_templates,
             "license": "Every built-in item is made by FossCut and free to use, also commercially; the sounds and music are listed by fosscut library list and the MCP library tool.",
         });
+        // Device frames, drawings and web compositions, added as media by fosscut library
+        // add and the MCP library tool (ADR-0028).
+        result["library"]["drawings"] = crate::library_files::drawings()
+            .into_iter()
+            .map(|d| {
+                if brief {
+                    json!({ "name": d.name, "kind": d.kind, "title": d.title, "screen": d.screen })
+                } else {
+                    json!(d)
+                }
+            })
+            .collect();
+        result["library"]["compositions"] = crate::library_files::compositions()
+            .into_iter()
+            .map(|c| {
+                let lines = c.lines();
+                if brief {
+                    json!({ "name": c.name, "title": c.title, "lines": lines })
+                } else {
+                    json!({ "name": c.name, "title": c.title, "description": c.description, "tags": c.tags, "lines": lines })
+                }
+            })
+            .collect();
+        // Particle presets and the emitter's reference (ADR-0038).
+        let (particle_presets, particles) = crate::commands::particle_capabilities(brief);
+        result["library"]["particles"] = particle_presets;
+        result["particles"] = particles;
+        // 3D object presets and the objects' reference (ADR-0040).
+        let (model_presets, models) = crate::commands::model_capabilities(brief);
+        result["library"]["models"] = model_presets;
+        result["models"] = models;
         if !brief {
             result["text"]["style_schema"] =
                 serde_json::to_value(schemars::schema_for!(fosscut_model::TextStyle))
@@ -318,6 +352,10 @@ fn capabilities(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> 
         result["transitions"] = motion["transitions"].clone();
         result["animations"] = motion["animations"].clone();
         result["speed_presets"] = crate::commands::speed_capabilities(brief);
+        // Strokes, trims, path following and SVG drawings (ADR-0036).
+        if !brief {
+            result["vector"] = crate::commands::vector_capabilities();
+        }
     }
     Ok(result)
 }
@@ -400,6 +438,10 @@ fn media_list(ctx: &QueryContext<'_>, args: Value) -> Result<Value, ApiError> {
             // A font asset's families are what text styles name (ADR-0027).
             if let Some(font) = &asset.info.font {
                 view["families"] = json!(font.families);
+            }
+            // A vector drawing's view box and paths, which vector.explode splits (ADR-0036).
+            if let Some(vector) = &asset.info.vector {
+                view["vector"] = json!(vector);
             }
             view
         })
@@ -505,6 +547,30 @@ fn clip_view(
             }
         }
         ClipContent::Adjustment => {}
+        ClipContent::Camera(camera) => {
+            // A camera clip (ADR-0037): the view of the timeline's 3D clips.
+            view["text"] = json!("Camera");
+            if detail == Detail::Full {
+                view["camera"] = json!(camera);
+            }
+        }
+        ClipContent::Model { model } => {
+            // A 3D object (ADR-0040).
+            view["object"] = json!(model.object.kind_name());
+            if let fosscut_model::ModelObject::Text(text) = &model.object {
+                view["text"] = json!(text.text);
+            }
+            if detail == Detail::Full {
+                view["content"] = json!(model);
+            }
+        }
+        ClipContent::Particles { particles } => {
+            view["sprite"] = json!(particles.sprite.kind);
+            view["rate"] = json!(particles.rate);
+            if detail == Detail::Full {
+                view["content"] = json!(particles);
+            }
+        }
         ClipContent::Shape(shape) => {
             view["shape"] = json!(shape.shape);
             if let Some(label) = &shape.label {
@@ -569,6 +635,10 @@ fn clip_view(
     }
     if let Some(group) = &clip.group {
         view["group"] = json!(group);
+    }
+    // The shape clip whose path it follows (ADR-0036).
+    if let Some(follow) = &clip.follow {
+        view["follow"] = json!(follow);
     }
     if clip.audio.detached {
         view["audio_detached"] = json!(true);

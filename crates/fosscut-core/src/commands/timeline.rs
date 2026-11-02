@@ -115,6 +115,7 @@ impl Command for TimelineDuplicate {
         };
         let mut clips = 0;
         let mut groups: std::collections::BTreeMap<Id, Id> = std::collections::BTreeMap::new();
+        let mut copies: std::collections::BTreeMap<Id, Id> = std::collections::BTreeMap::new();
         for marker in &original.markers {
             let mut marker = marker.clone();
             marker.id = ctx.project.allocate_id(IdKind::Marker);
@@ -124,7 +125,9 @@ impl Command for TimelineDuplicate {
             let mut track = track.clone();
             track.id = ctx.project.allocate_id(IdKind::Track);
             for clip in &mut track.clips {
+                let old = clip.id.clone();
                 clip.id = ctx.project.allocate_id(IdKind::Clip);
+                copies.insert(old, clip.id.clone());
                 renew_effect_ids(ctx.project, clip);
                 // A group belongs to one timeline: the copy's clips form groups of their own.
                 if let Some(group) = clip.group.take() {
@@ -172,6 +175,8 @@ impl Command for TimelineDuplicate {
             }
             copy.tracks.push(track);
         }
+        // Followers follow the copies of their paths (ADR-0036).
+        super::vector::remap_follows(&mut copy, &copies);
         ctx.project.manifest.timelines.push(TimelineEntry {
             role: Default::default(),
             id: id.clone(),

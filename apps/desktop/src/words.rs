@@ -35,12 +35,20 @@ pub enum Word {
     AudioFiles,
     /// The import dialog's choice of image files.
     ImageFiles,
+    /// The import dialog's choice of vector drawings (`.svg`).
+    DrawingFiles,
+    /// The import dialog's choice of web composition pages (`.html`).
+    WebFiles,
+    /// The import dialog's choice of 3D models (`.glb`, `.gltf`).
+    ModelFiles,
     /// The import dialog's choice of color lookup tables.
     LutFiles,
     /// The import dialog's choice of font files.
     FontFiles,
     /// The import dialog's choice of any file.
     AllFiles,
+    /// The title of the dialog that chooses a web composition's page or folder.
+    ImportComposition,
 }
 
 /// `word` in `language` (a code of `fosscut_engine::preferences::LANGUAGES`); English for
@@ -62,9 +70,13 @@ pub fn word(language: &str, word: Word) -> &'static str {
         ("hu", Word::VideoFiles) => "Videók",
         ("hu", Word::AudioFiles) => "Hangfájlok",
         ("hu", Word::ImageFiles) => "Képek",
+        ("hu", Word::DrawingFiles) => "Vektorrajzok (.svg)",
+        ("hu", Word::WebFiles) => "Webes kompozíciók (.html)",
+        ("hu", Word::ModelFiles) => "3D-modellek (.glb, .gltf)",
         ("hu", Word::LutFiles) => "LUT-ok (.cube)",
         ("hu", Word::FontFiles) => "Betűtípusok",
         ("hu", Word::AllFiles) => "Minden fájl",
+        ("hu", Word::ImportComposition) => "Webes kompozíció importálása",
         (_, Word::OpenProject) => "Open a FossCut project",
         (_, Word::CreateProject) => "Create a FossCut project",
         (_, Word::FindMedia) => "Find the media file",
@@ -80,9 +92,13 @@ pub fn word(language: &str, word: Word) -> &'static str {
         (_, Word::VideoFiles) => "Videos",
         (_, Word::AudioFiles) => "Audio",
         (_, Word::ImageFiles) => "Images",
+        (_, Word::DrawingFiles) => "Vector drawings (.svg)",
+        (_, Word::WebFiles) => "Web compositions (.html)",
+        (_, Word::ModelFiles) => "3D models (.glb, .gltf)",
         (_, Word::LutFiles) => "LUTs (.cube)",
         (_, Word::FontFiles) => "Fonts",
         (_, Word::AllFiles) => "All files",
+        (_, Word::ImportComposition) => "Import a web composition",
     }
 }
 
@@ -108,9 +124,13 @@ mod tests {
             Word::VideoFiles,
             Word::AudioFiles,
             Word::ImageFiles,
+            Word::DrawingFiles,
+            Word::WebFiles,
+            Word::ModelFiles,
             Word::LutFiles,
             Word::FontFiles,
             Word::AllFiles,
+            Word::ImportComposition,
         ];
         for text in all {
             assert_ne!(word("hu", text), word("en", text), "{text:?}");

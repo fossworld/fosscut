@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ShapeContentView } from "../engine/types";
 import { setLanguage, t } from "../i18n";
 import { clip } from "../test/fixtures";
-import { SHAPE_DEFAULTS, SHAPES, SHAPE_NUMBERS, shapeKinds, shapeOf, shapePatch, shownNumber } from "./shapeFields";
+import { SHAPE_DEFAULTS, SHAPES, SHAPE_NUMBERS, isOpen, shapeKinds, shapeOf, shapePatch, shownNumber } from "./shapeFields";
 
 const shape = (content: ShapeContentView) => clip("clip_0041", "shape", 0, 3, { shape: content.shape, content });
 
@@ -38,6 +38,19 @@ describe("shape fields", () => {
       label_size: 0.08,
       label_x: 0,
       label_y: 0,
+      no_fill: false,
+      closed: true,
+      stroke: false,
+      stroke_color: "#FFFFFF",
+      stroke_width: 0.01,
+      cap: "butt",
+      join: "miter",
+      dashed: false,
+      dash: 0.02,
+      gap: 0.015,
+      trim_start: 0,
+      trim_end: 1,
+      trim_offset: 0,
     });
     expect(shapeOf(badge)).toMatchObject({
       roundness: 1,
@@ -113,6 +126,52 @@ describe("shape fields", () => {
     expect(shapePatch(badge, "label_y", 0), "the middle").toEqual({ label_at: null });
     expect(shapePatch(badge, "label_y", -150)).toBeNull();
     expect(shapePatch(plain, "label_x", 10)).toBeNull();
+  });
+
+  it("turn no fill, strokes, dashes and trims into vector patches (ADR-0036)", () => {
+    const line = shape({
+      shape: "path",
+      size: [0.5, 0.2],
+      points: [{ at: [-1, 1] }, { at: [1, -1] }],
+      closed: false,
+      fill: null,
+      stroke: { color: "#FF7A45", width: 0.02, cap: "round", dashes: [0.03, 0.01] },
+      trim_end: 0.4,
+    });
+    expect(shapeOf(line)).toMatchObject({
+      no_fill: true,
+      closed: false,
+      stroke: true,
+      stroke_color: "#FF7A45",
+      stroke_width: 0.02,
+      cap: "round",
+      join: "miter",
+      dashed: true,
+      dash: 0.03,
+      gap: 0.01,
+      trim_end: 0.4,
+    });
+    expect(isOpen(line) && !isOpen(plain)).toBe(true);
+    expect(shapePatch(plain, "no_fill", true), "null is no fill").toEqual({ fill: null });
+    expect(shapePatch(line, "no_fill", false)).toEqual({ fill: { color: "#FFFFFF" } });
+    expect(shapePatch(line, "closed", true), "closed is the default").toEqual({ closed: null });
+    expect(shapePatch(plain, "closed", false), "only paths open").toBeNull();
+    expect(shapePatch(plain, "stroke", true)).toEqual({ stroke: { color: "#FFFFFF" } });
+    expect(shapePatch(line, "stroke", false)).toEqual({ stroke: null });
+    expect(shapePatch(line, "stroke_color", "#00ff00")).toEqual({ stroke: { color: "#00FF00" } });
+    expect(shapePatch(plain, "stroke_color", "#00ff00"), "no stroke yet").toBeNull();
+    expect(shapePatch(line, "stroke_width", 0.01), "the default width").toEqual({ stroke: { width: null } });
+    expect(shapePatch(line, "stroke_width", 0.8), "over half the canvas").toBeNull();
+    expect(shapePatch(line, "cap", "butt")).toEqual({ stroke: { cap: null } });
+    expect(shapePatch(line, "join", "bevel")).toEqual({ stroke: { join: "bevel" } });
+    expect(shapePatch(line, "join", "sharp")).toBeNull();
+    expect(shapePatch(line, "dashed", false)).toEqual({ stroke: { dashes: null } });
+    expect(shapePatch(line, "dash", 5)).toEqual({ stroke: { dashes: [0.05, 0.01] } });
+    expect(shapePatch(line, "gap", 2)).toEqual({ stroke: { dashes: [0.03, 0.02] } });
+    expect(shapePatch(line, "trim_end", 1), "the whole outline").toEqual({ trim_end: null });
+    expect(shapePatch(line, "trim_start", 0.25)).toEqual({ trim_start: 0.25 });
+    expect(shapePatch(line, "trim_start", 1.5)).toBeNull();
+    expect(shapePatch(line, "trim_offset", -0.5), "offsets wrap").toEqual({ trim_offset: -0.5 });
   });
 
   describe("in Hungarian", () => {

@@ -13,6 +13,7 @@ export const KINDS: { kind: LibraryKind }[] = [
   { kind: "text_style" },
   { kind: "caption_style" },
   { kind: "look" },
+  { kind: "particles" },
   { kind: "template" },
   { kind: "sound" },
   { kind: "music" },

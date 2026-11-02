@@ -1,18 +1,24 @@
 import {
   ArrowRightLeft,
   AudioLines,
+  Box,
   Captions,
   Check,
   Clapperboard,
   Layers,
   LayoutTemplate,
   type LucideIcon,
+  Move,
   Music,
   Palette,
+  PersonStanding,
   Plus,
+  ScanEye,
   Sparkles,
   Sticker,
+  SunMedium,
   Type,
+  WandSparkles,
   X,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -29,7 +35,7 @@ import { nextClip } from "./Motion";
 import { Speech } from "./Speech";
 
 /** The categories of the resource browser, in the order of its strip. */
-export const CATEGORIES = ["media", "audio", "text", "stickers", "effects", "transitions", "captions", "looks", "templates", "voice"] as const;
+export const CATEGORIES = ["media", "audio", "text", "stickers", "effects", "particles", "objects", "transitions", "captions", "looks", "templates", "voice"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 const ICONS: Record<Category, LucideIcon> = {
@@ -38,6 +44,8 @@ const ICONS: Record<Category, LucideIcon> = {
   text: Type,
   stickers: Sticker,
   effects: Sparkles,
+  particles: WandSparkles,
+  objects: Box,
   transitions: ArrowRightLeft,
   captions: Captions,
   looks: Palette,
@@ -51,6 +59,26 @@ const SECTIONS: Partial<Record<Category, LibraryKind[]>> = {
   text: ["title", "text_style"],
   stickers: ["sticker", "shape", "background"],
 };
+
+/** The icon of an effect's card, by its category. */
+export function effectIcon(category: string): LucideIcon {
+  switch (category) {
+    case "color":
+      return Palette;
+    case "light":
+      return SunMedium;
+    case "body":
+      return PersonStanding;
+    case "audio":
+      return AudioLines;
+    case "motion":
+      return Move;
+    case "detail":
+      return ScanEye;
+    default:
+      return Sparkles;
+  }
+}
 
 /** A narrow list of a category's sections. */
 function SideList<T extends string>({ items, value, onChange, label }: { items: { id: T; label: string }[]; value: T; onChange: (id: T) => void; label: string }) {
@@ -158,7 +186,7 @@ function EffectsBrowser({ editor, state, group }: { editor: Editor; state: Edito
         {all.map((spec) => (
           <li key={spec.type} className={cx("library-card", `lib-effect-${spec.category}`)}>
             <span className="library-art" aria-hidden="true">
-              <Glyph icon={Sparkles} size="lg" />
+              <Glyph icon={effectIcon(spec.category)} size="lg" />
             </span>
             <span className="library-about">
               <span className="title">{spec.title}</span>
@@ -180,6 +208,41 @@ function EffectsBrowser({ editor, state, group }: { editor: Editor; state: Edito
         {all.length === 0 && <li className="hint">{t("media.nothing")}</li>}
       </ul>
     </>
+  );
+}
+
+/** FossCut's 3D object presets (ADR-0040), added at the playhead in the 3D scene. */
+function ObjectsBrowser({ editor, state, search }: { editor: Editor; state: EditorState; search: string }) {
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  const presets = (state.catalog?.library?.models ?? []).filter((preset) =>
+    words.every((w) => `${preset.name} ${preset.title} ${preset.description ?? ""} ${(preset.tags ?? []).join(" ")}`.toLowerCase().includes(w)),
+  );
+  return (
+    <ul className="library-items">
+      {presets.map((preset) => (
+        <li key={preset.name} className="library-card lib-objects">
+          <span className="library-art" aria-hidden="true">
+            <Glyph icon={Box} size="lg" />
+          </span>
+          <span className="library-about">
+            <span className="title">{preset.title}</span>
+            <span className="description">{preset.description}</span>
+          </span>
+          <span className="library-actions">
+            <IconButton
+              icon={Plus}
+              size="sm"
+              variant="solid"
+              label={t("media.library.add")}
+              tooltip={t("objects.add.help")}
+              disabled={!state.timeline}
+              onClick={() => void editor.addModel({ preset: preset.name })}
+            />
+          </span>
+        </li>
+      ))}
+      {presets.length === 0 && <li className="hint">{t("media.nothing")}</li>}
+    </ul>
   );
 }
 
@@ -244,6 +307,7 @@ export function Browser({ editor, state }: { editor: Editor; state: EditorState 
   const setSection = (value: string) => setSections({ ...sections, [category]: value });
   const groups: { id: EffectGroup; label: string }[] = [
     { id: "picture", label: t("effects.group.picture") },
+    { id: "light", label: t("effects.group.light") },
     { id: "body", label: t("effects.group.body") },
     { id: "sound", label: t("effects.group.sound") },
   ];
@@ -275,6 +339,22 @@ export function Browser({ editor, state }: { editor: Editor; state: EditorState 
     const group = (sections.effects ?? "picture") as EffectGroup;
     side = <SideList label={t("media.category.effects")} items={groups} value={group} onChange={(g) => setSections({ ...sections, effects: g })} />;
     content = <EffectsBrowser editor={editor} state={state} group={group} />;
+  } else if (category === "particles") {
+    content = (
+      <>
+        <p className="hint">{t("particles.browser.help")}</p>
+        <Search value={search} onChange={setSearch} />
+        <LibraryItems editor={editor} state={state} kinds={["particles"]} search={search} />
+      </>
+    );
+  } else if (category === "objects") {
+    content = (
+      <>
+        <p className="hint">{t("objects.browser.help")}</p>
+        <Search value={search} onChange={setSearch} />
+        <ObjectsBrowser editor={editor} state={state} search={search} />
+      </>
+    );
   } else if (category === "transitions") {
     content = <TransitionsBrowser editor={editor} state={state} />;
   } else if (category === "captions") {

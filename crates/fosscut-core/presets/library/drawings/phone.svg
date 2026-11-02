@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="412" height="832" viewBox="0 0 412 832">
+  <title>Phone frame</title>
+  <!-- Drawn by FossCut: a generic phone. The screen (26, 26, 360 x 780, radius 46) is open: what lies below shows through. -->
+  <defs>
+    <linearGradient id="frame-metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4A505A"/>
+      <stop offset="0.5" stop-color="#262A31"/>
+      <stop offset="1" stop-color="#3A3F48"/>
+    </linearGradient>
+    <linearGradient id="frame-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A919C"/>
+      <stop offset="1" stop-color="#3A3F48"/>
+    </linearGradient>
+  </defs>
+  <rect id="button-action" x="1" y="168" width="7" height="34" rx="2.5" fill="#2E333B"/>
+  <rect id="button-volume-up" x="1" y="226" width="7" height="60" rx="2.5" fill="#2E333B"/>
+  <rect id="button-volume-down" x="1" y="300" width="7" height="60" rx="2.5" fill="#2E333B"/>
+  <rect id="button-side" x="404" y="250" width="7" height="96" rx="2.5" fill="#2E333B"/>
+  <path id="frame" fill="url(#frame-metal)" fill-rule="evenodd" d="M 70 6 H 342 A 64 64 0 0 1 406 70 V 762 A 64 64 0 0 1 342 826 H 70 A 64 64 0 0 1 6 762 V 70 A 64 64 0 0 1 70 6 Z M 71 18 H 341 A 53 53 0 0 1 394 71 V 761 A 53 53 0 0 1 341 814 H 71 A 53 53 0 0 1 18 761 V 71 A 53 53 0 0 1 71 18 Z"/>
+  <path id="frame-rim" fill="none" stroke="url(#frame-rim)" stroke-width="2.5" d="M 70 7.25 H 342 A 62.75 62.75 0 0 1 404.75 70 V 762 A 62.75 62.75 0 0 1 342 824.75 H 70 A 62.75 62.75 0 0 1 7.25 762 V 70 A 62.75 62.75 0 0 1 70 7.25 Z"/>
+  <path id="bezel" fill="#07080A" fill-rule="evenodd" d="M 71 18 H 341 A 53 53 0 0 1 394 71 V 761 A 53 53 0 0 1 341 814 H 71 A 53 53 0 0 1 18 761 V 71 A 53 53 0 0 1 71 18 Z M 72 26 H 340 A 46 46 0 0 1 386 72 V 760 A 46 46 0 0 1 340 806 H 72 A 46 46 0 0 1 26 760 V 72 A 46 46 0 0 1 72 26 Z"/>
+  <rect id="camera-island" x="158" y="40" width="96" height="28" rx="14" fill="#07080A"/>
+  <circle id="camera-lens" cx="236" cy="54" r="6" fill="#1A2433"/>
+  <circle id="camera-glint" cx="234" cy="52" r="1.6" fill="#4A6A8F"/>
+</svg>

@@ -142,6 +142,17 @@ export const en = {
   "inspector.project.where": "Folder",
   "inspector.project.hint": "Select a clip on the timeline to edit it here.",
   "inspector.tab.shorts": "Shorts",
+  "inspector.field.depth": "Depth",
+  "inspector.field.tilt": "Tilt",
+  "inspector.field.turn": "Turn",
+  "inspector.field.anchor_x": "Anchor X",
+  "inspector.field.anchor_y": "Anchor Y",
+  "inspector.tab.camera": "Camera",
+  "inspector.tab.particles": "Particles",
+  "inspector.kind.camera": "Camera",
+  "inspector.kind.particles": "Particles",
+  "inspector.kind.model": "3D object",
+  "inspector.tab.model": "Object",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -283,4 +294,15 @@ export const hu: Translation<typeof en> = {
   "inspector.project.where": "Mappa",
   "inspector.project.hint": "Jelöljön ki egy klipet az idővonalon, hogy itt szerkeszthesse.",
   "inspector.tab.shorts": "Rövid videók",
+  "inspector.field.depth": "Mélység",
+  "inspector.field.tilt": "Döntés",
+  "inspector.field.turn": "Fordítás",
+  "inspector.field.anchor_x": "Forgáspont X",
+  "inspector.field.anchor_y": "Forgáspont Y",
+  "inspector.tab.camera": "Kamera",
+  "inspector.tab.particles": "Részecskék",
+  "inspector.kind.camera": "Kamera",
+  "inspector.kind.particles": "Részecskék",
+  "inspector.kind.model": "3D-objektum",
+  "inspector.tab.model": "Objektum",
 };

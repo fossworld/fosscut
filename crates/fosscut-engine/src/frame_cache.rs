@@ -130,6 +130,16 @@ fn add_assets(layer: &Layer, assets: &mut BTreeSet<Id>) {
                 add_assets(layer, assets);
             }
         }
+        LayerSource::Particles(particles) => {
+            if let Some(sprite) = &particles.sprite {
+                assets.insert(sprite.asset.clone());
+            }
+        }
+        // A 3D object's model and printed pictures (ADR-0040).
+        LayerSource::Model(object) => {
+            assets.extend(object.content.model_asset().cloned());
+            assets.extend(object.textures.iter().map(|s| s.asset.clone()));
+        }
         LayerSource::Text(_)
         | LayerSource::Shape(_)
         | LayerSource::Caption(_)

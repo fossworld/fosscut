@@ -5,7 +5,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use fosscut_media::DecoderOptions;
-use fosscut_media::ffmpeg::FfmpegVideoDecoder;
 use fosscut_model::{Id, Project, TimelineFormat};
 use fosscut_render::color::TransferFunction;
 use fosscut_render::plan::{LayerSource, RenderPlan, plan_frame};
@@ -257,14 +256,44 @@ impl Media {
                     }
                 }
             }
-            if let LayerSource::Frame(source) = &layer.source
+            // A vector drawing is drawn at the size it shows, not decoded (ADR-0036).
+            if let Some(source) = layer.frame_source()
+                && !self.opened.contains(&source.asset)
+                && crate::vector::open_drawing(project, bundle, &source.asset, &mut self.decoders)?
+            {
+                self.opened.insert(source.asset.clone());
+            }
+            // A video or image frame, or a particle sprite's image (ADR-0038).
+            if let Some(source) = layer.frame_source()
                 && !self.opened.contains(&source.asset)
             {
                 let path = resolve(project, bundle, &source.asset)?;
-                let decoder = FfmpegVideoDecoder::open(&path, DecoderOptions::default())?;
-                self.decoders
-                    .insert(source.asset.clone(), Box::new(decoder));
+                let decoder = crate::web::open_decoder(
+                    project,
+                    &source.asset,
+                    &path,
+                    DecoderOptions::default(),
+                )?;
+                self.decoders.insert(source.asset.clone(), decoder);
                 self.opened.insert(source.asset.clone());
+            }
+            // A 3D object's model, and the pictures its materials print (ADR-0040).
+            if let LayerSource::Model(object) = &layer.source {
+                crate::model::open_model(project, bundle, &object.content, &mut self.decoders)?;
+                for source in &object.textures {
+                    if self.opened.contains(&source.asset) {
+                        continue;
+                    }
+                    let path = resolve(project, bundle, &source.asset)?;
+                    let decoder = crate::web::open_decoder(
+                        project,
+                        &source.asset,
+                        &path,
+                        DecoderOptions::default(),
+                    )?;
+                    self.decoders.insert(source.asset.clone(), decoder);
+                    self.opened.insert(source.asset.clone());
+                }
             }
         }
         self.require_subjects(project, bundle, &plan_requirements(project, plan))

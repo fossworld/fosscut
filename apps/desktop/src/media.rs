@@ -124,11 +124,14 @@ pub struct ImportResult {
 /// The file kinds the import dialog offers, each named by a translated word; the first
 /// holds every other, and the last lets any file be chosen. macOS offers only the union of
 /// the extensions.
-pub const IMPORT_FILTERS: [(Word, &[&str]); 7] = [
+pub const IMPORT_FILTERS: [(Word, &[&str]); 10] = [
     (Word::MediaFiles, &MEDIA_EXTENSIONS),
     (Word::VideoFiles, &VIDEO_EXTENSIONS),
     (Word::AudioFiles, &AUDIO_EXTENSIONS),
     (Word::ImageFiles, &IMAGE_EXTENSIONS),
+    (Word::DrawingFiles, &["svg"]),
+    (Word::WebFiles, &WEB_EXTENSIONS),
+    (Word::ModelFiles, &["glb", "gltf"]),
     (Word::LutFiles, &["cube"]),
     (Word::FontFiles, &FONT_EXTENSIONS),
     (Word::AllFiles, &["*"]),
@@ -145,11 +148,15 @@ const IMAGE_EXTENSIONS: [&str; 10] = [
     "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif",
 ];
 const FONT_EXTENSIONS: [&str; 4] = ["ttf", "otf", "ttc", "otc"];
-const MEDIA_EXTENSIONS: [&str; 43] = [
+/// Pages of web compositions (ADR-0039): one that names its size and length in its
+/// `fosscut:composition` meta tag imports from the dialog; a folder, or a page without
+/// the tag, through `web_import`.
+const WEB_EXTENSIONS: [&str; 2] = ["html", "htm"];
+const MEDIA_EXTENSIONS: [&str; 48] = [
     "mp4", "m4v", "mov", "mkv", "webm", "avi", "mts", "m2ts", "ts", "mxf", "mpg", "mpeg", "wmv",
     "flv", "3gp", "ogv", "mp3", "wav", "m4a", "aac", "flac", "ogg", "oga", "opus", "aif", "aiff",
-    "caf", "wma", "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif",
-    "cube", "ttf", "otf", "ttc", "otc",
+    "caf", "wma", "png", "jpg", "jpeg", "webp", "gif", "bmp", "tif", "tiff", "heic", "heif", "svg",
+    "html", "htm", "glb", "gltf", "cube", "ttf", "otf", "ttc", "otc",
 ];
 
 /// A small map that forgets the least recently used entry beyond `capacity`.
@@ -200,6 +207,17 @@ impl<K: Eq + Hash + Clone, V: Clone> Lru<K, V> {
     }
 }
 
+/// What thumbnails of an asset show at the times asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pictured {
+    /// The frame at each time: a video.
+    Moving,
+    /// The same picture at every time: an image or a vector drawing.
+    Still,
+    /// The first frame at every time: a web composition, whose frames each need a browser.
+    First,
+}
+
 /// One thumbnail in the caches: the content, the height and the source time shown (none
 /// for a still image, which looks the same at every time).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -235,6 +253,9 @@ fn kind_name(kind: AssetKind) -> &'static str {
         AssetKind::Image => "image",
         AssetKind::Lut => "lut",
         AssetKind::Font => "font",
+        AssetKind::Vector => "vector",
+        AssetKind::Web => "web",
+        AssetKind::Model => "model",
     }
 }
 
@@ -252,7 +273,7 @@ fn no_picture(asset: &Asset) -> ApiError {
         "fosscut.media.no_picture",
         format!("{} is a {kind} asset, which has no picture", asset.id),
     )
-    .with_hint("Thumbnails show video and image assets.")
+    .with_hint("Thumbnails show video, image, vector drawing and web composition assets.")
     .with_details(json!({ "asset": asset.id, "kind": kind }))
 }
 
@@ -525,10 +546,15 @@ impl MediaViews {
         let id = parse_id(asset, "asset")?;
         let (bundle, project, _) = open_project(workspace)?;
         let asset = find_asset(&project, &id)?;
-        let still = match asset.kind {
-            AssetKind::Video => false,
-            AssetKind::Image => true,
-            AssetKind::Audio | AssetKind::Lut | AssetKind::Font => {
+        let pictured = match asset.kind {
+            AssetKind::Video => Pictured::Moving,
+            // A drawing renders sharp at the thumbnail's size, through the same frame
+            // evaluation as an image clip of it (ADR-0036).
+            AssetKind::Image | AssetKind::Vector => Pictured::Still,
+            // Every frame of a composition needs a browser (ADR-0039), so its first frame
+            // stands for all of it: rendered once, then cached by its content.
+            AssetKind::Web => Pictured::First,
+            AssetKind::Audio | AssetKind::Lut | AssetKind::Font | AssetKind::Model => {
                 return Err(no_picture(asset));
             }
         };
@@ -557,7 +583,11 @@ impl MediaViews {
         };
         let shown: Vec<Option<i64>> = wanted
             .iter()
-            .map(|&time| (!still).then(|| shown_time(time, asset.info.duration, video.rate)))
+            .map(|&time| match pictured {
+                Pictured::Moving => Some(shown_time(time, asset.info.duration, video.rate)),
+                Pictured::Still => None,
+                Pictured::First => Some(0),
+            })
             .collect();
         let content = asset.identity.as_ref().map(content_name);
         let mut made: HashMap<Option<i64>, Arc<Vec<u8>>> = HashMap::new();
@@ -730,7 +760,13 @@ impl MediaViews {
         let sound = match asset.kind {
             AssetKind::Audio => true,
             AssetKind::Video => asset.info.audio.is_some(),
-            AssetKind::Image | AssetKind::Lut | AssetKind::Font => false,
+            // Drawings, compositions and 3D models have no sound (ADR-0036, ADR-0039).
+            AssetKind::Image
+            | AssetKind::Lut
+            | AssetKind::Font
+            | AssetKind::Vector
+            | AssetKind::Web
+            | AssetKind::Model => false,
         };
         if !sound {
             return Err(no_sound(asset));
@@ -1257,15 +1293,21 @@ mod tests {
 
     #[test]
     fn the_import_dialog_offers_every_kind_of_media() {
-        let (first, all) = (IMPORT_FILTERS[0].1, IMPORT_FILTERS[6].1);
-        for (_, extensions) in &IMPORT_FILTERS[1..6] {
+        let last = IMPORT_FILTERS.len() - 1;
+        let (first, all) = (IMPORT_FILTERS[0].1, IMPORT_FILTERS[last].1);
+        for (_, extensions) in &IMPORT_FILTERS[1..last] {
             for extension in *extensions {
                 assert!(first.contains(extension), "{extension} is media");
             }
         }
-        let others: usize = IMPORT_FILTERS[1..6].iter().map(|(_, e)| e.len()).sum();
+        let others: usize = IMPORT_FILTERS[1..last].iter().map(|(_, e)| e.len()).sum();
         assert_eq!(first.len(), others, "media is exactly the other kinds");
         assert_eq!(all, ["*"]);
+        // Drawings, web compositions and 3D models are offered too (ADR-0036, ADR-0039,
+        // ADR-0040).
+        for extension in ["svg", "html", "htm", "glb", "gltf"] {
+            assert!(first.contains(&extension), "{extension} is offered");
+        }
     }
 
     // ---- With generated media ----
@@ -1819,6 +1861,128 @@ mod tests {
                 .message
                 .contains("no project")
         );
+        done(workspace, runtime, work);
+    }
+
+    /// A small mark drawn for these tests: an orange disc with a white stroke and an open,
+    /// round-capped line, 200 by 100 units.
+    const MARK: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <circle id="disc" cx="50" cy="50" r="40" fill="#FF7A45" stroke="#FFFFFF" stroke-width="4"/>
+  <path id="swoosh" d="M 110 70 Q 150 10 190 60" fill="none" stroke="#2C62C0" stroke-width="8" stroke-linecap="round"/>
+</svg>"##;
+
+    #[test]
+    fn drawings_import_explode_from_the_window_and_show_one_sharp_picture() {
+        let (workspace, runtime, work) = opened("vector");
+        std::fs::write(work.join("mark.svg"), MARK).unwrap();
+        let asset = add(&workspace, &work, "mark.svg");
+        let listed = workspace.query("media.list", Value::Null).unwrap();
+        assert_eq!(listed["assets"][0]["kind"], "vector");
+        assert_eq!(listed["assets"][0]["vector"]["paths"], 2);
+
+        // The window sends only the asset; the paths come from the file.
+        let exploded = workspace
+            .execute(Request::single("vector.explode", json!({ "asset": asset })))
+            .unwrap();
+        let parts = exploded.results[0]["parts"].as_array().unwrap();
+        let names: Vec<&str> = parts.iter().filter_map(|p| p["name"].as_str()).collect();
+        assert_eq!(names, ["disc", "swoosh"], "{parts:?}");
+        let compound = exploded.results[0]["timeline"].as_str().unwrap();
+        let inside = workspace
+            .query(
+                "timeline.read",
+                json!({ "timeline": compound, "detail": "full" }),
+            )
+            .unwrap();
+        let shapes: Vec<&Value> = inside["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|t| t["clips"].as_array().unwrap())
+            .collect();
+        assert_eq!(shapes.len(), 2);
+        assert!(shapes.iter().all(|c| c["kind"] == "shape"), "{shapes:?}");
+
+        let cache = work.join("cache");
+        let views = MediaViews::new(&cache);
+        let silent = views.waveform(&workspace, &asset, 64).unwrap_err();
+        assert_eq!(silent.code, "fosscut.media.no_sound");
+        assert_eq!(silent.details["kind"], "vector");
+        if !gpu() {
+            eprintln!("skipped the pictures: no GPU adapter");
+            done(workspace, runtime, work);
+            return;
+        }
+        let strip = views
+            .thumbnails(&workspace, &asset, Some(&[0, 3 * SECOND]), None, Some(40))
+            .unwrap();
+        assert_eq!(
+            (strip.width, strip.height),
+            (80, 40),
+            "the drawing's aspect"
+        );
+        assert_eq!(
+            strip.frames[0].image, strip.frames[1].image,
+            "a drawing looks the same at every time"
+        );
+        let (_, width, height) = png_of(&strip.frames[0].image);
+        assert_eq!((width, height), (80, 40));
+        let made = thumbnail_files(&cache);
+        assert_eq!(made, 1, "one picture, kept once");
+        let again = views
+            .thumbnails(&workspace, &asset, None, Some(4), Some(40))
+            .unwrap();
+        assert!(
+            again
+                .frames
+                .iter()
+                .all(|f| f.image == strip.frames[0].image)
+        );
+        assert_eq!(thumbnail_files(&cache), made, "from the caches");
+        done(workspace, runtime, work);
+    }
+
+    #[test]
+    fn compositions_show_their_first_frame_or_say_why_not() {
+        let (workspace, runtime, work) = opened("webthumb");
+        std::fs::write(
+            work.join("card.html"),
+            r#"<!doctype html><html><head>
+<meta name="fosscut:composition" content="width=320, height=180, fps=30, duration=2">
+<style>html,body{margin:0;background:#2C62C0}</style></head><body></body></html>"#,
+        )
+        .unwrap();
+        let asset = add(&workspace, &work, "card.html");
+        let listed = workspace.query("media.list", Value::Null).unwrap();
+        assert_eq!(listed["assets"][0]["kind"], "web");
+        let views = MediaViews::new(&work.join("cache"));
+        let silent = views.waveform(&workspace, &asset, 16).unwrap_err();
+        assert_eq!(silent.code, "fosscut.media.no_sound");
+        if !gpu() {
+            eprintln!("skipped the pictures: no GPU adapter");
+            done(workspace, runtime, work);
+            return;
+        }
+        let asked = views.thumbnails(&workspace, &asset, Some(&[0, SECOND]), None, Some(36));
+        match fosscut_engine::web::find_browser() {
+            None => {
+                let error = asked.unwrap_err();
+                assert_eq!(error.code, "fosscut.web.browser_missing", "{error:?}");
+            }
+            Some(_) => {
+                let strip = asked.unwrap();
+                assert_eq!((strip.width, strip.height), (64, 36));
+                assert_eq!(
+                    strip.frames[0].image, strip.frames[1].image,
+                    "the first frame stands for the composition"
+                );
+                assert_eq!(
+                    strip.frames.iter().map(|f| f.flicks).collect::<Vec<_>>(),
+                    [0, SECOND],
+                    "the times asked for are answered"
+                );
+            }
+        }
         done(workspace, runtime, work);
     }
 }

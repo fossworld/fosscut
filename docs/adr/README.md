@@ -41,12 +41,17 @@ All records are **Proposed** until a maintainer accepts them in a pull request. 
 | [0033](0033-run-local-vision-and-voice-models-with-onnx-runtime.md) | Run local vision and voice models with ONNX Runtime | Proposed |
 | [0034](0034-plan-shorts-reframes-and-beat-edits-from-measurements.md) | Plan shorts, reframes and beat edits from measurements | Proposed |
 | [0035](0035-render-temporal-effects-from-neighbouring-frames.md) | Render temporal effects from neighbouring frames | Proposed |
+| [0036](0036-draw-vector-paths-with-strokes-trims-and-following.md) | Draw vector paths with strokes, trims and path following | Proposed |
+| [0037](0037-place-layers-in-3d-with-a-camera-and-depth-of-field.md) | Place layers in 3D with a camera and depth of field | Proposed |
+| [0038](0038-emit-particles-deterministically.md) | Emit particles deterministically from their birth index and seed | Proposed |
+| [0039](0039-render-web-compositions-in-a-headless-browser.md) | Render web compositions in a headless browser, and the user's own Remotion on request | Proposed |
+| [0040](0040-render-3d-objects-through-the-camera.md) | Render lit 3D objects through the timeline's camera | Proposed |
 
 ## Reading order
 
 - **Product shape:** 0002, 0006, 0007, 0013, 0022, 0031.
-- **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027, 0028, 0029.
-- **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026, 0030, 0032, 0033, 0034, 0035.
+- **Data:** 0004, 0005, 0011, 0021, 0023, 0024, 0025, 0027, 0028, 0029, 0036.
+- **Engine:** 0003, 0008, 0009, 0010, 0012, 0019, 0020, 0026, 0030, 0032, 0033, 0034, 0035, 0037, 0038, 0039, 0040.
 - **Project rules:** 0001, 0014, 0015, 0016, 0017, 0018.
 
 ## Suggested first milestones

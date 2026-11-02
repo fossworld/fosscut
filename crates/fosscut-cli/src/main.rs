@@ -4,7 +4,12 @@
 #![forbid(unsafe_code)]
 
 mod args;
+mod camera;
+mod model;
 mod output;
+mod particles;
+mod vector;
+mod web;
 
 use std::io::Read;
 use std::process::ExitCode;
@@ -521,6 +526,29 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ]),
             )
         }
+        Command::Clips(ClipsCommand::Stagger {
+            clips,
+            preset,
+            place,
+            duration,
+            step,
+            start,
+            order,
+            seed,
+        }) => write(
+            cli,
+            "clips.stagger",
+            object(vec![
+                ("clips", Some(json!(clips))),
+                ("preset", Some(json!(preset))),
+                ("place", some(place)),
+                ("duration", some(duration)),
+                ("step", some(step)),
+                ("start", some(start)),
+                ("order", some(order)),
+                ("seed", some(seed)),
+            ]),
+        ),
         Command::Marker(MarkerCommand::Add { at, name, color }) => write(
             cli,
             "marker.add",
@@ -561,6 +589,11 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             fade_out,
             pan,
             enabled,
+            three_d,
+            position_z,
+            rotation_x,
+            rotation_y,
+            anchor,
             properties,
         }) => {
             let mut set = object(vec![
@@ -575,6 +608,11 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                 ("audio.fade_out", some(fade_out)),
                 ("audio.pan", some(pan)),
                 ("enabled", some(enabled)),
+                ("transform.three_d", some(three_d)),
+                ("transform.position_z", some(position_z)),
+                ("transform.rotation_x", some(rotation_x)),
+                ("transform.rotation_y", some(rotation_y)),
+                ("transform.anchor", some(anchor)),
             ]);
             for property in properties {
                 let (path, value) = property_value(property)?;
@@ -622,7 +660,14 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             ]),
         ),
         Command::Text(command) => text(cli, command),
+        Command::Shape(command) => vector::shape(cli, command),
+        Command::Vector(command) => vector::vector(cli, command),
+        Command::Clip(ClipCommand::Follow(args)) => vector::follow(cli, args),
+        Command::Camera(command) => camera::camera(cli, command),
         Command::Library(command) => library(cli, command),
+        Command::Web(command) => web::web(cli, command),
+        Command::Particles(command) => particles::particles(cli, command),
+        Command::Model(command) => model::model(cli, command),
         Command::Multicam(command) => multicam(cli, command),
         Command::Clip(ClipCommand::Canvas {
             clips,
@@ -1081,13 +1126,18 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
             entrance,
             exit,
             combo,
+            in_delay,
+            out_delay,
+            combo_delay,
             clear,
         }) => {
-            let animation = |text: &Option<String>| -> Result<Option<Value>, ApiError> {
+            let animation = |text: &Option<String>,
+                             delay: &Option<TimeInput>|
+             -> Result<Option<Value>, ApiError> {
                 let Some(text) = text else {
                     return Ok(None);
                 };
-                Ok(Some(match text.split_once(':') {
+                let mut value = match text.split_once(':') {
                     Some((preset, duration)) => {
                         let duration: TimeInput =
                             duration.parse().map_err(|e: fosscut_time::TimeError| {
@@ -1096,16 +1146,20 @@ fn run(cli: &Cli) -> Result<Outcome, ApiError> {
                         json!({ "preset": preset, "duration": duration })
                     }
                     None => json!({ "preset": text }),
-                }))
+                };
+                if let Some(delay) = delay {
+                    value["delay"] = json!(delay);
+                }
+                Ok(Some(value))
             };
             write(
                 cli,
                 "animation.set",
                 object(vec![
                     ("clip", Some(json!(clip))),
-                    ("in", animation(entrance)?),
-                    ("out", animation(exit)?),
-                    ("combo", animation(combo)?),
+                    ("in", animation(entrance, in_delay)?),
+                    ("out", animation(exit, out_delay)?),
+                    ("combo", animation(combo, combo_delay)?),
                     ("clear", Some(json!(clear))),
                 ]),
             )
@@ -1744,6 +1798,10 @@ fn reveal_of(reveal: &RevealArgs) -> Option<Value> {
             )),
         ),
         ("exit", reveal.reveal_exit.then_some(json!(true))),
+        ("exit_motion", some(&reveal.reveal_exit_motion)),
+        ("overlap", some(&reveal.reveal_overlap)),
+        ("easing", some(&reveal.reveal_easing)),
+        ("order", some(&reveal.reveal_order)),
     ]))
 }
 
@@ -1878,16 +1936,19 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
             at,
             duration,
             track,
+            timeline,
             clip,
             lines,
             media,
         } => {
             let item = library::find(name, kind.as_deref()).map_err(|e| engine_error(&e))?;
-            if matches!(item.kind, "sound" | "music") {
-                // Imported first (or found again), then placed.
+            if library::imports_media(&item) {
+                // Imported first (or found again), then placed: sounds and music, device
+                // frames, drawings and web compositions.
                 let path = bundle::bundle_path(cli.project.as_deref())?;
+                let lines: Vec<String> = lines.iter().map(|l| l.replace("\\n", "\n")).collect();
                 let media_add =
-                    library::sound_media(&path, &item.name).map_err(|e| engine_error(&e))?;
+                    library::media_args(&path, &item, &lines).map_err(|e| engine_error(&e))?;
                 // The import is the first write and takes the revision check and dry run;
                 // placing follows on the revision it made.
                 let mut import = Request::single("media.add", media_add);
@@ -1898,25 +1959,40 @@ fn library(cli: &Cli, command: &LibraryCommand) -> Result<Outcome, ApiError> {
                     return Ok(Outcome::Write(imported));
                 }
                 let asset = imported.results[0]["asset"].clone();
+                // Pictures start at 0 on a free video track unless told otherwise; sounds
+                // without a time follow the audio already there.
+                let picture = !matches!(item.kind, "sound" | "music");
+                let start = some(at).or_else(|| picture.then(|| json!("0s")));
                 let placed = object(vec![
                     ("asset", Some(asset)),
-                    ("start", some(at)),
-                    ("duration", some(duration)),
-                    ("track", some(track)),
                     (
                         "free_track",
-                        (at.is_some() && track.is_none()).then_some(json!(true)),
+                        (start.is_some() && track.is_none()).then_some(json!(true)),
                     ),
+                    ("start", start),
+                    ("duration", some(duration)),
+                    ("track", some(track)),
+                    ("timeline", some(timeline)),
                 ]);
                 let mut request = Request::single("clip.add", placed);
                 apply_options(cli, &mut request, true);
                 request.expected_revision = Some(imported.revision);
-                return execute(cli, request);
+                let placed = bundle::execute(&path, request)?;
+                // A device says where its open screen is.
+                if let Some(screen) = bundle::snapshot(&path).ok().and_then(|project| {
+                    library::screen_report(&item, &project, timeline.as_deref())
+                }) {
+                    let mut value = serde_json::to_value(&placed).unwrap_or_default();
+                    value["screen"] = screen;
+                    return Ok(Outcome::Query("library.add".into(), value));
+                }
+                return Ok(Outcome::Write(placed));
             }
             let placement = library::Placement {
                 start: at.as_ref().map(|t| json!(t)),
                 duration: duration.as_ref().map(|t| json!(t)),
                 track: track.clone(),
+                timeline: timeline.clone(),
                 clip: clip.clone(),
                 lines: lines.iter().map(|l| l.replace("\\n", "\n")).collect(),
                 media: media.clone(),

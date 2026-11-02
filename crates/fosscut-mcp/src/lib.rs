@@ -18,6 +18,7 @@
 
 mod params;
 pub mod skills;
+mod web;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -454,7 +455,7 @@ impl FosscutServer {
 
     /// Imports media files.
     #[tool(
-        description = "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files).",
+        description = "Import video, audio or image files into the project's media table in one revision. Returns each new asset id (asset_...), which clip.add uses. An .svg file imports as a vector drawing that clip.add shows sharp at any size, and vector.explode (through edit, given only the asset) splits into shape clips. A .glb file, or a .gltf file with the buffers and images beside it, imports as a 3D model (copied into the bundle) that model.add shows as a lit 3D object (through edit, object {\"kind\": \"asset\", \"asset\": id}). Importing a file that is already in the project returns its existing asset. With relink set to an asset id, the one file given becomes that asset's new place, for media that was moved or renamed (media_list marks missing files). A folder with an index.html, or an .html file, imports as a web composition that video clips show, rendered in a headless browser: animate with CSS, Web Animations, GSAP or requestAnimationFrame (they follow FossCut's clock), or define window.fosscut.seek(seconds); load files from the folder only; size, fps and duration from the page's fosscut:composition meta tag or composition. With remotion and the user's Remotion project folder as the one file, renders that composition with the project's own Remotion as a job and imports it; ask the user first (confirm), since Remotion's licence applies.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn media_import(
@@ -469,7 +470,18 @@ impl FosscutServer {
         };
         let files = args.files;
         let relink = args.relink;
+        let composition = args.composition;
         let state = Arc::clone(&self.state);
+        if let Some(remotion) = args.remotion {
+            let template = request(Vec::new(), &context, None, false, None, args.reason.clone());
+            let dry_run = args.dry_run;
+            return reply(
+                blocking(move || {
+                    web::remotion_job(&state, bundle, &files, remotion, dry_run, template)
+                })
+                .await,
+            );
+        }
         let envelope = (
             args.expected_revision,
             args.dry_run,
@@ -500,12 +512,12 @@ impl FosscutServer {
                 None => files
                     .iter()
                     .map(|file| {
-                        fosscut_engine::import::media_add_args(Path::new(file), None, &bundle).map(
-                            |args| CommandCall {
+                        web::add_args(Path::new(file), &bundle, composition.as_ref()).map(|args| {
+                            CommandCall {
                                 command: "media.add".into(),
                                 args,
-                            },
-                        )
+                            }
+                        })
                     })
                     .collect::<Result<Vec<_>, ApiError>>()?,
             };
@@ -1308,7 +1320,7 @@ impl FosscutServer {
 
     /// Lists and adds library items.
     #[tool(
-        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project: sounds and music are imported and placed at start, shapes, stickers and backgrounds drawn, titles and templates added with lines and media, styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (sounds are imported in a step of their own first)."
+        description = "FossCut's own library, made by FossCut and free to use, also commercially: shapes, stickers (badges, buttons, arrows, bubbles, and a UI kit for app ads: search bar, caret, buttons, cards, price tag, toast, check badge, notification, app icon, progress tracker, rating, map pin, location dot, swooshes), backgrounds (solid and gradient), project templates, title templates, text and caption styles, looks, particle emitters (sparks, embers, dust, snow, confetti, bokeh, light streaks, bursts), 3D objects (shipping box, city blocks, podium, extruded title, neon ring, chrome sphere), device frames with open screens (phone, tablet, laptop, browser window), a street map drawing, web compositions (a shop app screen), sound effects and music loops. action list (with kind and search) lists items; action add puts one in the project, on timeline (such as a scene's compound timeline; the primary one when omitted): sounds, music, devices, drawings and compositions (with lines) are imported and placed at start (pictures at 0 s on a free track when start is omitted; a device's result says where its screen is), shapes, stickers and backgrounds drawn, titles, templates, particles and 3D objects added (change them afterwards with particles.set or model.set through edit), styles and looks applied (looks need clip). One undoable step with expected_revision, dry_run and request_id (media are imported in a step of their own first)."
     )]
     async fn library(
         &self,
@@ -1345,10 +1357,10 @@ impl FosscutServer {
                     request
                 };
                 let mut expected = args.expected_revision;
-                let (command, call_args) = if matches!(item.kind, "sound" | "music") {
+                let (command, call_args) = if library::imports_media(&item) {
                     // The import is the first write and takes the revision check; placing
                     // follows on the revision it made.
-                    let media_add = library::sound_media(&bundle, &item.name)?;
+                    let media_add = library::media_args(&bundle, &item, &args.lines)?;
                     let mut import = Request::single("media.add", media_add);
                     import.expected_revision = args.expected_revision;
                     import.dry_run = args.dry_run;
@@ -1359,13 +1371,21 @@ impl FosscutServer {
                     if args.dry_run {
                         let mut value = as_value(&imported);
                         value["item"] = json!(item);
-                        value["note"] = json!("dry run: the sound would be imported, then placed");
+                        value["note"] = json!("dry run: the media would be imported, then placed");
                         return Ok(value);
                     }
                     expected = Some(imported.revision);
                     let mut placed = json!({ "asset": imported.results[0]["asset"] });
-                    if let Some(start) = &args.start {
-                        placed["start"] = json!(start);
+                    // Pictures start at 0 on a free video track unless told otherwise; sounds
+                    // without a start follow the audio already there.
+                    let picture = !matches!(item.kind, "sound" | "music");
+                    let start = args
+                        .start
+                        .as_ref()
+                        .map(|start| json!(start))
+                        .or_else(|| picture.then(|| json!("0s")));
+                    if let Some(start) = start {
+                        placed["start"] = start;
                         if args.track.is_none() {
                             placed["free_track"] = json!(true);
                         }
@@ -1376,6 +1396,9 @@ impl FosscutServer {
                     if let Some(track) = &args.track {
                         placed["track"] = json!(track);
                     }
+                    if let Some(timeline) = &args.timeline {
+                        placed["timeline"] = json!(timeline);
+                    }
                     ("clip.add".to_string(), placed)
                 } else {
                     let call = library::command_for(
@@ -1384,6 +1407,7 @@ impl FosscutServer {
                             start: args.start.as_ref().map(|t| json!(t)),
                             duration: args.duration.as_ref().map(|t| json!(t)),
                             track: args.track.clone(),
+                            timeline: args.timeline.clone(),
                             clip: args.clip.clone(),
                             lines: args.lines.clone(),
                             media: args.media.clone(),
@@ -1397,6 +1421,16 @@ impl FosscutServer {
                 let request = envelope(Request::single(&command, call_args), expected);
                 let response = state.projects.execute(&bundle, request)?;
                 let mut value = as_value(&response);
+                // A device says where its open screen is.
+                if item.screen.is_some()
+                    && !args.dry_run
+                    && let Some(screen) =
+                        state.projects.snapshot(&bundle).ok().and_then(|project| {
+                            library::screen_report(&item, &project, args.timeline.as_deref())
+                        })
+                {
+                    value["screen"] = screen;
+                }
                 value["item"] = json!(item);
                 Ok(value)
             })
@@ -1858,7 +1892,7 @@ impl FosscutServer {
 
     /// Reports an export job.
     #[tool(
-        description = "The state of a job from export, media_analyze or record (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis or the recording; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
+        description = "The state of a job from export, media_analyze, record or a Remotion render of media_import (running, succeeded, failed or cancelled) with progress; when it succeeded, the verified export report, the analysis, the recording or the render with its asset; when it failed, the typed error. wait_seconds (up to 60) waits for the job to finish before answering.",
         annotations(read_only_hint = true)
     )]
     async fn job_status(&self, params: Parameters<JobArgs>) -> Result<CallToolResult, ErrorData> {

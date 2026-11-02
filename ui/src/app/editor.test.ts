@@ -986,4 +986,126 @@ describe("editor", () => {
     expect(await editor.pickExportPath("Demo.mp4")).toBeNull();
     expect(editor.getState().exporting.error?.message).toBe("no dialog");
   });
+
+  it("adds cameras, explodes drawings and staggers selections as single steps", async () => {
+    const { editor, fake } = await started();
+    fake.onExecute = (request) => {
+      fake.revision += 1;
+      const command = request.commands[0]?.command;
+      const results = command === "camera.add" ? [{ clip: "clip_0090" }] : command === "vector.explode" ? [{ compound: { clip: "clip_0091" } }] : [];
+      return { committed: true, dry_run: false, replayed: false, revision: fake.revision, results };
+    };
+    await editor.seek(FLICKS_PER_SECOND);
+    await editor.addCamera();
+    expect(editor.getState().selection, "the new camera is selected").toBe("clip_0090");
+    await editor.explodeDrawing("asset_0009");
+    expect(editor.getState().selection, "the compound clip of shapes").toBe("clip_0091");
+    editor.select("clip_0003");
+    editor.toggleSelected("clip_0005");
+    await editor.stagger({ preset: "pop_in", place: "in", step: 0.15, duration: 0.4, order: "left_to_right" });
+    await editor.setAnimation("clip_0005", "in", "blur_in", 0.5, 0.25);
+    await editor.setAnimation("clip_0005", "out", "draw_off", 1, 0);
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "camera.add", args: { start: { flicks: FLICKS_PER_SECOND } } },
+      { command: "vector.explode", args: { asset: "asset_0009", start: { flicks: FLICKS_PER_SECOND } } },
+      {
+        command: "clips.stagger",
+        args: { clips: ["clip_0003", "clip_0005"], preset: "pop_in", place: "in", step: { seconds: "0.15" }, order: "left_to_right", duration: { seconds: "0.4" } },
+      },
+      { command: "animation.set", args: { clip: "clip_0005", in: { preset: "blur_in", duration: { seconds: "0.5" }, delay: { seconds: "0.25" } } } },
+      { command: "animation.set", args: { clip: "clip_0005", out: { preset: "draw_off", duration: { seconds: "1" } } } },
+    ]);
+  });
+
+  it("imports web compositions with what their tag leaves out, and places them", async () => {
+    const fake = engine();
+    fake.answers["media.list"] = { assets: [] };
+    const { editor } = await started(fake);
+    fake.webPick = () => null;
+    await editor.pickComposition(false);
+    expect(editor.getState().webImport, "a cancelled dialog").toBeNull();
+    fake.webPick = (folder) => ({
+      path: folder ? "/work/card" : "/work/card.html",
+      name: "card",
+      width: null,
+      height: null,
+      fps: null,
+      duration_seconds: null,
+      problem: null,
+      remote: [],
+      browser: null,
+    });
+    await editor.pickComposition(true);
+    expect(editor.getState().webImport?.page.path).toBe("/work/card");
+    expect(await editor.importComposition({ path: "/work/card" }, true)).toBe(false);
+    expect(editor.getState().webImport?.error?.code, "the engine names what is missing").toBe("fosscut.web.composition_unknown");
+    expect(await editor.importComposition({ path: "/work/card", width: 1080, height: 1920, duration_seconds: 6, fps: "30" }, true)).toBe(true);
+    expect(editor.getState().webImport).toBeNull();
+    const asset = editor.getState().media.find((a) => a.kind === "web");
+    expect(asset?.name).toBe("card");
+    const placed = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(placed.at(-1)).toEqual({ command: "clip.add", args: { asset: asset?.id, start: { flicks: 0 } } });
+  });
+
+  it("renders a Remotion project only after the licence is agreed to, then follows it", async () => {
+    const fake = engine();
+    fake.answers["media.list"] = { assets: [] };
+    fake.remotionFrames = 60;
+    const { editor } = await started(fake);
+    editor.openRemotion();
+    expect(editor.getState().remotion).toMatchObject({ open: true, step: "choose" });
+    await editor.checkRemotion({ project: "/work/ad", composition: "Promo", props: { title: "Hi" } });
+    const asked = editor.getState().remotion;
+    expect(asked.step, "nothing runs before the user agrees").toBe("agree");
+    expect(asked.licence).toContain("licence");
+    expect(asked.command).toContain("Promo");
+    expect(fake.renders.size).toBe(0);
+    await editor.confirmRemotion();
+    expect(editor.getState().remotion.step).toBe("render");
+    expect(fake.callsOf("remotion.start").map(([choice]) => (choice as { confirmed: boolean }).confirmed)).toEqual([false, true]);
+    await editor.pollRemotion();
+    expect(editor.getState().remotion.job?.progress).toEqual({ done: 30, total: 60 });
+    editor.closeRemotion();
+    await editor.pollRemotion();
+    const done = editor.getState().remotion.job;
+    expect(done?.state).toBe("succeeded");
+    expect(editor.getState().media.some((a) => a.id === done?.remotion?.asset), "imported").toBe(true);
+    expect(editor.getState().notice?.text, "said while the dialog is hidden").toContain("Promo.mov");
+    editor.openRemotion();
+    editor.resetRemotion();
+    fake.remotionRefusal = { code: "fosscut.web.not_remotion", message: "/work is not a Remotion project" };
+    await editor.checkRemotion({ project: "/work", composition: "Promo" });
+    expect(editor.getState().remotion).toMatchObject({ step: "choose", error: { code: "fosscut.web.not_remotion" } });
+  });
+
+  it("stops a Remotion render it started", async () => {
+    const { editor, fake } = await started();
+    fake.remotionFrames = 600;
+    editor.openRemotion();
+    await editor.checkRemotion({ project: "/work/ad", composition: "Promo" });
+    await editor.confirmRemotion();
+    await editor.cancelRemotion();
+    expect(editor.getState().remotion.job?.state).toBe("cancelled");
+  });
+
+  it("adds 3D objects from presets and model assets with model.add", async () => {
+    const fake = engine();
+    fake.answers["media.list"] = { assets: [{ id: "asset_0020", kind: "model", name: "chair.glb", used_by: [] }] };
+    fake.onExecute = () => {
+      fake.revision += 1;
+      return { committed: true, dry_run: false, replayed: false, revision: fake.revision, results: [{ clip: "clip_0095" }] };
+    };
+    fake.answers["capabilities"] = { effects: [], looks: [], transitions: [], animations: [], library: { models: [{ name: "podium", title: "Podium" }] } };
+    const { editor } = await started(fake);
+    expect(editor.getState().catalog?.library?.models?.map((m) => m.name), "the presets the 3D browser lists").toEqual(["podium"]);
+    await editor.addModel({ preset: "podium" });
+    expect(editor.getState().selection, "the new object is selected").toBe("clip_0095");
+    await editor.addToTimeline("asset_0020");
+    const commands = fake.callsOf("execute").map(([request]) => (request as EditRequest).commands[0]);
+    expect(commands).toEqual([
+      { command: "model.add", args: { preset: "podium", start: { flicks: 0 } } },
+      { command: "model.add", args: { asset: "asset_0020", start: { flicks: 0 } } },
+    ]);
+  });
 });

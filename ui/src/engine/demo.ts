@@ -43,6 +43,13 @@ function library(): LibraryItem[] {
     item("sound", "ding", "Ding", "A clear bell for a reveal.", { seconds: 1.4 }),
     item("music", "lofi-beat", "Lo-fi beat", "A relaxed loop under talking.", { seconds: 16, bpm: 80 }),
     item("music", "upbeat-pop", "Upbeat pop", "A bright, driving loop for promos.", { seconds: 8, bpm: 120 }),
+    item("particles", "sparks", "Sparks", "Hot sparks fountaining up and falling back, cooling from white to orange.", { tags: ["fire"] }),
+    item("particles", "embers", "Embers", "Glowing embers drifting up on warm air, already in flight on the first frame.", { tags: ["fire", "glow"] }),
+    item("particles", "dust", "Dust in light", "Fine dust motes floating slowly all over the frame."),
+    item("particles", "snow", "Snow", "Soft snowflakes falling with a light breeze.", { tags: ["winter"] }),
+    item("particles", "confetti", "Confetti", "Tumbling pieces of confetti in party colours.", { tags: ["party"] }),
+    item("particles", "bokeh", "Bokeh", "Large soft circles of out-of-focus light."),
+    item("particles", "spark-gather", "Gathering sparks", "Sparks converging into the centre for a logo reveal.", { tags: ["logo"] }),
   ];
 }
 
@@ -85,7 +92,7 @@ export function demoEngine(): FakeEngine {
           clips: 2,
         },
       ],
-      assets: 6,
+      assets: 8,
       fonts: ["Inter", "Lora"],
       text_presets: ["brand title"],
     },
@@ -201,6 +208,96 @@ export function demoEngine(): FakeEngine {
           },
         }),
       ]),
+      // Motion graphics (ADR-0036 to ADR-0038): a route drawn on with a dot riding it, a card
+      // turned in 3D, sparks, and a camera pushing in.
+      track("track_0070", "video", 5, [
+        clip("clip_0071", "shape", 0, 6, {
+          shape: "path",
+          transform: { position: [0, 0.1] },
+          content: {
+            shape: "path",
+            size: [0.7, 0.4],
+            points: [{ at: [-1, 1] }, { at: [-0.2, -0.6], in: [-0.6, -0.4], out: [0.2, -0.8] }, { at: [1, -0.2] }],
+            closed: false,
+            fill: null,
+            stroke: { color: "#FF7A45", width: 0.012, cap: "round", join: "round" },
+            trim_end: 0,
+          },
+          animations: { in: { preset: "draw_on", duration: 1_411_200_000 } },
+          keyframes: {
+            "shape.trim_end": [
+              { at: moment(0), offset: moment(0), value: 0, interpolation: { bezier: [0.42, 0, 0.58, 1] } },
+              { at: moment(2), offset: moment(2), value: 1, interpolation: "linear" },
+            ],
+          },
+        }),
+        clip("clip_0074", "particles", 6, 12, {
+          sprite: "spark",
+          rate: 160,
+          content: {
+            emitter: { position: [0, 0.35] },
+            rate: 160,
+            life: 1.1,
+            speed: 1.3,
+            spread: 70,
+            gravity: 2.2,
+            size: 0.006,
+            colors: ["#FFF6D8", "#FFB347", "#FF5A1F"],
+            sprite: { kind: "spark", softness: 0.6 },
+            seed: 11,
+          },
+        }),
+      ]),
+      track("track_0072", "video", 6, [
+        clip("clip_0073", "shape", 0, 6, {
+          shape: "ellipse",
+          follow: { clip: "clip_0071", progress: 0, orient: false },
+          content: { shape: "ellipse", size: [0.03, 0.053], fill: { color: "#FFFFFF" } },
+          keyframes: {
+            "follow.progress": [
+              { at: moment(0), offset: moment(0), value: 0, interpolation: { bezier: [0.42, 0, 0.58, 1] } },
+              { at: moment(2), offset: moment(2), value: 1, interpolation: "linear" },
+            ],
+          },
+        }),
+        clip("clip_0075", "image", 7, 13, {
+          asset: "asset_0018",
+          asset_name: "logo.svg",
+          picture: [800, 400],
+          transform: { three_d: true, position_z: 0.2, rotation_y: -25, anchor: [-0.5, 0] },
+          animations: { in: { preset: "swing_in", duration: 705_600_000, delay: 235_200_000 } },
+          effects: [{ id: "effect_0076", type: "light.glow", params: { radius: 0.06, intensity: 1.4 } }],
+        }),
+        clip("clip_0079", "model", 14, 20, {
+          object: "text",
+          text: "FossCut",
+          transform: { rotation_y: -20, rotation_x: 10 },
+          content: {
+            object: { kind: "text", text: "FossCut", depth: 0.05 },
+            material: { color: "#FF7A45", roughness: 0.35 },
+            light: { azimuth: -40, elevation: 45 },
+            floor: { shadow: 0.5 },
+          },
+          keyframes: {
+            "model.light.azimuth": [
+              { at: moment(14), offset: moment(0), value: -60, interpolation: "linear" },
+              { at: moment(20), offset: moment(6), value: 40, interpolation: "linear" },
+            ],
+          },
+        }),
+      ]),
+      track("track_0077", "video", 7, [
+        clip("clip_0078", "camera", 0, 24, {
+          text: "Camera",
+          camera: { field_of_view: 45, depth_of_field: true, aperture: 0.2 },
+          keyframes: {
+            "camera.position_z": [
+              { at: moment(7), offset: moment(7), value: 0, interpolation: { bezier: [0.42, 0, 0.58, 1] } },
+              { at: moment(13), offset: moment(13), value: 0.3, interpolation: "linear" },
+            ],
+          },
+        }),
+      ], "Camera"),
     ],
   });
   engine.library = library();
@@ -246,8 +343,30 @@ export function demoEngine(): FakeEngine {
     meaning,
   });
   const curve = (name: string) => ({ name, kind: "curve" as const, default: "identity", min: 0, max: 1, animatable: false, meaning: name });
+  const light = (name: string, title: string, summary: string, params: ReturnType<typeof amount>[]) => ({
+    type: name,
+    version: 1,
+    title,
+    category: "light",
+    summary,
+    params,
+  });
   engine.answers["capabilities"] = {
     effects: [
+      light("light.glow", "Glow", "Soft light around the layer's bright parts that spreads past its edges.", [
+        { ...amount("radius", "how far the light spreads"), min: 0, max: 0.5, default: 0.04 },
+        { ...amount("intensity", "how bright the light is"), min: 0, max: 8, default: 1 },
+        { ...amount("threshold", "only parts at least this bright glow"), min: 0, max: 1, default: 0 },
+      ]),
+      light("light.sweep", "Light sweep", "A band of light that moves across the layer, such as a sheen over a logo.", [
+        { ...amount("position", "where the band is"), min: 0, max: 1, default: 0.5 },
+        { ...amount("angle", "the direction the band moves"), min: -180, max: 180, default: 20 },
+        { ...amount("width", "the band's width"), min: 0.01, max: 1, default: 0.15 },
+      ]),
+      light("light.streaks", "Light streaks", "Thin lines of light from the layer's highlights, fading with distance.", [
+        { ...amount("length", "how far the streaks reach"), min: 0, max: 1, default: 0.3 },
+        { ...amount("intensity", "how bright the streaks are"), min: 0, max: 8, default: 1 },
+      ]),
       {
         type: "color.adjust",
         version: 1,
@@ -393,6 +512,16 @@ export function demoEngine(): FakeEngine {
         ],
       },
     ],
+    library: {
+      models: [
+        { name: "shipping-box", title: "Shipping box", description: "An orange cardboard box with rounded edges, casting a soft shadow on the footage below." },
+        { name: "city-blocks", title: "City blocks", description: "A dark city of blocks of varied heights under a cool moonlight; grow it with keyframes." },
+        { name: "podium", title: "Podium", description: "A low white round stage for a product, lit from above." },
+        { name: "extruded-title", title: "Extruded title", description: "Bold white letters with depth and bevelled edges." },
+        { name: "neon-ring", title: "Neon ring", description: "A thin ring that glows magenta by itself." },
+        { name: "chrome-sphere", title: "Chrome sphere", description: "A polished metal ball with a soft shadow." },
+      ],
+    },
     voice_presets: [
       { name: "deep", title: "Deep", description: "A lower, fuller voice." },
       { name: "robot", title: "Robot", description: "A metallic, buzzing voice." },
@@ -420,7 +549,20 @@ export function demoEngine(): FakeEngine {
     animations: [
       { preset: "fade", applies: "in or out", meaning: "from or to transparent" },
       { preset: "pop", applies: "in or out", meaning: "springs to size" },
+      { preset: "blur_in", applies: "in", meaning: "comes into focus from a soft blur while fading in" },
+      { preset: "blur_out", applies: "out", meaning: "blurs away while fading out" },
+      { preset: "pop_in", applies: "in", meaning: "grows past full size and settles" },
+      { preset: "rise_in", applies: "in", meaning: "rises a short way into place" },
+      { preset: "swoop_in", applies: "in", meaning: "sweeps in on a curve" },
+      { preset: "glow_in", applies: "in", meaning: "fades in with a pulse of light" },
+      { preset: "glow_out", applies: "out", meaning: "flares with light while fading out" },
+      { preset: "flip_in", applies: "in", meaning: "turns over to face the viewer (3D)" },
+      { preset: "swing_in", applies: "in", meaning: "swings in like a door (3D)" },
+      { preset: "fly_in_3d", applies: "in", meaning: "flies in from deep behind the canvas (3D)" },
+      { preset: "draw_on", applies: "in", meaning: "draws a shape's outline on" },
+      { preset: "draw_off", applies: "out", meaning: "erases a shape's outline" },
       { preset: "pulse", applies: "combo", meaning: "beats larger and back" },
+      { preset: "turntable", applies: "combo", meaning: "turns around its vertical axis (3D)" },
     ],
     text: {
       fonts: ["Inter"],
@@ -446,6 +588,8 @@ export function demoEngine(): FakeEngine {
       { id: "asset_0004", name: "old take.mp4", kind: "video", duration: moment(12), used_by: [], missing: true },
       { id: "asset_0015", name: "film.cube", kind: "lut", used_by: [] },
       { id: "asset_0017", name: "Lora.ttf", kind: "font", used_by: [], families: ["Lora"] },
+      { id: "asset_0018", name: "logo.svg", kind: "vector", used_by: ["clip_0075"], video: { width: 800, height: 400 }, vector: { view_box: [0, 0, 200, 100], paths: 4 } },
+      { id: "asset_0019", name: "Search bar", kind: "web", duration: moment(6), used_by: [], video: { width: 1080, height: 1920 } },
     ],
     folders: ["Footage", "Footage/B-roll"],
   };

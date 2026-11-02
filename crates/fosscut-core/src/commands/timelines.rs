@@ -103,7 +103,7 @@ impl Command for TimelineAdd {
             });
         let first_video = assets
             .iter()
-            .find(|a| a.kind == AssetKind::Video)
+            .find(|a| a.kind.is_video())
             .and_then(|a| a.info.video.as_ref());
         let shown = first_video.map(|v| {
             if v.rotation.rem_euclid(180) == 90 {
@@ -155,7 +155,7 @@ impl Command for TimelineAdd {
             }
             let clip_id = ctx.project.allocate_id(IdKind::Clip);
             let (content, list) = match asset.kind {
-                AssetKind::Video => (
+                AssetKind::Video | AssetKind::Web => (
                     ClipContent::Video {
                         asset: asset.id.clone(),
                         source_in: Flicks::ZERO,

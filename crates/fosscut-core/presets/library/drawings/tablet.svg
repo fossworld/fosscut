@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1112" height="856" viewBox="0 0 1112 856">
+  <title>Tablet frame</title>
+  <!-- Drawn by FossCut: a generic tablet in landscape. The screen (44, 44, 1024 x 768, radius 22) is open: what lies below shows through. -->
+  <defs>
+    <linearGradient id="frame-metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#565C66"/>
+      <stop offset="0.5" stop-color="#2B2F36"/>
+      <stop offset="1" stop-color="#40454E"/>
+    </linearGradient>
+  </defs>
+  <rect id="button-top" x="880" y="1" width="72" height="7" rx="2.5" fill="#2E333B"/>
+  <path id="frame" fill="url(#frame-metal)" fill-rule="evenodd" d="M 62 6 H 1050 A 56 56 0 0 1 1106 62 V 794 A 56 56 0 0 1 1050 850 H 62 A 56 56 0 0 1 6 794 V 62 A 56 56 0 0 1 62 6 Z M 63 16 H 1049 A 47 47 0 0 1 1096 63 V 793 A 47 47 0 0 1 1049 840 H 63 A 47 47 0 0 1 16 793 V 63 A 47 47 0 0 1 63 16 Z"/>
+  <path id="bezel" fill="#07080A" fill-rule="evenodd" d="M 63 16 H 1049 A 47 47 0 0 1 1096 63 V 793 A 47 47 0 0 1 1049 840 H 63 A 47 47 0 0 1 16 793 V 63 A 47 47 0 0 1 63 16 Z M 66 44 H 1046 A 22 22 0 0 1 1068 66 V 790 A 22 22 0 0 1 1046 812 H 66 A 22 22 0 0 1 44 790 V 66 A 22 22 0 0 1 66 44 Z"/>
+  <circle id="camera-lens" cx="556" cy="30" r="5" fill="#1A2433"/>
+</svg>

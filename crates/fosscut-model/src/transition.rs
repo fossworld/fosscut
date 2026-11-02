@@ -173,6 +173,12 @@ pub struct Animation {
     pub preset: String,
     /// How long it takes; combo animations repeat with this period.
     pub duration: Flicks,
+    /// How long it waits (0 when omitted): an entrance starts this long after the clip's
+    /// start and holds its first state until then, an exit ends this long before the
+    /// clip's end and holds its last state after, and a combo starts its cycles this late.
+    /// Staggered animations give each clip a growing delay.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub delay: Flicks,
 }
 
 /// How a clip moves in, out and while it shows.
@@ -232,6 +238,108 @@ pub const ANIMATION_PRESETS: &[(&str, &str, &str)] = &[
     ("swing", "combo", "rocks from side to side"),
     ("float", "combo", "drifts up and down"),
     ("shake", "combo", "shakes quickly"),
+    (
+        "blur_in",
+        "in",
+        "comes into focus from a soft blur while fading in",
+    ),
+    ("blur_out", "out", "blurs away while fading out"),
+    (
+        "pop_in",
+        "in",
+        "grows from 60% past full size and settles, quickly opaque",
+    ),
+    (
+        "pop_out",
+        "out",
+        "swells slightly, then shrinks away to 60% while fading",
+    ),
+    (
+        "rise_in",
+        "in",
+        "rises a short way into place from below while fading in",
+    ),
+    ("rise_out", "out", "sinks a short way while fading out"),
+    (
+        "swoop_in",
+        "in",
+        "sweeps in on a curve from the lower right, turning upright and growing to size",
+    ),
+    (
+        "swoop_out",
+        "out",
+        "sweeps away on a curve to the lower right, turning and shrinking",
+    ),
+    (
+        "glow_in",
+        "in",
+        "fades in with a pulse of light that flares and settles (light.glow)",
+    ),
+    (
+        "glow_out",
+        "out",
+        "flares with light while fading out (light.glow)",
+    ),
+    (
+        "flip_in",
+        "in",
+        "turns over around its vertical axis from edge-on to face the viewer (3D)",
+    ),
+    (
+        "flip_out",
+        "out",
+        "turns away around its vertical axis until edge-on (3D)",
+    ),
+    (
+        "swing_in",
+        "in",
+        "swings in around its vertical axis like a door, past facing the viewer, and settles (3D)",
+    ),
+    (
+        "swing_out",
+        "out",
+        "swings away around its vertical axis like a door (3D)",
+    ),
+    (
+        "tilt_in",
+        "in",
+        "tips up from lying back around its horizontal axis while rising and fading in (3D)",
+    ),
+    (
+        "tilt_out",
+        "out",
+        "tips back around its horizontal axis while sinking and fading out (3D)",
+    ),
+    (
+        "fly_in_3d",
+        "in",
+        "flies in from deep behind the canvas while turning to face the viewer (3D)",
+    ),
+    (
+        "fly_out_3d",
+        "out",
+        "flies away into the distance while turning (3D)",
+    ),
+    (
+        "turntable",
+        "combo",
+        "turns around its vertical axis, a full turn per cycle (3D)",
+    ),
+    (
+        "sway_3d",
+        "combo",
+        "rocks gently around its vertical axis (3D)",
+    ),
+    (
+        "draw_on",
+        "in",
+        "draws a shape clip's outline on from its start to its end, by its trim (ADR-0036)",
+    ),
+    (
+        "draw_off",
+        "out",
+        "erases a shape clip's outline from its start to its end, by its trim (ADR-0036)",
+    ),
 ];
 
 /// The change an animation makes to a clip's placement at a moment.
@@ -245,6 +353,23 @@ pub struct AnimationDelta {
     pub rotation: f64,
     /// Multiplies the opacity.
     pub opacity: f64,
+    /// Added to the depth (`transform.position_z`), as a fraction of the canvas width
+    /// (ADR-0037).
+    pub depth: f64,
+    /// Added to the tilt around the horizontal axis (`transform.rotation_x`), in degrees.
+    pub rotation_x: f64,
+    /// Added to the turn around the vertical axis (`transform.rotation_y`), in degrees.
+    pub rotation_y: f64,
+    /// A blur over the picture (one standard deviation) as a fraction of the canvas height,
+    /// measured at the clip's own size so it scales with it; 0 for none. The renderer plans
+    /// it as a blur that spreads past the picture's edges.
+    pub blur: f64,
+    /// Light around the picture, 0 (none) to 1 (a strong flare); the renderer plans it as a
+    /// `light.glow` effect.
+    pub glow: f64,
+    /// The part of a shape clip's trimmed outline that shows, `[from, to]` as fractions of
+    /// it: `[0, 1]` shows all of it (ADR-0036). Combined animations keep what both show.
+    pub draw: [f64; 2],
 }
 
 impl Default for AnimationDelta {
@@ -254,6 +379,12 @@ impl Default for AnimationDelta {
             scale: 1.0,
             rotation: 0.0,
             opacity: 1.0,
+            depth: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            blur: 0.0,
+            glow: 0.0,
+            draw: [0.0, 1.0],
         }
     }
 }
@@ -268,6 +399,15 @@ impl AnimationDelta {
             scale: self.scale * other.scale,
             rotation: self.rotation + other.rotation,
             opacity: self.opacity * other.opacity,
+            depth: self.depth + other.depth,
+            rotation_x: self.rotation_x + other.rotation_x,
+            rotation_y: self.rotation_y + other.rotation_y,
+            blur: self.blur + other.blur,
+            glow: self.glow + other.glow,
+            draw: [
+                self.draw[0].max(other.draw[0]),
+                self.draw[1].min(other.draw[1]),
+            ],
         }
     }
 }
@@ -278,6 +418,9 @@ fn ease_out(t: f64) -> f64 {
 
 /// An entrance at `t` from 0 (start) to 1 (fully in); exits use `1 - t`.
 fn entrance(preset: &str, t: f64) -> AnimationDelta {
+    if let Some(d) = crate::camera::entrance_3d(preset, t) {
+        return d;
+    }
     let t = t.clamp(0.0, 1.0);
     let e = ease_out(t);
     let away = 1.0 - e;
@@ -312,13 +455,53 @@ fn entrance(preset: &str, t: f64) -> AnimationDelta {
             d.offset[1] = -0.6 * bounce;
             d.opacity = (t * 4.0).min(1.0);
         }
+        "blur_in" | "blur_out" => {
+            d.blur = 0.03 * (1.0 - t).powi(2);
+            d.scale = 1.0 + 0.06 * away;
+            d.opacity = (t * 1.6).min(1.0);
+        }
+        "pop_in" | "pop_out" => {
+            d.scale = 0.6 + 0.4 * back_out(t);
+            d.opacity = (t * 4.0).min(1.0);
+        }
+        "rise_in" | "rise_out" => {
+            d.offset[1] = 0.08 * away;
+            d.opacity = (t * 1.5).min(1.0);
+        }
+        "swoop_in" | "swoop_out" => {
+            d.offset = [0.35 * away, 0.2 * away * away];
+            d.rotation = 15.0 * away;
+            d.scale = 0.7 + 0.3 * e;
+            d.opacity = (t * 2.5).min(1.0);
+        }
+        "glow_in" | "glow_out" => {
+            d.opacity = (t * 2.0).min(1.0);
+            d.glow = (4.0 * t * (1.0 - t)).powf(1.5);
+            d.scale = 0.97 + 0.03 * e;
+        }
+        // Shape outlines draw on from their start, and erase from their start on the way
+        // out (ADR-0036).
+        "draw_on" => d.draw = [0.0, e],
+        "draw_off" => d.draw = [away, 1.0],
         _ => {}
     }
     d
 }
 
+/// Overshoots past 1 and settles back, from 0 at `t` 0 to 1 at `t` 1: the "back" ease-out
+/// of Robert Penner's easing equations, overshooting by about 10%.
+fn back_out(t: f64) -> f64 {
+    const C1: f64 = 1.70158;
+    const C3: f64 = C1 + 1.0;
+    let u = t - 1.0;
+    1.0 + C3 * u * u * u + C1 * u * u
+}
+
 /// A combo animation at phase `p` (cycles, any real number).
 fn combo(preset: &str, p: f64) -> AnimationDelta {
+    if let Some(d) = crate::camera::combo_3d(preset, p) {
+        return d;
+    }
     let wave = (p * std::f64::consts::TAU).sin();
     let mut d = AnimationDelta::default();
     match preset {
@@ -339,24 +522,31 @@ fn combo(preset: &str, p: f64) -> AnimationDelta {
 pub fn animate(animations: &ClipAnimations, offset: Flicks, duration: Flicks) -> AnimationDelta {
     let seconds = |f: Flicks| f.as_seconds_f64();
     let mut delta = AnimationDelta::default();
+    // Before an entrance's delay it holds its first state; after an exit, its last.
     if let Some(a) = &animations.entrance
         && a.duration.is_positive()
-        && offset < a.duration
     {
-        delta = delta.then(entrance(&a.preset, seconds(offset) / seconds(a.duration)));
+        let into = (offset - a.delay).max(Flicks::ZERO);
+        if into < a.duration {
+            delta = delta.then(entrance(&a.preset, seconds(into) / seconds(a.duration)));
+        }
     }
     if let Some(a) = &animations.exit
         && a.duration.is_positive()
     {
-        let left = duration - offset;
+        let left = (duration - offset - a.delay).max(Flicks::ZERO);
         if left < a.duration {
             delta = delta.then(entrance(&a.preset, seconds(left) / seconds(a.duration)));
         }
     }
     if let Some(a) = &animations.combo
         && a.duration.is_positive()
+        && offset >= a.delay
     {
-        delta = delta.then(combo(&a.preset, seconds(offset) / seconds(a.duration)));
+        delta = delta.then(combo(
+            &a.preset,
+            seconds(offset - a.delay) / seconds(a.duration),
+        ));
     }
     delta
 }
@@ -373,6 +563,7 @@ mod tests {
         let a = |preset: &str| Animation {
             preset: preset.into(),
             duration: s(1.0),
+            delay: Flicks::ZERO,
         };
         ClipAnimations {
             entrance: entrance.map(a),
@@ -417,6 +608,7 @@ mod tests {
                 entrance: Some(Animation {
                     preset: name.to_string(),
                     duration: s(1.0),
+                    delay: Flicks::ZERO,
                 }),
                 ..Default::default()
             };
@@ -427,6 +619,109 @@ mod tests {
         let json = serde_json::to_value(with(Some("fade"), None, None)).unwrap();
         assert_eq!(json["in"]["preset"], "fade");
         assert!(json.get("out").is_none());
+    }
+
+    fn delayed(place: &str, preset: &str, delay: f64) -> ClipAnimations {
+        let animation = Some(Animation {
+            preset: preset.into(),
+            duration: s(0.5),
+            delay: s(delay),
+        });
+        match place {
+            "in" => ClipAnimations {
+                entrance: animation,
+                ..Default::default()
+            },
+            "out" => ClipAnimations {
+                exit: animation,
+                ..Default::default()
+            },
+            _ => ClipAnimations {
+                combo: animation,
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn delays_hold_the_first_and_last_states() {
+        let late = delayed("in", "fade", 1.0);
+        assert_eq!(
+            animate(&late, s(0.0), s(4.0)).opacity,
+            0.0,
+            "hidden until its turn"
+        );
+        assert_eq!(animate(&late, s(0.99), s(4.0)).opacity, 0.0);
+        assert!((animate(&late, s(1.25), s(4.0)).opacity - 0.5).abs() < 1e-9);
+        assert_eq!(animate(&late, s(1.5), s(4.0)), AnimationDelta::default());
+        // An exit with a delay ends that long before the clip does, and stays gone.
+        let early = delayed("out", "fade", 1.0);
+        assert_eq!(animate(&early, s(2.4), s(4.0)), AnimationDelta::default());
+        assert!((animate(&early, s(2.75), s(4.0)).opacity - 0.5).abs() < 1e-9);
+        assert_eq!(animate(&early, s(3.5), s(4.0)).opacity, 0.0);
+        // A combo starts its cycles after the delay, so a stagger makes a wave.
+        let wave = delayed("combo", "pulse", 0.25);
+        assert_eq!(animate(&wave, s(0.2), s(4.0)), AnimationDelta::default());
+        let first = delayed("combo", "pulse", 0.0);
+        assert!(
+            (animate(&wave, s(0.375), s(4.0)).scale - animate(&first, s(0.125), s(4.0)).scale)
+                .abs()
+                < 1e-9
+        );
+        // Delays are sparse in JSON and default to zero.
+        let json = serde_json::to_value(&late).unwrap();
+        assert_eq!(json["in"]["delay"], serde_json::json!(s(1.0)));
+        let plain: Animation =
+            serde_json::from_value(serde_json::json!({"preset": "fade", "duration": 1})).unwrap();
+        assert_eq!(plain.delay, Flicks::ZERO);
+        assert!(serde_json::to_value(&plain).unwrap().get("delay").is_none());
+    }
+
+    #[test]
+    fn motion_design_presets_move_blur_and_glow() {
+        let at = |preset: &str, t: f64| animate(&delayed("in", preset, 0.0), s(t), s(4.0));
+        let leaving = |preset: &str, t: f64| animate(&delayed("out", preset, 0.0), s(t), s(4.0));
+        // blur_in starts soft and transparent and comes into focus.
+        let start = at("blur_in", 0.0);
+        assert!(start.blur > 0.025 && start.opacity == 0.0 && start.scale > 1.0);
+        assert!(at("blur_in", 0.25).blur < start.blur && at("blur_in", 0.25).blur > 0.0);
+        assert!(leaving("blur_out", 3.9).blur > 0.0, "blurs as it leaves");
+        // pop_in overshoots and settles.
+        let peak = (0..50)
+            .map(|i| at("pop_in", f64::from(i) / 100.0).scale)
+            .fold(0.0, f64::max);
+        assert!(peak > 1.03 && peak < 1.15, "{peak}");
+        assert!((at("pop_in", 0.0).scale - 0.6).abs() < 1e-9);
+        // rise_in comes up from a little below; swoop_in from the lower right, turned.
+        assert!((at("rise_in", 0.0).offset[1] - 0.08).abs() < 1e-9);
+        let swoop = at("swoop_in", 0.0);
+        assert!(swoop.offset[0] > 0.3 && swoop.offset[1] > 0.1 && swoop.rotation > 10.0);
+        assert!(at("swoop_in", 0.25).offset[0] < swoop.offset[0]);
+        // glow_in flares in the middle and ends without light.
+        assert_eq!(at("glow_in", 0.0).glow, 0.0);
+        assert!(
+            (at("glow_in", 0.25).glow - 1.0).abs() < 1e-9,
+            "the flare peaks halfway"
+        );
+        assert!(leaving("glow_out", 3.75).glow > 0.9);
+        // Every new preset rests at its end and the exits mirror the entrances.
+        for name in ["blur", "pop", "rise", "swoop", "glow"] {
+            let entrance = format!("{name}_in");
+            let exit = format!("{name}_out");
+            assert_eq!(at(&entrance, 0.5), AnimationDelta::default(), "{entrance}");
+            assert_eq!(leaving(&exit, 3.5), AnimationDelta::default(), "{exit}");
+            assert_eq!(
+                at(&entrance, 0.1),
+                leaving(&exit, 3.9),
+                "{exit} mirrors {entrance}"
+            );
+            let places: Vec<&str> = ANIMATION_PRESETS
+                .iter()
+                .filter(|(n, ..)| *n == entrance || *n == exit)
+                .map(|(_, p, _)| *p)
+                .collect();
+            assert_eq!(places, ["in", "out"], "{name}");
+        }
     }
 
     #[test]

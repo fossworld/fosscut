@@ -155,6 +155,13 @@
   --clip-adjustment-tone: #c7b8ff;
   --clip-timeline: #46529e;
   --clip-timeline-tone: #b7c0ff;
+  /* A camera shows nothing itself: a dark slate with a warm viewfinder (ADR-0037). */
+  --clip-camera: #2f3540;
+  --clip-camera-tone: #ffd27a;
+  --clip-particles: #8c3fa8;
+  --clip-particles-tone: #f0b8ff;
+  --clip-model: #2f7a73;
+  --clip-model-tone: #9eeee4;
   --clip-other: #4c4e57;
   --clip-other-tone: #c9cad1;
   --clip-label: #ffffff;

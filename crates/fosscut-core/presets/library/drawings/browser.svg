@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1296" height="824" viewBox="0 0 1296 824">
+  <title>Browser window</title>
+  <!-- Drawn by FossCut: a generic browser window. The page area (8, 96, 1280 x 720, bottom corners radius 16) is open: what lies below shows through. -->
+  <path id="toolbar" fill="#ECEFF3" d="M 24 8 H 1272 A 16 16 0 0 1 1288 24 V 96 H 8 V 24 A 16 16 0 0 1 24 8 Z"/>
+  <rect id="toolbar-edge" x="8" y="95" width="1280" height="1" fill="#D3D8DF"/>
+  <circle id="window-button-1" cx="36" cy="30" r="7" fill="#C3C9D2"/>
+  <circle id="window-button-2" cx="60" cy="30" r="7" fill="#C3C9D2"/>
+  <circle id="window-button-3" cx="84" cy="30" r="7" fill="#C3C9D2"/>
+  <path id="tab" fill="#FFFFFF" d="M 126 14 H 366 A 10 10 0 0 1 376 24 V 48 H 116 V 24 A 10 10 0 0 1 126 14 Z"/>
+  <rect id="tab-title" x="136" y="27" width="150" height="8" rx="4" fill="#C9CED6"/>
+  <path id="tab-close" fill="none" stroke="#9AA1AC" stroke-width="2" stroke-linecap="round" d="M 350 26 L 358 34 M 358 26 L 350 34"/>
+  <path id="back" fill="none" stroke="#7B8494" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M 42 64 L 30 72 L 42 80"/>
+  <path id="forward" fill="none" stroke="#B4BAC4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M 58 64 L 70 72 L 58 80"/>
+  <path id="reload" fill="none" stroke="#7B8494" stroke-width="2.5" stroke-linecap="round" d="M 102 66 A 8 8 0 1 0 104 74"/>
+  <path id="address-bar" fill="#FFFFFF" stroke="#D3D8DF" stroke-width="1.5" d="M 138 58 H 1170 A 14 14 0 0 1 1184 72 V 72 A 14 14 0 0 1 1170 86 H 138 A 14 14 0 0 1 124 72 V 72 A 14 14 0 0 1 138 58 Z"/>
+  <rect id="address-text" x="150" y="68" width="220" height="8" rx="4" fill="#C9CED6"/>
+  <circle id="menu-dot-1" cx="1262" cy="64" r="2.5" fill="#7B8494"/>
+  <circle id="menu-dot-2" cx="1262" cy="72" r="2.5" fill="#7B8494"/>
+  <circle id="menu-dot-3" cx="1262" cy="80" r="2.5" fill="#7B8494"/>
+  <path id="window-edge" fill="none" stroke="#C9CED6" stroke-width="1.5" d="M 24 8 H 1272 A 16 16 0 0 1 1288 24 V 800 A 16 16 0 0 1 1272 816 H 24 A 16 16 0 0 1 8 800 V 24 A 16 16 0 0 1 24 8 Z"/>
+</svg>

@@ -77,6 +77,21 @@
           "const": "font",
           "description": "A font file (`.ttf`, `.otf`, `.ttc`) whose families text can use (ADR-0027).",
           "type": "string"
+        },
+        {
+          "const": "vector",
+          "description": "A vector drawing (`.svg`, ADR-0036): shown as an image, drawn sharp at any size, and\nsplit into editable shape clips by `vector.explode`.",
+          "type": "string"
+        },
+        {
+          "const": "web",
+          "description": "A web composition (ADR-0039): an HTML page, with the files it loads, copied into the\nbundle's `web/` folder and rendered frame by frame in a headless browser. Video clips\nshow it like a video; its size and frame rate are in `video`, its length in\n`duration`.",
+          "type": "string"
+        },
+        {
+          "const": "model",
+          "description": "A 3D model (`.glb`, or `.gltf` with its buffers and textures, ADR-0040), copied\ninto the bundle's `models/` folder by content and shown by 3D object clips.",
+          "type": "string"
         }
       ]
     },
@@ -231,6 +246,28 @@
           ],
           "description": "Size of a LUT asset's table."
         },
+        "model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a 3D model holds (ADR-0040)."
+        },
+        "vector": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VectorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a vector drawing holds; its size in pixels is in `video`."
+        },
         "video": {
           "anyOf": [
             {
@@ -243,6 +280,67 @@
           "description": "Primary video stream."
         }
       },
+      "type": "object"
+    },
+    "ModelInfo": {
+      "description": "What a 3D model file holds (ADR-0040), probed at import.",
+      "properties": {
+        "copyright": {
+          "description": "The file's own copyright line, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generator": {
+          "description": "The file's own note of the tool that wrote it, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "materials": {
+          "description": "Materials.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "meshes": {
+          "description": "Meshes its default scene draws.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "size": {
+          "description": "The size of its bounds `[x, y, z]` in its own units (metres in glTF), y up.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "textures": {
+          "description": "Images its materials use.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "triangles": {
+          "description": "Triangles drawn.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "meshes",
+        "triangles",
+        "materials",
+        "textures",
+        "size"
+      ],
       "type": "object"
     },
     "PathHints": {
@@ -277,6 +375,32 @@
           "type": "integer"
         }
       ]
+    },
+    "VectorInfo": {
+      "description": "What a vector drawing (`.svg`) holds (ADR-0036).",
+      "properties": {
+        "paths": {
+          "description": "How many path elements it draws, each a shape clip when exploded.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "view_box": {
+          "description": "Its view box `[x, y, width, height]` in its own units.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "view_box",
+        "paths"
+      ],
+      "type": "object"
     },
     "VideoInfo": {
       "description": "Video stream properties.",

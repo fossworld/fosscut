@@ -6,7 +6,7 @@ use fosscut_model::{
     ANIMATION_PRESETS, Animation, Clip, ClipAnimations, Id, ParamValue, Transition,
     transition_type, transition_types,
 };
-use fosscut_time::{Flicks, TimeInput, TimeReport};
+use fosscut_time::{Flicks, Rate, TimeInput, TimeReport};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -200,6 +200,59 @@ pub struct AnimationInput {
     /// How long it takes; half a second for in and out, one second per cycle for combo.
     #[serde(default)]
     pub duration: Option<TimeInput>,
+    /// How long it waits: an entrance starts this long after the clip's start (hidden or in
+    /// its first state until then), an exit ends this long before the clip's end, a combo
+    /// starts its cycles this late; none when omitted. clips.stagger sets growing delays.
+    #[serde(default)]
+    pub delay: Option<TimeInput>,
+}
+
+/// The animation `input` describes for `place` (`in`, `out` or `combo`) on a timeline at
+/// `rate`, lasting `default_ms` when it gives no duration; `command` names the caller in
+/// errors.
+pub(super) fn animation(
+    command: &str,
+    input: &AnimationInput,
+    place: &str,
+    rate: Rate,
+    default_ms: i64,
+) -> Result<Animation, ApiError> {
+    let fits = ANIMATION_PRESETS
+        .iter()
+        .any(|(name, places, _)| *name == input.preset && places.contains(place));
+    if !fits {
+        let names: Vec<&str> = ANIMATION_PRESETS
+            .iter()
+            .filter(|(_, places, _)| places.contains(place))
+            .map(|(n, ..)| *n)
+            .collect();
+        return Err(invalid(format!(
+            "{command}: {} is not a {place} animation",
+            input.preset
+        ))
+        .with_hint(format!("{place} animations: {}.", names.join(", "))));
+    }
+    let duration = match &input.duration {
+        Some(d) => resolve(d, rate)?,
+        None => rate.snap(Flicks::from_millis(default_ms)),
+    };
+    if !duration.is_positive() {
+        return Err(invalid(format!(
+            "{command}: an animation takes more than zero time"
+        )));
+    }
+    let delay = match &input.delay {
+        Some(d) => resolve(d, rate)?,
+        None => Flicks::ZERO,
+    };
+    if delay.is_negative() {
+        return Err(invalid(format!("{command}: a delay cannot be negative")));
+    }
+    Ok(Animation {
+        preset: input.preset.clone(),
+        duration,
+        delay,
+    })
 }
 
 /// Sets how a clip moves in, out and while it shows.
@@ -209,10 +262,14 @@ pub struct AnimationSet {
     /// The clip.
     pub clip: Id,
     /// The entrance: `fade`, `slide_left`, `slide_right`, `slide_up`, `slide_down`,
-    /// `zoom_in`, `zoom_out`, `spin`, `pop` or `drop`.
+    /// `zoom_in`, `zoom_out`, `spin`, `pop` or `drop`, or one made for entrances such as
+    /// `blur_in`, `pop_in`, `rise_in`, `swoop_in` or `glow_in`, or `draw_on` for a shape
+    /// clip's outline (capabilities lists them all under animations).
     #[serde(default, rename = "in")]
     pub entrance: Option<AnimationInput>,
-    /// The exit: the same presets, played backwards up to the clip's end.
+    /// The exit: the same presets, played backwards up to the clip's end, or one made for
+    /// exits such as `blur_out`, `pop_out`, `rise_out`, `swoop_out` or `glow_out`, or
+    /// `draw_off` for a shape clip's outline.
     #[serde(default, rename = "out")]
     pub exit: Option<AnimationInput>,
     /// A repeating animation: `pulse`, `swing`, `float` or `shake`.
@@ -225,7 +282,7 @@ pub struct AnimationSet {
 
 impl Command for AnimationSet {
     const NAME: &'static str = "animation.set";
-    const SUMMARY: &'static str = "Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop), out (the same, reversed), or with a repeating combo (pulse, swing, float, shake); clear removes them. Animations move placement and opacity on top of keyframes.";
+    const SUMMARY: &'static str = "Animate a clip in (fade, slide_left/right/up/down, zoom_in, zoom_out, spin, pop, drop, blur_in, pop_in, rise_in, swoop_in, glow_in), out (the same reversed, or blur_out, pop_out, rise_out, swoop_out, glow_out), or with a repeating combo (pulse, swing, float, shake), each after an optional delay; clear removes them. Animations move placement and opacity (and blur or glow) on top of keyframes; clips.stagger animates several clips one after another. draw_on (in) and draw_off (out) draw a shape clip's outline on and off through its trims.";
     type Output = MotionChanged;
 
     fn apply(self, ctx: &mut Context<'_>) -> Result<MotionChanged, ApiError> {
@@ -242,37 +299,9 @@ impl Command for AnimationSet {
         let track = &mut timeline.tracks[location.track];
         ensure_unlocked(track)?;
         let clip = &mut track.clips[location.clip];
-        let build =
-            |input: &AnimationInput, place: &str, default_ms: i64| -> Result<Animation, ApiError> {
-                let fits = ANIMATION_PRESETS
-                    .iter()
-                    .any(|(name, places, _)| *name == input.preset && places.contains(place));
-                if !fits {
-                    let names: Vec<&str> = ANIMATION_PRESETS
-                        .iter()
-                        .filter(|(_, places, _)| places.contains(place))
-                        .map(|(n, ..)| *n)
-                        .collect();
-                    return Err(invalid(format!(
-                        "animation.set: {} is not a {place} animation",
-                        input.preset
-                    ))
-                    .with_hint(format!("{place} animations: {}.", names.join(", "))));
-                }
-                let duration = match &input.duration {
-                    Some(d) => resolve(d, rate)?,
-                    None => rate.snap(Flicks::from_millis(default_ms)),
-                };
-                if !duration.is_positive() {
-                    return Err(invalid(
-                        "animation.set: an animation takes more than zero time",
-                    ));
-                }
-                Ok(Animation {
-                    preset: input.preset.clone(),
-                    duration,
-                })
-            };
+        let build = |input: &AnimationInput, place: &str, default_ms: i64| {
+            animation(Self::NAME, input, place, rate, default_ms)
+        };
         for place in &self.clear {
             match place.as_str() {
                 "in" => clip.animations.entrance = None,

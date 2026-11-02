@@ -922,6 +922,7 @@ fn skills_install_into_agent_folders() {
             "fosscut-basics",
             "beat-sync",
             "long-to-shorts",
+            "motion-graphics",
             "talking-head-cleanup",
             "vertical-reframe",
             "viral-captions"
@@ -1135,7 +1136,8 @@ fn models_from_the_command_line() {
     let dir = workspace("models");
     let listed = ok(&dir, &["models", "list"]);
     let models = listed["models"].as_array().unwrap();
-    assert_eq!(models.len(), 10);
+    // Ten analysis and voice models and runtimes, and the headless browser (ADR-0039).
+    assert_eq!(models.len(), 11);
     assert!(models.iter().all(|m| m["installed"] == json!(false)));
     assert!(Path::new(listed["dir"].as_str().unwrap()).ends_with("cache/models"));
 

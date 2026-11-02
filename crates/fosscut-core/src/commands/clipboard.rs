@@ -75,9 +75,12 @@ impl Command for ClipsPaste {
             .unwrap_or(Flicks::ZERO);
         let mut groups: BTreeMap<Id, Id> = BTreeMap::new();
         let mut placements = Vec::new();
+        let mut copies: BTreeMap<Id, Id> = BTreeMap::new();
         for item in self.clips {
             let mut clip = item.clip;
+            let old = clip.id.clone();
             clip.id = ctx.project.allocate_id(IdKind::Clip);
+            copies.insert(old, clip.id.clone());
             renew_effect_ids(ctx.project, &mut clip);
             if let Some(group) = clip.group.take() {
                 let fresh = match groups.get(&group) {
@@ -112,6 +115,9 @@ impl Command for ClipsPaste {
             insert_sorted(track, clip);
         }
         tidy_groups(timeline_mut(ctx.project, &timeline)?);
+        // Pasted followers follow the pasted copies of their paths, or the paths on this
+        // timeline; others stop following (ADR-0036).
+        super::vector::remap_follows(timeline_mut(ctx.project, &timeline)?, &copies);
         Ok(Pasted { clips: placements })
     }
 }

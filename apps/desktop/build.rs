@@ -75,6 +75,11 @@ fn main() {
         "beats_cut",
         "shorts_candidates",
         "shorts_make",
+        "web_pick",
+        "web_import",
+        "remotion_start",
+        "remotion_status",
+        "remotion_cancel",
     ]);
     if let Err(error) =
         tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))

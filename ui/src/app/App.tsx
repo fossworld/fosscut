@@ -24,6 +24,8 @@ const Export = lazy(() => import("./Export").then((m) => ({ default: m.Export })
 const Settings = lazy(() => import("./Settings").then((m) => ({ default: m.Settings })));
 const ModelInstall = lazy(() => import("./ModelInstall").then((m) => ({ default: m.ModelInstall })));
 const Record = lazy(() => import("../panels/Record").then((m) => ({ default: m.Record })));
+const WebImport = lazy(() => import("./Compositions").then((m) => ({ default: m.WebImport })));
+const RemotionRender = lazy(() => import("./Compositions").then((m) => ({ default: m.RemotionRender })));
 
 /** How often the list of connected agents is read, in milliseconds. */
 const CLIENTS_POLL = 2000;
@@ -128,6 +130,8 @@ export function App({ editor }: { editor: Editor }) {
       // The export dialog and the record panel read their jobs faster while they show.
       if (!editor.getState().exporting.open) void editor.pollExport();
       if (!editor.getState().recorder.open) void editor.pollRecording();
+      // A Remotion render goes on, and imports its file, while its dialog is hidden.
+      if (!editor.getState().remotion.open) void editor.pollRemotion();
       // An analysis goes on, and adds its effect, while its clip is not selected.
       void editor.pollAnalysis();
     }, CLIENTS_POLL);
@@ -148,6 +152,14 @@ export function App({ editor }: { editor: Editor }) {
       }
       if (now.install) {
         if (event.key === "Escape") editor.cancelInstall();
+        return;
+      }
+      if (now.webImport) {
+        if (event.key === "Escape") editor.closeWebImport();
+        return;
+      }
+      if (now.remotion.open) {
+        if (event.key === "Escape") editor.closeRemotion();
         return;
       }
       const action = actionFor(keystroke(event), MAC, undefined, focusOf(event.target));
@@ -261,6 +273,8 @@ export function App({ editor }: { editor: Editor }) {
           <Suspense fallback={null}>
             {state.exporting.open && <Export editor={editor} state={state} />}
             {state.install && <ModelInstall editor={editor} prompt={state.install} />}
+            {state.webImport && <WebImport key={state.webImport.page.path} editor={editor} state={state} dialog={state.webImport} />}
+            {state.remotion.open && <RemotionRender editor={editor} dialog={state.remotion} />}
           </Suspense>
         </>
       )}

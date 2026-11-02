@@ -36,6 +36,12 @@ export const en = {
   "timeline.vertical.person": "Vertical version following a person",
   "timeline.vertical.subject": "Vertical version following the subject",
   "timeline.vertical.title": "Vertical version",
+  "timeline.clip.camera": "Camera",
+  "timeline.clip.particles": "Particles",
+  "timeline.camera": "Add a camera",
+  "timeline.camera.help": "Add a camera from the playhead: clips with 3D on are seen through it",
+  "timeline.stagger": "Stagger",
+  "timeline.stagger.help": "Animate the selected clips one after another",
 } satisfies Messages;
 
 export const hu: Translation<typeof en> = {
@@ -71,4 +77,10 @@ export const hu: Translation<typeof en> = {
   "timeline.vertical.person": "Álló változat, amely egy személyt követ",
   "timeline.vertical.subject": "Álló változat, amely az alanyt követi",
   "timeline.vertical.title": "Álló változat",
+  "timeline.clip.camera": "Kamera",
+  "timeline.clip.particles": "Részecskék",
+  "timeline.camera": "Kamera hozzáadása",
+  "timeline.camera.help": "Kamera hozzáadása a lejátszófejtől: a bekapcsolt 3D-s klipek ezen át látszanak",
+  "timeline.stagger": "Lépcsőzés",
+  "timeline.stagger.help": "A kijelölt klipek animálása egymás után",
 };

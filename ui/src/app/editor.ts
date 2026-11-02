@@ -39,6 +39,7 @@ import {
   type RecordChoice,
   type RecordState,
   type Region,
+  type RemotionChoice,
   type ShortCandidates,
   type ShortRequest,
   type SubjectChoice,
@@ -47,6 +48,8 @@ import {
   type TrashEntry,
   type UpdateAnswer,
   type VoiceInfo,
+  type WebImportRequest,
+  type WebPage,
   isApiError,
 } from "../engine/types";
 import { setLanguage, t } from "../i18n";
@@ -183,6 +186,34 @@ export interface EditorState {
   analysisFor: Measurement["kind"] | null;
   /** The moments of a long clip found worth a short, the last time they were looked for. */
   shortList: ShortCandidates | null;
+  /** The dialog that imports a web composition, while it shows (ADR-0039). */
+  webImport: WebImportDialog | null;
+  /** The dialog that renders a composition of the user's own Remotion project. */
+  remotion: RemotionDialog;
+}
+
+/** Importing a web composition: the page chosen, and the import that runs or failed. */
+export interface WebImportDialog {
+  page: WebPage;
+  busy: boolean;
+  error: ApiError | null;
+}
+
+/**
+ * Rendering the user's own Remotion project: the choices, then the licence note and the
+ * command to agree to (nothing runs before), then the render and what it became.
+ */
+export interface RemotionDialog {
+  open: boolean;
+  /** `choose` the project and composition, `agree` to the licence, then `render`. */
+  step: "choose" | "agree" | "render";
+  choice: Omit<RemotionChoice, "confirmed"> | null;
+  /** The licence note and the command, as the engine wrote them. */
+  licence: string | null;
+  command: string[];
+  job: JobStatus | null;
+  busy: boolean;
+  error: ApiError | null;
 }
 
 /** Work with local models, for the panel that started it. */
@@ -390,6 +421,8 @@ const EMPTY: EditorState = {
   missingAnalysis: null,
   analysisFor: null,
   shortList: null,
+  webImport: null,
+  remotion: { open: false, step: "choose", choice: null, licence: null, command: [], job: null, busy: false, error: null },
   notice: null,
   catalog: null,
   luts: [],
@@ -561,6 +594,9 @@ export class Editor {
           speed_presets: caps.speed_presets ?? [],
           voice_presets: caps.voice_presets ?? [],
           text: { ...NO_TEXT, ...caps.text },
+          // What particle emitters can be, and the 3D object presets (ADR-0038, ADR-0040).
+          particles: caps.particles,
+          library: { particles: caps.library?.particles ?? [], models: caps.library?.models ?? [] },
         },
       });
     } catch {
@@ -1268,7 +1304,13 @@ export class Editor {
    */
   async addToTimeline(asset: string, at?: { start: number; track?: string }): Promise<void> {
     const args: Record<string, unknown> = { asset, start: { flicks: at?.start ?? this.state.playhead } };
-    if (this.state.media.find((a) => a.id === asset)?.kind === "image") {
+    const kind = this.state.media.find((a) => a.id === asset)?.kind;
+    // A 3D model is an object of its own, placed in the 3D scene (ADR-0040).
+    if (kind === "model") {
+      await this.addModel({ asset }, at?.start);
+      return;
+    }
+    if (kind === "image" || kind === "vector") {
       args.duration = { seconds: String(preferencesOf(this.state).editing.image_duration) };
     }
     // Dropped on the timeline: on the track it was dropped on, or the first free one there.
@@ -1355,17 +1397,39 @@ export class Editor {
     ]);
   }
 
-  /** Sets or clears one of a clip's animations (`in`, `out` or `combo`). */
-  async setAnimation(clip: string, place: "in" | "out" | "combo", preset: string, seconds?: number): Promise<void> {
+  /**
+   * Sets or clears one of a clip's animations (`in`, `out` or `combo`), lasting `seconds`
+   * and waiting `delay` seconds first when given.
+   */
+  async setAnimation(clip: string, place: "in" | "out" | "combo", preset: string, seconds?: number, delay?: number): Promise<void> {
     const args: Record<string, unknown> = { clip };
     if (preset) {
       const animation: Record<string, unknown> = { preset };
       if (seconds !== undefined) animation.duration = { seconds: String(seconds) };
+      if (delay !== undefined && delay > 0) animation.delay = { seconds: String(delay) };
       args[place] = animation;
     } else {
       args.clear = [place];
     }
     await this.edit([{ command: "animation.set", args }]);
+  }
+
+  /**
+   * Animates the selected clips with one preset, each `step` seconds after the one before,
+   * in `order` (`clips.stagger`), as one step.
+   */
+  async stagger(request: { preset: string; place: "in" | "out" | "combo"; step: number; duration?: number; order: string }): Promise<void> {
+    const clips = this.selected();
+    if (clips.length === 0 || !request.preset) return;
+    const args: Record<string, unknown> = {
+      clips,
+      preset: request.preset,
+      place: request.place,
+      step: { seconds: String(request.step) },
+      order: request.order,
+    };
+    if (request.duration !== undefined) args.duration = { seconds: String(request.duration) };
+    await this.edit([{ command: "clips.stagger", args }]);
   }
 
   /**
@@ -2194,6 +2258,168 @@ export class Editor {
   async setShape(clip: string, patch: Record<string, unknown> | null): Promise<void> {
     if (!patch || Object.keys(patch).length === 0) return;
     await this.edit([{ command: "shape.set", args: { clip, set: patch } }]);
+  }
+
+  /**
+   * Adds a camera from the playhead to the timeline's end (ADR-0037), on a camera track
+   * above the video, and selects it.
+   */
+  async addCamera(): Promise<void> {
+    if (!this.state.timeline) return;
+    const response = await this.apply([{ command: "camera.add", args: { start: { flicks: this.state.playhead } } }]);
+    const clip = (response?.results[0] as { clip?: string } | undefined)?.clip;
+    if (clip) this.set({ selection: clip, also: [] });
+  }
+
+  /** Adds a 3D object from a preset or a model asset at the playhead (`model.add`), and selects it. */
+  async addModel(source: { preset: string } | { asset: string }, start = this.state.playhead): Promise<void> {
+    if (!this.state.timeline) return;
+    const response = await this.apply([{ command: "model.add", args: { ...source, start: { flicks: start } } }]);
+    const clip = (response?.results[0] as { clip?: string } | undefined)?.clip;
+    if (clip) this.set({ selection: clip, also: [] });
+  }
+
+  /**
+   * Turns a vector drawing into a compound clip of editable shapes at the playhead
+   * (`vector.explode`, ADR-0036); the app reads the drawing's paths. Selects the clip.
+   */
+  async explodeDrawing(asset: string): Promise<void> {
+    if (!this.state.timeline) return;
+    const response = await this.apply([{ command: "vector.explode", args: { asset, start: { flicks: this.state.playhead } } }]);
+    const placed = (response?.results[0] as { compound?: { clip?: string } } | undefined)?.compound?.clip;
+    if (placed) this.set({ selection: placed, also: [] });
+  }
+
+  // ---- Web compositions and Remotion (ADR-0039) ----
+
+  /** Asks for a page (or a folder) to import as a web composition, and opens the dialog with it. */
+  async pickComposition(folder: boolean): Promise<void> {
+    if (!this.state.opened) return;
+    try {
+      const page = await this.engine.web.pick(folder);
+      if (page) this.set({ webImport: { page, busy: false, error: null } });
+    } catch (error) {
+      this.notify(error);
+    }
+  }
+
+  closeWebImport(): void {
+    if (!this.state.webImport?.busy) this.set({ webImport: null });
+  }
+
+  /** Imports the composition chosen with the values the dialog gives, then adds it at the playhead when `place`. */
+  async importComposition(request: WebImportRequest, place: boolean): Promise<boolean> {
+    const dialog = this.state.webImport;
+    if (!dialog) return false;
+    this.set({ webImport: { ...dialog, busy: true, error: null } });
+    try {
+      const imported = await this.engine.web.import(request);
+      this.set({ webImport: null });
+      await this.refresh();
+      if (place) await this.addToTimeline(imported.asset);
+      return true;
+    } catch (error) {
+      this.set({ webImport: { ...dialog, busy: false, error: asError(error) } });
+      return false;
+    }
+  }
+
+  private setRemotion(patch: Partial<RemotionDialog>): void {
+    this.set({ remotion: { ...this.state.remotion, ...patch } });
+  }
+
+  /** Opens the Remotion dialog at its first step, keeping a render that runs. */
+  openRemotion(): void {
+    const running = this.state.remotion.job?.state === "running";
+    this.setRemotion({ open: true, ...(running ? {} : { step: "choose", licence: null, command: [], job: null, error: null }) });
+  }
+
+  closeRemotion(): void {
+    this.setRemotion({ open: false });
+  }
+
+  /** Asks the user for the Remotion project's folder; null when they cancel. */
+  async pickRemotionProject(title: string): Promise<string | null> {
+    try {
+      return await this.engine.pickFolder(title);
+    } catch (error) {
+      this.setRemotion({ error: asError(error) });
+      return null;
+    }
+  }
+
+  /**
+   * Checks a render without running it: the engine refuses it until the user agrees, with
+   * the licence note and the command, which the dialog shows next. Other refusals (not a
+   * Remotion project, Remotion or Node.js missing) show as they are.
+   */
+  async checkRemotion(choice: Omit<RemotionChoice, "confirmed">): Promise<void> {
+    this.setRemotion({ busy: true, error: null, choice });
+    try {
+      const job = await this.engine.remotion.start({ ...choice, confirmed: false });
+      // An engine that runs without asking still renders what was chosen.
+      this.setRemotion({ busy: false, step: "render", job });
+    } catch (error) {
+      const api = asError(error);
+      if (api.code === "fosscut.web.confirmation_required") {
+        const details = (api.details ?? {}) as { licence?: string; command?: string[] };
+        this.setRemotion({ busy: false, step: "agree", licence: details.licence ?? api.message, command: details.command ?? [] });
+      } else {
+        this.setRemotion({ busy: false, error: api });
+      }
+    }
+  }
+
+  /** Starts the render the user agreed to. */
+  async confirmRemotion(): Promise<void> {
+    const choice = this.state.remotion.choice;
+    if (!choice) return;
+    this.setRemotion({ busy: true, error: null });
+    try {
+      const job = await this.engine.remotion.start({ ...choice, confirmed: true });
+      this.setRemotion({ busy: false, step: "render", job });
+    } catch (error) {
+      this.setRemotion({ busy: false, error: asError(error) });
+    }
+  }
+
+  /** Reads the render's progress; once it succeeded, the media bin shows what it became. */
+  async pollRemotion(): Promise<void> {
+    const job = this.state.remotion.job;
+    if (job?.state !== "running") return;
+    try {
+      const status = await this.engine.remotion.status(job.job);
+      if (this.state.remotion.job?.job !== status.job) return;
+      this.setRemotion({ job: status });
+      if (status.state === "succeeded") await this.refresh();
+      if (status.state !== "running" && !this.state.remotion.open) {
+        const file = (status.output ?? status.job).split(/[\\/]/).pop() ?? status.job;
+        this.set({
+          notice:
+            status.state === "succeeded"
+              ? { kind: "info", text: t("web.remotion.done", { file }) }
+              : { kind: "error", text: t("web.remotion.failed", { reason: status.error?.message ?? file }) },
+        });
+      }
+    } catch (error) {
+      this.setRemotion({ error: asError(error) });
+    }
+  }
+
+  /** Stops the render; Remotion stops and no file is kept. */
+  async cancelRemotion(): Promise<void> {
+    const job = this.state.remotion.job;
+    if (job?.state !== "running") return;
+    try {
+      this.setRemotion({ job: await this.engine.remotion.cancel(job.job) });
+    } catch (error) {
+      this.setRemotion({ error: asError(error) });
+    }
+  }
+
+  /** Back to the first step, to render another composition. */
+  resetRemotion(): void {
+    this.setRemotion({ step: "choose", licence: null, command: [], job: null, error: null });
   }
 
   // ---- Export ----

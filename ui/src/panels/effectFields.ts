@@ -50,17 +50,21 @@ export function isSoundEffect(spec: EffectSpec): boolean {
 }
 
 /** The groups the effects browser lists effects in. */
-export type EffectGroup = "picture" | "body" | "sound";
+export type EffectGroup = "picture" | "light" | "body" | "sound";
 
-/** The group an effect is listed in: body effects follow a person (ADR-0033). */
+/**
+ * The group an effect is listed in: body effects follow a person (ADR-0033), and glows,
+ * light sweeps and streaks add light (category `light`).
+ */
 export function groupOf(spec: EffectSpec): EffectGroup {
   if (isSoundEffect(spec)) return "sound";
+  if (spec.category === "light") return "light";
   return spec.category === "body" ? "body" : "picture";
 }
 
 /** Effects by group, picture first, each in the catalog's order; empty groups left out. */
 export function effectGroups(offered: EffectSpec[]): { kind: EffectGroup; effects: EffectSpec[] }[] {
-  return (["picture", "body", "sound"] as const)
+  return (["picture", "light", "body", "sound"] as const)
     .map((kind) => ({ kind, effects: offered.filter((spec) => groupOf(spec) === kind) }))
     .filter((group) => group.effects.length > 0);
 }

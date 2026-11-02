@@ -62,7 +62,58 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
             let added = run(&mut session, "shape.add", json!({ "shape": "ellipse" }));
             json!({ "clip": added.results[0]["clip"], "set": { "fill": { "color": "#00AAFF" } } })
         }
+        "particles.add" => json!({
+            "preset": "sparks",
+            "set": { "rate": 90, "sprite": { "kind": "star" } },
+            "bursts": [{ "at": "0.5s", "count": 100 }],
+            "prewarm": "1s",
+            "start": "1s",
+            "duration": "2s"
+        }),
+        "particles.set" => {
+            let added = run(&mut session, "particles.add", json!({ "preset": "snow" }));
+            json!({ "clip": added.results[0]["clip"], "set": { "wind": 0.2 }, "bursts": [{ "at": "1s", "count": 50 }], "seed": 9 })
+        }
+        "model.add" => json!({
+            "preset": "shipping-box",
+            "set": { "object": { "bevel": 0.01 }, "light": { "azimuth": 30 } },
+            "transform": { "position_z": 0.2, "rotation_y": -20 },
+            "start": "1s",
+            "duration": "2s"
+        }),
+        "model.set" => {
+            let added = run(&mut session, "model.add", json!({ "text": "SALE" }));
+            json!({ "clip": added.results[0]["clip"], "set": { "object": { "depth": 0.08 }, "floor": {} } })
+        }
         "template.apply" => json!({ "template": "photo-montage", "media": [asset] }),
+        "camera.add" => json!({
+            "camera": { "field_of_view": 50, "position_z": 0.2, "depth_of_field": true },
+            "start": "0f",
+            "duration": "2s"
+        }),
+        "camera.set" => {
+            let added = run(&mut session, "camera.add", json!({}));
+            json!({ "clip": added.results[0]["clip"], "set": { "orbit": [20, 5], "roll": 3 } })
+        }
+        "clip.follow" => {
+            let path = run(
+                &mut session,
+                "shape.add",
+                json!({ "d": "M 100 900 C 600 100 1300 1000 1800 300", "stroke": { "width": 0.01 } }),
+            );
+            json!({ "clip": clip, "path": path.results[0]["clip"], "progress": 0.5, "orient": true })
+        }
+        "vector.explode" => {
+            let added = run(&mut session, "media.add", vector_args());
+            json!({ "asset": added.results[0]["asset"], "start": "0f", "duration": "2s", "parts": [
+                { "name": "swoosh", "position": [-0.2, 0.1], "shape": {
+                    "shape": "path", "size": [0.5, 0.2], "closed": false, "fill": null,
+                    "points": [{ "at": [-1, 0] }, { "at": [1, 0], "in": [-0.5, -1] }],
+                    "stroke": { "color": "#FF6600", "width": 0.05, "cap": "round" } } },
+                { "opacity": 0.8, "position": [0.25, 0], "shape": {
+                    "shape": "ellipse", "size": [0.3, 0.6], "fill": { "color": "#0066FF" } } }
+            ] })
+        }
         "multicam.create" => json!({ "angles": [asset, asset], "offsets": ["0s", "1s"] }),
         "multicam.switch" => {
             let made = run(
@@ -244,6 +295,14 @@ fn sample(command: &str) -> (Session<MemoryStore>, CommandCall) {
         }
         "animation.set" => {
             json!({ "clip": clip, "in": { "preset": "fade" }, "combo": { "preset": "pulse", "duration": "2s" } })
+        }
+        "clips.stagger" => {
+            let title = run(
+                &mut session,
+                "text.add",
+                json!({ "text": "Card", "start": "0f" }),
+            );
+            json!({ "clips": [clip, title.results[0]["clip"]], "preset": "pop_in", "step": "0.2s", "order": "reverse" })
         }
         "mask.add" => {
             json!({ "clip": clip, "shape": "ellipse", "feather": 0.3, "center": [0.4, 0.5] })

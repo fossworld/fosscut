@@ -236,6 +236,24 @@ describe("the Tauri engine client", () => {
     ]);
   });
 
+  it("imports web compositions and runs Remotion renders through the app's commands", async () => {
+    const engine = new TauriEngine();
+    await engine.web.pick(true);
+    await engine.web.pick(false);
+    await engine.web.import({ path: "/work/card", name: "Card", width: 1080, height: 1920, fps: "30", duration_seconds: 6 });
+    await engine.remotion.start({ project: "/work/ad", composition: "Promo", props: { title: "Hi" }, confirmed: false });
+    await engine.remotion.status("job_0004");
+    await engine.remotion.cancel("job_0004");
+    expect(invoke.mock.calls).toEqual([
+      ["web_pick", { folder: true }],
+      ["web_pick", { folder: false }],
+      ["web_import", { request: { path: "/work/card", name: "Card", width: 1080, height: 1920, fps: "30", duration_seconds: 6 } }],
+      ["remotion_start", { choice: { project: "/work/ad", composition: "Promo", props: { title: "Hi" }, confirmed: false } }],
+      ["remotion_status", { job: "job_0004" }],
+      ["remotion_cancel", { job: "job_0004" }],
+    ]);
+  });
+
   it("reads the caches' sizes as the app lists them", async () => {
     const engine = new TauriEngine();
     const caches = [{ kind: "proxies", path: "/cache/proxies", bytes: 300, entries: 1 }];

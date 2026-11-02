@@ -22,7 +22,10 @@ export type InspectorTab =
   | "effects"
   | "subject"
   | "tools"
-  | "shorts";
+  | "shorts"
+  | "camera"
+  | "particles"
+  | "model";
 
 /** The tabs for `clip`, in order; the first is shown when the clip is selected. */
 export function inspectorTabs(clip: ClipView, media: AssetView[]): InspectorTab[] {
@@ -49,6 +52,15 @@ export function inspectorTabs(clip: ClipView, media: AssetView[]): InspectorTab[
       return ["captions", "style", "translate"];
     case "shape":
       return ["shape", "basic", "animation", "effects", "masks"];
+    // A camera has only its own fields (ADR-0037).
+    case "camera":
+      return ["camera"];
+    // A particle emitter covers the canvas and takes a picture's placement (ADR-0038).
+    case "particles":
+      return ["particles", "basic", "animation", "effects", "masks"];
+    // A 3D object is always in the 3D scene (ADR-0040).
+    case "model":
+      return ["model", "basic", "animation", "effects", "masks"];
     case "adjustment":
       return ["adjust", "effects"];
     case "timeline":
@@ -73,7 +85,7 @@ export function basicTabName(clip: ClipView): "video" | "image" | "placement" | 
 }
 
 /** The groups of the inspector's numeric fields. */
-export type FieldGroup = "placement" | "opacity" | "crop" | "sound";
+export type FieldGroup = "placement" | "opacity" | "crop" | "sound" | "space";
 
 const GROUPS: Record<FieldId, FieldGroup> = {
   x: "placement",
@@ -91,6 +103,11 @@ const GROUPS: Record<FieldId, FieldGroup> = {
   pan: "sound",
   fade_in: "sound",
   fade_out: "sound",
+  depth: "space",
+  tilt: "space",
+  turn: "space",
+  anchor_x: "space",
+  anchor_y: "space",
 };
 
 /** The fields of one group, in their order. */
@@ -110,6 +127,11 @@ export function sliderRange(field: Field): [number, number] {
     volume: [0, 200],
     fade_in: [0, 10],
     fade_out: [0, 10],
+    depth: [-100, 300],
+    tilt: [-180, 180],
+    turn: [-180, 180],
+    anchor_x: [-50, 50],
+    anchor_y: [-50, 50],
   };
   const [low, high] = typical[field.id] ?? [field.min ?? 0, field.max ?? 100];
   return [field.min ?? low, field.max !== undefined && field.id !== "volume" ? field.max : high];

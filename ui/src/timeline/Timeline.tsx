@@ -5,6 +5,7 @@ import {
   Flag,
   Link2,
   Link2Off,
+  ListOrdered,
   Lock,
   type LucideIcon,
   Magnet,
@@ -21,6 +22,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  Video,
   VolumeX,
   ZoomIn,
   ZoomOut,
@@ -159,6 +161,15 @@ function Toolbar({ editor, state, view, onZoom }: { editor: Editor; state: Edito
         />
         <IconButton icon={Crop} label={t("timeline.crop")} tooltip={t("timeline.crop.help")} disabled={!selected} onClick={() => requestInspector("basic", "crop")} />
         <IconButton icon={Combine} label={t("transport.compound")} tooltip={t("transport.compound.help")} action="timeline.compound" disabled={!selected} onClick={() => void editor.compound()} />
+        <IconButton
+          icon={ListOrdered}
+          label={t("timeline.stagger")}
+          tooltip={t("timeline.stagger.help")}
+          disabled={state.also.length === 0}
+          onClick={() => requestInspector("animation", "stagger")}
+        />
+        <span className="divider" aria-hidden="true" />
+        <IconButton icon={Video} label={t("timeline.camera")} tooltip={t("timeline.camera.help")} disabled={!timeline} onClick={() => void editor.addCamera()} />
       </div>
       <div className="tool-group">
         <IconButton

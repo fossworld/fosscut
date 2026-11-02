@@ -90,11 +90,23 @@ pub struct TimelineReadArgs {
 pub struct MediaImportArgs {
     /// Path of a `.fosscut` bundle; the open project when omitted.
     pub project: Option<String>,
-    /// Media files to import: video, audio or images. All are added in one revision.
+    /// Media files to import: video, audio or images, or web compositions (a folder with an
+    /// index.html, or an .html file). All are added in one revision.
     pub files: Vec<String>,
     /// Instead of adding it, the one file given is the new place of this moved asset.
     #[serde(default)]
     pub relink: Option<String>,
+    /// For web compositions: width, height, fps and duration, for values the page's
+    /// `<meta name="fosscut:composition" content="width=1080, height=1920, fps=30,
+    /// duration=6">` tag does not give.
+    #[serde(default)]
+    pub composition: Option<fosscut_engine::web::CompositionOptions>,
+    /// Render a composition of the user's own Remotion project (the one folder in files)
+    /// and import the file, as a background job (follow it with job_status). Only after the
+    /// user agreed to Remotion's licence: without confirm it fails with the note to tell
+    /// them.
+    #[serde(default)]
+    pub remotion: Option<RemotionArgs>,
     /// Fail with `fosscut.revision.conflict` unless the project is at this revision.
     pub expected_revision: Option<u64>,
     /// Report what would be added without changing the project.
@@ -104,6 +116,24 @@ pub struct MediaImportArgs {
     pub request_id: Option<String>,
     /// Why, recorded in the project's history.
     pub reason: Option<String>,
+}
+
+/// A Remotion render for `media_import` (ADR-0039).
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemotionArgs {
+    /// The composition id.
+    pub composition: String,
+    /// Input props for the composition.
+    #[serde(default)]
+    pub props: Option<Value>,
+    /// The entry point relative to the project, such as `src/index.ts`; Remotion's usual
+    /// places when omitted.
+    #[serde(default)]
+    pub entry: Option<String>,
+    /// True once the user agreed to run their Remotion under its licence.
+    #[serde(default)]
+    pub confirm: bool,
 }
 
 /// Arguments of `media_analyze`.
@@ -452,7 +482,8 @@ pub struct LibraryArgs {
     /// add: the item's name.
     pub name: Option<String>,
     /// Only, or the item's, kind: shape, sticker, background, template, title,
-    /// text_style, caption_style, look, sound or music.
+    /// text_style, caption_style, look, particles, model (3D objects), device, drawing,
+    /// composition, sound or music.
     pub kind: Option<String>,
     /// list: words to find in names, descriptions and tags.
     pub search: Option<String>,
@@ -462,9 +493,12 @@ pub struct LibraryArgs {
     pub duration: Option<fosscut_time::TimeInput>,
     /// add: the track.
     pub track: Option<String>,
+    /// add: the timeline, such as a scene's compound timeline; the primary timeline when
+    /// omitted.
+    pub timeline: Option<String>,
     /// add: the clip a look applies to.
     pub clip: Option<String>,
-    /// add: lines for titles and templates; the text of a text style's clip.
+    /// add: lines for titles, templates and compositions; the text of a text style's clip.
     #[serde(default)]
     pub lines: Vec<String>,
     /// add: assets for a template's slots.

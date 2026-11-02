@@ -139,7 +139,7 @@ impl Command for ClipReplace {
             None => Flicks::ZERO,
         };
         let fits = match &clip.content {
-            ClipContent::Video { .. } => asset.kind == AssetKind::Video,
+            ClipContent::Video { .. } => asset.kind.is_video(),
             ClipContent::Audio { .. } => asset.has_audio(),
             ClipContent::Image { .. } => asset.kind == AssetKind::Image,
             _ => false,

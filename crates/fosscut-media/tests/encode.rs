@@ -263,6 +263,7 @@ fn rgba_frames_become_limited_range_bt709() {
     let (cb, cr) = match back.format {
         PixelFormat::Nv12 => (chroma.data[10], chroma.data[11]),
         PixelFormat::Yuv420p => (chroma.data[10], back.planes[2].data[10]),
+        PixelFormat::Rgba => panic!("an opaque H.264 frame decodes as Y'CbCr"),
     };
     assert!(
         cb.abs_diff(109) <= 3 && cr.abs_diff(212) <= 3,

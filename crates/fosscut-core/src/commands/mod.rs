@@ -1,6 +1,7 @@
 //! Built-in commands.
 
 mod arrange;
+mod camera;
 mod canvas;
 mod caption;
 mod clip;
@@ -13,17 +14,22 @@ mod library;
 mod marker;
 mod mask;
 mod media;
+mod model;
 mod motion;
 mod multicam;
+mod particles;
 mod shape;
 mod speed;
+mod stagger;
 mod text;
 mod timeline;
 mod timelines;
 mod track;
 mod util;
+mod vector;
 
 pub use arrange::{Aligned, ClipAlign, ClipReplace, Horizontal, SplitAll, TimelineSplit, Vertical};
+pub use camera::{CameraAdd, CameraReport, CameraSet};
 pub use canvas::{CanvasChanged, ClipCanvas};
 pub use caption::{
     CaptionPage, CaptionsAdd, CaptionsAdded, CaptionsEdit, CaptionsStyle, CaptionsStyled, Paging,
@@ -55,14 +61,22 @@ pub use library::{
 pub use marker::{MarkerAdd, MarkerRemove, MarkerReport, MarkerSet};
 pub use mask::{MaskAdd, MaskFields, MaskRemove, MaskSet, MasksChanged};
 pub use media::{MediaAdd, MediaAdded};
+pub(crate) use model::model_capabilities;
+pub use model::{ModelAdd, ModelChanged, ModelPreset, ModelSet, model_preset, model_presets};
 pub(crate) use motion::motion_capabilities;
 pub use motion::{AnimationInput, AnimationSet, MotionChanged, TransitionRemove, TransitionSet};
 pub use multicam::{
     AngleChoice, MulticamCreate, MulticamCreated, MulticamSwitch, MulticamSwitched,
 };
+pub(crate) use particles::particle_capabilities;
+pub use particles::{
+    BurstInput, ParticlePreset, ParticlesAdd, ParticlesChanged, ParticlesSet, particle_preset,
+    particle_presets,
+};
 pub use shape::{ShapeAdd, ShapeChanged, ShapeSet, TemplateApplied, TemplateApply};
 pub(crate) use speed::speed_capabilities;
 pub use speed::{ClipFreeze, ClipSpeed, Frozen, SpeedChanged};
+pub use stagger::{ClipsStagger, StaggerOrder, StaggerPlace, Staggered, StaggeredClip};
 pub use text::{
     RevealInput, TextAdd, TextChanged, TextPresetRemove, TextPresetSave, TextPresets, TextSet,
     TextTemplate,
@@ -76,6 +90,8 @@ pub use timelines::{
     TimelineSetPrimary,
 };
 pub use track::{TrackAdd, TrackAdded};
+pub(crate) use vector::vector_capabilities;
+pub use vector::{ClipFollow, Exploded, ExplodedPart, Followed, VectorExplode, VectorPart};
 
 use crate::Registry;
 
@@ -127,6 +143,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TransitionSet>();
     registry.register::<TransitionRemove>();
     registry.register::<AnimationSet>();
+    registry.register::<ClipsStagger>();
     registry.register::<TextAdd>();
     registry.register::<TextSet>();
     registry.register::<TextPresetSave>();
@@ -134,7 +151,15 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register::<TextTemplate>();
     registry.register::<ShapeAdd>();
     registry.register::<ShapeSet>();
+    registry.register::<ParticlesAdd>();
+    registry.register::<ParticlesSet>();
+    registry.register::<ModelAdd>();
+    registry.register::<ModelSet>();
+    registry.register::<CameraAdd>();
+    registry.register::<CameraSet>();
     registry.register::<TemplateApply>();
+    registry.register::<ClipFollow>();
+    registry.register::<VectorExplode>();
     registry.register::<MulticamCreate>();
     registry.register::<MulticamSwitch>();
     registry.register::<CaptionsAdd>();

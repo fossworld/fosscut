@@ -12,7 +12,9 @@ import {
   LOOK_NUMBERS,
   type Look,
   NUMBERS,
+  REVEAL_EASINGS,
   REVEAL_MOTIONS,
+  REVEAL_ORDERS,
   REVEAL_UNITS,
   type RevealDraft,
   picked,
@@ -223,8 +225,10 @@ function LookFields({
 function Reveal({ editor, clip, catalog }: { editor: Editor; clip: ClipView; catalog: Catalog | null }) {
   const reveal = revealOf(clip);
   const units = catalog?.text.reveal.units ?? REVEAL_UNITS;
-  const motions = catalog?.text.reveal.motions ?? REVEAL_MOTIONS;
+  // Every motion the model knows, with any more the engine lists.
+  const motions = [...new Set([...REVEAL_MOTIONS, ...(catalog?.text.reveal.motions ?? [])])];
   const change = (draft: Partial<RevealDraft>) => void editor.setText(clip.id, revealChange(clip, draft));
+  const easing = typeof reveal.easing === "string" ? reveal.easing : "custom";
   return (
     <>
       <label className="choice">
@@ -251,13 +255,78 @@ function Reveal({ editor, clip, catalog }: { editor: Editor; clip: ClipView; cat
             </select>
           </label>
           <RevealSeconds seconds={reveal.seconds} onCommit={(seconds) => change({ seconds })} />
+          <label className="choice" title={t("text.reveal.easing.help")}>
+            <span>{t("text.reveal.easing")}</span>
+            <select value={easing} onChange={(event) => event.target.value !== "custom" && change({ easing: event.target.value as RevealDraft["easing"] })}>
+              <option value="">{t("text.reveal.easing.natural")}</option>
+              {easing === "custom" && <option value="custom">{t("text.reveal.easing.custom")}</option>}
+              {REVEAL_EASINGS.map((name) => (
+                <option key={name} value={name}>
+                  {named("text.reveal.easing", name)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="choice" title={t("text.reveal.order.help")}>
+            <span>{t("text.reveal.order")}</span>
+            <select value={reveal.order} onChange={(event) => change({ order: event.target.value as RevealDraft["order"] })}>
+              {REVEAL_ORDERS.map((order) => (
+                <option key={order} value={order}>
+                  {named("text.reveal.order", order)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <RevealOverlap overlap={reveal.overlap} onCommit={(overlap) => change({ overlap })} />
           <label className="toggle" title={t("text.reveal.exit.help")}>
             <input type="checkbox" checked={reveal.exit} onChange={(event) => change({ exit: event.target.checked })} />
             <span>{t("text.reveal.exit")}</span>
           </label>
+          {reveal.exit && (
+            <label className="choice" title={t("text.reveal.exitMotion.help")}>
+              <span>{t("text.reveal.exitMotion")}</span>
+              <select value={reveal.exitMotion} onChange={(event) => change({ exitMotion: event.target.value as RevealDraft["exitMotion"] })}>
+                <option value="">{t("text.reveal.exitMotion.same")}</option>
+                {motions.map((motion) => (
+                  <option key={motion} value={motion}>
+                    {named("text.reveal.motion", motion)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </>
       )}
     </>
+  );
+}
+
+/** How much each part's motion overlaps the next one's, in % from 0 (one after another) to 100 (all at once). */
+function RevealOverlap({ overlap, onCommit }: { overlap: number; onCommit: (overlap: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft !== null && draft.trim() !== "") onCommit(Number(draft) / 100);
+    setDraft(null);
+  };
+  return (
+    <label className="field" title={t("text.reveal.overlap.help")}>
+      <span />
+      <span>{t("text.reveal.overlap")}</span>
+      <input
+        type="number"
+        step={5}
+        min={0}
+        max={100}
+        value={draft ?? String(Math.round(overlap * 100))}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape") setDraft(null);
+        }}
+      />
+      <span className="unit">%</span>
+    </label>
   );
 }
 

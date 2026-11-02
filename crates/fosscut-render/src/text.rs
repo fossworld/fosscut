@@ -10,7 +10,7 @@ use cosmic_text::{
     Align as TextAlign, Attrs, Buffer, Color as GlyphColor, Family, FontSystem, LayoutRun, Metrics,
     Shaping, Style, SwashCache, UnderlineStyle, Weight, fontdb,
 };
-use fosscut_model::{Align, BUNDLED_FONT, RevealUnit, TextContent};
+use fosscut_model::{Align, BUNDLED_FONT, RevealLook, RevealMotion, RevealUnit, TextContent};
 use fosscut_time::Flicks;
 
 use crate::raster::{blur, outline, over, rounded_rect};
@@ -137,11 +137,48 @@ struct CharLook {
     underline: bool,
 }
 
-/// Glyphs of one reveal look (opacity and rise), composed together.
+/// Glyphs of one reveal look, composed together.
 struct Group {
     alpha: f32,
+    /// Blur of the whole group in output pixels (one standard deviation).
+    blur: f32,
     ink: Vec<f32>,
     fill: Vec<[f32; 4]>,
+}
+
+impl Group {
+    /// Blurs the group's ink and colour by its blur, for reveals that come into focus.
+    fn soften(&mut self, w: usize, h: usize) {
+        if self.blur < 0.3 {
+            return;
+        }
+        blur(&mut self.ink, w, h, self.blur);
+        let mut channel = vec![0.0f32; w * h];
+        for c in 0..4 {
+            for (value, pixel) in channel.iter_mut().zip(&self.fill) {
+                *value = pixel[c];
+            }
+            blur(&mut channel, w, h, self.blur);
+            for (pixel, value) in self.fill.iter_mut().zip(&channel) {
+                pixel[c] = *value;
+            }
+        }
+    }
+}
+
+/// Where the units and lines of a laid-out text are, in layout units: each unit's centre,
+/// and each line's horizontal centre and width, from their visible glyphs.
+struct Extents {
+    units: BTreeMap<usize, [f32; 4]>,
+    lines: Vec<(f32, f32)>,
+}
+
+impl Extents {
+    fn centre(&self, unit: usize) -> (f32, f32) {
+        self.units
+            .get(&unit)
+            .map_or((0.0, 0.0), |b| ((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0))
+    }
 }
 
 /// A copy of the bundled Inter Regular whose family is `family`: a font file of a family
@@ -377,8 +414,21 @@ impl TextEngine {
             0.0
         };
         let reach = stroke.max(shadow_reach).max(glow_reach).max(padding);
-        let margin_x = (size * 0.5 + reach).ceil() as i32 + PADDING as i32;
-        let margin_y = reach.ceil() as i32 + PADDING as i32;
+        // Room for where reveal motions take units: in em, and sideways as a share of the
+        // widest line.
+        let motions: Vec<RevealMotion> = content
+            .reveal
+            .iter()
+            .flat_map(|r| std::iter::once(r.motion).chain(r.exit_motion))
+            .collect();
+        let travel = motions.iter().map(|m| m.reach()).fold(0.0f32, f32::max) * size;
+        let sideways = motions.iter().map(|m| m.sideways()).fold(0.0f32, f32::max)
+            * buffer
+                .layout_runs()
+                .map(|run| run.line_w)
+                .fold(0.0f32, f32::max);
+        let margin_x = (size * 0.5 + reach + travel + sideways).ceil() as i32 + PADDING as i32;
+        let margin_y = (reach + travel).ceil() as i32 + PADDING as i32;
         let w = wrap.ceil() as i32 + 2 * margin_x;
         let h = height.ceil() as i32 + 2 * margin_y;
         let (wu, hu) = (w as usize, h as usize);
@@ -406,20 +456,76 @@ impl TextEngine {
             Some(RevealUnit::Word) => words_before(&written, written.len()),
             _ => written.iter().filter(|c| !c.is_whitespace()).count(),
         };
-        let look_at = |unit: usize| -> (f32, f32) {
+        let look_at = |unit: usize| -> RevealLook {
             match &content.reveal {
-                Some(reveal) => reveal.unit_at(unit, count, layer.time, layer.duration),
-                None => (1.0, 0.0),
+                Some(reveal) => reveal.look_at(unit, count, layer.time, layer.duration),
+                None => RevealLook::SHOWN,
             }
         };
-        let key = |(alpha, rise): (f32, f32)| {
+        let key = |look: &RevealLook| {
+            let q = |v: f32| (v * 1024.0).round() as i32;
             (
-                (alpha * 1024.0).round() as i32,
-                (rise * 1024.0).round() as i32,
+                q(look.alpha),
+                q(look.rise),
+                q(look.shift),
+                q(look.scale),
+                q(look.blur),
+                q(look.spread),
+            )
+        };
+        // Each unit's centre and each line's middle, so units grow around their centre and
+        // letters spread from their line's middle.
+        let mut extents = Extents {
+            units: BTreeMap::new(),
+            lines: Vec::with_capacity(lines.len()),
+        };
+        for (line_index, run) in lines.iter().enumerate() {
+            let (mut left, mut right) = (f32::MAX, f32::MIN);
+            for glyph in run.glyphs {
+                let visible = run
+                    .text
+                    .get(glyph.start..glyph.end)
+                    .is_some_and(|t| !t.trim().is_empty());
+                if !visible {
+                    continue;
+                }
+                left = left.min(glyph.x);
+                right = right.max(glyph.x + glyph.w);
+                let middle = run.line_top + run.line_height / 2.0;
+                let half = run.line_height / 2.0;
+                let b = extents
+                    .units
+                    .entry(unit_of(line_index, glyph.start))
+                    .or_insert([f32::MAX, f32::MAX, f32::MIN, f32::MIN]);
+                *b = [
+                    b[0].min(glyph.x),
+                    b[1].min(middle - half),
+                    b[2].max(glyph.x + glyph.w),
+                    b[3].max(middle + half),
+                ];
+            }
+            extents.lines.push(if left <= right {
+                ((left + right) / 2.0, right - left)
+            } else {
+                (0.0, 0.0)
+            });
+        }
+        // Where a glyph of `unit` on `line` starting at `x` goes: the offset and scale that
+        // `LayoutGlyph::physical` takes, for a glyph `width` wide.
+        let placed = |look: &RevealLook, unit: usize, line: usize, x: f32, width: f32| {
+            let s = look.scale;
+            let (cx, cy) = extents.centre(unit);
+            let middle = extents.lines.get(line).map_or(0.0, |l| l.0);
+            let spread = (x + width / 2.0 - middle) * look.spread;
+            let line_y = lines[line].line_y;
+            (
+                origin.0 + cx * (1.0 - s) + look.shift * size + spread,
+                origin.1 + cy * (1.0 - s) + line_y * s + look.rise * size,
+                s,
             )
         };
 
-        let mut groups: BTreeMap<(i32, i32), Group> = BTreeMap::new();
+        let mut groups: BTreeMap<(i32, i32, i32, i32, i32, i32), Group> = BTreeMap::new();
         let mut line_alpha = vec![0.0f32; lines.len()];
         let TextEngine { fonts, glyphs } = self;
         for (line_index, run) in lines.iter().enumerate() {
@@ -428,21 +534,24 @@ impl TextEngine {
                     .text
                     .get(glyph.start..glyph.end)
                     .is_some_and(|t| !t.trim().is_empty());
-                let look = look_at(unit_of(line_index, glyph.start));
-                if look.0 <= 0.0 {
+                let unit = unit_of(line_index, glyph.start);
+                let look = look_at(unit);
+                // A unit grown from nothing has no glyphs to draw yet.
+                if look.alpha <= 0.0 || look.scale < 0.01 {
                     continue;
                 }
                 if visible {
-                    line_alpha[line_index] = line_alpha[line_index].max(look.0);
+                    line_alpha[line_index] = line_alpha[line_index].max(look.alpha);
                 }
-                let group = groups.entry(key(look)).or_insert_with(|| Group {
-                    alpha: look.0,
+                let group = groups.entry(key(&look)).or_insert_with(|| Group {
+                    alpha: look.alpha,
+                    blur: look.blur * size,
                     ink: vec![0.0; wu * hu],
                     fill: vec![[0.0; 4]; wu * hu],
                 });
                 let color = looks.get(glyph.metadata).map_or(base.color, |l| l.color);
-                let physical =
-                    glyph.physical((origin.0, origin.1 + run.line_y + look.1 * size), 1.0);
+                let (x, y, s) = placed(&look, unit, line_index, glyph.x, glyph.w);
+                let physical = glyph.physical((x, y), s);
                 glyphs.with_pixels(
                     fonts,
                     physical.cache_key,
@@ -465,20 +574,23 @@ impl TextEngine {
                     continue;
                 }
                 let metrics = span.data.underline_metrics;
-                let thickness = (metrics.thickness * span.font_size).max(1.0);
-                let top = run.line_y - metrics.offset * span.font_size;
+                let below = -metrics.offset * span.font_size;
                 for glyph in run.glyphs.get(span.glyph_range.clone()).unwrap_or_default() {
-                    let look = look_at(unit_of(line_index, glyph.start));
-                    if look.0 <= 0.0 {
+                    let unit = unit_of(line_index, glyph.start);
+                    let look = look_at(unit);
+                    if look.alpha <= 0.0 || look.scale < 0.01 {
                         continue;
                     }
-                    let Some(group) = groups.get_mut(&key(look)) else {
+                    let Some(group) = groups.get_mut(&key(&look)) else {
                         continue;
                     };
                     let color = looks.get(glyph.metadata).map_or(base.color, |l| l.color);
-                    let y0 = (origin.1 + top + look.1 * size).round() as i32;
-                    let x0 = (origin.0 + glyph.x).round() as i32;
-                    let x1 = (origin.0 + glyph.x + glyph.w).round() as i32;
+                    // The underline moves and scales with its glyph.
+                    let (x, y, s) = placed(&look, unit, line_index, glyph.x, glyph.w);
+                    let thickness = (metrics.thickness * span.font_size * s).max(1.0);
+                    let y0 = (y + below * s).round() as i32;
+                    let x0 = (x + glyph.x * s).round() as i32;
+                    let x1 = (x + (glyph.x + glyph.w) * s).round() as i32;
                     for py in y0.max(0)..(y0 + thickness.ceil() as i32).min(h) {
                         for px in x0.max(0)..x1.min(w) {
                             let cell = (py * w + px) as usize;
@@ -491,6 +603,9 @@ impl TextEngine {
         }
         if groups.is_empty() {
             return TextRaster::empty();
+        }
+        for group in groups.values_mut() {
+            group.soften(wu, hu);
         }
 
         let mut pixels = vec![[0.0f32; 4]; wu * hu];
@@ -1098,6 +1213,7 @@ mod tests {
                     motion,
                     duration: second,
                     exit: false,
+                    ..TextReveal::default()
                 });
             });
             layer.time = Flicks::from_millis(millis);
@@ -1127,6 +1243,140 @@ mod tests {
         assert!(at(&mut engine, RevealUnit::Word, RevealMotion::Fade, 0).is_empty());
         let still = TextLayer::still(TextContent::plain("x"));
         assert_eq!(still.moment(), None);
+    }
+
+    /// Where a raster's ink lies relative to its layout box: the centroid of its coverage,
+    /// and the width and height of the area more than a tenth covered.
+    fn ink(raster: &TextRaster) -> ((f32, f32), (u32, u32)) {
+        let (mut sum, mut sx, mut sy) = (0.0f32, 0.0f32, 0.0f32);
+        let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+        for y in 0..raster.height {
+            for x in 0..raster.width {
+                let a = raster.alpha(x, y);
+                sum += a;
+                sx += a * x as f32;
+                sy += a * y as f32;
+                if a > 0.1 {
+                    (left, top) = (left.min(x), top.min(y));
+                    (right, bottom) = (right.max(x), bottom.max(y));
+                }
+            }
+        }
+        let [bx, by, ..] = raster.layout_box;
+        (
+            (sx / sum.max(1e-6) - bx, sy / sum.max(1e-6) - by),
+            (right.saturating_sub(left), bottom.saturating_sub(top)),
+        )
+    }
+
+    #[test]
+    fn reveal_motions_move_scale_blur_and_spread_their_units() {
+        use fosscut_model::{RevealEasing, RevealMotion, RevealUnit, TextReveal};
+        let mut engine = TextEngine::new();
+        let reveal = |motion, unit, millis: i64| {
+            let mut layer = styled_text("Everything you love.", |c| {
+                c.style.size = 0.1;
+                c.reveal = Some(TextReveal {
+                    unit,
+                    motion,
+                    duration: Flicks::from_seconds(1).unwrap(),
+                    overlap: 1.0,
+                    easing: Some(RevealEasing::Linear),
+                    ..TextReveal::default()
+                });
+            });
+            layer.time = Flicks::from_millis(millis);
+            layer.duration = Flicks::from_seconds(3).unwrap();
+            layer
+        };
+        let mut at = |motion, millis| {
+            let layer = reveal(motion, RevealUnit::Word, millis);
+            engine.rasterize(&layer, CANVAS, 1.0)
+        };
+        // At rest every motion draws the text where it belongs.
+        let rest = at(RevealMotion::Fade, 2000);
+        let ((rx, ry), (rw, rh)) = ink(&rest);
+        for motion in [
+            RevealMotion::Blur,
+            RevealMotion::Pop,
+            RevealMotion::Zoom,
+            RevealMotion::SlideLeft,
+            RevealMotion::SlideRight,
+            RevealMotion::Drop,
+            RevealMotion::Collapse,
+        ] {
+            let done = at(motion, 2000);
+            assert_eq!(
+                done.pixels.len(),
+                done.width as usize * done.height as usize
+            );
+            let ((x, y), size) = ink(&done);
+            assert!(
+                (x - rx).abs() < 0.5 && (y - ry).abs() < 0.5 && size == (rw, rh),
+                "{motion:?} rests in place"
+            );
+        }
+        // Part way, each moves its units as it says.
+        let ((x, _), _) = ink(&at(RevealMotion::SlideLeft, 300));
+        assert!(x > rx + 10.0, "still to the right: {x} vs {rx}");
+        let ((x, _), _) = ink(&at(RevealMotion::SlideRight, 300));
+        assert!(x < rx - 10.0, "still to the left");
+        let ((_, y), _) = ink(&at(RevealMotion::Drop, 300));
+        assert!(y < ry - 10.0, "still above: {y} vs {ry}");
+        let (_, (w, h)) = ink(&at(RevealMotion::Zoom, 300));
+        assert!(w > rw + 40 && h > rh + 10, "larger: {w}x{h} vs {rw}x{rh}");
+        let (_, (w, _)) = ink(&at(RevealMotion::Pop, 300));
+        assert!(w + 40 < rw, "smaller: {w} vs {rw}");
+        let (_, (w, _)) = ink(&at(RevealMotion::Collapse, 300));
+        assert!(w > rw + 100, "spread apart: {w} vs {rw}");
+        // A blur softens edges: fewer pixels fully covered, more partly covered.
+        let soft = at(RevealMotion::Blur, 300);
+        let partly = |r: &TextRaster| {
+            r.pixels
+                .iter()
+                .filter(|p| p[3] > 0.02 && p[3] < 0.3)
+                .count()
+        };
+        assert!(partly(&soft) > 2 * partly(&rest), "blurred edges");
+        // Letters spread from their line's middle, and the outermost move the most.
+        let letters = engine.rasterize(
+            &reveal(RevealMotion::Collapse, RevealUnit::Letter, 300),
+            CANVAS,
+            1.0,
+        );
+        let (_, (w, _)) = ink(&letters);
+        assert!(w > rw + 100, "letter by letter too: {w}");
+    }
+
+    #[test]
+    fn exits_leave_with_their_own_motion() {
+        use fosscut_model::{RevealMotion, RevealUnit, TextReveal};
+        let mut engine = TextEngine::new();
+        let mut layer = styled_text("Goodbye", |c| {
+            c.style.size = 0.1;
+            c.reveal = Some(TextReveal {
+                unit: RevealUnit::Word,
+                motion: RevealMotion::Fade,
+                duration: Flicks::from_millis(500),
+                exit: true,
+                exit_motion: Some(RevealMotion::SlideLeft),
+                ..TextReveal::default()
+            });
+        });
+        layer.duration = Flicks::from_seconds(2).unwrap();
+        layer.time = Flicks::from_seconds(1).unwrap();
+        let rest = engine.rasterize(&layer, CANVAS, 1.0);
+        layer.time = Flicks::from_millis(1800);
+        let leaving = engine.rasterize(&layer, CANVAS, 1.0);
+        assert!(
+            ink(&leaving).0.0 > ink(&rest).0.0 + 10.0,
+            "slides away to the right"
+        );
+        assert_eq!(
+            layer.moment(),
+            Some(Flicks::from_millis(1800)),
+            "cached by the moment"
+        );
     }
 
     #[test]

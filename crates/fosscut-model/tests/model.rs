@@ -623,7 +623,7 @@ fn older_formats_load_and_save_as_the_current_version() {
     assert_eq!(manifest["format_version"], FORMAT_VERSION);
     for older in [
         "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.10.0",
-        "0.11.0", "0.12.0", "0.13.0", "0.14.0",
+        "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0",
     ] {
         manifest["format_version"] = older.into();
         store
@@ -634,7 +634,7 @@ fn older_formats_load_and_save_as_the_current_version() {
         assert_eq!(loaded, project, "nothing else changes in {older}");
         assert!(READABLE_VERSIONS.contains(&older));
     }
-    assert_eq!(FORMAT_VERSION, "0.15.0");
+    assert_eq!(FORMAT_VERSION, "0.16.0");
 }
 
 #[test]
@@ -728,10 +728,12 @@ fn transitions_and_animations_round_trip_and_are_checked() {
         entrance: Some(Animation {
             preset: "pop".into(),
             duration: frames(15),
+            delay: Flicks::ZERO,
         }),
         combo: Some(Animation {
             preset: "swing".into(),
             duration: frames(30),
+            delay: Flicks::ZERO,
         }),
         ..Default::default()
     };
@@ -751,7 +753,7 @@ fn transitions_and_animations_round_trip_and_are_checked() {
     );
 
     type Breakage = fn(&mut Clip);
-    let cases: [(&str, &str, Breakage); 7] = [
+    let cases: [(&str, &str, Breakage); 9] = [
         ("unknown type", "fosscut.model.transition", |c| {
             c.transition.as_mut().unwrap().transition_type = "morph".into();
         }),
@@ -780,6 +782,12 @@ fn transitions_and_animations_round_trip_and_are_checked() {
         }),
         ("no time", "fosscut.model.animation", |c| {
             c.animations.entrance.as_mut().unwrap().duration = Flicks::ZERO;
+        }),
+        ("a negative delay", "fosscut.model.animation", |c| {
+            c.animations.entrance.as_mut().unwrap().delay = frames(-2);
+        }),
+        ("an exit as an entrance", "fosscut.model.animation", |c| {
+            c.animations.entrance.as_mut().unwrap().preset = "glow_out".into();
         }),
     ];
     for (case, code, breakage) in cases {
@@ -1249,6 +1257,7 @@ fn styled_text_fonts_presets_and_sound_effects_are_checked() {
             motion: RevealMotion::Appear,
             duration: frames(30),
             exit: true,
+            ..TextReveal::default()
         });
     }
     project.manifest.text_presets = vec![TextPreset {

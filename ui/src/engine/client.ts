@@ -38,6 +38,7 @@ import type {
   RecordState,
   ReframeRequest,
   ReframeResult,
+  RemotionChoice,
   SceneSplit,
   ShortCandidates,
   ShortRequest,
@@ -56,6 +57,9 @@ import type {
   VerticalResult,
   VoiceInfo,
   Waveform,
+  WebImported,
+  WebImportRequest,
+  WebPage,
 } from "./types";
 
 export type Unsubscribe = () => void;
@@ -294,6 +298,27 @@ export interface EngineClient {
   shorts: {
     candidates(clip: string, options?: { min_seconds?: number; max_seconds?: number; count?: number }): Promise<ShortCandidates>;
     make(request: ShortRequest): Promise<ShortResult>;
+  };
+  /** Web compositions (ADR-0039): HTML pages shown by video clips, rendered in a browser. */
+  web: {
+    /**
+     * Asks for a page (or a folder with an `index.html` when `folder`) and answers what its
+     * meta tag says, for the window to ask for what it leaves out; null when cancelled.
+     */
+    pick(folder: boolean): Promise<WebPage | null>;
+    /** Copies a composition into the project and adds it, as the user's one step. */
+    import(request: WebImportRequest): Promise<WebImported>;
+  };
+  /**
+   * Renders a composition of the user's own Remotion project in the background, imported
+   * when done. Without `confirmed` it refuses with `fosscut.web.confirmation_required`,
+   * whose details carry the licence note and the command to show first.
+   */
+  remotion: {
+    start(choice: RemotionChoice): Promise<JobStatus>;
+    status(job: string): Promise<JobStatus>;
+    /** Stops the render; no file is kept. */
+    cancel(job: string): Promise<JobStatus>;
   };
   /** The caches outside projects (ADR-0032): their sizes, and emptying them. */
   cache: {

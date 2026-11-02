@@ -54,7 +54,7 @@ impl Command for MediaAdd {
         }
         let info = &self.info;
         let complete = match self.kind {
-            AssetKind::Video => {
+            AssetKind::Video | AssetKind::Web => {
                 info.video.is_some() && info.duration.is_some_and(|d| d.is_positive())
             }
             AssetKind::Audio => {
@@ -63,6 +63,8 @@ impl Command for MediaAdd {
             AssetKind::Image => info.video.is_some(),
             AssetKind::Lut => info.lut.is_some(),
             AssetKind::Font => info.font.as_ref().is_some_and(|f| !f.families.is_empty()),
+            AssetKind::Vector => info.video.is_some() && info.vector.is_some(),
+            AssetKind::Model => info.model.is_some(),
         };
         if !complete {
             return Err(ApiError::new(

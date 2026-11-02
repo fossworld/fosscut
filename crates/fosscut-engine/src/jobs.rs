@@ -69,7 +69,8 @@ impl From<&EngineError> for JobError {
 pub struct JobStatus {
     /// The job id, for example `job_0001`.
     pub job: String,
-    /// What the job does: `export`, `analysis`, `recording`, `proxy` or `remux`.
+    /// What the job does: `export`, `analysis`, `recording`, `proxy`, `remux` or
+    /// `remotion`.
     pub kind: String,
     /// Where it stands.
     pub state: JobState,
@@ -102,10 +103,18 @@ pub struct JobStatus {
     /// The remuxed copy, once a remux job succeeded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remux: Option<RemuxReport>,
+    /// The rendered file and the asset it became, once a Remotion render succeeded
+    /// (ADR-0039).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remotion: Option<crate::remotion::RemotionReport>,
     /// The typed error, once the job failed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JobError>,
 }
+
+/// Imports a finished Remotion render into the project and answers the asset id.
+pub type RemotionImport =
+    Box<dyn FnOnce(&std::path::Path) -> Result<String, EngineError> + Send + 'static>;
 
 /// The jobs of one host session.
 #[derive(Default)]
@@ -122,6 +131,7 @@ enum Done {
     Recording(RecordingReport),
     Proxy(ProxyReport),
     Remux(RemuxReport),
+    Remotion(crate::remotion::RemotionReport),
 }
 
 type Outcome = Option<Result<Done, EngineError>>;
@@ -179,6 +189,10 @@ impl Job {
             },
             remux: match done {
                 Some(Done::Remux(report)) => Some(report.clone()),
+                _ => None,
+            },
+            remotion: match done {
+                Some(Done::Remotion(report)) => Some(report.clone()),
                 _ => None,
             },
             error,
@@ -404,6 +418,36 @@ impl Jobs {
                 let _ = progress(crate::record::progress(time, duration));
             };
             record_plan(&planned, stop, &mut recorded).map(Done::Recording)
+        }))
+    }
+
+    /// Starts a checked Remotion render ([`crate::remotion::render`]) on a new thread and
+    /// returns the job's status at once. Progress counts the frames Remotion reports;
+    /// cancelling stops Remotion and keeps no file. When the render succeeds, `import` (if
+    /// given) imports the file and answers the asset id, which the report carries.
+    pub fn start_remotion(
+        &self,
+        plan: crate::remotion::RemotionPlan,
+        import: Option<RemotionImport>,
+    ) -> Result<JobStatus, EngineError> {
+        let output = plan.output.display().to_string();
+        let jobs = lock(&self.jobs);
+        if let Some(running) = jobs
+            .values()
+            .find(|job| job.output.as_deref() == Some(output.as_str()) && job.running())
+        {
+            return Err(EngineError::OutputBusy {
+                path: output,
+                job: running.id.clone(),
+            });
+        }
+        let job = Job::new(jobs.len(), "remotion", Some(output), None, None);
+        Ok(self.spawn(jobs, job, move |cancel, progress| {
+            let mut report = crate::remotion::render(&plan, cancel, progress)?;
+            if let Some(import) = import {
+                report.asset = Some(import(&plan.output)?);
+            }
+            Ok(Done::Remotion(report))
         }))
     }
 

@@ -114,7 +114,7 @@ impl Command for ClipAdd {
             )
         })?;
         let content = match asset.kind {
-            AssetKind::Video => ClipContent::Video {
+            AssetKind::Video | AssetKind::Web => ClipContent::Video {
                 asset: asset.id.clone(),
                 source_in,
             },
@@ -140,7 +140,22 @@ impl Command for ClipAdd {
                     ),
                 ));
             }
-            AssetKind::Image => {
+            // A 3D model is an object of its own (ADR-0040).
+            AssetKind::Model => {
+                return Err(ApiError::new(
+                    codes::INVALID_ARGUMENTS,
+                    format!(
+                        "clip.add: {} is a 3D model; add it with model.add",
+                        asset.id
+                    ),
+                )
+                .with_hint(format!(
+                    "model.add with object {{\"kind\": \"asset\", \"asset\": \"{}\"}} places it in the timeline's 3D scene.",
+                    asset.id
+                )));
+            }
+            // A vector drawing shows as an image, drawn sharp at any size (ADR-0036).
+            AssetKind::Image | AssetKind::Vector => {
                 if source_in != Flicks::ZERO {
                     return Err(ApiError::new(
                         codes::INVALID_ARGUMENTS,
@@ -641,6 +656,9 @@ impl ClipTrim {
             ClipContent::Image { .. }
             | ClipContent::Text(_)
             | ClipContent::Shape(_)
+            | ClipContent::Particles { .. }
+            | ClipContent::Model { .. }
+            | ClipContent::Camera(_)
             | ClipContent::Adjustment => {}
         }
         if self.ripple {
@@ -772,6 +790,8 @@ impl ClipRemove {
         }
         let track = track.id.clone();
         tidy_groups(timeline);
+        // Clips that followed its path stay where their own transforms put them (ADR-0036).
+        super::vector::release_follows(ctx.project, std::slice::from_ref(&removed.id));
         Ok(ClipRemoved {
             removed: removed.id,
             track,

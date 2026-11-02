@@ -42,6 +42,7 @@ import type {
   RecordState,
   ReframeRequest,
   ReframeResult,
+  RemotionChoice,
   SceneSplit,
   ShortCandidate,
   ShortCandidates,
@@ -62,6 +63,9 @@ import type {
   VerticalResult,
   VoiceInfo,
   Waveform,
+  WebImported,
+  WebImportRequest,
+  WebPage,
 } from "./types";
 
 /** `count` times spread evenly over `length` flicks, at the centre of equal parts. */
@@ -1005,6 +1009,144 @@ export class FakeEngine implements EngineClient {
         },
         response,
       };
+    },
+  };
+
+  // ---- Web compositions and Remotion (ADR-0039) ----
+
+  /** What `web.pick` answers: a page or a folder chosen, with its meta tag read; null for a cancel. */
+  webPick: ((folder: boolean) => WebPage | null) | null = (folder) => ({
+    path: folder ? "/work/Phone mockup" : "/work/search-bar.html",
+    name: folder ? "Phone mockup" : "search-bar.html",
+    width: 1080,
+    height: 1920,
+    fps: "30",
+    duration_seconds: folder ? 6 : null,
+    problem: null,
+    remote: [],
+    browser: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  });
+
+  /** The meta tags of pages `web.import` reads, by path: what a request may leave out. */
+  webTags: Record<string, Partial<WebImportRequest>> = {};
+
+  /** A length as `media.list` reports it, at 30 frames a second. */
+  private length(seconds: number) {
+    const frames = Math.round(seconds * 30);
+    const two = (n: number) => String(n).padStart(2, "0");
+    const timecode = `${two(Math.floor(frames / 108_000))}:${two(Math.floor(frames / 1800) % 60)}:${two(Math.floor(frames / 30) % 60)}:${two(frames % 30)}`;
+    return { flicks: Math.round(seconds * 705_600_000), frames, seconds: String(seconds), timecode };
+  }
+
+  /** Adds an asset to the `media.list` answer, when it has a list, as an import does. */
+  private listAsset(asset: Record<string, unknown>): void {
+    const listing = this.answers["media.list"] as { assets?: unknown[] } | undefined;
+    listing?.assets?.push(asset);
+  }
+
+  web = {
+    pick: async (folder: boolean): Promise<WebPage | null> => {
+      this.log("web.pick", folder);
+      return this.webPick ? this.webPick(folder) : null;
+    },
+    /** Imports as the desktop does: the values given, else the page's tag, else refused. */
+    import: async (request: WebImportRequest): Promise<WebImported> => {
+      this.log("web.import", request);
+      const tag = this.webTags[request.path] ?? {};
+      const width = request.width ?? tag.width;
+      const height = request.height ?? tag.height;
+      const seconds = request.duration_seconds ?? tag.duration_seconds;
+      const missing = [width ? null : "width", height ? null : "height", seconds ? null : "duration"].filter(Boolean);
+      if (missing.length > 0) {
+        throw {
+          code: "fosscut.web.composition_unknown",
+          message: `the composition's ${missing.join(", ")} is not known`,
+          hint: "Give width, height and duration, or add a fosscut:composition meta tag to the page.",
+          details: { missing },
+        } satisfies ApiError;
+      }
+      this.revision += 1;
+      const asset = `asset_${String(90 + this.revision).padStart(4, "0")}`;
+      const name = request.name ?? request.path.split("/").pop() ?? "composition";
+      this.listAsset({
+        id: asset,
+        kind: "web",
+        name,
+        duration: this.length(seconds!),
+        video: { width, height },
+        used_by: [],
+      });
+      return { asset, revision: this.revision };
+    },
+  };
+
+  /** Frames every Remotion render renders, and how many more each status read finds done. */
+  remotionFrames = 180;
+  remotionStep = 30;
+  /** Why every Remotion render is refused before it runs, when set (a missing install, say). */
+  remotionRefusal: ApiError | null = null;
+  renders = new Map<string, { status: JobStatus; choice: RemotionChoice }>();
+
+  /** Renders as the desktop runs them: refused until confirmed, then `remotionStep` frames per read, then imported. */
+  remotion = {
+    start: async (choice: RemotionChoice): Promise<JobStatus> => {
+      this.log("remotion.start", choice);
+      if (!choice.project.trim()) throw { code: "fosscut.request.invalid_arguments", message: "choose the Remotion project's folder" } satisfies ApiError;
+      if (this.remotionRefusal) throw this.remotionRefusal;
+      const output = `${this.opened?.bundle ?? "/work/Demo.fosscut"}/renders/${choice.composition}.mov`;
+      if (!choice.confirmed) {
+        throw {
+          code: "fosscut.web.confirmation_required",
+          message: "rendering with Remotion needs confirmation",
+          hint: "Tell the user the licence note in details.licence; confirm only if they agree.",
+          details: {
+            licence:
+              "Remotion is source-available under its own licence, which is free for individuals and small companies but requires a paid company licence above that size (remotion.dev/license); FossCut runs the copy installed in your project and never installs it.",
+            command: ["npx", "--no-install", "remotion", "render", choice.entry ?? "src/index.ts", choice.composition, output, "--codec=prores"],
+          },
+        } satisfies ApiError;
+      }
+      const job = `job_${String(200 + this.renders.size).padStart(4, "0")}`;
+      const status: JobStatus = { job, kind: "remotion", state: "running", progress: { done: 0, total: 0 }, elapsed_ms: 0, output };
+      this.renders.set(job, { status, choice });
+      return status;
+    },
+    status: async (job: string): Promise<JobStatus> => {
+      this.log("remotion.status", job);
+      const entry = this.renders.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state !== "running") return entry.status;
+      const done = Math.min(this.remotionFrames, entry.status.progress.done + this.remotionStep);
+      entry.status = { ...entry.status, progress: { done, total: this.remotionFrames }, elapsed_ms: entry.status.elapsed_ms + 500 };
+      if (done >= this.remotionFrames) {
+        this.revision += 1;
+        const asset = `asset_${String(150 + this.revision).padStart(4, "0")}`;
+        const output = entry.status.output ?? "";
+        this.listAsset({
+          id: asset,
+          kind: "video",
+          name: output.split("/").pop() ?? output,
+          duration: this.length(this.remotionFrames / 30),
+          video: { width: 1080, height: 1920 },
+          used_by: [],
+          folder: "renders",
+        });
+        entry.status = {
+          ...entry.status,
+          state: "succeeded",
+          remotion: { output, composition: entry.choice.composition, command: ["npx", "remotion", "render"], asset },
+        };
+      }
+      return entry.status;
+    },
+    cancel: async (job: string): Promise<JobStatus> => {
+      this.log("remotion.cancel", job);
+      const entry = this.renders.get(job);
+      if (!entry) throw { code: "fosscut.job.not_found", message: `there is no job ${job}` } satisfies ApiError;
+      if (entry.status.state === "running") {
+        entry.status = { ...entry.status, state: "cancelled", error: { code: "fosscut.job.cancelled", message: "the remotion job was cancelled" } };
+      }
+      return entry.status;
     },
   };
 
