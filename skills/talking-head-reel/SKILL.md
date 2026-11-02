@@ -55,19 +55,22 @@ Work in order; check each with `frame_grab` at the beat's middle before going on
 
 - **Visuals:** `library` add the overlay with `start` at the first word it illustrates, `params` with the user's words (short: 2 to 6 words per text), `accent` and `hold` (seconds until the thought ends; raise `speed` when the phrase is shorter than the overlay's build time), and `media` for its slots. Then `clip.set` its `transform.scale` and `transform.position` from `references/visuals.md`. Overlays animate themselves in and out: do not add entrance animations or `motion.blur` to them.
 - **Sound on entrances:** `library` add `pop`, `whoosh`, `click` or `swipe` at each visual's start (a `notification` or `ding` for notification cards, `typewriter` under a terminal), then turn them all down with one `audio_normalize` to -26 LUFS (`target_lufs`) so they sit under the voice.
-- **Split screens:** `clip.split` the speaker's clip at the beat's edges, then on the middle part `clip.set` `crop.top` and `crop.bottom` adding up to 0.5 (for example 0.2 and 0.3, so the face stays in the kept half) and `transform.position` [0, 0.25], and put the visual above it at `transform.position` [0, -0.25] filling the top half. Check the join with `frame_grab`.
-- **Background swaps:** `media_analyze` with `["matte"]` on the footage once, `effect.add` `key.subject` (`background` "color" with the colour, or "none" with `grid-stage` or an image on a track below) on the speaker clip, and keyframe its `effects.<id>.mix` from 0 to 1 at the beat's start and back to 0 at its end (`keyframe.set` with `hold` easing for a hard switch).
+- **Split screens:** use at least one for the longest explanation (a process, a list, a timeline, a menu), as creators do. `clip.split` the speaker's clip at the beat's edges, then on the middle part `clip.set` `crop.top` and `crop.bottom` adding up to 0.5 (for example 0.2 and 0.3, so the face stays in the kept half) and `transform.position` [0, 0.25], and put the visual above it at `transform.position` [0, -0.25] filling the top half. Check the join with `frame_grab`.
+- **Never shrink the speaker** or add bars to make room for a visual: use a smaller visual, move it up, or make the beat a split screen.
+- **Background swaps:** `media_analyze` with `["matte"]` on the footage once, `effect.add` `key.subject` (`background` "color" with the colour, or "none" with `grid-stage` or an image on a track below) on the speaker clip, and keyframe its `effects.<id>.mix` from 0 to 1 at the beat's start and back to 0 at its end (`keyframe.set` with `hold` easing for a hard switch). The fast person matte can leave soft edges around hands, props and cables: keep swaps short, and prefer a busy background such as `grid-stage` over flat green, which shows edges most.
 - **Punch-ins:** `auto_edit` with action `punch_in`, `clip` the speaker clip and `moments` with one `{"start", "end", "scale"}` per punchline (`scale` 1.15 to 1.3, held to the end of the phrase); after `media_analyze` with `["pose"]` it centres on the face. Alternate them with wide moments; never punch in during a split screen or a background swap.
 
 ## 6. Captions
 
 `captions` with action `generate`, `preset` "reel", `skip_fillers` true, and `emphasis` with one or two keywords per sentence (the word that carries the meaning, never "the" or "and"; give `at` when the word occurs more than once). Check a frame where a visual and a caption overlap: the caption must not cover the visual's text; move the visual up rather than the caption.
 
+Caption pages are clips on the caption track, so one shot can differ: where the face sits low or the hands fill the middle, or on a split screen, move just those pages with one `edit` of `clip.set` `transform.position` per page (for example [0, -0.04] to sit on a split screen's dividing line). Keep the style the same everywhere.
+
 ## 7. Music and loudness
 
 1. `audio_normalize` every speech clip to -14 LUFS.
-2. `library` add kind music with `duration` the timeline's length (pick the feel from the brief: `upbeat-loop`, `chill-loop`, `corporate-loop`, `trap-loop`), then `audio_normalize` it to -24 LUFS.
-3. `auto_edit` with action `duck`, `clips` the music clip, `speech` the speech clips and `depth_db` -10: it dips while they talk and rises in pauses. Level first, then duck (levelling keeps the ducking's shape either way).
+2. `library` add kind music with `duration` the timeline's length (pick the feel from the brief: `upbeat-loop`, `chill-loop`, `corporate-loop`, `trap-loop`), then `audio_normalize` it to -20 LUFS.
+3. `auto_edit` with action `duck`, `clips` the music clip, `speech` the speech clips and `depth_db` -6: it dips while they talk and rises in pauses. Level first, then duck (levelling keeps the ducking's shape either way). Creators' reels keep the bed clearly audible, about 10 to 12 dB under the voice the whole time: with fast talkers who never pause, a deeper duck only makes the music vanish.
 
 ## 8. Check and deliver
 

@@ -363,22 +363,30 @@
       }
     },
     {
-      "about": "Sound effects and music well under the voice.",
+      "about": "Sound effects well under the voice (the library's pop is already there, so nothing may change).",
       "tool": "audio_normalize",
       "args": {
         "clips": [
-          "${pop}",
+          "${pop}"
+        ],
+        "target_lufs": -26
+      }
+    },
+    {
+      "about": "The music bed about 6 dB under the voice before ducking, so it stays audible.",
+      "tool": "audio_normalize",
+      "args": {
+        "clips": [
           "${music}"
         ],
-        "target_lufs": -26,
-        "expected_revision": "${rev}"
+        "target_lufs": -20
       },
       "save": {
         "rev": "revision"
       }
     },
     {
-      "about": "The music dips while the speaker talks and comes back in the pauses.",
+      "about": "The music dips 6 dB while the speaker talks and comes back in the pauses.",
       "tool": "auto_edit",
       "args": {
         "action": "duck",
@@ -388,7 +396,7 @@
         "speech": [
           "${talk}"
         ],
-        "depth_db": -10,
+        "depth_db": -6,
         "expected_revision": "${rev}"
       },
       "expect": {
