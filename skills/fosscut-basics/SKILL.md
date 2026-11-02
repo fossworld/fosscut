@@ -68,7 +68,7 @@ FossCut's MCP server (`fosscut mcp`) offers these tools; every one also exists o
 | Effects that follow a person's body: outline, glow, shadow, sparkles | `media_analyze` with `analyzers: ["pose"]`, then `effect.add` of `body.outline`, `body.glow`, `body.shadow` or `body.sparkle` | `fosscut media analyze <asset> pose`, `fosscut effect add --clip <id> --type body.glow` |
 | A voiceover from text, in an English voice | `record` with action `voices`, then action `speak` (`text`, `voice`, `at`) | `fosscut speak "Welcome back" --voice af_heart --at 2s` |
 | Translate captions between English and Hungarian, or dub them in English | `captions` with action `translate` (`to`, `mode` bilingual or replace) or `dub` (`voice`, `translation`); you can also translate pages yourself with `captions.edit` | `fosscut captions translate --to hu`, `fosscut captions dub --voice bm_george` |
-| Look at the result | `frame_grab`, `contact_sheet` | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
+| Look at the result, or save it for the user | `frame_grab`, `contact_sheet` (with `out` to write the PNG) | `fosscut frame <time> --out still.png`, `fosscut contact-sheet --out sheet.png` |
 | Export | `export`, then `job_status` | `fosscut export <file>` |
 | Export choices: resolution (720p to 8K), frame rate, bit rate, a part of the timeline, a cover image, subtitles beside the file; ProRes profiles, GIF, WAV, FLAC or MP3 (`capabilities` lists the presets); rights notes on the media used | `export` with `resolution`, `fps`, `bitrate`, `range`, `cover`, `subtitles`, `preset` | `fosscut export clip.gif --range 2s..6s`, `fosscut export Promo.mp4 --resolution 720p --fps 30 --cover 1s --subtitles srt` |
 

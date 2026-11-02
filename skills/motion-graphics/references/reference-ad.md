@@ -67,4 +67,4 @@ Alternative: `logo-extrude-3d` with the logo in its `logo` slot, `side_color` or
 2. Glow passes on scenes 1 and 6.
 3. One `adjustment.add` from 0 to 10.5 s with `stylize.grain` 0.1 and `motion.shake` 0.004, and `look.apply` `cool` on it; the end card stays clean and still.
 4. `audio_normalize` with the music and all the sounds to -14 LUFS.
-5. Whole preview at `resolution` "360" for the last approval, then the final `export` at 1080x1920 with `"cover": "11.5s"`, and a `contact_sheet` of 12 frames for the user.
+5. Whole preview at `resolution` "360" for the last approval, then the final `export` at 1080x1920 with `"cover": "11.5s"`, and a `contact_sheet` of 12 frames saved with `"out": "sheet.png"` for the user.

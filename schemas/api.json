@@ -19662,7 +19662,7 @@
               }
             ],
             "default": null,
-            "description": "Text on it, as a text clip's content (`{\"text\": \"NEW\", \"style\": {...}}`)."
+            "description": "Text on it, as a text clip's content (`{\"text\": \"NEW\", \"style\": {...}}`). On a\nlibrary item it changes the item's label like a merge patch: `{\"text\": \"SALE\"}`\nkeeps the item's look."
           },
           "label_at": {
             "default": null,
@@ -22696,7 +22696,7 @@
           },
           "text": {
             "default": null,
-            "description": "New text; spans that no longer fit are dropped.",
+            "description": "New text in the same look; a span over whole lines moves to the same lines, others\nstay where they still fit.",
             "type": [
               "string",
               "null"
@@ -29424,13 +29424,13 @@
           },
           {
             "default": {
-              "samples": 8,
+              "samples": 16,
               "shutter": 0.5
             },
             "description": "Motion blur from sub-frames spread over the shutter interval and averaged.",
             "fields": [
               {
-                "default": 8,
+                "default": 16,
                 "description": "Sub-frames per frame; 1 turns motion blur off, and render time grows with the count.",
                 "integer": true,
                 "max": 32.0,

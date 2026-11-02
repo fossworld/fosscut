@@ -453,3 +453,34 @@ fn capabilities_list_every_reveal_motion_and_only_those() {
         serde_json::from_value::<fosscut_model::RevealOrder>(json!(order)).unwrap();
     }
 }
+
+#[test]
+fn new_text_keeps_spans_over_whole_lines_on_their_lines() {
+    let mut session = new_session();
+    let added = run(
+        &mut session,
+        "text.add",
+        json!({
+            "text": "SALE\nup to 50% off\ntoday",
+            "spans": [
+                { "start": 5, "end": 18, "color": "#FFCC00" },
+                { "start": 0, "end": 2, "italic": true },
+            ],
+        }),
+    );
+    let id = added.results[0]["clip"].clone();
+    let changed = run(
+        &mut session,
+        "text.set",
+        json!({ "clip": id, "text": "NEW\nfresh arrivals every week\nnow" }),
+    );
+    let text = &changed.results[0]["content"];
+    assert_eq!(
+        text["spans"],
+        json!([
+            { "start": 4, "end": 29, "color": "#FFCC00" },
+            { "start": 0, "end": 2, "italic": true },
+        ]),
+        "the whole second line stays yellow; the part of a line stays where it fits"
+    );
+}

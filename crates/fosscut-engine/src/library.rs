@@ -1172,7 +1172,8 @@ mod tests {
         assert_eq!(params["box_color"], "#F07A2B");
         assert_eq!(
             params["motion_blur"],
-            json!({ "samples": 8, "shutter": 0.5 })
+            json!({ "samples": 16, "shutter": 0.5 }),
+            "the fast drop takes more samples"
         );
         for file in [
             "scene.js",

@@ -993,16 +993,28 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position.",
+    "description": "Render frames spread evenly over the timeline into one PNG grid (default 12 frames, 240 pixels wide each), to check a whole edit at a glance. Returns the image and each tile's time and position; with out it also writes the PNG to that file for the user.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "allow_destructive": {
+          "default": false,
+          "description": "Replace `out` if it exists. Ask the user first.",
+          "type": "boolean"
+        },
         "count": {
           "description": "Frames to show, 1 to 100 (default 12), from the middle of equal parts of the\ntimeline.",
           "format": "uint32",
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "out": {
+          "description": "Also write the sheet to this `.png` file, for example `sheet.png`, to give the user;\nan existing file needs allow_destructive.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -1033,7 +1045,7 @@ expression: listing
       "type": "object"
     },
     "name": "contact_sheet",
-    "read_only": true
+    "read_only": false
   },
   {
     "description": "Change the project: apply one or more commands (clip.add, clip.split, clip.move, clip.remove, text.add, track.add and others from capabilities) in order as one atomic transaction and one undo step. Pass expected_revision from your last read; dry_run: true reports the changes without committing; a request_id makes retries safe. Returns the new revision, each command's result and a summary of changes.",
@@ -1321,7 +1333,7 @@ expression: listing
     "read_only": false
   },
   {
-    "description": "Render the frame of the timeline at a time as a PNG image, exactly as the export will show it (default 640 pixels wide). Use it to check titles, placement and cuts. Returns the image and the frame's time in every unit.",
+    "description": "Render the frame of the timeline at a time as a PNG image, exactly as the export will show it (default 640 pixels wide). Use it to check titles, placement and cuts. Returns the image and the frame's time in every unit; with out it also writes the PNG to that file for the user, such as a style frame.",
     "input": {
       "$defs": {
         "TimeInput": {
@@ -1389,6 +1401,18 @@ expression: listing
       },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "allow_destructive": {
+          "default": false,
+          "description": "Replace `out` if it exists. Ask the user first.",
+          "type": "boolean"
+        },
+        "out": {
+          "description": "Also write the image to this `.png` file, for example `style-2.png`, to give the\nuser; an existing file needs allow_destructive.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "project": {
           "description": "Path of a `.fosscut` bundle; the open project when omitted.",
           "type": [
@@ -1423,7 +1447,7 @@ expression: listing
       "type": "object"
     },
     "name": "frame_grab",
-    "read_only": true
+    "read_only": false
   },
   {
     "description": "List the project's recent changes, newest first: revision, who made it (human or agent:<name>), the commands and the reason.",

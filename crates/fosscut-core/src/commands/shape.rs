@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::caption::merge;
+use super::text::retext;
 use super::util::{
     ensure_free, ensure_kind, ensure_unlocked, ensure_valid_range, insert_sorted, locate_clip,
     resolve, timeline_id, timeline_mut, track_index,
@@ -163,9 +164,12 @@ pub struct ShapeAdd {
     /// Moves the visible part along the outline by this fraction, wrapping around.
     #[serde(default)]
     pub trim_offset: Option<f64>,
-    /// Text on it, as a text clip's content (`{"text": "NEW", "style": {...}}`).
+    /// Text on it, as a text clip's content (`{"text": "NEW", "style": {...}}`). On a
+    /// library item it changes the item's label like a merge patch: `{"text": "SALE"}`
+    /// keeps the item's look.
     #[serde(default)]
-    pub label: Option<TextContent>,
+    #[schemars(with = "Option<TextContent>")]
+    pub label: Option<Value>,
     /// Where the label's centre sits in the shape's box, -1 to 1 on each axis.
     #[serde(default)]
     pub label_at: Option<[f64; 2]>,
@@ -261,8 +265,8 @@ impl Command for ShapeAdd {
         if let Some(trim) = self.trim_offset {
             shape.trim_offset = trim;
         }
-        if let Some(label) = self.label {
-            shape.label = Some(label);
+        if let Some(patch) = &self.label {
+            shape.label = Some(relabel(shape.label.take(), patch, Self::NAME)?);
         }
         if let Some(label_at) = self.label_at {
             shape.label_at = label_at;
@@ -366,6 +370,39 @@ pub struct ShapeChanged {
     pub content: ShapeContent,
 }
 
+/// `label` as a merge patch over `current`: new text keeps the look (`retext`), and given
+/// style or spans change it.
+fn relabel(
+    current: Option<TextContent>,
+    patch: &Value,
+    command: &str,
+) -> Result<TextContent, ApiError> {
+    let parse = |value: Value| {
+        serde_json::from_value::<TextContent>(value)
+            .map_err(|e| invalid(format!("{command}: label: {e}")))
+    };
+    let Some(mut current) = current else {
+        return parse(patch.clone());
+    };
+    let mut patch = patch.clone();
+    let text = match patch.as_object_mut().map(|p| p.remove("text")) {
+        Some(Some(Value::String(text))) => Some(text),
+        Some(Some(other)) => {
+            return Err(invalid(format!(
+                "{command}: label text must be a string, not {other}"
+            )));
+        }
+        Some(None) => None,
+        None => return Err(invalid(format!("{command}: label must be an object"))),
+    };
+    if let Some(text) = text {
+        retext(&mut current, text);
+    }
+    let mut value = serde_json::to_value(&current).unwrap_or_else(|_| json!({}));
+    merge(&mut value, &patch);
+    parse(value)
+}
+
 impl Command for ShapeSet {
     const NAME: &'static str = "shape.set";
     const SUMMARY: &'static str = "Change a shape clip's outline, size, roundness, points, contours, fill (null for none), gradient, outline, stroke, trims or label by a merge patch.";
@@ -382,10 +419,17 @@ impl Command for ShapeSet {
                 clip.content.kind_name()
             )));
         };
+        let mut patch = self.set.clone();
+        let label = patch.as_object_mut().and_then(|p| p.remove("label"));
         let mut value = serde_json::to_value(current.as_ref()).unwrap_or_else(|_| json!({}));
-        merge(&mut value, &self.set);
+        merge(&mut value, &patch);
         let mut shape: ShapeContent =
             serde_json::from_value(value).map_err(|e| invalid(format!("shape.set: {e}")))?;
+        match label {
+            Some(Value::Null) => shape.label = None,
+            Some(label) => shape.label = Some(relabel(current.label.clone(), &label, Self::NAME)?),
+            None => {}
+        }
         // A merge patch's null removes a field, which would bring back the default white
         // fill: `"fill": null` means no fill (ADR-0036).
         if self.set.get("fill").is_some_and(Value::is_null) {

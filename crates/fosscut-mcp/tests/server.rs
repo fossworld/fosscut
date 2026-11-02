@@ -134,10 +134,9 @@ async fn agents_see_a_few_well_described_tools() {
         "ADR-0002 keeps the MCP surface coarse: {} tools",
         tools.len()
     );
+    // frame_grab and contact_sheet can write a PNG for the user (`out`), so they are not.
     let read_only = [
         "capabilities",
-        "contact_sheet",
-        "frame_grab",
         "history",
         "job_status",
         "media_analyze",
@@ -344,6 +343,59 @@ async fn frames_and_export_jobs_on_a_title() {
     let sheet = call_raw(&client, "contact_sheet", json!({ "count": 4, "width": 80 })).await;
     assert_eq!(png_size(&sheet), (164, 94));
     assert_eq!(json_of(&sheet)["tiles"].as_array().unwrap().len(), 4);
+
+    // Both can also save the PNG for the user, never over a file without allow_destructive.
+    let style = dir.join("style-1.png");
+    let saved = call_raw(
+        &client,
+        "frame_grab",
+        json!({ "time": { "frames": 12 }, "width": 160, "out": style }),
+    )
+    .await;
+    assert_eq!(json_of(&saved)["written"], style.display().to_string());
+    let written = std::fs::read(&style).unwrap();
+    assert_eq!(&written[1..4], b"PNG");
+    assert_eq!(
+        base64::engine::general_purpose::STANDARD.encode(&written),
+        saved.content[0].as_image().unwrap().data,
+        "the file is the image returned"
+    );
+    let again = fails(
+        &client,
+        "frame_grab",
+        json!({ "time": { "frames": 0 }, "out": style }),
+    )
+    .await;
+    assert_eq!(again["code"], "fosscut.guard.destructive");
+    assert_eq!(std::fs::read(&style).unwrap(), written, "left as it was");
+    let replaced = call_raw(
+        &client,
+        "frame_grab",
+        json!({ "time": { "frames": 0 }, "width": 80, "out": style, "allow_destructive": true }),
+    )
+    .await;
+    assert_eq!(png_size(&replaced), (80, 45));
+    assert_ne!(std::fs::read(&style).unwrap(), written);
+    let not_png = fails(
+        &client,
+        "frame_grab",
+        json!({ "time": { "frames": 0 }, "out": dir.join("style.jpg") }),
+    )
+    .await;
+    assert_eq!(not_png["code"], "fosscut.request.invalid_arguments");
+    assert!(!dir.join("style.jpg").exists());
+    let sheet_file = dir.join("sheet.png");
+    let saved_sheet = call_raw(
+        &client,
+        "contact_sheet",
+        json!({ "count": 4, "width": 80, "out": sheet_file }),
+    )
+    .await;
+    assert_eq!(
+        json_of(&saved_sheet)["written"],
+        sheet_file.display().to_string()
+    );
+    assert!(std::fs::metadata(&sheet_file).unwrap().len() > 100);
 
     // Export: a dry run, then a background job followed to its verified report.
     let output = dir.join("Card.m4a");

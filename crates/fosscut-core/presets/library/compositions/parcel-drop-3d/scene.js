@@ -29,7 +29,7 @@ const DEFAULTS = {
   "tone_mapping": "aces",
   "bloom": { "strength": 1, "radius": 0.55, "threshold": 0.9 },
   "depth_of_field": { "aperture": 0.35, "max_blur": 0.012 },
-  "motion_blur": { "samples": 8, "shutter": 0.5 }
+  "motion_blur": { "samples": 16, "shutter": 0.5 }
 };
 // fosscut:end
 

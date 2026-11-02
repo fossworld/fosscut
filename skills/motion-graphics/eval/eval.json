@@ -222,18 +222,20 @@
       }
     },
     {
-      "about": "Scene 1's style frame at full size, for the user to approve.",
+      "about": "Scene 1's style frame at full size, saved for the user to approve.",
       "tool": "frame_grab",
       "args": {
         "time": "1.2s",
-        "width": 360
+        "width": 360,
+        "out": "style-1.png"
       },
       "expect_image": {
         "width": 360,
         "height": 640
       },
       "expect": {
-        "at.frames": 36
+        "at.frames": 36,
+        "written": "style-1.png"
       }
     },
     {
@@ -883,16 +885,18 @@
       }
     },
     {
-      "about": "The finished piece at a glance, for the user.",
+      "about": "The finished piece at a glance, saved for the user.",
       "tool": "contact_sheet",
       "args": {
         "count": 6,
-        "width": 60
+        "width": 60,
+        "out": "sheet.png"
       },
       "expect": {
         "tiles": {
           "$len": 6
-        }
+        },
+        "written": "sheet.png"
       }
     },
     {

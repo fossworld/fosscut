@@ -27,7 +27,7 @@ Read `references/quality.md` before the storyboard (timing, easing, type, colour
 
 ## 2. Style frames (approval 2)
 
-For each scene, build only its hero moment at its place on the timeline: background, colours, type, the main object, already at the final look and position, without motion. `frame_grab` at that time with `width` 1080 (full size) and send it to the user with the scene's name. Ask for approval or comments, revise and grab again. Settle palette, type scale, contrast and framing here: they are cheap to change now and expensive after the motion is built.
+For each scene, build only its hero moment at its place on the timeline: background, colours, type, the main object, already at the final look and position, without motion. `frame_grab` at that time with `width` 1080 (full size) and `out` set to a file such as `style-2.png`, and send it to the user with the scene's name. Ask for approval or comments, revise and grab again. Settle palette, type scale, contrast and framing here: they are cheap to change now and expensive after the motion is built.
 
 ## 3. Build each scene (approval 3, per scene)
 
@@ -38,14 +38,14 @@ Build one scene at a time, in storyboard order, from its approved style frame:
    | Idea | Primitive |
    |---|---|
    | A 3D city with a route, a parcel dropping, a phone turning with a live app, a logo extruded in 3D, a product on a podium | The 3D templates (`library` add `route-map-3d`, `parcel-drop-3d`, `phone-3d`, `logo-extrude-3d`, `product-podium-3d` with `params` and `media`): FossCut's own Three.js scenes with bloom, depth of field and motion blur; `references/library.md` lists their parameters |
-   | An app screen: search, cards, product page, button, toast | `shop-app` with `lines` (its defaults are placeholders: always set them), inside `phone-3d` or the flat `phone` frame; push in on the part that matters, or lift it out at a readable size with the UI kit (`ui-*` stickers) |
+   | An app screen: search, cards, product page, button, toast | `shop-app` with `lines` (its defaults are placeholders: always set them), inside `phone-3d` or the flat `phone` frame; its flow takes 9 s, so show one or two of its states per scene (the screen_start parameter of `phone-3d` picks the moment its screen starts at) rather than speeding it up, since each state needs about 0.8 s to read; push in on the part that matters, or lift it out at a readable size with the UI kit (`ui-*` stickers) |
    | Lines, underlines, routes and logos that draw themselves | `shape.add` paths with a `stroke`, `animation.set` with `{"in": {"preset": "draw_on"}}`; `vector.explode` for the user's SVG logo |
    | Type with energy | `text.add` with a `reveal`, the `kinetic-type` title, `clips.stagger` |
    | Halos, sheens, streaks, sparks | `light.glow`, `light.sweep` (with `bloom` on white type), `light.streaks`; `particles.add` with a burst on the beat |
    | Depth and camera moves over flat layers | `transform.three_d`, `camera.add` with keyframes on `camera.position_z` or `camera.orbit` |
 
 2. **Build in place, then make it one clip.** Lay the scene's layers over its time on the main timeline (background at the bottom, light and particles on top), then `edit` with `clip.compound` (`clips`, and `name` "Scene N"). Animate the scene clip as a whole for a push, a rise or a 3D turn.
-3. **Motion.** Entrances overshoot a little and settle, the hero moment holds, and the scene hands over to the next on its last beat (`references/quality.md`). Add `motion.blur` (`{"amount": 0.5}`) to every clip that moves, inside the scene and on the scene clip when it moves; 3D layers under a moving camera streak with it too.
+3. **Motion.** Entrances overshoot a little and settle, the hero moment holds, and the scene hands over to the next on its last beat (`references/quality.md`). Add `motion.blur` (`{"amount": 0.5}`) to every clip that moves, inside the scene and on the scene clip when it moves; 3D layers under a moving camera streak with it too. The 3D templates blur their own motion: never add `motion.blur` to a template clip, and raise the samples of its motion_blur parameter (16 to 32) when a fast move shows separate copies instead of a streak.
 4. **Preview.** `export` the scene alone: `range` from its marker to the next, `resolution` "360" and `fps` "15", a versioned file name such as `scene-2-v1.mp4`, then `job_status` until it succeeds. Give the user the file and a `frame_grab` of the hero moment, wait for approval, revise, and export the next version (`scene-2-v2.mp4`).
 
 ## 4. Finish the whole piece (approval 4)
@@ -60,7 +60,7 @@ In this order, then preview the whole piece at `resolution` "360" for the last a
 
 ## 5. Final export and delivery
 
-`export` at 1080x1920 and 30 fps (`resolution` "1080p" when the project is smaller) with `expected_revision` and a `cover` on the end card, `job_status` until it succeeds, and compare the report with the brief. Send the file, a `contact_sheet` of 12 frames, the scenes with what changed at each approval, and a note that `undo` reverses each step.
+`export` at 1080x1920 and 30 fps (`resolution` "1080p" when the project is smaller) with `expected_revision` and a `cover` on the end card, `job_status` until it succeeds, and compare the report with the brief. Send the file, a `contact_sheet` of 12 frames saved with `out` (`sheet.png`), the scenes with what changed at each approval, and a note that `undo` reverses each step.
 
 ## When the user is not there to approve
 

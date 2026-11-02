@@ -251,13 +251,52 @@ fn place_text(
     Ok(placement)
 }
 
+/// Character ranges of the lines of `text`, without their line breaks.
+fn line_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        let end = start + line.chars().count();
+        lines.push((start, end));
+        start = end + 1;
+    }
+    lines
+}
+
+/// Gives `content` new text and keeps its look: a span that covered whole lines covers the
+/// same lines of the new text (a grey second line stays grey), other spans stay where they
+/// still fit, and spans past the new text are dropped.
+pub(crate) fn retext(content: &mut TextContent, text: String) {
+    let old = line_ranges(&content.text);
+    let new = line_ranges(&text);
+    let length = text.chars().count();
+    let spans = std::mem::take(&mut content.spans);
+    content.spans = spans
+        .into_iter()
+        .filter_map(|mut span| {
+            let first = old.iter().position(|&(start, _)| start == span.start);
+            let last = old.iter().position(|&(_, end)| end == span.end);
+            match (first, last) {
+                (Some(first), Some(last)) if first <= last && span.start < span.end => {
+                    span.start = new.get(first)?.0;
+                    span.end = new.get(last)?.1;
+                    (span.start < span.end).then_some(span)
+                }
+                _ => (span.end <= length).then_some(span),
+            }
+        })
+        .collect();
+    content.text = text;
+}
+
 /// Changes a text clip's text, style, spans or reveal.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TextSet {
     /// The text clip.
     pub clip: Id,
-    /// New text; spans that no longer fit are dropped.
+    /// New text in the same look; a span over whole lines moves to the same lines, others
+    /// stay where they still fit.
     #[serde(default)]
     pub text: Option<String>,
     /// A preset whose style replaces the current one before `style` applies.
@@ -331,9 +370,7 @@ impl Command for TextSet {
                     "text.set: text must not be empty",
                 ));
             }
-            let length = text.chars().count();
-            content.spans.retain(|s| s.end <= length);
-            content.text = text;
+            retext(&mut content, text);
         }
         content.style = styled(
             ctx.project,

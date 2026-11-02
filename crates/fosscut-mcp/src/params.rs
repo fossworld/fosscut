@@ -228,6 +228,12 @@ pub struct FrameArgs {
     pub timeline: Option<String>,
     /// Image width in pixels (default 640); the height keeps the aspect ratio.
     pub width: Option<u32>,
+    /// Also write the image to this `.png` file, for example `style-2.png`, to give the
+    /// user; an existing file needs allow_destructive.
+    pub out: Option<String>,
+    /// Replace `out` if it exists. Ask the user first.
+    #[serde(default)]
+    pub allow_destructive: bool,
 }
 
 /// Arguments of `contact_sheet`.
@@ -242,6 +248,12 @@ pub struct SheetArgs {
     pub width: Option<u32>,
     /// Timeline id; the primary timeline when omitted.
     pub timeline: Option<String>,
+    /// Also write the sheet to this `.png` file, for example `sheet.png`, to give the user;
+    /// an existing file needs allow_destructive.
+    pub out: Option<String>,
+    /// Replace `out` if it exists. Ask the user first.
+    #[serde(default)]
+    pub allow_destructive: bool,
 }
 
 /// Arguments of `export`.
