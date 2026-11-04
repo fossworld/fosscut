@@ -67,7 +67,7 @@ schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 # float_roundtrip: numbers read back from JSON (caches, records) equal what was written.
 serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 # The desktop shell (ADR-0010): Tauri 2 on the system webview, with native file dialogs.
 tauri = "2.12.5"
 tauri-build = "2.7.4"
